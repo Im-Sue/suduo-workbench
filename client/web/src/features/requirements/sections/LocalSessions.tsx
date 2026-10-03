@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useT } from "../../../i18n/provider.js";
 import { localSessionsQuery } from "../queries.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
@@ -15,18 +16,19 @@ export function LocalSessions({
   requirementId: string;
   limit?: number;
 }) {
+  const text = useT().requirementDetail.localSessions;
   const sessions = useQuery(localSessionsQuery(projectId));
   if (sessions.isPending) {
     return <Skeleton className="h-9 w-full" />;
   }
   if (sessions.isError) {
-    return <p className="m-0 text-caption text-subtle-foreground">暂时读不到本机会话</p>;
+    return <p className="m-0 text-caption text-subtle-foreground">{text.loadFailed}</p>;
   }
   const items = sessions.data
     .filter((item) => item.requirement?.remoteRequirementId === requirementId)
     .sort((a, b) => activity(b.session) - activity(a.session));
   if (items.length === 0) {
-    return <p className="m-0 text-caption text-subtle-foreground">还没有人在本机为它开过会话</p>;
+    return <p className="m-0 text-caption text-subtle-foreground">{text.empty}</p>;
   }
   const shown = limit === undefined ? items : items.slice(0, limit);
   return (
@@ -39,7 +41,7 @@ export function LocalSessions({
             className="flex h-9 items-center gap-2.5 rounded-sm bg-muted px-2.5 text-small text-foreground no-underline outline-none hover:bg-muted-strong focus-visible:ring-2 focus-visible:ring-ring"
           >
             <MessageSquareIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{session.title || "未命名会话"}</span>
+            <span className="min-w-0 flex-1 truncate">{session.title || text.untitled}</span>
             <time className="shrink-0 text-caption text-subtle-foreground" title={formatDateTime(activity(session))}>
               {formatRelativeTime(activity(session))}
             </time>
@@ -47,7 +49,7 @@ export function LocalSessions({
         </li>
       ))}
       {shown.length < items.length ? (
-        <li className="text-caption text-subtle-foreground">还有 {items.length - shown.length} 个会话</li>
+        <li className="text-caption text-subtle-foreground">{text.more(items.length - shown.length)}</li>
       ) : null}
     </ul>
   );

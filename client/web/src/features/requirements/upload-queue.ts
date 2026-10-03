@@ -3,6 +3,8 @@ import { REQUIREMENTS_WEB_ATTACHMENT_UPLOAD_PRECHECK_LIMIT } from "@suduo/cloud-
 import { useSyncExternalStore } from "react";
 import { api, REQUIREMENT_ATTACHMENT_MAX_BYTES } from "../../api/client.js";
 import { classifyFailure } from "../../feedback/classify.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 import { requirementKeys } from "./keys.js";
 
 /**
@@ -119,9 +121,9 @@ export function enqueueUploads(
 }
 
 /** 选文件时的本地预检：超过单文件大小或单需求数量上限返回原因，否则 null。最终以服务端判断为准。 */
-export function precheck(file: File, room: number): string | null {
-  if (file.size > REQUIREMENT_ATTACHMENT_MAX_BYTES) return "超过 300 MB，无法上传";
-  if (room <= 0) return `每个需求最多 ${REQUIREMENTS_WEB_ATTACHMENT_UPLOAD_PRECHECK_LIMIT} 个材料，先删掉一些再传`;
+export function precheck(file: File, room: number, t: Messages = messagesFor(currentLocale())): string | null {
+  if (file.size > REQUIREMENT_ATTACHMENT_MAX_BYTES) return t.requirementDetail.upload.tooLarge;
+  if (room <= 0) return t.requirementDetail.upload.tooMany(REQUIREMENTS_WEB_ATTACHMENT_UPLOAD_PRECHECK_LIMIT);
   return null;
 }
 

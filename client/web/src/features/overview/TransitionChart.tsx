@@ -1,6 +1,8 @@
 import type { DailyRequirementTransitionDto, RequirementStatus } from "@suduo/cloud-contracts";
-import { REQUIREMENT_STATUSES, REQUIREMENT_STATUS_LABELS } from "@suduo/cloud-contracts";
+import { REQUIREMENT_STATUSES } from "@suduo/cloud-contracts";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useT } from "../../i18n/provider.js";
+import { requirementStatusLabel } from "../../ui/requirement-status.js";
 
 /**
  * 流转趋势（需求 §4.6）：近 7 / 30 天每天进入各状态的次数，堆叠柱，带坐标轴与日期。
@@ -17,6 +19,8 @@ const STATUS_COLOR: Record<RequirementStatus, string> = {
 };
 
 export default function TransitionChart({ transitions }: { transitions: readonly DailyRequirementTransitionDto[] }) {
+  const t = useT();
+  const text = t.overview.trend;
   const data = transitions.map((day) => ({
     date: day.date.slice(5).replace("-", "/"),
     fullDate: day.date,
@@ -39,7 +43,7 @@ export default function TransitionChart({ transitions }: { transitions: readonly
             const index = (REQUIREMENT_STATUSES as readonly unknown[]).indexOf(item.dataKey);
             return index === -1 ? REQUIREMENT_STATUSES.length : index;
           }}
-          formatter={(value, name) => [`${String(value)} 次`, name]}
+          formatter={(value, name) => [text.times(Number(value)), name]}
         />
         {/* 图例按流程顺序（与柱子堆叠顺序一致），文字用正文色，色块只在圆点上。 */}
         <Legend
@@ -50,9 +54,9 @@ export default function TransitionChart({ transitions }: { transitions: readonly
           formatter={(value) => <span style={{ color: "var(--muted-foreground)" }}>{String(value)}</span>}
         />
         {present.map((status) => (
-          <Bar key={status} dataKey={status} name={`进入${REQUIREMENT_STATUS_LABELS[status]}`} stackId="flow" fill={STATUS_COLOR[status]} maxBarSize={28} />
+          <Bar key={status} dataKey={status} name={text.entered(requirementStatusLabel(status, t))} stackId="flow" fill={STATUS_COLOR[status]} maxBarSize={28} />
         ))}
-        {hasOther ? <Bar dataKey="other" name="其他" stackId="flow" fill="var(--subtle-foreground)" maxBarSize={28} /> : null}
+        {hasOther ? <Bar dataKey="other" name={text.other} stackId="flow" fill="var(--subtle-foreground)" maxBarSize={28} /> : null}
       </BarChart>
     </ResponsiveContainer>
   );

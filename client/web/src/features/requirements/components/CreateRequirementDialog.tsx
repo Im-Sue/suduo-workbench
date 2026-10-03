@@ -1,7 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type RequirementListItemDto } from "@suduo/client-contracts";
 import {
-  REQUIREMENT_STATUS_LABELS,
   REQUIREMENTS_WEB_ATTACHMENT_UPLOAD_PRECHECK_LIMIT,
   type RequirementStatus,
   type UserSummaryDto,
@@ -26,6 +25,8 @@ import { enqueueUploads, precheck } from "../upload-queue.js";
 import { AssigneeMenu } from "./AssigneeMenu.js";
 import { StatusMenu } from "./StatusMenu.js";
 import { UserAvatar } from "./UserAvatar.js";
+import { requirementStatusLabel } from "../../../ui/requirement-status.js";
+import { useT } from "../../../i18n/provider.js";
 
 const TITLE_MAX = 200;
 const SUMMARY_MAX = 4000;
@@ -53,6 +54,7 @@ export function CreateRequirementDialog({
   /** 提示里点「查看」：打开新建的需求。 */
   onView(requirement: RequirementListItemDto): void;
 }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const create = useCreateRequirement(projectId);
   const [title, setTitle] = useState("");
@@ -93,10 +95,10 @@ export function CreateRequirementDialog({
         accepted.push(file);
         room -= 1;
       } else {
-        reasons.push(`「${file.name}」${reason}`);
+        reasons.push(t.requirements.create.rejectedItem(file.name, reason));
       }
     }
-    setRejected(reasons.length === 0 ? null : reasons.slice(0, 3).join("；") + (reasons.length > 3 ? ` 等 ${reasons.length} 个文件` : ""));
+    setRejected(reasons.length === 0 ? null : t.requirements.create.rejected(reasons.slice(0, 3), reasons.length));
     if (accepted.length > 0) setFiles((current) => [...current, ...accepted]);
   };
 
@@ -131,18 +133,16 @@ export function CreateRequirementDialog({
         // 对话框多半已关掉：材料传失败时单独提示，并给「查看」回到这条需求重试。
         enqueueUploads(queryClient, created.id, files, 0, {
           onFailed: (item) =>
-            showMessage(`${requirementCode(created.number)} 的材料「${item.file.name}」没能上传`, "error", {
+            showMessage(t.requirements.create.uploadFailed(requirementCode(created.number), item.file.name), "error", {
               id: `create-upload-${item.id}`,
-              action: { label: "查看", onClick: () => onView(created) },
+              action: { label: t.requirements.create.view, onClick: () => onView(created) },
             }),
         });
       }
       highlightRequirement(created.id);
-      showMessage(
-        `已创建 ${requirementCode(created.number)}${files.length > 0 ? `，${files.length} 份材料正在上传` : ""}`,
-        "success",
-        { action: { label: "查看", onClick: () => onView(created) } },
-      );
+      showMessage(t.requirements.create.created(requirementCode(created.number), files.length), "success", {
+        action: { label: t.requirements.create.view, onClick: () => onView(created) },
+      });
       if (more) {
         setTitle("");
         setSummary("");
@@ -188,9 +188,9 @@ export function CreateRequirementDialog({
           <div className="flex items-center gap-2 px-5 pt-4">
             <Badge className="max-w-48 truncate">{projectName}</Badge>
             <ChevronRightIcon className="size-3 text-subtle-foreground" aria-hidden="true" />
-            <DialogTitle className="text-small font-medium">新建需求</DialogTitle>
-            <DialogDescription className="sr-only">只有标题必填，其余可以稍后补充。</DialogDescription>
-            <Button type="button" size="icon-sm" variant="ghost" className="ml-auto" aria-label="关闭" onClick={requestClose}>
+            <DialogTitle className="text-small font-medium">{t.requirements.create.title}</DialogTitle>
+            <DialogDescription className="sr-only">{t.requirements.create.description}</DialogDescription>
+            <Button type="button" size="icon-sm" variant="ghost" className="ml-auto" aria-label={t.feedback.dialog.close} onClick={requestClose}>
               <XIcon />
             </Button>
           </div>
@@ -199,27 +199,27 @@ export function CreateRequirementDialog({
             <div
               className="mx-5 mt-3 flex items-center gap-2 rounded-md bg-warning-soft px-3 py-2 text-small"
               role="alertdialog"
-              aria-label="放弃这条需求？"
+              aria-label={t.requirements.create.discardLabel}
               data-testid="form-dialog-discard"
             >
-              <span className="flex-1">放弃这条还没创建的需求？</span>
+              <span className="flex-1">{t.requirements.create.discardPrompt}</span>
               <Button autoFocus size="sm" type="button" variant="ghost" onClick={() => setConfirmingDiscard(false)}>
-                继续编辑
+                {t.feedback.dialog.keepEditing}
               </Button>
               <Button size="sm" type="button" variant="danger" onClick={() => onOpenChange(false)}>
-                放弃
+                {t.feedback.dialog.discard}
               </Button>
             </div>
           ) : null}
 
           <div className="flex flex-col gap-2.5 px-5 pt-3 pb-4">
-            <label htmlFor="new-requirement-title" className="sr-only">需求标题</label>
+            <label htmlFor="new-requirement-title" className="sr-only">{t.requirements.create.titleLabel}</label>
             <input
               ref={titleRef}
               id="new-requirement-title"
               autoFocus
               maxLength={TITLE_MAX}
-              placeholder="需求标题"
+              placeholder={t.requirements.create.titlePlaceholder}
               aria-invalid={titleError || undefined}
               aria-describedby={titleError ? "new-requirement-title-error" : undefined}
               className="h-10 w-full border-0 bg-transparent px-0.5 text-[18px] leading-7 font-semibold text-foreground outline-none placeholder:text-disabled-foreground"
@@ -231,15 +231,15 @@ export function CreateRequirementDialog({
             />
             {titleError ? (
               <p id="new-requirement-title-error" className="m-0 text-caption text-danger" role="alert">
-                写一个标题，方便大家在看板上认出它
+                {t.requirements.create.titleRequired}
               </p>
             ) : null}
-            <label htmlFor="new-requirement-summary" className="sr-only">描述</label>
+            <label htmlFor="new-requirement-summary" className="sr-only">{t.requirements.create.summaryLabel}</label>
             <textarea
               id="new-requirement-summary"
               rows={4}
               maxLength={SUMMARY_MAX}
-              placeholder="补充背景、目标或验收标准，支持 Markdown（可稍后再写）"
+              placeholder={t.requirements.create.summaryPlaceholder}
               className="min-h-24 w-full resize-y border-0 bg-transparent px-0.5 text-body text-foreground outline-none placeholder:text-disabled-foreground"
               value={summary}
               onChange={(event) => setSummary(event.target.value)}
@@ -249,21 +249,25 @@ export function CreateRequirementDialog({
                 status={status}
                 onChange={setStatus}
                 trigger={
-                  <button type="button" className={CHIP} aria-label={`状态：${REQUIREMENT_STATUS_LABELS[status]}`}>
+                  <button type="button" className={CHIP} aria-label={t.requirements.filter.statusValue(requirementStatusLabel(status))}>
                     <StatusIcon status={status} aria-hidden="true" />
-                    {REQUIREMENT_STATUS_LABELS[status]}
+                    {requirementStatusLabel(status)}
                   </button>
                 }
               />
               <AssigneeMenu assignee={assignee} currentUserId={currentUser?.id ?? null} onChange={setAssignee}>
-                <button type="button" className={CHIP} aria-label={`负责人：${assignee?.displayName ?? "未指派"}`}>
+                <button
+                  type="button"
+                  className={CHIP}
+                  aria-label={t.requirements.filter.assigneeValue(assignee?.displayName ?? t.requirements.assignee.unassigned)}
+                >
                   <UserAvatar user={assignee} size="sm" />
-                  {assignee?.displayName ?? "未指派"}
+                  {assignee?.displayName ?? t.requirements.assignee.unassigned}
                 </button>
               </AssigneeMenu>
               <button type="button" className={cn(CHIP, "border-dashed")} onClick={() => fileRef.current?.click()}>
                 <PaperclipIcon className="size-3.5" aria-hidden="true" />
-                添加材料
+                {t.requirements.create.addMaterials}
               </button>
               <input
                 ref={fileRef}
@@ -278,7 +282,7 @@ export function CreateRequirementDialog({
               />
             </div>
             {files.length === 0 ? null : (
-              <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label="待上传的材料">
+              <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label={t.requirements.create.pendingFiles}>
                 {files.map((file, index) => (
                   <li
                     key={`${file.name}-${index}`}
@@ -288,7 +292,7 @@ export function CreateRequirementDialog({
                     <span className="text-subtle-foreground">{formatBytes(file.size)}</span>
                     <button
                       type="button"
-                      aria-label={`移除 ${file.name}`}
+                      aria-label={t.requirements.create.removeFile(file.name)}
                       className="inline-flex size-5 items-center justify-center rounded-xs text-subtle-foreground hover:bg-muted-strong hover:text-foreground"
                       onClick={() => setFiles((current) => current.filter((_, position) => position !== index))}
                     >
@@ -299,18 +303,18 @@ export function CreateRequirementDialog({
               </ul>
             )}
             {rejected === null ? null : <InlineError kind="validation">{rejected}</InlineError>}
-            {failure === null ? null : <InlineError kind={failure.kind}>没能创建：{failure.message}</InlineError>}
+            {failure === null ? null : <InlineError kind={failure.kind}>{t.requirements.create.failed(failure.message)}</InlineError>}
           </div>
 
           <div className="flex items-center gap-2 border-t border-border px-5 py-3">
             <label className="flex cursor-pointer items-center gap-2 text-small text-muted-foreground">
-              <Switch checked={more} onCheckedChange={setMore} aria-label="继续新建下一条" />
-              继续新建下一条
+              <Switch checked={more} onCheckedChange={setMore} aria-label={t.requirements.create.createMore} />
+              {t.requirements.create.createMore}
             </label>
             <div className="flex-1" />
-            <Button type="button" variant="secondary" onClick={requestClose}>取消</Button>
+            <Button type="button" variant="secondary" onClick={requestClose}>{t.feedback.dialog.cancel}</Button>
             <Button type="submit" variant="primary" loading={create.isPending}>
-              创建需求
+              {t.requirements.create.submit}
               <Kbd className="ml-1">⌘⏎</Kbd>
             </Button>
           </div>

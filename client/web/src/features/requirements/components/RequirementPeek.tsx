@@ -19,6 +19,7 @@ import { AssigneeMenu } from "./AssigneeMenu.js";
 import { StatusMenu } from "./StatusMenu.js";
 import { UserAvatar } from "./UserAvatar.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 需求速览（原型 Main · 速览）：看板 / 列表右侧 480px，不离开当前页面。
@@ -45,6 +46,7 @@ export function RequirementPeek({
   onNext: (() => void) | null;
   onStartSession(requirement: RequirementListItemDto): void;
 }) {
+  const t = useT();
   const { requirement, detail } = useRequirement(requirementId);
   const update = useUpdateRequirement();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -69,7 +71,7 @@ export function RequirementPeek({
     <aside
       ref={asideRef}
       tabIndex={-1}
-      aria-label={requirement === undefined ? "需求速览" : `需求速览：${code} ${requirement.title}`}
+      aria-label={requirement === undefined ? t.requirements.peek.label : t.requirements.peek.labelWith(code, requirement.title)}
       className="absolute inset-y-0 right-0 z-20 flex w-[min(480px,100%)] flex-col border-l border-border bg-card shadow-2 outline-none animate-in slide-in-from-right-4 fade-in-0 duration-150 min-[1440px]:static min-[1440px]:w-[480px] min-[1440px]:shrink-0 min-[1440px]:shadow-none"
       data-testid="requirement-peek"
     >
@@ -83,10 +85,10 @@ export function RequirementPeek({
           />
         )}
         <div className="flex-1" />
-        <NavButton label="上一条" shortcut="K" onClick={onPrev}>
+        <NavButton label={t.requirements.peek.prev} shortcut="K" onClick={onPrev}>
           <ChevronUpIcon />
         </NavButton>
-        <NavButton label="下一条" shortcut="J" onClick={onNext}>
+        <NavButton label={t.requirements.peek.next} shortcut="J" onClick={onNext}>
           <ChevronDownIcon />
         </NavButton>
         {requirement === undefined ? null : (
@@ -97,23 +99,23 @@ export function RequirementPeek({
                   to="/p/$projectId/requirements/$number"
                   params={{ projectId: ownProjectId, number: String(requirement.number) }}
                   state={(previous) => ({ ...previous, fromList: true })}
-                  aria-label="打开完整页"
+                  aria-label={t.requirements.peek.openFull}
                 >
                   <Maximize2Icon />
                 </Link>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>打开完整页</TooltipContent>
+            <TooltipContent>{t.requirements.peek.openFull}</TooltipContent>
           </Tooltip>
         )}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="icon-sm" variant="ghost" aria-label="关闭速览" onClick={onClose}>
+            <Button size="icon-sm" variant="ghost" aria-label={t.requirements.peek.close} onClick={onClose}>
               <XIcon />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            关闭 <Kbd>Esc</Kbd>
+            {t.requirements.peek.closeHint} <Kbd>Esc</Kbd>
           </TooltipContent>
         </Tooltip>
       </div>
@@ -123,7 +125,7 @@ export function RequirementPeek({
           detail.isError ? (
             <RegionError
               kind={classifyFailure(detail.error).kind}
-              message={`没能打开这条需求：${classifyFailure(detail.error).message}`}
+              message={t.requirements.peek.loadFailed(classifyFailure(detail.error).message)}
               busy={detail.isFetching}
               onRetry={() => void detail.refetch()}
             />
@@ -134,7 +136,7 @@ export function RequirementPeek({
           <>
             <h2 className="m-0 text-page font-semibold break-words">{requirement.title}</h2>
             <dl className="m-0 grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-small">
-              <dt className="text-subtle-foreground">负责人</dt>
+              <dt className="text-subtle-foreground">{t.requirements.peek.field.assignee}</dt>
               <dd className="m-0">
                 <AssigneeMenu
                   assignee={requirement.assignee}
@@ -146,21 +148,23 @@ export function RequirementPeek({
                   <button
                     type="button"
                     className="-mx-1.5 -my-0.5 inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label={`负责人：${requirement.assignee?.displayName ?? "未指派"}，点击修改`}
+                    aria-label={t.requirements.peek.assigneeTrigger(
+                      requirement.assignee?.displayName ?? t.requirements.assignee.unassigned,
+                    )}
                   >
                     <UserAvatar user={requirement.assignee} />
                     <span className={requirement.assignee === null ? "text-subtle-foreground" : undefined}>
-                      {requirement.assignee?.displayName ?? "未指派"}
+                      {requirement.assignee?.displayName ?? t.requirements.assignee.unassigned}
                     </span>
                   </button>
                 </AssigneeMenu>
               </dd>
-              <dt className="text-subtle-foreground">创建</dt>
+              <dt className="text-subtle-foreground">{t.requirements.peek.field.created}</dt>
               <dd className="m-0">
                 {requirement.createdBy.displayName} ·{" "}
                 <time title={formatDateTime(requirement.createdAt)}>{formatRelativeTime(requirement.createdAt)}</time>
               </dd>
-              <dt className="text-subtle-foreground">更新</dt>
+              <dt className="text-subtle-foreground">{t.requirements.peek.field.updated}</dt>
               <dd className="m-0">
                 {requirement.updatedBy.displayName} ·{" "}
                 <time title={formatDateTime(requirement.updatedAt)}>{formatRelativeTime(requirement.updatedAt)}</time>
@@ -168,14 +172,14 @@ export function RequirementPeek({
             </dl>
             {requirement.summary.trim() === "" ? (
               <p className="m-0 text-small text-subtle-foreground">
-                还没有描述。
+                {t.requirements.peek.noDescription}
                 <Link
                   to="/p/$projectId/requirements/$number"
                   params={{ projectId: ownProjectId, number: String(requirement.number) }}
                   state={(previous) => ({ ...previous, fromList: true })}
                   className="text-primary-text"
                 >
-                  去补充
+                  {t.requirements.peek.addDescription}
                 </Link>
               </p>
             ) : (
@@ -185,11 +189,11 @@ export function RequirementPeek({
             )}
             <MaterialsPreview requirementId={requirement.id} />
             <section className="flex flex-col gap-2">
-              <h3 className="m-0 text-small font-semibold">本机会话</h3>
+              <h3 className="m-0 text-small font-semibold">{t.requirements.peek.localSessions}</h3>
               <LocalSessions projectId={ownProjectId} requirementId={requirement.id} limit={3} />
             </section>
             <section className="flex flex-col gap-2.5">
-              <h3 className="m-0 text-small font-semibold">最近活动</h3>
+              <h3 className="m-0 text-small font-semibold">{t.requirements.peek.recentActivity}</h3>
               <ActivityFeed requirementId={requirement.id} mode="recent" limit={3} />
             </section>
           </>
@@ -204,7 +208,7 @@ export function RequirementPeek({
           onClick={() => requirement !== undefined && onStartSession(requirement)}
         >
           <PlayIcon />
-          开始会话
+          {t.requirements.peek.startSession}
         </Button>
         {/* 按需求重新挂载：J / K 换需求时面板不卸载，新建讨论的默认名字要跟着换。 */}
         {requirement === undefined ? null : <RequirementRoomButton key={requirement.id} requirement={requirement} />}
@@ -215,7 +219,7 @@ export function RequirementPeek({
               params={{ projectId: ownProjectId, number: String(requirement.number) }}
               state={(previous) => ({ ...previous, fromList: true })}
             >
-              打开完整页
+              {t.requirements.peek.openFull}
             </Link>
           </Button>
         )}
@@ -250,8 +254,9 @@ function NavButton({
 }
 
 function PeekSkeleton() {
+  const t = useT();
   return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label="正在加载需求">
+    <div className="flex flex-col gap-4" aria-busy="true" aria-label={t.requirements.peek.loading}>
       <Skeleton className="h-6 w-4/5" />
       <Skeleton className="h-4 w-2/5" />
       <Skeleton className="h-4 w-3/5" />

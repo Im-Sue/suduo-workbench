@@ -2,6 +2,7 @@ import type { AuditEntryDto } from "@suduo/cloud-contracts";
 import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useT } from "../../i18n/provider.js";
 import { formatClock, formatRelativeTime } from "../../ui/format.js";
 import { groupOverviewAudit, groupSummary, presentAudit, statusTransitionOf, type AuditTone } from "./timeline.js";
 
@@ -17,13 +18,14 @@ const TONE_DOT: Record<AuditTone, string> = {
  * 限高（需求 §4.6）：先显示最近 preview 组，其余点「显示全部」。
  */
 export function OverviewTimeline({ entries, preview = 8 }: { entries: readonly AuditEntryDto[]; preview?: number }) {
+  const t = useT();
   const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(() => new Set());
   const [showAll, setShowAll] = useState(false);
   const allGroups = groupOverviewAudit(entries);
   const groups = showAll ? allGroups : allGroups.slice(0, preview);
 
   if (allGroups.length === 0) {
-    return <p className="m-0 py-3 text-small text-muted-foreground">这个项目还没有动态。</p>;
+    return <p className="m-0 py-3 text-small text-muted-foreground">{t.overview.activity.empty}</p>;
   }
 
   const toggle = (groupId: string) =>
@@ -49,10 +51,10 @@ export function OverviewTimeline({ entries, preview = 8 }: { entries: readonly A
                 aria-expanded={expanded}
                 onClick={() => toggle(groupId)}
               >
-                <span className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[presentAudit(group.entries[0]!).tone])} aria-hidden="true" />
+                <span className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[presentAudit(group.entries[0]!, t).tone])} aria-hidden="true" />
                 <span className="min-w-0 flex-1">
                   <span className="font-medium text-foreground">{group.actorName}</span>{" "}
-                  <span className="text-muted-foreground">{groupSummary(group.action, group.entries.length)}</span>
+                  <span className="text-muted-foreground">{groupSummary(group.action, group.entries.length, t)}</span>
                 </span>
                 <Time iso={group.createdAt} />
                 <ChevronRightIcon className={cn("mt-0.5 size-3.5 shrink-0 text-subtle-foreground transition-transform", expanded && "rotate-90")} aria-hidden="true" />
@@ -75,7 +77,7 @@ export function OverviewTimeline({ entries, preview = 8 }: { entries: readonly A
           aria-expanded={showAll}
           onClick={() => setShowAll((value) => !value)}
         >
-          {showAll ? "收起" : `显示全部 ${entries.length} 条`}
+          {showAll ? t.overview.activity.showLess : t.overview.activity.showAll(entries.length)}
         </button>
       ) : null}
     </div>
@@ -83,8 +85,9 @@ export function OverviewTimeline({ entries, preview = 8 }: { entries: readonly A
 }
 
 function TimelineEntry({ entry }: { entry: AuditEntryDto }) {
-  const presented = presentAudit(entry);
-  const transition = statusTransitionOf(entry);
+  const t = useT();
+  const presented = presentAudit(entry, t);
+  const transition = statusTransitionOf(entry, t);
   return (
     <li data-testid={`overview-audit-${entry.action}`} className="flex items-start gap-2.5 px-1.5 py-1.5 text-small">
       <span className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[presented.tone])} aria-hidden="true" />

@@ -5,6 +5,16 @@ export const common = {
     "zh-CN": "简体中文",
     en: "English",
   },
+  /** 需求状态名（契约里的状态值不变，显示名按语言）。 */
+  requirementStatus: {
+    draft: "草稿",
+    in_refinement: "梳理中",
+    ready_for_development: "待开发",
+    in_development: "开发中",
+    in_testing: "测试中",
+    completed: "已完成",
+    on_hold: "暂缓",
+  },
   time: {
     justNow: "刚刚",
     minutesAgo: (minutes: number) => `${String(minutes)} 分钟前`,

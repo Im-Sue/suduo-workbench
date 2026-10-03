@@ -20,6 +20,8 @@ import {
 import { useEffect } from "react";
 import { api, ApiClientError } from "../../api/client.js";
 import { reportFailure } from "../../feedback/report.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 import { requirementKeys, type RequirementListFilters } from "./keys.js";
 import { markLocalChange } from "./highlight.js";
 import { isRealtimeLive } from "./realtime-status.js";
@@ -332,7 +334,7 @@ export function useUpdateRequirement() {
       reportFailure(cause, {
         surface: "action",
         id: `requirement-update-${variables.requirement.id}`,
-        title: "未能保存",
+        title: messagesFor(currentLocale()).requirementDetail.page.saveFailed,
         retry: () => mutation.mutate(variables),
       });
     },

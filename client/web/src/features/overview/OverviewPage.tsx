@@ -3,7 +3,6 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   PROJECT_STATS_WINDOWS,
   REQUIREMENT_STATUSES,
-  REQUIREMENT_STATUS_LABELS,
   STALE_RHYTHM,
   formatRequirementNumber,
   type ProjectStatsWindow,
@@ -16,6 +15,9 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { api } from "../../api/client.js";
 import { useCurrentProject } from "../../app/project-context.js";
 import { classifyFailure } from "../../feedback/classify.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
+import { useT } from "../../i18n/provider.js";
 import { formatRelativeTime } from "../../ui/format.js";
 import { usePersistentChoice } from "../../ui/use-persistent-state.js";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { requirementKeys } from "../requirements/keys.js";
 import { useRequirementsRealtimeState } from "../requirements/realtime.js";
 import { OverviewTimeline } from "./OverviewTimeline.js";
+import { requirementStatusLabel } from "../../ui/requirement-status.js";
 
 /**
  * 项目概览（需求 §4.6）：状态分布、流转趋势、停滞需求、最近动态。
@@ -33,18 +36,21 @@ import { OverviewTimeline } from "./OverviewTimeline.js";
  */
 const TransitionChart = lazy(() => import("./TransitionChart.js"));
 
-/** 「开发中 / 测试中 3 天、梳理中 / 待开发 7 天、草稿 14 天、暂缓 30 天」：按 STALE_RHYTHM 生成，改表即改文案。 */
-export function staleRuleText(): string {
+/**
+ * 「开发中 / 测试中 3 天、梳理中 / 待开发 7 天、草稿 14 天、暂缓 30 天」：按 STALE_RHYTHM 生成，改表即改文案。
+ * 文字按调用时的界面语言取，组件里可以传入 useT() 拿到的字典。
+ */
+export function staleRuleText(t: Messages = messagesFor(currentLocale())): string {
   const byDays = new Map<number, string[]>();
   for (const status of REQUIREMENT_STATUSES) {
     const rhythm = STALE_RHYTHM[status];
     if (rhythm === null) continue;
-    byDays.set(rhythm.notice, [...(byDays.get(rhythm.notice) ?? []), REQUIREMENT_STATUS_LABELS[status]]);
+    byDays.set(rhythm.notice, [...(byDays.get(rhythm.notice) ?? []), requirementStatusLabel(status, t)]);
   }
   return [...byDays.entries()]
     .sort((left, right) => left[0] - right[0])
-    .map(([days, labels]) => `${labels.join(" / ")} ${days} 天`)
-    .join("、");
+    .map(([days, labels]) => t.overview.stale.rhythmItem(labels.join(" / "), days))
+    .join(t.overview.stale.rhythmSeparator);
 }
 
 /** 地址里的 ?range=7d|30d（可分享）；没写时用上次记住的。 */
@@ -54,6 +60,8 @@ export function validateOverviewSearch(search: Record<string, unknown>): { range
 }
 
 export function OverviewPage({ projectId }: { projectId: string }) {
+  const t = useT();
+  const text = t.overview;
   const navigate = useNavigate();
   const { project } = useCurrentProject();
   const realtime = useRequirementsRealtimeState();
@@ -99,7 +107,7 @@ export function OverviewPage({ projectId }: { projectId: string }) {
   const transitions = stats.data?.transitions ?? [];
   const transitionTotal = transitions.reduce((sum, day) => sum + day.count, 0);
   // 文案按正在显示的数据写：切换期间显示的还是上一个范围。
-  const shownRange = transitions.length > 7 ? "近 30 天" : "近 7 天";
+  const shownDays = transitions.length > 7 ? 30 : 7;
   const refreshing = stats.isPlaceholderData;
 
   return (
@@ -107,28 +115,30 @@ export function OverviewPage({ projectId }: { projectId: string }) {
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-8 py-6">
         <header className="flex items-end gap-3">
           <div className="flex-1">
-            <h1 className="m-0 text-page font-semibold text-foreground">概览</h1>
-            <p className="m-0 mt-1 text-small text-muted-foreground">
-              {project?.name ?? "当前项目"}的需求分布、流转和停滞情况。
-            </p>
+            <h1 className="m-0 text-page font-semibold text-foreground">{text.header.title}</h1>
+            <p className="m-0 mt-1 text-small text-muted-foreground">{text.header.intro(project?.name ?? null)}</p>
           </div>
           <span className="text-caption text-subtle-foreground" role="status" data-testid="overview-realtime-state">
-            {realtime === "live" ? "实时更新中" : realtime === "reconnecting" ? "实时更新已断开，正在重连…" : "正在连接实时更新…"}
+            {realtime === "live"
+              ? text.header.realtime.live
+              : realtime === "reconnecting"
+                ? text.header.realtime.reconnecting
+                : text.header.realtime.connecting}
           </span>
         </header>
 
         {/* 统计接口失败时只在这里报一次（role=alert），下面两个区块给静默的重试入口，读屏不会连播三遍。 */}
-        <Block title="状态分布" subtitle={total > 0 ? `共 ${total} 条需求` : undefined}>
+        <Block title={text.status.title} subtitle={total > 0 ? text.status.total(total) : undefined}>
           {stats.isPending ? (
             <Skeleton className="h-20 w-full" />
           ) : statsFailed ? (
-            <Failure label="统计" error={stats.error} onRetry={() => void stats.refetch()} announce />
+            <Failure label={text.status.failureLabel} error={stats.error} onRetry={() => void stats.refetch()} announce />
           ) : total === 0 ? (
             <div className="flex items-center gap-3 py-2">
-              <p className="m-0 text-small text-muted-foreground">这个项目还没有需求。</p>
+              <p className="m-0 text-small text-muted-foreground">{text.status.empty}</p>
               <Button size="sm" variant="secondary" onClick={() => void navigate({ to: "/p/$projectId/requirements", params: { projectId } })}>
                 <PlusIcon />
-                去新建第一条
+                {text.status.createFirst}
               </Button>
             </div>
           ) : (
@@ -138,12 +148,12 @@ export function OverviewPage({ projectId }: { projectId: string }) {
                   key={status}
                   type="button"
                   className="flex flex-col items-start gap-2 rounded-md border border-border bg-card px-3 py-2.5 text-left outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={`${REQUIREMENT_STATUS_LABELS[status]}：${statusCounts?.[status] ?? 0} 条，查看这些需求`}
+                  aria-label={text.status.tile(requirementStatusLabel(status, t), statusCounts?.[status] ?? 0)}
                   onClick={() => openStatus(status)}
                 >
                   <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
                     <StatusIcon status={status} aria-hidden="true" />
-                    {REQUIREMENT_STATUS_LABELS[status]}
+                    {requirementStatusLabel(status, t)}
                   </span>
                   <span className={cn("text-page font-semibold tabular-nums", (statusCounts?.[status] ?? 0) === 0 ? "text-subtle-foreground" : "text-foreground")}>
                     {statusCounts?.[status] ?? 0}
@@ -155,17 +165,17 @@ export function OverviewPage({ projectId }: { projectId: string }) {
         </Block>
 
         <Block
-          title="流转趋势"
-          subtitle={stats.data === undefined ? undefined : `${shownRange}共 ${transitionTotal} 次状态变化`}
+          title={text.trend.title}
+          subtitle={stats.data === undefined ? undefined : text.trend.summary(shownDays, transitionTotal)}
           action={
             <SegmentedControl
               size="sm"
-              aria-label="时间范围"
+              aria-label={text.trend.rangeLabel}
               value={statsWindow}
               onValueChange={setStatsWindow}
               options={[
-                { value: "7d", label: "7 天" },
-                { value: "30d", label: "30 天" },
+                { value: "7d", label: text.trend.rangeOption(7) },
+                { value: "30d", label: text.trend.rangeOption(30) },
               ]}
             />
           }
@@ -178,45 +188,43 @@ export function OverviewPage({ projectId }: { projectId: string }) {
             {stats.isPending ? (
               <Skeleton className="h-[220px] w-full" />
             ) : statsFailed ? (
-              <Failure label="流转趋势" error={stats.error} onRetry={() => void stats.refetch()} />
+              <Failure label={text.trend.failureLabel} error={stats.error} onRetry={() => void stats.refetch()} />
             ) : transitionTotal === 0 ? (
               <div className="flex h-[160px] flex-col items-center justify-center gap-2 text-center">
                 <ChartColumnIcon className="size-5 text-subtle-foreground" aria-hidden="true" />
-                <p className="m-0 text-small text-muted-foreground">这段时间没有需求改过状态。</p>
+                <p className="m-0 text-small text-muted-foreground">{text.trend.empty}</p>
               </div>
             ) : (
               <Suspense fallback={<Skeleton className="h-[220px] w-full" />}>
                 <TransitionChart transitions={transitions} />
               </Suspense>
             )}
-            <TransitionTable transitions={transitions} caption={`${shownRange}每天进入各状态的次数`} />
+            <TransitionTable transitions={transitions} caption={text.trend.tableCaption(shownDays)} />
           </div>
         </Block>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Block
-            title="停滞需求"
+            title={text.stale.title}
             subtitle={
               stats.data === undefined
                 ? undefined
                 : staleTotal > stale.length
-                  ? `共 ${staleTotal} 条，先列最要紧的 ${stale.length} 条`
+                  ? text.stale.truncated(staleTotal, stale.length)
                   : undefined
             }
           >
             <p className="m-0 -mt-1 text-caption text-subtle-foreground">
-              {legacyStale
-                ? "需求服务的版本较旧，这里只列出它给出的停滞需求；升级后按各状态的节奏判断。"
-                : `按各状态的节奏：${staleRuleText()}没有变化就列出来；停滞较久的在前。`}
+              {legacyStale ? text.stale.legacyRule : text.stale.rule(staleRuleText(t))}
             </p>
             {stats.isPending ? (
               <Skeleton className="h-32 w-full" />
             ) : statsFailed ? (
-              <Failure label="停滞需求" error={stats.error} onRetry={() => void stats.refetch()} />
+              <Failure label={text.stale.failureLabel} error={stats.error} onRetry={() => void stats.refetch()} />
             ) : stale.length === 0 ? (
               <p className="m-0 flex items-center gap-2 py-3 text-small text-muted-foreground">
                 <CheckCircle2Icon className="size-4 text-success" aria-hidden="true" />
-                没有停滞的需求，都在各自的节奏里有进展。
+                {text.stale.empty}
               </p>
             ) : (
               <ul
@@ -238,12 +246,12 @@ export function OverviewPage({ projectId }: { projectId: string }) {
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-small font-medium text-foreground">{item.title}</span>
                         <span className="truncate text-caption text-subtle-foreground">
-                          最后由 {item.lastUpdatedBy.displayName} 更新 · {formatRelativeTime(Date.parse(item.updatedAt))}
+                          {text.stale.lastUpdated(item.lastUpdatedBy.displayName, formatRelativeTime(Date.parse(item.updatedAt)))}
                         </span>
                       </span>
                       <span className={cn("flex shrink-0 flex-col items-end text-caption tabular-nums", item.level === "warning" ? "text-warning" : "text-subtle-foreground")}>
-                        <span className="font-medium">{item.level === "warning" ? "停滞较久" : "该推进了"}</span>
-                        <span>{item.staleDays} 天没动</span>
+                        <span className="font-medium">{item.level === "warning" ? text.stale.warning : text.stale.notice}</span>
+                        <span>{text.stale.idleDays(item.staleDays)}</span>
                       </span>
                     </button>
                   </li>
@@ -252,11 +260,11 @@ export function OverviewPage({ projectId }: { projectId: string }) {
             )}
           </Block>
 
-          <Block title="最近动态">
+          <Block title={text.activity.title}>
             {audit.isPending ? (
               <Skeleton className="h-32 w-full" />
             ) : audit.isError && audit.data === undefined ? (
-              <Failure label="最近动态" error={audit.error} onRetry={() => void audit.refetch()} announce />
+              <Failure label={text.activity.failureLabel} error={audit.error} onRetry={() => void audit.refetch()} announce />
             ) : (
               <OverviewTimeline entries={audit.data?.items ?? []} />
             )}
@@ -282,14 +290,13 @@ function Block({ title, subtitle, action, children }: { title: string; subtitle?
 }
 
 function Failure({ label, error, onRetry, announce = false }: { label: string; error: unknown; onRetry(): void; announce?: boolean }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 rounded-md bg-danger-soft px-3 py-2 text-small text-foreground" role={announce ? "alert" : undefined}>
       <AlertTriangleIcon className="size-4 shrink-0 text-danger" aria-hidden="true" />
-      <span className="flex-1">
-        {label}没能加载：{classifyFailure(error).message}
-      </span>
+      <span className="flex-1">{t.overview.failure(label, classifyFailure(error).message)}</span>
       <Button size="sm" variant="ghost" onClick={onRetry}>
-        重试
+        {t.overview.retry}
       </Button>
     </div>
   );
@@ -297,17 +304,18 @@ function Failure({ label, error, onRetry, announce = false }: { label: string; e
 
 /** 图表的读屏替代：同样的数据，每天一行、每个出现过的状态一列（颜色之外的第二通道）。 */
 function TransitionTable({ transitions, caption }: { transitions: readonly DailyRequirementTransitionDto[]; caption: string }) {
+  const t = useT();
   const present = REQUIREMENT_STATUSES.filter((status) => transitions.some((day) => (day.byStatus?.[status] ?? 0) > 0));
   return (
     <table className="sr-only">
       <caption>{caption}</caption>
       <thead>
         <tr>
-          <th scope="col">日期</th>
-          <th scope="col">合计</th>
+          <th scope="col">{t.overview.trend.date}</th>
+          <th scope="col">{t.overview.trend.total}</th>
           {present.map((status) => (
             <th key={status} scope="col">
-              进入{REQUIREMENT_STATUS_LABELS[status]}
+              {t.overview.trend.entered(requirementStatusLabel(status, t))}
             </th>
           ))}
         </tr>

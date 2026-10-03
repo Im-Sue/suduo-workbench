@@ -1,12 +1,12 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
-  REQUIREMENT_STATUS_LABELS,
   type RequirementActivityEntryDto,
 } from "@suduo/cloud-contracts";
 import { ArrowRightIcon } from "lucide-react";
 import { useEffect, useMemo, type ReactNode } from "react";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
 import { Markdown } from "../../../ui/markdown.js";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +16,8 @@ import { presentActivity, type ActivityKind } from "../activity.js";
 import { activityQuery } from "../queries.js";
 import { UserAvatar } from "../components/UserAvatar.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
+import { requirementStatusLabel } from "../../../ui/requirement-status.js";
+import type { RequirementStatus } from "@suduo/cloud-contracts";
 
 export type ActivityFilter = "all" | "comments" | "changes";
 
@@ -46,6 +48,8 @@ export function ActivityFeed({
    */
   onShownComments?(latestCommentAt: string | null): void;
 }) {
+  const t = useT();
+  const text = t.requirementDetail.activity;
   const query = useInfiniteQuery(activityQuery(requirementId));
   const entries = useMemo(() => {
     const all = query.data?.pages.flatMap((page) => page.items) ?? [];
@@ -82,7 +86,7 @@ export function ActivityFeed({
     return (
       <RegionError
         kind={failure.kind}
-        message={`没能加载活动：${failure.message}`}
+        message={text.loadFailed(failure.message)}
         busy={query.isFetching}
         onRetry={() => void query.refetch()}
       />
@@ -90,19 +94,17 @@ export function ActivityFeed({
   }
 
   return (
-    <ol className={cn("m-0 flex list-none flex-col p-0", mode === "recent" ? "gap-2.5" : "gap-4")} aria-label="活动">
+    <ol className={cn("m-0 flex list-none flex-col p-0", mode === "recent" ? "gap-2.5" : "gap-4")} aria-label={text.listLabel}>
       {mode === "timeline" && query.hasNextPage ? (
         <li>
           <Button variant="ghost" size="sm" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
-            更早的记录 · 加载更多
+            {text.loadEarlier}
           </Button>
         </li>
       ) : null}
       {entries.length === 0 ? (
         <li className="text-caption text-subtle-foreground">
-          {query.hasNextPage
-            ? `最近的记录里没有${filter === "comments" ? "评论" : filter === "changes" ? "变更" : "活动"}${mode === "timeline" ? "，更早的可以加载更多" : ""}`
-            : filter === "comments" ? "还没有评论" : filter === "changes" ? "还没有变更" : "还没有活动"}
+          {query.hasNextPage ? text.emptyRecent[filter](mode === "timeline") : text.empty[filter]}
         </li>
       ) : null}
       {entries.map((entry) => (
@@ -114,7 +116,8 @@ export function ActivityFeed({
 }
 
 function ActivityEntry({ entry, compact }: { entry: RequirementActivityEntryDto; compact: boolean }) {
-  const view = presentActivity(entry);
+  const t = useT();
+  const view = presentActivity(entry, t);
   const time = (
     <time className="text-caption text-subtle-foreground" dateTime={entry.createdAt} title={formatDateTime(entry.createdAt)}>
       {formatRelativeTime(entry.createdAt)}
@@ -146,9 +149,9 @@ function ActivityEntry({ entry, compact }: { entry: RequirementActivityEntryDto;
             <span className="text-muted-foreground">{view.text}</span>
           ) : (
             <span className="inline-flex flex-wrap items-center gap-1 text-muted-foreground">
-              修改了状态
+              {t.requirementDetail.activity.statusChanged}
               <StatusChip status={view.status.from} />
-              <ArrowRightIcon className="size-3" aria-label="改为" />
+              <ArrowRightIcon className="size-3" aria-label={t.requirementDetail.activity.statusArrow} />
               <StatusChip status={view.status.to} />
             </span>
           )}
@@ -163,11 +166,12 @@ function ActivityEntry({ entry, compact }: { entry: RequirementActivityEntryDto;
   );
 }
 
-function StatusChip({ status }: { status: keyof typeof REQUIREMENT_STATUS_LABELS }) {
+function StatusChip({ status }: { status: RequirementStatus }) {
+  const t = useT();
   return (
     <span className="inline-flex items-center gap-1 rounded-xs bg-muted px-1.5 py-px text-caption text-foreground">
       <StatusIcon status={status} aria-hidden="true" className="size-3" />
-      {REQUIREMENT_STATUS_LABELS[status]}
+      {requirementStatusLabel(status, t)}
     </span>
   );
 }

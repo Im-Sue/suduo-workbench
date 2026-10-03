@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { REQUIREMENT_STATUS_LABELS, formatRequirementNumber } from "@suduo/cloud-contracts";
+import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import type { SessionListItemDto, WorkbenchActionDto } from "@suduo/client-contracts";
 import {
   AlertTriangleIcon,
@@ -19,10 +19,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../api/client.js";
 import { invalidateMappingCaches } from "../../app/mapping-cache.js";
 import { useCurrentProject } from "../../app/project-context.js";
-import { clearSetupPending, readSetupPending, type SetupPendingItem } from "../../app/pages/setup-pending.js";
+import { clearSetupPending, readSetupPending } from "../../app/pages/setup-pending.js";
 import { settingsQuery } from "../../app/queries.js";
 import { classifyFailure } from "../../feedback/classify.js";
 import { InlineError } from "../../feedback/components/index.js";
+import type { Messages } from "../../i18n/messages/index.js";
+import { useT } from "../../i18n/provider.js";
 import { formatRelativeTime } from "../../ui/format.js";
 import type { SessionUiStatus } from "../../ui/session-status.js";
 import { usePersistentChoice } from "../../ui/use-persistent-state.js";
@@ -44,6 +46,7 @@ import {
   type MyRequirement,
 } from "./model.js";
 import { assignedToMeQuery, createdUnassignedQuery, useMyWorkData, workbenchQuery } from "./queries.js";
+import { requirementStatusLabel } from "../../ui/requirement-status.js";
 
 /**
  * 我的工作（需求 §4.3，默认落地页）：需要你处理 / 我的需求 / 会话 / 最近动态。
@@ -63,6 +66,8 @@ export function validateMyWorkSearch(search: Record<string, unknown>): { scope?:
 }
 
 export function MyWorkPage() {
+  const t = useT();
+  const text = t.myWork;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { project } = useCurrentProject();
@@ -121,26 +126,26 @@ export function MyWorkPage() {
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-8 py-6">
         <header className="flex items-end gap-3">
           <div className="flex-1">
-            <h1 className="m-0 text-page font-semibold text-foreground">我的工作</h1>
-            <p className="m-0 mt-1 text-small text-muted-foreground">跨项目汇总需要你处理的事、在跑的会话和你的需求。</p>
+            <h1 className="m-0 text-page font-semibold text-foreground">{text.header.title}</h1>
+            <p className="m-0 mt-1 text-small text-muted-foreground">{text.header.intro}</p>
           </div>
           <Button size="sm" variant="ghost" data-testid="workbench-refresh" onClick={() => void refreshAll()}>
             <RefreshCwIcon className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
-            刷新
+            {text.header.refresh}
           </Button>
         </header>
 
         <SetupChecklist mappingCount={settings.data?.mappingCount ?? null} onNavigate={(step) => void navigate({ to: "/setup", search: { step } })} />
 
-        <Block title="需要你处理" count={attention.length} data-testid="workbench-actions">
+        <Block title={text.attention.title} count={attention.length} data-testid="workbench-actions">
           {workbench.isPending ? (
             <RowsSkeleton rows={2} />
           ) : actionsError !== null ? (
-            <Unavailable label="待我处理的事" message={actionsError} onRetry={() => void workbench.refetch()} announce />
+            <Unavailable label={text.attention.unavailableLabel} message={actionsError} onRetry={() => void workbench.refetch()} announce />
           ) : attention.length === 0 ? (
             <p className="m-0 flex items-center gap-2 py-2 text-small text-muted-foreground">
               <CheckCircle2Icon className="size-4 text-success" aria-hidden="true" />
-              都处理完了，暂时没有需要你出手的事。
+              {text.attention.empty}
             </p>
           ) : (
             <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
@@ -160,44 +165,44 @@ export function MyWorkPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="flex min-w-0 flex-col gap-6">
             <Block
-              title="我的需求"
+              title={text.requirements.title}
               count={mine.length}
               data-testid="workbench-requirements"
               action={
                 <SegmentedControl
                   size="sm"
-                  aria-label="需求范围"
+                  aria-label={text.requirements.scopeLabel}
                   value={scope}
                   onValueChange={setScope}
                   options={[
-                    { value: "all", label: "全部项目" },
-                    { value: "current", label: project === null ? "当前项目" : project.name },
+                    { value: "all", label: text.requirements.scopeAll },
+                    { value: "current", label: project === null ? text.requirements.scopeCurrent : project.name },
                   ]}
                 />
               }
             >
               {workingError === null ? null : (
-                <Unavailable label="我在做的需求" message={workingError} onRetry={() => void workbench.refetch()} announce={actionsError === null} />
+                <Unavailable label={text.requirements.workingUnavailableLabel} message={workingError} onRetry={() => void workbench.refetch()} announce={actionsError === null} />
               )}
               {assignedFailed === undefined ? null : (
-                <Unavailable label="我负责 / 我提的需求" message={classifyFailure(assignedFailed.error).message} onRetry={() => void assignedFailed.refetch()} />
+                <Unavailable label={text.requirements.listUnavailableLabel} message={classifyFailure(assignedFailed.error).message} onRetry={() => void assignedFailed.refetch()} />
               )}
               {assignedLoading || workbench.isPending ? (
                 <RowsSkeleton rows={3} />
               ) : mine.length === 0 ? (
-                <p className="m-0 py-2 text-small text-muted-foreground">没有你负责、正在做或你提了还没人负责的需求。在需求页把需求指派给自己，或从需求开始会话。</p>
+                <p className="m-0 py-2 text-small text-muted-foreground">{text.requirements.empty}</p>
               ) : (
                 <RequirementGroups items={mine} onOpen={(item) => openRequirement(item.remoteProjectId, item.number === null ? item.id : String(item.number))} />
               )}
             </Block>
 
-            <Block title="会话" count={activeSessions} countLabel="进行中" data-testid="workbench-sessions">
+            <Block title={text.sessions.title} count={activeSessions} countLabel={text.sessions.activeCount} data-testid="workbench-sessions">
               {sessionList.isPending ? (
                 <RowsSkeleton rows={2} />
               ) : sessionList.isError && sessionList.data === undefined ? (
-                <Unavailable label="本机会话" message={classifyFailure(sessionList.error).message} onRetry={() => void sessionList.refetch()} />
+                <Unavailable label={text.sessions.unavailableLabel} message={classifyFailure(sessionList.error).message} onRetry={() => void sessionList.refetch()} />
               ) : sessions.length === 0 ? (
-                <p className="m-0 py-2 text-small text-muted-foreground">本机还没有会话。在需求页从某个需求开始会话。</p>
+                <p className="m-0 py-2 text-small text-muted-foreground">{text.sessions.empty}</p>
               ) : (
                 <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 md:grid-cols-2">
                   {shownSessions.map(({ session, status }) => (
@@ -208,7 +213,7 @@ export function MyWorkPage() {
             </Block>
           </div>
 
-          <Block title="最近动态" data-testid="workbench-activity">
+          <Block title={text.recent.title} data-testid="workbench-activity">
             {assignedLoading || workbench.isPending ? (
               <RowsSkeleton rows={4} />
             ) : (
@@ -246,7 +251,8 @@ function Block({
 }: {
   title: string;
   count?: number;
-  countLabel?: string;
+  /** 计数前后的说明（如「进行中 2」）；不给时只显示数字。 */
+  countLabel?: (count: number) => string;
   action?: ReactNode;
   children: ReactNode;
   "data-testid": string;
@@ -257,7 +263,7 @@ function Block({
         <h2 className="m-0 text-section font-semibold text-foreground">{title}</h2>
         {count === undefined || count === 0 ? null : (
           <span className="text-caption text-subtle-foreground">
-            {countLabel === undefined ? count : `${countLabel} ${count}`}
+            {countLabel === undefined ? count : countLabel(count)}
           </span>
         )}
         <div className="flex-1" />
@@ -269,8 +275,9 @@ function Block({
 }
 
 function RowsSkeleton({ rows }: { rows: number }) {
+  const t = useT();
   return (
-    <div className="flex flex-col gap-2" role="status" aria-busy="true" aria-label="正在加载">
+    <div className="flex flex-col gap-2" role="status" aria-busy="true" aria-label={t.myWork.loading}>
       {Array.from({ length: rows }, (_, index) => (
         <Skeleton key={index} className="h-12 w-full" />
       ))}
@@ -280,14 +287,13 @@ function RowsSkeleton({ rows }: { rows: number }) {
 
 /** announce：同一原因导致几个区块一起失败时，只让第一个进读屏的警报，其余静默显示。 */
 function Unavailable({ label, message, onRetry, announce = true }: { label: string; message: string; onRetry(): void; announce?: boolean }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 rounded-md bg-danger-soft px-3 py-2 text-small text-foreground" role={announce ? "alert" : undefined}>
       <AlertTriangleIcon className="size-4 shrink-0 text-danger" aria-hidden="true" />
-      <span className="flex-1">
-        {label}暂不可用：{message}
-      </span>
+      <span className="flex-1">{t.myWork.unavailable(label, message)}</span>
       <Button size="sm" variant="ghost" onClick={onRetry}>
-        重试
+        {t.myWork.retry}
       </Button>
     </div>
   );
@@ -304,6 +310,9 @@ function AttentionRow({
   onOpenRequirement(remoteProjectId: string, requirementId: string): void;
   onFixMapping(action: Extract<WorkbenchActionDto, { kind: "invalid_mapping" }>): void;
 }) {
+  const t = useT();
+  const text = t.myWork.attention;
+  const fallback = t.myWork.fallback;
   const row = (props: { icon: ReactNode; title: string; detail: string; action: string; onClick(): void; testId: string }) => (
     <li>
       <button
@@ -328,62 +337,62 @@ function AttentionRow({
     case "pending_approval":
       return row({
         icon: <HandIcon className="size-4 shrink-0 text-warning" aria-hidden="true" />,
-        title: `等你确认 · ${item.action.sessionTitle}`,
-        detail: `${item.action.projectName ?? "本机项目"} · ${item.action.pendingApprovals} 项等你确认${item.action.lastActivityAt === null ? "" : ` · ${formatRelativeTime(item.action.lastActivityAt)}`}`,
-        action: "去确认",
+        title: text.pendingApproval.title(item.action.sessionTitle),
+        detail: `${item.action.projectName ?? fallback.localProject} · ${text.pendingApproval.count(item.action.pendingApprovals)}${item.action.lastActivityAt === null ? "" : ` · ${formatRelativeTime(item.action.lastActivityAt)}`}`,
+        action: text.pendingApproval.action,
         onClick: () => onOpenSession(item.action.sessionId),
         testId: `workbench-action-pending_approval-${item.action.sessionId}`,
       });
     case "failed_turn":
       return row({
         icon: <AlertTriangleIcon className="size-4 shrink-0 text-danger" aria-hidden="true" />,
-        title: `上一轮没能完成 · ${item.action.sessionTitle}`,
-        detail: `${item.action.projectName ?? "本机项目"}${item.action.lastActivityAt === null ? "" : ` · ${formatRelativeTime(item.action.lastActivityAt)}`}`,
-        action: "查看原因",
+        title: text.failedTurn.title(item.action.sessionTitle),
+        detail: `${item.action.projectName ?? fallback.localProject}${item.action.lastActivityAt === null ? "" : ` · ${formatRelativeTime(item.action.lastActivityAt)}`}`,
+        action: text.failedTurn.action,
         onClick: () => onOpenSession(item.action.sessionId),
         testId: `workbench-action-failed_turn-${item.action.sessionId}`,
       });
     case "drift":
       return row({
         icon: <SparklesIcon className="size-4 shrink-0 text-primary-text" aria-hidden="true" />,
-        title: `开工后需求有变化 · ${item.requirement.title ?? "需求"}`,
-        detail: `${item.requirement.projectName ?? "项目"} · ${item.requirement.sessionCount} 个会话在做它，开工时看到的内容已经过时`,
-        action: "看看改了什么",
+        title: text.drift.title(item.requirement.title ?? fallback.requirement),
+        detail: `${item.requirement.projectName ?? fallback.project} · ${text.drift.detail(item.requirement.sessionCount)}`,
+        action: text.drift.action,
         onClick: () => onOpenRequirement(item.requirement.remoteProjectId, item.requirement.requirementId),
         testId: `workbench-action-drift-${item.requirement.requirementId}`,
       });
     case "new_comments":
       return row({
         icon: <MessageSquareTextIcon className="size-4 shrink-0 text-primary-text" aria-hidden="true" />,
-        title: `有新评论 · ${requirementLabel(item.requirement)}`,
-        detail: `${item.requirement.projectName ?? "项目"} · ${item.count} 条你还没看过的评论`,
-        action: "去看看",
+        title: text.newComments.title(requirementLabel(item.requirement, fallback.requirement)),
+        detail: `${item.requirement.projectName ?? fallback.project} · ${text.newComments.detail(item.count)}`,
+        action: text.newComments.action,
         onClick: () => onOpenRequirement(item.requirement.remoteProjectId, requirementRef(item.requirement)),
         testId: `workbench-action-new_comments-${item.requirement.id}`,
       });
     case "stale":
       return row({
         icon: <HourglassIcon className="size-4 shrink-0 text-warning" aria-hidden="true" />,
-        title: `停滞较久 · ${requirementLabel(item.requirement)}`,
-        detail: `${item.requirement.projectName ?? "项目"} · ${item.requirement.status === null ? "" : `${REQUIREMENT_STATUS_LABELS[item.requirement.status]} · `}${item.days} 天没有变化`,
-        action: "推进一下",
+        title: text.stale.title(requirementLabel(item.requirement, fallback.requirement)),
+        detail: `${item.requirement.projectName ?? fallback.project} · ${item.requirement.status === null ? "" : `${requirementStatusLabel(item.requirement.status, t)} · `}${text.stale.days(item.days)}`,
+        action: text.stale.action,
         onClick: () => onOpenRequirement(item.requirement.remoteProjectId, requirementRef(item.requirement)),
         testId: `workbench-action-stale-${item.requirement.id}`,
       });
     case "invalid_mapping":
       return row({
         icon: <FolderXIcon className="size-4 shrink-0 text-warning" aria-hidden="true" />,
-        title: `本机代码目录不可用 · ${item.action.projectName ?? "项目"}`,
-        detail: "目录可能被移动或删除，重新选一次就好。",
-        action: "重新选择",
+        title: text.invalidMapping.title(item.action.projectName ?? fallback.project),
+        detail: text.invalidMapping.detail,
+        action: text.invalidMapping.action,
         onClick: () => onFixMapping(item.action),
         testId: `workbench-action-invalid_mapping-${item.action.remoteProjectId}`,
       });
   }
 }
 
-function requirementLabel(item: MyRequirement): string {
-  return [item.number === null ? null : formatRequirementNumber(item.number), item.title ?? "需求"].filter(Boolean).join(" ");
+function requirementLabel(item: MyRequirement, untitled: string): string {
+  return [item.number === null ? null : formatRequirementNumber(item.number), item.title ?? untitled].filter(Boolean).join(" ");
 }
 
 function requirementRef(item: MyRequirement): string {
@@ -391,13 +400,15 @@ function requirementRef(item: MyRequirement): string {
 }
 
 function RequirementGroups({ items, onOpen }: { items: MyRequirement[]; onOpen(item: MyRequirement): void }) {
+  const t = useT();
+  const text = t.myWork.requirements;
   return (
     <div className="flex flex-col gap-4">
       {groupByStatus(items).map((group) => (
-        <section key={group.status ?? "unknown"} className="flex flex-col gap-1" aria-label={group.status === null ? "状态未知" : REQUIREMENT_STATUS_LABELS[group.status]}>
+        <section key={group.status ?? "unknown"} className="flex flex-col gap-1" aria-label={group.status === null ? text.statusUnknown : requirementStatusLabel(group.status, t)}>
           <h3 className="m-0 flex items-center gap-1.5 text-caption font-medium text-subtle-foreground">
             {group.status === null ? null : <StatusIcon status={group.status} aria-hidden="true" />}
-            {group.status === null ? "状态未知" : REQUIREMENT_STATUS_LABELS[group.status]}
+            {group.status === null ? text.statusUnknown : requirementStatusLabel(group.status, t)}
             <span>{group.items.length}</span>
           </h3>
           <ul className="m-0 flex list-none flex-col p-0">
@@ -412,7 +423,7 @@ function RequirementGroups({ items, onOpen }: { items: MyRequirement[]; onOpen(i
                     <span className="w-16 shrink-0 font-mono text-caption text-subtle-foreground">
                       {item.number === null ? "REQ-—" : formatRequirementNumber(item.number)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-small text-foreground">{item.title ?? "需求暂不可用"}</span>
+                    <span className="min-w-0 flex-1 truncate text-small text-foreground">{item.title ?? t.myWork.fallback.requirementUnavailable}</span>
                   </button>
                   {item.working?.drift === true ? (
                     <button
@@ -420,21 +431,21 @@ function RequirementGroups({ items, onOpen }: { items: MyRequirement[]; onOpen(i
                       className="shrink-0 rounded-xs px-1 text-caption text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => onOpen(item)}
                     >
-                      开工后需求有变化
+                      {text.drift}
                     </button>
                   ) : null}
                   {item.working !== null ? (
                     <span className="shrink-0 text-caption text-subtle-foreground">
-                      {item.working.pendingApprovals > 0 ? "等你确认" : item.working.running ? "运行中" : `${item.working.sessionCount} 个会话`}
+                      {item.working.pendingApprovals > 0 ? text.waiting : item.working.running ? text.running : text.sessions(item.working.sessionCount)}
                     </span>
                   ) : null}
                   {item.unreadComments > 0 ? (
                     <span className="shrink-0 rounded-full bg-primary-soft px-1.5 text-caption font-medium text-primary-text">
-                      {item.unreadComments} 条新评论
+                      {text.unreadComments(item.unreadComments)}
                     </span>
                   ) : null}
-                  {item.assignedToMe ? <span className="shrink-0 text-caption text-subtle-foreground">你负责</span> : null}
-                  {item.createdUnassigned ? <span className="shrink-0 text-caption text-warning">我提的 · 还没人负责</span> : null}
+                  {item.assignedToMe ? <span className="shrink-0 text-caption text-subtle-foreground">{text.assignedToMe}</span> : null}
+                  {item.createdUnassigned ? <span className="shrink-0 text-caption text-warning">{text.createdUnassigned}</span> : null}
                   <span className="hidden w-24 shrink-0 truncate text-right text-caption text-subtle-foreground md:inline">{item.projectName ?? ""}</span>
                 </div>
               </li>
@@ -446,22 +457,32 @@ function RequirementGroups({ items, onOpen }: { items: MyRequirement[]; onOpen(i
   );
 }
 
-const SESSION_CARD_TEXT: Record<SessionUiStatus, (session: SessionListItemDto) => string> = {
-  running: () => "运行中",
-  approval: (session) => `等你确认 ${session.runStatus.pendingApprovals} 项`,
-  error: (session) => (session.runStatus.lastTurnOutcome === "failed" ? "上一轮没能完成" : "会话出错了"),
-  completed: () => "已完成",
-  idle: () => "空闲",
-};
+/** 会话卡副行开头的状态说明，按调用时传入的字典取。 */
+function sessionCardText(status: SessionUiStatus, session: SessionListItemDto, t: Messages): string {
+  const text = t.myWork.sessions.card;
+  switch (status) {
+    case "running":
+      return text.running;
+    case "approval":
+      return text.approval(session.runStatus.pendingApprovals);
+    case "error":
+      return session.runStatus.lastTurnOutcome === "failed" ? text.failedTurn : text.error;
+    case "completed":
+      return text.completed;
+    case "idle":
+      return text.idle;
+  }
+}
 
 /** 会话卡：状态点与文字同源（同一个 status）；副行写关联需求编号或项目，再给最后一句话。 */
 function SessionCard({ session, status, onOpen }: { session: SessionListItemDto; status: SessionUiStatus; onOpen(): void }) {
+  const t = useT();
   const requirementLabel =
     session.requirement === null
       ? session.project.name
       : [session.requirement.number === null ? null : formatRequirementNumber(session.requirement.number), session.requirement.title]
           .filter(Boolean)
-          .join(" ") || "需求会话";
+          .join(" ") || t.myWork.fallback.requirementSession;
   const at = session.lastActivityAt ?? session.updatedAt;
   return (
     <li>
@@ -473,11 +494,11 @@ function SessionCard({ session, status, onOpen }: { session: SessionListItemDto;
       >
         <span className="flex w-full items-center gap-2">
           <SessionStatusDot status={status} />
-          <span className="min-w-0 flex-1 truncate text-small font-medium text-foreground">{session.title || "未命名会话"}</span>
+          <span className="min-w-0 flex-1 truncate text-small font-medium text-foreground">{session.title || t.myWork.fallback.untitledSession}</span>
           <span className="shrink-0 text-caption text-subtle-foreground">{formatRelativeTime(at)}</span>
         </span>
         <span className="truncate pl-5.5 text-caption text-subtle-foreground">
-          {SESSION_CARD_TEXT[status](session)}
+          {sessionCardText(status, session, t)}
           {status === "running" && session.runStatus.runningSince != null ? <Elapsed since={session.runStatus.runningSince} /> : null} ·{" "}
           {requirementLabel}
         </span>
@@ -487,7 +508,7 @@ function SessionCard({ session, status, onOpen }: { session: SessionListItemDto;
           </span>
         ) : session.preview === null ? null : (
           <span className="truncate pl-5.5 text-caption text-muted-foreground">
-            {session.preview.role === "user" ? "你：" : ""}
+            {session.preview.role === "user" ? t.myWork.sessions.previewFromYou : ""}
             {session.preview.text}
           </span>
         )}
@@ -499,23 +520,27 @@ function SessionCard({ session, status, onOpen }: { session: SessionListItemDto;
 /**
  * 首启时跳过的事（需求 §4.2）：做完一项消失一项，全部完成后整块不显示；也可以直接关掉。
  * 代码目录那条以实际关联为准：已经有关联就不再提醒。
+ * 存的是类型，标题按当前语言取（setup-pending.ts），所以每次渲染时按 t 读一遍。
  */
 function SetupChecklist({ mappingCount, onNavigate }: { mappingCount: number | null; onNavigate(step: number): void }) {
-  const [items, setItems] = useState<SetupPendingItem[]>(readSetupPending);
+  const t = useT();
+  const text = t.myWork.setupChecklist;
+  const [dismissed, setDismissed] = useState(false);
+  const items = dismissed ? [] : readSetupPending(t);
   const visible = items.filter((item) => item.key !== "mapping" || mappingCount === 0);
   if (visible.length === 0) return null;
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3" aria-label="还没做完的设置" data-testid="setup-checklist">
+    <section className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3" aria-label={text.label} data-testid="setup-checklist">
       <div className="flex items-center gap-2">
         <ListChecksIcon className="size-4 text-primary-text" aria-hidden="true" />
-        <h2 className="m-0 flex-1 text-body font-semibold text-foreground">还有 {visible.length} 项设置没做完</h2>
+        <h2 className="m-0 flex-1 text-body font-semibold text-foreground">{text.remaining(visible.length)}</h2>
         <Button
           size="icon-sm"
           variant="ghost"
-          aria-label="不再提示"
+          aria-label={text.dismiss}
           onClick={() => {
             clearSetupPending();
-            setItems([]);
+            setDismissed(true);
           }}
         >
           <XIcon />
@@ -530,7 +555,7 @@ function SetupChecklist({ mappingCount, onNavigate }: { mappingCount: number | n
               <span className="text-muted-foreground"> · {item.detail}</span>
             </span>
             <Button size="sm" variant="ghost" onClick={() => onNavigate(item.key === "mapping" ? 4 : 3)}>
-              {item.key === "mapping" ? "去关联" : "重新检查"}
+              {item.key === "mapping" ? text.link : text.recheck}
             </Button>
           </li>
         ))}
@@ -541,17 +566,19 @@ function SetupChecklist({ mappingCount, onNavigate }: { mappingCount: number | n
 
 /** 运行中的会话已经跑了多久（每秒走一次）。 */
 function Elapsed({ since }: { since: number }) {
+  const t = useT();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  return <span className="tabular-nums"> · 已用 {formatElapsed(now - since)}</span>;
+  return <span className="tabular-nums"> · {t.myWork.sessions.elapsed(formatElapsed(now - since))}</span>;
 }
 
 function RecentList({ items, onOpen }: { items: MyRequirement[]; onOpen(item: MyRequirement): void }) {
+  const t = useT();
   if (items.length === 0) {
-    return <p className="m-0 py-2 text-small text-muted-foreground">最近没有别人改动你的需求。</p>;
+    return <p className="m-0 py-2 text-small text-muted-foreground">{t.myWork.recent.empty}</p>;
   }
   return (
     <ol className="m-0 flex list-none flex-col gap-0.5 p-0">
@@ -563,12 +590,14 @@ function RecentList({ items, onOpen }: { items: MyRequirement[]; onOpen(item: My
             onClick={() => onOpen(item)}
           >
             <span className="text-small text-foreground">
-              <span className="font-medium">{item.updatedBy?.displayName ?? "有人"}</span> 更新了{" "}
-              <span className="font-mono text-caption text-muted-foreground">{item.number === null ? "" : formatRequirementNumber(item.number)}</span>{" "}
-              {item.title ?? ""}
+              {t.myWork.recent.updated(
+                <span key="who" className="font-medium">{item.updatedBy?.displayName ?? t.myWork.fallback.someone}</span>,
+                <span key="number" className="font-mono text-caption text-muted-foreground">{item.number === null ? "" : formatRequirementNumber(item.number)}</span>,
+                item.title ?? "",
+              )}
             </span>
             <span className="text-caption text-subtle-foreground">
-              {item.status === null ? "" : `${REQUIREMENT_STATUS_LABELS[item.status]} · `}
+              {item.status === null ? "" : `${requirementStatusLabel(item.status, t)} · `}
               {item.updatedAt === null ? "" : formatRelativeTime(item.updatedAt)}
             </span>
           </button>
@@ -587,6 +616,8 @@ function FixMappingDialog({
   onClose(): void;
   onSaved(): void;
 }) {
+  const t = useT();
+  const text = t.myWork.fixMapping;
   const [path, setPath] = useState("");
   const [valid, setValid] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -594,7 +625,7 @@ function FixMappingDialog({
   const save = async () => {
     // 提交按钮不禁用（技术设计 §6.2）：点了再说哪里不对。
     if (!valid) {
-      setError(path.trim() === "" ? "先选一个代码目录。" : "这个目录现在用不了，换一个可以读写的目录。");
+      setError(path.trim() === "" ? text.pathRequired : text.pathInvalid);
       return;
     }
     setSaving(true);
@@ -612,17 +643,15 @@ function FixMappingDialog({
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>重新选择本机代码目录</DialogTitle>
-          <DialogDescription>
-            {action.projectName ?? "这个项目"}的代码目录不可用了。选一个可以读写的目录，之后这个项目的会话都在这里运行。
-          </DialogDescription>
+          <DialogTitle>{text.title}</DialogTitle>
+          <DialogDescription>{text.description(action.projectName)}</DialogDescription>
         </DialogHeader>
         <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} />
         {error === null ? null : <InlineError kind="validation">{error}</InlineError>}
         <DialogFooter>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>取消</Button>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>{text.cancel}</Button>
           <Button variant="primary" loading={saving} onClick={() => void save()}>
-            使用这个目录
+            {text.save}
           </Button>
         </DialogFooter>
       </DialogContent>

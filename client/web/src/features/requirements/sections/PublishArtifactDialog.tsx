@@ -10,6 +10,7 @@ import {
 import { classifyFailure } from "../../../feedback/classify.js";
 import { InlineError } from "../../../feedback/components/index.js";
 import type { Failure } from "../../../feedback/types.js";
+import { useT } from "../../../i18n/provider.js";
 import { showMessage } from "../../../ui/message.js";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,6 +45,7 @@ export function PublishArtifactDialog({
   onClose(): void;
   onPublished(version: ArtifactVersionDetailDto): void;
 }) {
+  const text = useT().requirementDetail.publish;
   const queryClient = useQueryClient();
   const attempt = useRef<{ key: string; fingerprint: string } | null>(null);
   const openedWith = useRef(latest?.id);
@@ -61,9 +63,9 @@ export function PublishArtifactDialog({
   const publishedMeanwhile = latest !== undefined && latest.id !== openedWith.current ? latest : null;
   const overLimit = selected.size > REQUIREMENTS_ARTIFACT_VERSION_FETCH_FILE_LIMIT;
   const selectionError = touched && selected.size === 0
-    ? "至少选一份材料"
+    ? text.selectAtLeastOne
     : overLimit
-      ? `一个版本最多 ${REQUIREMENTS_ARTIFACT_VERSION_FETCH_FILE_LIMIT} 个文件`
+      ? text.tooManyFiles(REQUIREMENTS_ARTIFACT_VERSION_FETCH_FILE_LIMIT)
       : undefined;
 
   const toggle = (id: string) =>
@@ -96,7 +98,7 @@ export function PublishArtifactDialog({
         queryClient.invalidateQueries({ queryKey: requirementKeys.detail(requirementId) }),
       ]);
       onPublished(version);
-      showMessage(`已发布确认版 · 第 ${version.versionNumber} 版`, "success");
+      showMessage(text.published(version.versionNumber), "success");
       onClose();
     } catch (cause) {
       // 可能其实已经发出去了（响应丢失）：刷新版本列表，新版本出现时上方会说明。
@@ -104,7 +106,7 @@ export function PublishArtifactDialog({
       const failure = classifyFailure(cause);
       setFailure(
         cause instanceof ApiClientError && cause.code === "IDEMPOTENCY_CONFLICT"
-          ? { ...failure, message: "刚才那次发布可能已经成功，确认版列表已刷新，请先看一眼再决定是否重发" }
+          ? { ...failure, message: text.maybePublished }
           : failure,
       );
     } finally {
@@ -116,18 +118,18 @@ export function PublishArtifactDialog({
     <Dialog open onOpenChange={(open) => !open && !submitting && onClose()}>
       <DialogContent size="md" data-testid="publish-artifact-dialog">
         <DialogHeader>
-          <DialogTitle>发布确认版 · 第 {nextNumber} 版</DialogTitle>
+          <DialogTitle>{text.title(nextNumber)}</DialogTitle>
           <DialogDescription>
-            确认版是团队对齐后的材料组合，发布后全组可见，不能修改。
+            {text.description}
           </DialogDescription>
         </DialogHeader>
         {publishedMeanwhile === null ? null : (
           <p className="m-0 rounded-md bg-warning-soft px-3 py-2 text-small" role="status">
-            {publishedMeanwhile.publishedBy.displayName} 刚刚发布了第 {publishedMeanwhile.versionNumber} 版。继续发布会成为第 {nextNumber} 版。
+            {text.publishedMeanwhile(publishedMeanwhile.publishedBy.displayName, publishedMeanwhile.versionNumber, nextNumber)}
           </p>
         )}
         <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
-          <legend className="mb-1.5 text-small font-medium">包含的材料（{selected.size}）</legend>
+          <legend className="mb-1.5 text-small font-medium">{text.included(selected.size)}</legend>
           <ul className="m-0 flex max-h-64 list-none flex-col gap-0.5 overflow-y-auto p-0" aria-invalid={selectionError !== undefined}>
             {attachments.map((attachment) => {
               const id = `publish-${attachment.id}`;
@@ -137,7 +139,7 @@ export function PublishArtifactDialog({
                     <Checkbox id={id} checked={selected.has(attachment.id)} onCheckedChange={() => toggle(attachment.id)} />
                     <span className="min-w-0 flex-1 truncate text-small">{attachment.fileName}</span>
                     {isNew(attachment) ? (
-                      <span className="shrink-0 text-caption text-primary-text">新</span>
+                      <span className="shrink-0 text-caption text-primary-text">{text.new}</span>
                     ) : null}
                     <span className="shrink-0 text-caption text-subtle-foreground">{formatBytes(attachment.sizeBytes)}</span>
                   </label>
@@ -147,14 +149,14 @@ export function PublishArtifactDialog({
           </ul>
           {selectionError === undefined ? null : <InlineError kind="validation">{selectionError}</InlineError>}
         </fieldset>
-        <Field label="这一版改了什么" hint="可不填；会显示在活动里，方便大家了解变化。">
-          <Textarea rows={3} maxLength={4000} value={note} placeholder="例如：补充导出上限与保留期" onChange={(event) => setNote(event.target.value)} />
+        <Field label={text.noteLabel} hint={text.noteHint}>
+          <Textarea rows={3} maxLength={4000} value={note} placeholder={text.notePlaceholder} onChange={(event) => setNote(event.target.value)} />
         </Field>
-        {failure === null ? null : <InlineError kind={failure.kind}>没能发布：{failure.message}</InlineError>}
+        {failure === null ? null : <InlineError kind={failure.kind}>{text.failed(failure.message)}</InlineError>}
         <DialogFooter>
-          <Button variant="secondary" disabled={submitting} onClick={onClose}>取消</Button>
+          <Button variant="secondary" disabled={submitting} onClick={onClose}>{text.cancel}</Button>
           <Button variant="primary" loading={submitting} onClick={() => void publish()}>
-            {failure === null ? `发布第 ${nextNumber} 版` : "重试发布"}
+            {failure === null ? text.submit(nextNumber) : text.retry}
           </Button>
         </DialogFooter>
       </DialogContent>

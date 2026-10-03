@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { useT } from "../../../i18n/provider.js";
+import type { Messages } from "../../../i18n/messages/index.js";
 
 /**
  * 选择本机代码目录（需求 §4.4「开始会话」、首启向导第 4 步）。
@@ -33,6 +35,8 @@ export function DirectoryPicker({
   onChange(path: string): void;
   onValidityChange?(valid: boolean): void;
 }) {
+  const t = useT();
+  const text = t.requirements.directoryPicker;
   // 已有选择时从它的上一级开始浏览，当前目录在列表里可见；否则从主目录开始。
   const [browsePath, setBrowsePath] = useState<string | undefined>(() => parentOf(value));
   const [manual, setManual] = useState(false);
@@ -50,7 +54,7 @@ export function DirectoryPicker({
     staleTime: 5_000,
     retry: false,
   });
-  const verdict = judge(deferredValue === "" ? undefined : inspection.data);
+  const verdict = judge(deferredValue === "" ? undefined : inspection.data, t);
 
   useEffect(() => {
     onValidityChange?.(verdict.tone === "ok" || verdict.tone === "warn");
@@ -128,7 +132,7 @@ export function DirectoryPicker({
     <div className="flex flex-col gap-3">
       {manual ? (
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="directory-manual" className="text-small font-medium">代码目录的绝对路径</label>
+          <label htmlFor="directory-manual" className="text-small font-medium">{text.manualLabel}</label>
           <Input
             id="directory-manual"
             autoFocus
@@ -144,13 +148,13 @@ export function DirectoryPicker({
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="上一级目录"
+              aria-label={text.up}
               disabled={listing.data?.parent === null || listing.data === undefined}
               onClick={() => listing.data?.parent != null && browse(listing.data.parent, false)}
             >
               <ChevronLeftIcon />
             </Button>
-            <nav aria-label="当前位置" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto font-mono text-caption text-muted-foreground">
+            <nav aria-label={text.location} className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto font-mono text-caption text-muted-foreground">
               {segments.map((segment, index) => (
                 <span key={segment.path} className="flex shrink-0 items-center gap-0.5">
                   {index > 0 ? <span aria-hidden="true">/</span> : null}
@@ -167,7 +171,7 @@ export function DirectoryPicker({
           </div>
           <div className="flex max-h-60 min-h-40 flex-col overflow-y-auto p-1">
             {listing.isPending ? (
-              <div className="flex flex-col gap-2 p-2" aria-busy="true" aria-label="正在读取目录">
+              <div className="flex flex-col gap-2 p-2" aria-busy="true" aria-label={text.loading}>
                 <Skeleton className="h-3.5 w-1/2" />
                 <Skeleton className="h-3.5 w-2/3" />
                 <Skeleton className="h-3.5 w-2/5" />
@@ -175,21 +179,21 @@ export function DirectoryPicker({
             ) : null}
             {listing.isError ? (
               <div className="flex flex-col items-start gap-2 p-3">
-                <p className="m-0 text-small text-danger">没能读取这个目录：{classifyFailure(listing.error).message}</p>
+                <p className="m-0 text-small text-danger">{text.loadFailed(classifyFailure(listing.error).message)}</p>
                 {browsePath === undefined ? null : (
                   <Button size="sm" variant="secondary" onClick={() => setBrowsePath(undefined)}>
-                    回到主目录
+                    {text.goHome}
                   </Button>
                 )}
               </div>
             ) : null}
             {listing.data?.entries.length === 0 ? (
-              <p className="m-0 p-3 text-small text-subtle-foreground">这里没有子目录</p>
+              <p className="m-0 p-3 text-small text-subtle-foreground">{text.empty}</p>
             ) : null}
             <div
               ref={listRef}
               role="listbox"
-              aria-label={listing.data === undefined ? "目录" : `${listing.data.path} 下的目录`}
+              aria-label={listing.data === undefined ? text.listLabel : text.listLabelIn(listing.data.path)}
               tabIndex={entries.length === 0 ? -1 : undefined}
               className="flex flex-col outline-none"
               onKeyDown={onListKeyDown}
@@ -217,13 +221,13 @@ export function DirectoryPicker({
                       <FolderIcon className="size-4 shrink-0 text-subtle-foreground" aria-hidden="true" />
                     )}
                     <span className="flex-1 truncate">{entry.name}</span>
-                    {entry.isGitRepo ? <span className="text-caption text-subtle-foreground">Git 仓库</span> : null}
+                    {entry.isGitRepo ? <span className="text-caption text-subtle-foreground">{text.gitRepo}</span> : null}
                   </div>
                 );
               })}
             </div>
             {listing.data?.truncated === true ? (
-              <p className="m-0 px-2 py-1.5 text-caption text-subtle-foreground">目录较多，只显示前 500 个。可以直接输入路径。</p>
+              <p className="m-0 px-2 py-1.5 text-caption text-subtle-foreground">{text.truncated}</p>
             ) : null}
           </div>
         </div>
@@ -233,7 +237,7 @@ export function DirectoryPicker({
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="inline-flex items-center gap-1 text-caption text-subtle-foreground">
             <HistoryIcon className="size-3.5" />
-            最近使用
+            {text.recent}
           </span>
           {listing.data.recent.slice(0, 4).map((path) => (
             <button
@@ -253,7 +257,7 @@ export function DirectoryPicker({
         {deferredValue !== "" && inspection.isFetching ? (
           <span className="inline-flex items-center gap-1.5 text-small text-subtle-foreground">
             <Spinner size="sm" />
-            正在检查…
+            {text.checking}
           </span>
         ) : (
           <span className={cn("inline-flex items-center gap-1.5 text-small", TONE_CLASS[verdict.tone])}>
@@ -265,7 +269,7 @@ export function DirectoryPicker({
         )}
         <Button className="ml-auto" size="sm" variant="ghost" onClick={() => setManual((current) => !current)}>
           <KeyboardIcon />
-          {manual ? "浏览目录" : "手动输入路径"}
+          {manual ? text.browse : text.manual}
         </Button>
       </div>
     </div>
@@ -274,16 +278,17 @@ export function DirectoryPicker({
 
 const TONE_CLASS = { idle: "text-subtle-foreground", ok: "text-success", warn: "text-warning", error: "text-danger" } as const;
 
-function judge(inspection: LocalDirInspectionDto | undefined): { tone: keyof typeof TONE_CLASS; text: string } {
-  if (inspection === undefined) return { tone: "idle", text: "选中一个目录（双击或 → 进入子目录）" };
-  if (!inspection.exists) return { tone: "error", text: "这个路径不存在" };
-  if (!inspection.isDirectory) return { tone: "error", text: "这不是一个目录" };
-  if (!inspection.readable || !inspection.writable) return { tone: "error", text: "SuDuo 需要能读写这个目录" };
-  if (!inspection.isGitRepo) return { tone: "warn", text: "可以读写，但不是 Git 仓库：会话里将无法保存检查点" };
-  return {
-    tone: "ok",
-    text: inspection.branch === null ? "可以读写 · 是 Git 仓库" : `可以读写 · 是 Git 仓库 · 当前分支 ${inspection.branch}`,
-  };
+function judge(
+  inspection: LocalDirInspectionDto | undefined,
+  t: Messages,
+): { tone: keyof typeof TONE_CLASS; text: string } {
+  const text = t.requirements.directoryPicker.verdict;
+  if (inspection === undefined) return { tone: "idle", text: text.idle };
+  if (!inspection.exists) return { tone: "error", text: text.missing };
+  if (!inspection.isDirectory) return { tone: "error", text: text.notDirectory };
+  if (!inspection.readable || !inspection.writable) return { tone: "error", text: text.noAccess };
+  if (!inspection.isGitRepo) return { tone: "warn", text: text.notGitRepo };
+  return { tone: "ok", text: inspection.branch === null ? text.ok : text.okOnBranch(inspection.branch) };
 }
 
 function parentOf(path: string): string | undefined {

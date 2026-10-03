@@ -1,5 +1,4 @@
 import type { SessionContextDto } from "@suduo/client-contracts";
-import { REQUIREMENT_STATUS_LABELS } from "@suduo/cloud-contracts";
 import { DownloadIcon, ExternalLinkIcon, FileTextIcon, PaperclipIcon, RotateCwIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +13,7 @@ import {
   requirementCode,
 } from "../features/requirements/format.js";
 import { formatDateTime, formatRelativeTime } from "../ui/format.js";
+import { requirementStatusLabel } from "../ui/requirement-status.js";
 
 /** 外壳（会话列表）知道的关联需求。 */
 export interface LinkedRequirement {
@@ -102,7 +102,7 @@ function RequirementSummary({ context, onNavigate }: { context: SessionContextDt
         <div className="flex items-center gap-2">
           <span className="shrink-0 font-mono text-caption text-subtle-foreground">{requirementCode(number)}</span>
           {current === null ? null : (
-            <Badge variant="neutral" data-testid="requirement-material-status">{REQUIREMENT_STATUS_LABELS[current.status]}</Badge>
+            <Badge variant="neutral" data-testid="requirement-material-status">{requirementStatusLabel(current.status)}</Badge>
           )}
         </div>
         <h3 className="m-0 text-body font-semibold text-foreground" data-testid="requirement-material-title">

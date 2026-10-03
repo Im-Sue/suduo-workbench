@@ -1,6 +1,5 @@
 import {
   REQUIREMENT_STATUSES,
-  REQUIREMENT_STATUS_LABELS,
   type RequirementStatus,
 } from "@suduo/cloud-contracts";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
@@ -15,6 +14,8 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { cn } from "@/lib/utils";
+import { requirementStatusLabel } from "../../../ui/requirement-status.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 需求状态菜单：七个状态按流程顺序排列，数字键 1–7 直接选择。
@@ -36,6 +37,7 @@ export function StatusMenu({
   trigger?: ReactNode;
   align?: "start" | "end";
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const pick = (next: RequirementStatus) => {
     setOpen(false);
@@ -47,14 +49,14 @@ export function StatusMenu({
         {trigger ?? (
           <button
             type="button"
-            aria-label={`状态：${REQUIREMENT_STATUS_LABELS[status]}${pending ? "，正在保存" : "，点击修改"}`}
+            aria-label={t.requirements.statusMenu.triggerLabel(requirementStatusLabel(status), pending)}
             className={cn(
               "inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-small font-medium text-foreground outline-none",
               "hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 aria-disabled:opacity-60 data-[state=open]:bg-muted",
             )}
           >
             {pending ? <Spinner size="sm" className="text-subtle-foreground" /> : <StatusIcon status={status} aria-hidden="true" />}
-            {REQUIREMENT_STATUS_LABELS[status]}
+            {requirementStatusLabel(status)}
             <ChevronDownIcon className="size-3.5 text-subtle-foreground" />
           </button>
         )}
@@ -74,7 +76,7 @@ export function StatusMenu({
         {REQUIREMENT_STATUSES.map((item, index) => (
           <DropdownMenuItem key={item} onSelect={() => pick(item)}>
             <StatusIcon status={item} aria-hidden="true" />
-            <span className="flex-1">{REQUIREMENT_STATUS_LABELS[item]}</span>
+            <span className="flex-1">{requirementStatusLabel(item)}</span>
             {item === status ? <CheckIcon className="size-4 text-primary-text!" /> : null}
             <DropdownMenuShortcut>{index + 1}</DropdownMenuShortcut>
           </DropdownMenuItem>

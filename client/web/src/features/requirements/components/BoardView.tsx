@@ -12,7 +12,7 @@ import {
 } from "@dnd-kit/core";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { type RequirementListItemDto } from "@suduo/client-contracts";
-import { REQUIREMENT_STATUS_LABELS, type RequirementStatus } from "@suduo/cloud-contracts";
+import { REQUIREMENT_STATUSES, type RequirementStatus } from "@suduo/cloud-contracts";
 import { PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { classifyFailure } from "../../../feedback/classify.js";
@@ -25,6 +25,9 @@ import { requirementCode } from "../format.js";
 import type { RequirementListFilters } from "../keys.js";
 import { columnQuery, type ColumnState } from "../queries.js";
 import { RequirementCard } from "./RequirementCard.js";
+import { requirementStatusLabel } from "../../../ui/requirement-status.js";
+import { useT } from "../../../i18n/provider.js";
+import type { Messages } from "../../../i18n/messages/index.js";
 
 /**
  * 看板视图：每个状态一列，各自分页加载、各自骨架与错误。
@@ -52,19 +55,22 @@ export function BoardView({
   onColumnState?(status: RequirementStatus, state: ColumnState): void;
   onMove(requirement: RequirementListItemDto, status: RequirementStatus): void;
 }) {
+  const t = useT();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [active, setActive] = useState<RequirementListItemDto | null>(null);
 
-  const announcements = useMemo<Announcements>(
-    () => ({
-      onDragStart: ({ active: item }) => `已拿起 ${describe(item.data.current)}`,
-      onDragOver: ({ over }) => (over === null ? "不在任何列上" : `移到「${statusLabel(over.id)}」上方`),
+  const announcements = useMemo<Announcements>(() => {
+    const drag = t.requirements.board.drag;
+    return {
+      onDragStart: ({ active: item }) => drag.pickedUp(describe(item.data.current, t)),
+      onDragOver: ({ over }) => (over === null ? drag.overNone : drag.over(statusLabel(over.id, t))),
       onDragEnd: ({ active: item, over }) =>
-        over === null ? `已放下 ${describe(item.data.current)}，状态未变` : `已把 ${describe(item.data.current)} 移到「${statusLabel(over.id)}」`,
-      onDragCancel: ({ active: item }) => `已取消移动 ${describe(item.data.current)}`,
-    }),
-    [],
-  );
+        over === null
+          ? drag.droppedUnchanged(describe(item.data.current, t))
+          : drag.moved(describe(item.data.current, t), statusLabel(over.id, t)),
+      onDragCancel: ({ active: item }) => drag.cancelled(describe(item.data.current, t)),
+    };
+  }, [t]);
 
   const onDragStart = (event: DragStartEvent) => {
     const requirement = (event.active.data.current as { requirement?: RequirementListItemDto } | undefined)?.requirement;
@@ -82,14 +88,14 @@ export function BoardView({
   return (
     <DndContext
       sensors={sensors}
-      accessibility={{ announcements, screenReaderInstructions: { draggable: "按 1 到 7 可直接修改状态。" } }}
+      accessibility={{ announcements, screenReaderInstructions: { draggable: t.requirements.board.dragInstructions } }}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragCancel={() => setActive(null)}
     >
       <div
         role="region"
-        aria-label="需求看板"
+        aria-label={t.requirements.board.region}
         className="flex min-h-0 min-w-0 flex-1 items-start gap-3 overflow-auto bg-background px-5 py-4"
         data-testid="requirements-board"
       >
@@ -115,15 +121,15 @@ export function BoardView({
   );
 }
 
-function statusLabel(id: unknown): string {
-  return typeof id === "string" && id in REQUIREMENT_STATUS_LABELS
-    ? REQUIREMENT_STATUS_LABELS[id as RequirementStatus]
+function statusLabel(id: unknown, t: Messages): string {
+  return typeof id === "string" && (REQUIREMENT_STATUSES as readonly string[]).includes(id)
+    ? requirementStatusLabel(id as RequirementStatus, t)
     : String(id);
 }
 
-function describe(data: unknown): string {
+function describe(data: unknown, t: Messages): string {
   const requirement = (data as { requirement?: RequirementListItemDto } | undefined)?.requirement;
-  return requirement === undefined ? "需求" : `${requirementCode(requirement.number)} ${requirement.title}`;
+  return requirement === undefined ? t.requirements.board.drag.fallbackItem : `${requirementCode(requirement.number)} ${requirement.title}`;
 }
 
 function BoardColumn({
@@ -147,6 +153,7 @@ function BoardColumn({
   onCreate(): void;
   onState?(status: RequirementStatus, state: ColumnState): void;
 }) {
+  const t = useT();
   const query = useInfiniteQuery(columnQuery(projectId, status, filters));
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const items = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
@@ -155,7 +162,7 @@ function BoardColumn({
   useEffect(() => {
     onState?.(status, { count: items.length, hasMore, loaded });
   }, [onState, status, items.length, hasMore, loaded]);
-  const label = REQUIREMENT_STATUS_LABELS[status];
+  const label = requirementStatusLabel(status);
   const count = query.data === undefined ? null : `${items.length}${query.hasNextPage ? "+" : ""}`;
 
   return (
@@ -172,7 +179,7 @@ function BoardColumn({
           size="icon-sm"
           variant="ghost"
           className="ml-auto size-6"
-          aria-label={`在「${label}」新建需求`}
+          aria-label={t.requirements.column.createIn(label)}
           onClick={onCreate}
         >
           <PlusIcon className="size-3.5" />
@@ -195,7 +202,7 @@ function BoardColumn({
           <div className="rounded-md border border-border bg-card">
             <RegionError
               kind={classifyFailure(query.error).kind}
-              message={`没能加载「${label}」：${classifyFailure(query.error).message}`}
+              message={t.requirements.column.loadFailed(label, classifyFailure(query.error).message)}
               busy={query.isFetching}
               onRetry={() => void query.refetch()}
             />
@@ -203,7 +210,7 @@ function BoardColumn({
         ) : null}
         {query.isSuccess && items.length === 0 ? (
           <p className="m-0 rounded-md border border-dashed border-border px-3 py-2.5 text-caption text-subtle-foreground">
-            暂无
+            {t.requirements.column.empty}
           </p>
         ) : null}
         {items.map((requirement) => (
@@ -223,7 +230,7 @@ function BoardColumn({
             loading={query.isFetchingNextPage}
             onClick={() => void query.fetchNextPage()}
           >
-            加载更多
+            {t.requirements.column.loadMore}
           </Button>
         ) : null}
       </div>
