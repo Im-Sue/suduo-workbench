@@ -1,141 +1,212 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
+  <img src=".github/assets/logo.svg" width="88" height="88" alt="SuDuo logo">
+</picture>
+
 # SuDuo
 
-**Requirements with your team. Code on your machine.**
+**Requirements live with your team. Code stays on your machine.**
 
-[中文](README.zh-CN.md) · Source-available · [Commercial use](COMMERCIAL.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+A self-hosted requirements workspace for teams that build with the Codex CLI.
 
-SuDuo (速舵) connects a team's shared requirements and discussions with the Codex CLI running on each developer's own computer. The team keeps requirements, attachments and discussion rooms on a server it hosts itself. Each person starts a local Codex session straight from a requirement, and their code, repositories and sessions never leave their computer.
+[![Release](https://img.shields.io/github/v/release/Im-Sue/suduo-workbench?color=3451D1&label=release)](https://github.com/Im-Sue/suduo-workbench/releases)
+[![CI](https://github.com/Im-Sue/suduo-workbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Im-Sue/suduo-workbench/actions/workflows/ci.yml)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-3451D1)](LICENSE)
+[![Client: macOS | Windows](https://img.shields.io/badge/client-macOS%20%7C%20Windows-12A594)](client/README.md)
+[![Server: Linux + Docker](https://img.shields.io/badge/server-Linux%20%2B%20Docker-12A594)](cloud/DEPLOYMENT.md)
+
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Commercial use](COMMERCIAL.md) · [Changelog](CHANGELOG.md) · [中文](README.zh-CN.md)
+
+</div>
+
+<br>
+
+![A requirement in SuDuo: the description, discussion and activity on the left; status, the local code folder and local sessions on the right; "Start session" at the top](.github/assets/screenshot-requirement.png)
+
+<p align="center"><sub>The interface is in Chinese today. An English interface is in progress.</sub></p>
+
+## What is SuDuo
+
+SuDuo (速舵) is where a development team keeps its requirements and discussions, and where each developer turns a requirement into a Codex session on their own computer.
+
+- **Shared requirements, on your own server.** Requirements, attachments and discussion rooms live on a server your team deploys. Everyone works from the same board.
+- **From requirement to Codex in one click.** Start a local Codex session from any requirement. Codex reads the requirement through SuDuo's tools and writes its conclusions back.
+- **Your code stays on your machine.** Repositories, Codex sessions and model credentials stay on each developer's computer. There is no SuDuo service in between.
 
 ## How it works
 
-```text
- Team server (cloud/, self-hosted)            Each person's computer (client/)
-┌──────────────────────────────────┐        ┌──────────────────────────────────────┐
-│ Projects · requirements          │        │ SuDuo in the browser                  │
-│ Comments · attachments · rooms   │ ◀────▶ │ Local service (127.0.0.1 only)        │
-│ PostgreSQL + file volumes        │  HTTP  │ Your repositories · Codex sessions    │
-└──────────────────────────────────┘        │ Codex CLI with your own model account │
-                                            └──────────────────────────────────────┘
-```
+<img src=".github/assets/architecture.svg" width="100%" alt="The team server stores projects, requirements, comments, attachments and discussion rooms. Each developer's computer runs SuDuo in the browser, a local service that listens only on 127.0.0.1, the Codex CLI and the repositories. Codex calls your model provider directly.">
 
-- **Shared requirements and discussion**: a requirements board, requirement details with comments and attachments, project and requirement rooms, and activity history.
-- **Start work from a requirement**: open a local Codex session from a requirement, with tools that let Codex read the requirement and record conclusions.
-- **Shared agents**: share your Codex in a room so teammates can ask it questions. It runs read-only on your machine and posts its answers in the room.
-- **Self-hosted**: the server runs on your own infrastructure. SuDuo has no central service and never sees your code.
+| On the team server | On each developer's computer |
+|---|---|
+| Projects, requirements, comments and attachments | Code repositories |
+| Discussion rooms, messages and room files | Codex sessions, approvals and their history |
+| Accounts and activity history | Codex configuration and model credentials |
+| Answers from agents that members share into a room | Which local folder belongs to which project |
+
+1. **Deploy the server** once per team: one command on a Linux server with Docker.
+2. **Run the client** on each computer and connect it to the server.
+3. **Choose the folder** where each project's code lives.
+4. **Discuss a requirement, then start a session from it.** Codex works in that folder.
+
+## Features
+
+**Requirements**
+
+- Board and list views, seven statuses, assignees and `REQ-n` numbers
+- Requirement pages with Markdown, comments, attachments and a full activity history
+- Confirmed versions: publish the agreed set of materials so everyone builds from the same files
+- Overview of status distribution, flow over time and requirements that have stalled
+- My work: what needs your answer, your requirements, your sessions and recent activity
+
+**Discussion rooms**
+
+- A room for every project, and rooms for individual requirements
+- Threads, @mentions, files and video
+- Shared agents: share your Codex into a room, and teammates can @ it. It runs read-only on your computer and replies in the thread
+- Floating room windows that stay open while you move around
+
+**Local Codex workbench**
+
+- Sessions linked to requirements, with tools to read the requirement and record conclusions
+- Approvals, commands, file changes and diffs in one timeline
+- Git checkpoints: an optional checkpoint before every turn, and one-click restore
+- Skills, `@` file references and a message queue in the composer
+- File paths in answers open a preview at the right line, or open in VS Code
+- Light and dark themes, keyboard shortcuts and a command palette
+
+**Self-hosting**
+
+- One script installs, upgrades, backs up and restores the server
+- Backups cover the database and file volumes together; upgrades back up first
+- Mirrors for mainland China with `--mirror cn`
+- The client tells you when its version differs from the server's
+
+<table>
+  <tr>
+    <td width="50%"><img src=".github/assets/screenshot-board.png" alt="Requirements board with a column for each status"></td>
+    <td width="50%"><img src=".github/assets/screenshot-discussion.png" alt="Project discussion room with messages from four teammates"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Requirements board</sub></td>
+    <td align="center"><sub>Project discussion room</sub></td>
+  </tr>
+</table>
 
 ## Quick start
 
-### 1. Deploy the cloud (once per team)
+| | You need |
+|---|---|
+| Team server | Ubuntu 22.04 / 24.04 (other Linux: best effort), 2 CPU cores, 4 GB RAM, Docker with Compose, git |
+| Each computer | macOS 13.5+ (Apple silicon or Intel) or Windows 10 / 11 (x64); Node.js 24 LTS (24.10+), pnpm 10.25, git |
+| Model | A ChatGPT sign-in for Codex, or an API key for OpenAI or a compatible service |
 
-Follow the [deployment guide](cloud/DEPLOYMENT.md). On an Ubuntu server with Docker it is one command in the `cloud/` directory of a checkout:
-
-```bash
-cd suduo-workbench/cloud
-sudo ./scripts/suduo-cloud.sh install
-```
-
-### 2. Run the client (each person)
-
-Requirements:
-
-- **macOS 13.5 or later** (Apple silicon or Intel), or **Windows 10 / 11** (x64)
-- **Node.js 24 LTS** (24.10 or later in the 24.x line): from <https://nodejs.org/>, or with a version manager such as mise, nvm or fnm. Newer major versions are not tested, and from Node 25 on `corepack` is no longer included
-- **pnpm 10.25**: `corepack enable pnpm` (run it as administrator on Windows, or with `sudo` on macOS when Node is installed system-wide), or `npm install -g pnpm@10.25.0`
-- **git**
-
-macOS (Terminal):
+**1. Deploy the server** (once per team, on the server):
 
 ```bash
 git clone https://github.com/Im-Sue/suduo-workbench.git
 cd suduo-workbench
 git checkout "$(git describe --tags --abbrev=0)"   # the latest release
-cd client
-pnpm install
-pnpm start
+cd cloud
+sudo ./scripts/suduo-cloud.sh install               # add --mirror cn in mainland China
 ```
 
-Windows (PowerShell):
+The script prints the address when the server is ready. The [deployment guide](cloud/DEPLOYMENT.md) covers upgrades, backups and HTTPS.
 
-```powershell
-git clone https://github.com/Im-Sue/suduo-workbench.git
-cd suduo-workbench
-git checkout (git describe --tags --abbrev=0)      # the latest release
-cd client
-pnpm install
-pnpm start
-```
-
-`pnpm start` checks your environment, builds SuDuo the first time (about 1–2 minutes), starts the local service on `http://127.0.0.1:8787` and opens your browser. If SuDuo is already running, it just opens the browser. Press `Ctrl+C` to stop it. Options: `pnpm start --port 18787`, `--no-open`, `--rebuild`.
-
-If the repository has no release tag yet, stay on `main`.
-
-Use the same release as your team's cloud. SuDuo shows a hint in **Settings → About (关于)** when the versions differ. The interface is in Chinese for now; an English interface is on the way, so menu names below include the current Chinese label.
-
-### 3. Set up Codex
-
-SuDuo runs the Codex CLI version pinned in `client/` with your own Codex configuration in `~/.codex`, the same directory your own Codex CLI uses. Either:
-
-- configure a model service in SuDuo under **Settings → Model service (模型服务)**: SuDuo passes the base URL and API key to Codex, which saves them in `~/.codex`. This changes the configuration your own Codex CLI uses too, and can replace an existing ChatGPT sign-in; or
-- sign in from the `client/` directory: `pnpm exec codex login`
-
-SuDuo itself does not keep a copy of your key, and sends nothing to SuDuo's authors.
-
-### 4. Connect and start
-
-1. **Settings → Requirements service (需求服务)**: enter your team's cloud address, then register or sign in.
-2. For each project, choose the folder on your computer where its code lives.
-3. Open a requirement and start a session.
-
-## Updating
-
-Stop SuDuo first (`Ctrl+C` in the window running `pnpm start`; on Windows `pnpm install` fails while SuDuo still has its files open), then in the `client/` directory:
+**2. Run the client** (each person, on their own computer; the same commands work in Terminal and PowerShell):
 
 ```bash
-git fetch --tags
-git checkout v0.8.0     # the release your team uses
+git clone https://github.com/Im-Sue/suduo-workbench.git
+cd suduo-workbench
+git checkout "$(git describe --tags --abbrev=0)"   # use the same release as your server
+cd client
 pnpm install
-pnpm start              # rebuilds automatically
+pnpm start
 ```
 
-Your local data is migrated on start. Going back to an older version is not supported for the local database: back up the data directory first if you might need to.
+`pnpm start` checks your environment, builds SuDuo the first time (about 1–2 minutes), starts it on `http://127.0.0.1:8787` and opens your browser.
 
-## Where things are
+**3. Connect.** Sign in to Codex with `pnpm exec codex login`, or set your model service in SuDuo under **Settings → Model service**. Then enter the server address under **Settings → Requirements service**, register, choose the folder for your project, open a requirement and start a session.
 
-| | macOS | Windows |
-|---|---|---|
-| Local data (sessions, settings) | `~/Library/Application Support/SuDuo` (before 0.7: `~/.local/share/suduo`) | `%LOCALAPPDATA%\SuDuo` |
-| Logs | `<data directory>/logs/suduo.log` | `<data directory>\logs\suduo.log` |
-| Codex configuration | `~/.codex` | `%USERPROFILE%\.codex` |
+The [client guide](client/README.md) covers Codex setup in detail, updating, where your data is kept, and troubleshooting.
 
-Set `SUDUO_DATA_DIR` to use another data directory, and `SUDUO_CODEX_HOME` (or `CODEX_HOME`) to use another Codex directory. [`client/server/.env.example`](client/server/.env.example) lists all settings.
+## Status
 
-## Troubleshooting
+SuDuo is in early access. Version 0.7.0 is the first public release.
 
-| Problem | What to do |
+- The interface is in Chinese. An English interface is in progress.
+- There is no installer yet. The client runs from source.
+- The server has no administrator or invitation system yet: anyone who can reach it can register. Keep it on a private network.
+- Tested on macOS (Apple silicon) and on Ubuntu 22.04 / 24.04 servers. Windows and Intel Macs are supported but have had less testing.
+
+See the [changelog](CHANGELOG.md) and [releases](https://github.com/Im-Sue/suduo-workbench/releases).
+
+## FAQ
+
+<details>
+<summary><b>Does my code go to the server?</b></summary>
+<br>
+
+No. Codex runs on your computer, in your folder. The server only receives what you post there yourself: requirements, comments, messages and the files you attach. If you share your agent into a room, its answers are posted in that room and can quote code.
+
+</details>
+
+<details>
+<summary><b>Does SuDuo see my model credentials or requests?</b></summary>
+<br>
+
+No. Codex keeps its own configuration in `~/.codex` and talks to your model provider directly. If you set a model service in SuDuo's settings, SuDuo passes it to Codex and keeps no copy. Nothing is sent to SuDuo's authors.
+
+</details>
+
+<details>
+<summary><b>Do I need to install Codex separately?</b></summary>
+<br>
+
+No. `pnpm install` installs the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.7.0). It uses the same `~/.codex` as a Codex CLI you may already have.
+
+</details>
+
+<details>
+<summary><b>Can my company use SuDuo?</b></summary>
+<br>
+
+Yes. Start right away and register within 30 days. Registration is a short email and is currently free. See [License and commercial use](#license-and-commercial-use).
+
+</details>
+
+<details>
+<summary><b>Does the client run on Linux?</b></summary>
+<br>
+
+Linux is not a supported client platform, but the client runs there for development and testing. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+</details>
+
+## License and commercial use
+
+SuDuo is **source-available, not open source**. It is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE), copyright sue.
+
+| Who | What to do |
 |---|---|
-| Something is wrong and you don't know what | `pnpm run doctor` in `client/`, or **Settings → Diagnostics (诊断)**, or open `http://127.0.0.1:8787/doctor` |
-| `pnpm install` fails on `better-sqlite3` | It downloads a prebuilt binary; behind a firewall it falls back to compiling. Install build tools: `xcode-select --install` on macOS, or Visual Studio Build Tools with "Desktop development with C++" on Windows. Then run `pnpm install` again |
-| Downloads from npm are slow or fail (for example in mainland China) | `pnpm config set registry https://registry.npmmirror.com`, then `pnpm install` |
-| You are behind a company proxy | Set `HTTPS_PROXY` for `pnpm install`. For Codex, set the proxy in **Settings → Network proxy (网络代理)** |
-| Port 8787 is in use | `pnpm start --port 18787` |
-| Codex keeps warning about `preferred_auth_method` | Delete that line from `~/.codex/config.toml`; current Codex versions do not use it |
+| Individuals: personal study, research, hobby projects with no anticipated commercial application | Free, no registration |
+| Schools, public research organizations, charities and government institutions | Free, no registration |
+| Companies and other for-profit organizations, including internal-only use | Start right away and **register within 30 days** by emailing im.suyejian@gmail.com. Registration is currently free |
 
-## Repository
+[COMMERCIAL.md](COMMERCIAL.md) explains what counts as commercial use and what to include in the email. Contributions require agreeing to the [Contributor License Agreement](CLA.md). Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-```text
-client/   runs on each person's computer: web (frontend), server (local service), contracts, codex-protocol, scripts
-cloud/    runs on the team's server: server (requirements service, Docker), contracts, scripts
-docs/     requirements, architecture, technical designs and decisions (in Chinese)
-```
+## Contributing and contact
 
-Linux is not a supported client platform, but the client runs there for development and testing; see [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Bugs and questions**: [GitHub Issues](https://github.com/Im-Sue/suduo-workbench/issues)
+- **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Security issues**: email im.suyejian@gmail.com rather than opening a public issue
+- **Commercial registration**: im.suyejian@gmail.com
 
-## License
+Codex and OpenAI are trademarks of OpenAI. SuDuo is not affiliated with or endorsed by OpenAI. See [TRADEMARKS.md](TRADEMARKS.md).
 
-SuDuo is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE), copyright sue.
-
-- Noncommercial personal use (study, research, hobby projects with no anticipated commercial application) and use by educational, public research, charitable and government institutions is free, with no registration.
-- Use by a company or other for-profit organization, including internal-only use, is generally commercial use: **start right away and register within 30 days of first use** by emailing im.suyejian@gmail.com. Registration is currently free. See [COMMERCIAL.md](COMMERCIAL.md).
-- Contributions require agreeing to the [Contributor License Agreement](CLA.md).
-- Third-party licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- Codex and OpenAI are trademarks of OpenAI. SuDuo is not affiliated with OpenAI. See [TRADEMARKS.md](TRADEMARKS.md).
+<div align="center">
+<br>
+<sub>SuDuo · 速舵 · © 2026 sue</sub>
+</div>

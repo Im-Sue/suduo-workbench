@@ -70,7 +70,7 @@ sudo ./scripts/suduo-cloud.sh install
 
 ## 4. 连接客户端
 
-团队成员在自己电脑上运行 SuDuo 客户端，打开 **设置 → 需求服务**，填入地址并注册账号。见[客户端快速开始](../README.md)。
+团队成员在自己电脑上运行 SuDuo 客户端，打开 **设置 → 需求服务**，填入地址并注册账号。见[客户端指南](../client/README.zh-CN.md)。
 
 ## 安全
 

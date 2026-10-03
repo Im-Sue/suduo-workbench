@@ -68,7 +68,7 @@ The containers restart automatically with Docker, including after a server reboo
 
 ## 4. Connect the clients
 
-Each team member runs the SuDuo client on their own computer, opens **Settings → Requirements service**, enters the address and registers an account. See the [client quick start](../README.md).
+Each team member runs the SuDuo client on their own computer, opens **Settings → Requirements service**, enters the address and registers an account. See the [client guide](../client/README.md).
 
 ## Security
 

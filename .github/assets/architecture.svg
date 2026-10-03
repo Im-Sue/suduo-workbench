@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#4F5562"/></marker></defs>
+<rect x="0.5" y="0.5" width="959" height="479" rx="20" fill="#F5F6F8" stroke="#E2E4E9"/>
+<rect x="32" y="32" width="344" height="320" rx="14" fill="#FFFFFF" stroke="#E2E4E9"/>
+<rect x="56" y="58" width="12" height="12" rx="3" fill="#3451D1"/>
+<text x="78" y="70" font-size="20" font-weight="600" fill="#15171C">Team server</text>
+<text x="56" y="98" font-size="14" fill="#4F5562">Self-hosted by your team · cloud/</text>
+<rect x="56" y="120" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="74" cy="141" r="4" fill="#3451D1"/>
+<text x="88" y="146" font-size="15" fill="#15171C">Projects &amp; requirements</text>
+<rect x="56" y="172" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="74" cy="193" r="4" fill="#3451D1"/>
+<text x="88" y="198" font-size="15" fill="#15171C">Comments &amp; attachments</text>
+<rect x="56" y="224" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="74" cy="245" r="4" fill="#3451D1"/>
+<text x="88" y="250" font-size="15" fill="#15171C">Discussion rooms</text>
+<rect x="56" y="276" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="74" cy="297" r="4" fill="#3451D1"/>
+<text x="88" y="302" font-size="15" fill="#15171C">PostgreSQL + file volumes</text>
+<rect x="584" y="32" width="344" height="320" rx="14" fill="#FFFFFF" stroke="#E2E4E9"/>
+<rect x="608" y="58" width="12" height="12" rx="3" fill="#12A594"/>
+<text x="630" y="70" font-size="20" font-weight="600" fill="#15171C">Each developer's computer</text>
+<text x="608" y="98" font-size="14" fill="#4F5562">Runs from source · client/</text>
+<rect x="608" y="120" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="626" cy="141" r="4" fill="#12A594"/>
+<text x="640" y="146" font-size="15" fill="#15171C">SuDuo in your browser</text>
+<rect x="608" y="172" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="626" cy="193" r="4" fill="#12A594"/>
+<text x="640" y="198" font-size="15" fill="#15171C">Local service · 127.0.0.1 only</text>
+<rect x="608" y="224" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="626" cy="245" r="4" fill="#12A594"/>
+<text x="640" y="250" font-size="15" fill="#15171C">Codex CLI · your own sign-in</text>
+<rect x="608" y="276" width="296" height="42" rx="10" fill="#F5F6F8"/>
+<circle cx="626" cy="297" r="4" fill="#12A594"/>
+<text x="640" y="302" font-size="15" fill="#15171C">Your repositories &amp; sessions</text>
+<line x1="392" y1="186" x2="568" y2="186" stroke="#4F5562" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="480" y="172" font-size="15" font-weight="600" fill="#15171C" text-anchor="middle">HTTP(S)</text>
+<text x="480" y="214" font-size="13" fill="#4F5562" text-anchor="middle">requirements,</text>
+<text x="480" y="234" font-size="13" fill="#4F5562" text-anchor="middle">discussions, files</text>
+<text x="56" y="404" font-size="14" fill="#4F5562">Ubuntu / Linux with Docker</text>
+<text x="56" y="430" font-size="14" font-weight="600" fill="#0B7A6E">Repositories and personal sessions are never uploaded</text>
+<line x1="756" y1="354" x2="756" y2="386" stroke="#4F5562" stroke-width="2" marker-end="url(#a)"/>
+<text x="768" y="375" font-size="12" fill="#4F5562">Codex calls it directly</text>
+<rect x="584" y="392" width="344" height="56" rx="12" fill="#FFFFFF" stroke="#A9B0BC" stroke-dasharray="5 4"/>
+<text x="608" y="426" font-size="15" fill="#15171C"><tspan font-weight="600">Your model provider</tspan><tspan fill="#4F5562" dx="8">OpenAI or compatible</tspan></text>
+</svg>
