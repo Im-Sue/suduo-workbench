@@ -112,7 +112,7 @@ export async function runDoctor(
     configDir: options.installed
       ? options.codexHome
       : defaultSuDuoConfigDir(),
-    dataDir: defaultSuDuoDataDir(),
+    dataDir: process.env["SUDUO_DATA_DIR"] ?? defaultSuDuoDataDir(),
     port: options.port,
     checkedAt: new Date().toISOString(),
     checks,
@@ -526,15 +526,29 @@ async function checkPort(
       server.close(() => resolveCheck(true));
     });
   });
+  // 端口被占用时先看是不是 SuDuo 自己：SuDuo 正在运行时跑自检是常见用法，不算失败。
+  const suDuoRunning = !available && !allowPortInUse && (await isSuDuoListening(port));
   checks.push({
     name: "监听端口",
-    status: available || allowPortInUse ? "pass" : "fail",
+    status: available || allowPortInUse || suDuoRunning ? "pass" : "fail",
     message: available
       ? `127.0.0.1:${String(port)} 可用`
-      : allowPortInUse
+      : allowPortInUse || suDuoRunning
         ? `127.0.0.1:${String(port)} 已占用（服务正在运行）`
-        : `127.0.0.1:${String(port)} 已被占用`,
+        : `127.0.0.1:${String(port)} 已被其他程序占用`,
   });
+}
+
+async function isSuDuoListening(port: number): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${String(port)}/healthz`, {
+      signal: AbortSignal.timeout(1_000),
+    });
+    const body = (await response.json().catch(() => null)) as { product?: unknown } | null;
+    return response.ok && body?.product === "suduo";
+  } catch {
+    return false;
+  }
 }
 
 function messageOf(error: unknown): string {

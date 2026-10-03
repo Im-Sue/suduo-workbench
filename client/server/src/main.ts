@@ -67,12 +67,18 @@ async function startFromEnvironment(): Promise<void> {
         "重新运行安装（pnpm install:m1）即可更新。\n",
     );
   }
-  const dataDir = process.env["SUDUO_DATA_DIR"] ?? defaultSuDuoDataDir();
+  // 空字符串按未设置处理（与 pnpm start 一致）。
+  const dataDir = process.env["SUDUO_DATA_DIR"] || defaultSuDuoDataDir();
   mkdirSync(dataDir, { recursive: true });
   const databasePath =
     process.env["SUDUO_DB_PATH"] ?? resolve(dataDir, "suduo.sqlite");
   const codexHome =
     process.env["SUDUO_CODEX_HOME"] ?? process.env["CODEX_HOME"];
+  if (codexHome !== undefined && codexHome !== "" && !existsSync(codexHome)) {
+    process.stderr.write(
+      `SuDuo: CODEX_HOME 指向的目录不存在：${codexHome}。Codex 会无法启动；请检查 SUDUO_CODEX_HOME / CODEX_HOME，或删掉这个设置改用默认的 ~/.codex。\n`,
+    );
+  }
   const codexDefaults = process.env["SUDUO_CODEX_DEFAULTS"];
   if (codexHome && codexDefaults && existsSync(codexDefaults)) {
     const seed = seedCodexHome(codexDefaults, codexHome);
@@ -182,18 +188,27 @@ async function startFromEnvironment(): Promise<void> {
     }) + "\n",
   );
 
+  // 可重入：终端里的 Ctrl+C、启动器调用的关闭接口、systemd 的 SIGTERM 可能先后到达，只关一次；
+  // 后续信号不再走默认动作把进程直接杀掉（那样关闭流程走不完）。
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    const failSafe = setTimeout(() => process.exit(0), 10_000);
+    failSafe.unref();
     await application.close();
     removePidFile(pidFile);
     process.exitCode = 0;
   };
   shutdownForExit = shutdown;
   process.once("exit", () => removePidFile(pidFile));
-  process.once("SIGINT", () => void shutdown());
+  process.on("SIGINT", () => void shutdown());
   if (process.platform === "win32") {
-    process.once("SIGBREAK", () => void shutdown());
+    process.on("SIGBREAK", () => void shutdown());
   } else {
-    process.once("SIGTERM", () => void shutdown());
+    process.on("SIGTERM", () => void shutdown());
   }
 }
 

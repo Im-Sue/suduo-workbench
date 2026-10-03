@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { ApiError } from "../../../application/api-error.js";
+import { defaultCodexHome } from "../../platform/host-platform.js";
 import { openWithSystemApp } from "../../platform/system-open.js";
 
 export interface CodexConfigFileRouteDependencies {
@@ -15,7 +16,7 @@ export function registerCodexConfigFileRoutes(
   dependencies: CodexConfigFileRouteDependencies,
 ): void {
   const codexHome =
-    dependencies.codexHome ?? process.env["CODEX_HOME"] ?? resolve(process.cwd(), ".codex");
+    dependencies.codexHome ?? process.env["CODEX_HOME"] ?? defaultCodexHome();
   const configFile = resolve(codexHome, "config.toml");
   const open = dependencies.openCodexConfigFile ?? ((path: string) => openWithSystemApp(path, "open"));
 

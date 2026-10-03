@@ -55,6 +55,28 @@ pnpm typecheck && pnpm build && pnpm lint && pnpm test
 
 在 `client/` 改动 Codex 集成时，还要跑 `pnpm protocol:diff`。端到端检查（`pnpm gate:a`、`gate:b`、`gate:c`）会调用真实的 Codex CLI，需要一个配好模型的 `CODEX_HOME`；`gate:c` 需要带 systemd 的 Linux，在 macOS 上用 `sh scripts/gate-c-vm.sh` 在 Lima 虚拟机里跑。
 
+## 在 Linux 上运行客户端（开发用）
+
+Linux 不是面向使用者的正式客户端平台，但开发和 gate-c 端到端检查都在 Linux 上跑。`pnpm start` 和在 macOS 上一样可用。把客户端装成 systemd 用户服务（gate-c 就是这样用的）：
+
+```bash
+cd client
+pnpm install:m1 -- --codex-home "$HOME/.codex"     # 构建、运行自检、注册 suduo.service
+pnpm uninstall:m1                                   # 保留本机数据；加 -- --purge-data 一并删除
+```
+
+Codex 在 Linux 上用 bubblewrap 给命令做沙箱，按 OpenAI 的[沙箱前置条件](https://developers.openai.com/codex/concepts/sandboxing)准备：
+
+```bash
+sudo apt install bubblewrap
+# Ubuntu 24.04 默认用 AppArmor 限制非特权用户命名空间，还要加载官方的放行配置：
+sudo apt install apparmor-profiles apparmor-utils
+sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+```
+
+`pnpm run doctor` 会检查沙箱，不通过时给出处理办法。Windows 安装器暂未发布，见 [client/scripts/dist-win/README.md](client/scripts/dist-win/README.md)。
+
 ## 设计原则
 
 - **仲裁者是人，不是系统**（[ADR-0004](docs/06_决策记录/ADR-0004-人机协作系统的一致性边界.md)）。默认不加锁、版本校验等拒绝用户操作的守卫：检测到冲突就告诉人谁在何时改了什么。拒绝只留给不可逆的数据损失和不可逆的对外副作用。

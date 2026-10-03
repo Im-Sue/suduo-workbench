@@ -22,6 +22,7 @@
   "scripts": {
     "build": "pnpm run build:contracts && pnpm --recursive --if-present run build",
     "build:contracts": "tsc -b contracts",
+    "start": "node scripts/start.mjs",
     "typecheck": "pnpm run build:contracts && pnpm --recursive --if-present run typecheck",
     "lint": "eslint . --max-warnings=0",
     "test": "pnpm run build:contracts && pnpm --recursive --if-present run test",

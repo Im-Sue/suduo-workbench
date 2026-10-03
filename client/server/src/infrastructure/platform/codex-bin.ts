@@ -1,5 +1,5 @@
 import { CODEX_VERSION } from "@suduo/client-contracts";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { posix, resolve, win32 } from "node:path";
 
 /**
@@ -9,13 +9,23 @@ import { posix, resolve, win32 } from "node:path";
 export function resolvePinnedCodexBin(input: {
   workspaceRoot?: string;
   configuredBin?: string;
+  platform?: NodeJS.Platform;
 } = {}): string {
   const workspaceRoot = input.workspaceRoot ?? process.cwd();
+  const platform = input.platform ?? process.platform;
+  if (platform === "win32") {
+    // Windows 上直接运行 vendor 里的 codex.exe：codex.cmd 只能经 cmd 启动，
+    // 而 Node 拼给 cmd 的命令行不给路径加引号，仓库路径里有空格（如 C:\Users\John Smith）时就起不来。
+    const vendorExe = findWindowsVendorCodex(workspaceRoot);
+    if (vendorExe !== null) {
+      return vendorExe;
+    }
+  }
   const workspaceBin = resolve(
     workspaceRoot,
     "node_modules",
     ".bin",
-    process.platform === "win32" ? "codex.cmd" : "codex",
+    platform === "win32" ? "codex.cmd" : "codex",
   );
   if (existsSync(workspaceBin)) {
     return workspaceBin;
@@ -26,6 +36,26 @@ export function resolvePinnedCodexBin(input: {
   throw new Error(
     `未找到 workspace 锁定的 Codex ${CODEX_VERSION}；请通过绝对或相对路径设置 SUDUO_CODEX_BIN`,
   );
+}
+
+/** pnpm 把锁定版本的 Windows 平台包装在 node_modules/.pnpm/@openai+codex@<版本>-win32-<架构>/ 下。 */
+function findWindowsVendorCodex(workspaceRoot: string): string | null {
+  const store = resolve(workspaceRoot, "node_modules", ".pnpm");
+  try {
+    const candidates = readdirSync(store, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith(`@openai+codex@${CODEX_VERSION}-win32-`))
+      .flatMap((entry) => {
+        const vendor = resolve(store, entry.name, "node_modules", "@openai", "codex", "vendor");
+        if (!existsSync(vendor)) return [];
+        return readdirSync(vendor, { withFileTypes: true })
+          .filter((target) => target.isDirectory())
+          .map((target) => resolve(vendor, target.name, "bin", "codex.exe"))
+          .filter((path) => existsSync(path));
+      });
+    return candidates.length === 1 ? (candidates[0] ?? null) : null;
+  } catch {
+    return null;
+  }
 }
 
 function isPath(value: string): boolean {

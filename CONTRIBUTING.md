@@ -55,6 +55,28 @@ pnpm typecheck && pnpm build && pnpm lint && pnpm test
 
 In `client/`, also run `pnpm protocol:diff` when you touch the Codex integration. The end-to-end gates (`pnpm gate:a`, `gate:b`, `gate:c`) drive a real Codex CLI and need a `CODEX_HOME` with a working model configuration. `gate:c` needs Linux with systemd; on macOS, `sh scripts/gate-c-vm.sh` runs it in a Lima VM.
 
+## Running the client on Linux (development)
+
+Linux is not a supported client platform for users, but development and the gate-c end-to-end check run there. `pnpm start` works as on macOS. To install the client as a systemd user service (this is what gate-c uses):
+
+```bash
+cd client
+pnpm install:m1 -- --codex-home "$HOME/.codex"     # builds, runs doctor, registers suduo.service
+pnpm uninstall:m1                                   # keeps local data; add -- --purge-data to delete it
+```
+
+Codex sandboxes commands on Linux with bubblewrap. Follow OpenAI's [sandbox prerequisites](https://developers.openai.com/codex/concepts/sandboxing):
+
+```bash
+sudo apt install bubblewrap
+# Ubuntu 24.04 restricts unprivileged user namespaces with AppArmor; load the official allowance profile:
+sudo apt install apparmor-profiles apparmor-utils
+sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+```
+
+`pnpm run doctor` checks the sandbox and explains what to do when it fails. The Windows installer is not released yet; see [client/scripts/dist-win/README.md](client/scripts/dist-win/README.md) (in Chinese).
+
 ## Design principles
 
 - **People arbitrate, not the system** ([ADR-0004](docs/06_决策记录/ADR-0004-人机协作系统的一致性边界.md)). By default we do not add locks, version checks or other guards that refuse a user's action. Detect conflicts and tell people what changed. Refusing is reserved for irreversible data loss and irreversible external side effects.
