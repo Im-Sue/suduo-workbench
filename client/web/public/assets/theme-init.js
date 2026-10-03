@@ -1,7 +1,7 @@
 /* global document, window */
-/* 首屏主题与密度：在样式表生效前写入根元素，避免闪白/闪黑。
+/* 首屏主题、密度与语言：在样式表生效前写入根元素，避免闪白/闪黑。
    必须是同源外部脚本（服务端 CSP 为 script-src 'self'，不允许内联）。
-   键名与 src/ui/theme.ts、src/ui/density.ts 保持一致。 */
+   键名与 src/ui/theme.ts、src/ui/density.ts、src/i18n/locale.ts 保持一致。 */
 (function () {
   var root = document.documentElement;
   try {
@@ -16,6 +16,9 @@
       "data-density",
       localStorage.getItem("suduo.density") === "compact" ? "compact" : "comfortable",
     );
+    // 固定了语言才提前写 lang；「跟随系统」要看界面已支持哪些语言，由 src/i18n/locale.ts 在启动时决定。
+    var lang = localStorage.getItem("suduo.locale");
+    if (lang === "zh-CN" || lang === "en") root.setAttribute("lang", lang);
   } catch {
     root.setAttribute("data-theme", "light");
     root.setAttribute("data-density", "comfortable");

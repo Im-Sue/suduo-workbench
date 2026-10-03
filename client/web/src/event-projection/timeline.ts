@@ -772,7 +772,14 @@ function currentStep(turn: TurnTimeline): CurrentStep | null {
       if (step.status === "running" && (latest === null || step.seq > latest.seq)) latest = step;
     }
   }
-  return latest === null ? null : { title: latest.title, detail: latest.detail };
+  return latest === null ? null : { kind: currentStepKind(latest.kind), title: latest.title, detail: latest.detail };
+}
+
+/** 时间线的步骤分得更细；状态行只区分命令、思考和其他工具调用（文件改动在时间线里不是步骤）。 */
+function currentStepKind(kind: StepKind): CurrentStep["kind"] {
+  if (kind === "command") return "command";
+  if (kind === "thinking") return "thinking";
+  return "tool";
 }
 
 function summarize(turn: TurnTimeline): TurnSummary {

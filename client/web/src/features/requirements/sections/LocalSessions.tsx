@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatFullTime, formatRelativeTime } from "../format.js";
 import { localSessionsQuery } from "../queries.js";
+import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /** 这条需求在本机的会话（速览与详情共用）。点击进入会话。 */
 export function LocalSessions({
@@ -40,7 +40,7 @@ export function LocalSessions({
           >
             <MessageSquareIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{session.title || "未命名会话"}</span>
-            <time className="shrink-0 text-caption text-subtle-foreground" title={formatFullTime(activity(session))}>
+            <time className="shrink-0 text-caption text-subtle-foreground" title={formatDateTime(activity(session))}>
               {formatRelativeTime(activity(session))}
             </time>
           </Link>

@@ -37,7 +37,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { formatBytes, formatFullTime, formatRelativeTime, inlineUrl, previewKind } from "../format.js";
+import { formatBytes, inlineUrl, previewKind } from "../format.js";
 import { requirementKeys } from "../keys.js";
 import { artifactVersionQuery, artifactsQuery, attachmentsQuery } from "../queries.js";
 import {
@@ -48,6 +48,7 @@ import {
   type UploadItem,
 } from "../upload-queue.js";
 import { PublishArtifactDialog } from "./PublishArtifactDialog.js";
+import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /**
  * 材料与确认版（原型 Detail · 材料与确认版）。
@@ -226,7 +227,7 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
             </Badge>
             <span className="min-w-0 flex-1 truncate text-caption text-subtle-foreground">
               {viewed.publishedBy.displayName} 发布于{" "}
-              <time dateTime={viewed.publishedAt} title={formatFullTime(viewed.publishedAt)}>
+              <time dateTime={viewed.publishedAt} title={formatDateTime(viewed.publishedAt)}>
                 {formatRelativeTime(viewed.publishedAt)}
               </time>
             </span>

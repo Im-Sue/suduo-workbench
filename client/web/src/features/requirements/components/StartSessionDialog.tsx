@@ -20,8 +20,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { formatRelativeTime } from "../format.js";
 import { DirectoryPicker } from "./DirectoryPicker.js";
+import { formatRelativeTime } from "../../../ui/format.js";
 
 /**
  * 分步的「开始会话」（需求 §4.4 / 技术设计 §6.3）：

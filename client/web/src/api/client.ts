@@ -1,3 +1,5 @@
+import { LOCALE_HEADER } from "@suduo/client-contracts";
+import { currentLocale } from "../i18n/locale.js";
 import { markRequestNetworkFailure, markRequestReachedServer } from "./connectivity.js";
 import type {
   McpServerDto,
@@ -993,6 +995,7 @@ function uploadRoomFile(
     const request = new XMLHttpRequest();
     request.open("POST", `/api/v2/rooms/${encodeURIComponent(roomId)}/files`);
     request.setRequestHeader("Accept", "application/json");
+    request.setRequestHeader(LOCALE_HEADER, currentLocale());
     request.setRequestHeader("X-Attachment-Size", String(file.size));
     request.setRequestHeader("Idempotency-Key", crypto.randomUUID());
     request.upload.onprogress = (event) => {
@@ -1075,6 +1078,7 @@ function uploadRequirementAttachment(
       `/api/v2/requirements/${encodeURIComponent(requirementId)}/attachments`,
     );
     request.setRequestHeader("Accept", "application/json");
+    request.setRequestHeader(LOCALE_HEADER, currentLocale());
     request.setRequestHeader("X-Attachment-Size", String(file.size));
     request.setRequestHeader("Idempotency-Key", idempotencyKey);
     request.upload.onprogress = (event) => {
@@ -1166,6 +1170,8 @@ async function request<T = unknown>(
   const method = options.method ?? "GET";
   const headers: Record<string, string> = {
     Accept: "application/json",
+    // 本机服务按它生成错误与提示，并记下当前界面语言供后台任务使用（中英双语技术设计 §4.1）。
+    [LOCALE_HEADER]: currentLocale(),
     ...options.headers,
   };
   if (options.body !== undefined) {

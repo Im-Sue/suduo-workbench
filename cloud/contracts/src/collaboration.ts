@@ -5,6 +5,16 @@ import type {
 } from "./pagination.js";
 import type { RequirementStatus } from "./status.js";
 
+/** 系统代写的评论类型；按类型 + 参数渲染，正文 body 只作兜底（中英双语技术设计 §4.3）。 */
+export const COMMENT_SYSTEM_KINDS = ["artifact_published"] as const;
+export type CommentSystemKind = (typeof COMMENT_SYSTEM_KINDS)[number];
+
+/** artifact_published：发布确认版时没写说明，系统代写的那条评论。 */
+export interface ArtifactPublishedCommentParams {
+  versionNumber: number;
+  fileCount: number;
+}
+
 export interface CommentDto {
   id: string;
   requirementId: string;
@@ -12,6 +22,9 @@ export interface CommentDto {
   body: string;
   author: UserSummaryDto;
   createdAt: string;
+  /** 系统代写的评论才有；用户写的评论没有这两个字段。 */
+  systemKind?: CommentSystemKind;
+  systemParams?: ArtifactPublishedCommentParams;
 }
 
 export interface CreateCommentRequest {

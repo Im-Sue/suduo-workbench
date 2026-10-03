@@ -3,9 +3,10 @@ import type { AgentRunSummaryDto, RoomMessageDto } from "@suduo/cloud-contracts"
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { dayKey, dayLabel, maxSeq, rootMessages, type MessagesData } from "../model.js";
+import { maxSeq, rootMessages, type MessagesData } from "../model.js";
 import type { PendingRoomMessage } from "../pending.js";
 import { DaySeparator, MessageItem, PendingMessageItem } from "./MessageItem.js";
+import { dayKey, formatDayLabel } from "../../../ui/format.js";
 
 /**
  * 房间消息流（需求十一）：按日期分隔；同一人连续发的消息合并头像；向上滚到顶加载更早（滚动位置不跳）；
@@ -28,7 +29,7 @@ function buildRows(messages: readonly RoomMessageDto[], pending: readonly Pendin
   for (const message of messages) {
     const day = dayKey(message.createdAt);
     if (day !== lastDay) {
-      rows.push({ kind: "day", key: `day-${day}`, label: dayLabel(message.createdAt, now) });
+      rows.push({ kind: "day", key: `day-${day}`, label: formatDayLabel(message.createdAt, now) });
       lastDay = day;
       previous = null;
     }

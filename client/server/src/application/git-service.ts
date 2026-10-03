@@ -3,15 +3,23 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import type { GitCheckpointDto, GitStatusDto } from "@suduo/client-contracts";
+import {
+  CHECKPOINT_TRAILER,
+  LEGACY_CHECKPOINT_AUTO_SUBJECT,
+  LEGACY_CHECKPOINT_MANUAL_PREFIX,
+  type CheckpointKind,
+  type GitCheckpointDto,
+  type GitStatusDto,
+  type Locale,
+} from "@suduo/client-contracts";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import { ensureSuDuoDir } from "../infrastructure/workspace/suduo-dir.js";
+import { allMessages, messagesFor } from "../i18n/messages/index.js";
 import { ApiError } from "./api-error.js";
 
 const execFileAsync = promisify(execFile);
 
-const AUTO_SUBJECT = "SuDuo 自动存档：回合开始前";
-const MANUAL_PREFIX = "SuDuo 检查点：";
+const TRAILER_PATTERN = new RegExp(`^${CHECKPOINT_TRAILER}:\\s*(turn-start|manual)\\s*$`, "m");
 const FALLBACK_IDENTITY = [
   "-c",
   "user.name=SuDuo",
@@ -123,9 +131,10 @@ export class GitService {
   async checkpoint(
     projectId: string,
     message: string | undefined,
+    locale: Locale = "zh-CN",
   ): Promise<GitCheckpointDto | null> {
     const project = this.requireProject(projectId);
-    return this.snapshot(project.rootPath, false, message);
+    return this.snapshot(project.rootPath, false, message, locale);
   }
 
   /** 回合前自动存档：任何失败都不阻塞发消息，只记录 lastError。 */
@@ -155,22 +164,27 @@ export class GitService {
       return [];
     }
     // 非仓库时 log 直接失败并被 catch，无须额外探测调用。
+    // 每条记录以 \x1e 结尾、字段以 \x1f 分隔；正文 %b 里可能有换行，所以不能按行切。
     const raw = await this.run(root, [
       "log",
       "-n",
       "30",
-      "--pretty=%H%x1f%s%x1f%ct",
+      "--pretty=%H%x1f%s%x1f%ct%x1f%b%x1e",
     ]).catch(() => "");
     return raw
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-      .map((line) => {
-        const [hash = "", subject = "", epoch = "0"] = line.split("\x1f");
+      .split("\x1e")
+      .map((record) => record.replace(/^\n+/, ""))
+      .filter((record) => record.trim() !== "")
+      .map((record) => {
+        const [hash = "", subject = "", epoch = "0", body = ""] = record.split("\x1f");
+        const kind = checkpointKindOf(subject, body);
         return {
           hash,
           subject,
           ts: Number(epoch) * 1000,
-          auto: subject.startsWith(AUTO_SUBJECT),
+          auto: kind === "turn-start",
+          kind,
+          note: kind === "manual" ? manualNoteOf(subject) : null,
         };
       })
       .filter((item) => item.hash !== "");
@@ -180,7 +194,7 @@ export class GitService {
    * 还原到指定提交（git reset --hard）。
    * 未纳入版本管理的新文件不会被删除；后续提交仍可从 reflog 找回。
    */
-  async restore(projectId: string, hash: string): Promise<GitStatusDto> {
+  async restore(projectId: string, hash: string, locale: Locale = "zh-CN"): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const root = project.rootPath;
     if (!/^[0-9a-f]{7,40}$/i.test(hash)) {
@@ -193,11 +207,12 @@ export class GitService {
     // 并提交为新的一步。历史只往前走，所以还原本身也能再被还原（可反悔）。
     // 反例（旧实现）：reset --hard 会把 HEAD 移到过去，刚存的救命检查点脱离分支历史，
     // 检查点列表里再也看不到，用户实际无从反悔。
-    await this.snapshot(root, false, "还原前自动存档");
+    const text = messagesFor(locale).checkpoint;
+    await this.snapshot(root, false, text.beforeRestore, locale);
     await this.run(root, ["read-tree", "-u", "--reset", hash]);
     const pending = await this.run(root, ["status", "--porcelain"]);
     if (pending.trim() !== "") {
-      await this.commit(root, MANUAL_PREFIX + "还原到 " + hash.slice(0, 7));
+      await this.commit(root, text.manualPrefix + text.restoredTo(hash.slice(0, 7)), "manual");
     }
     return this.status(projectId);
   }
@@ -215,10 +230,15 @@ export class GitService {
     return this.status(projectId);
   }
 
+  /**
+   * 提交标题按语言写（迁移期调用方都还没传语言，默认中文，与之前一致）；
+   * 是不是检查点、是哪一种，看正文末尾的标记行，不看标题。
+   */
   private async snapshot(
     root: string,
     auto: boolean,
     message: string | undefined,
+    locale: Locale = "zh-CN",
   ): Promise<GitCheckpointDto | null> {
     if (!(await this.available()) || !(await this.isRepoRoot(root))) {
       throw new ApiError(400, "VALIDATION_ERROR", "该项目不是 git 仓库");
@@ -228,22 +248,25 @@ export class GitService {
     if (pending.trim() === "") {
       return null;
     }
-    const subject = auto
-      ? AUTO_SUBJECT
-      : MANUAL_PREFIX + (message?.trim() ? message.trim() : timeLabel());
-    await this.commit(root, subject);
+    const text = messagesFor(locale).checkpoint;
+    const note = message?.trim() ? message.trim() : timeLabel();
+    const kind: CheckpointKind = auto ? "turn-start" : "manual";
+    const subject = auto ? text.autoSubject : text.manualPrefix + note;
+    await this.commit(root, subject, kind);
     const hash = (await this.run(root, ["rev-parse", "HEAD"])).trim();
-    return { hash, subject, ts: Date.now(), auto };
+    return { hash, subject, ts: Date.now(), auto, kind, note: auto ? null : note };
   }
 
-  private async commit(root: string, subject: string): Promise<void> {
+  /** kind 不为空时在正文末尾加标记行（git trailer），检查点列表靠它识别。 */
+  private async commit(root: string, subject: string, kind?: CheckpointKind): Promise<void> {
+    const message = ["-m", subject, ...(kind === undefined ? [] : ["-m", `${CHECKPOINT_TRAILER}: ${kind}`])];
     try {
-      await this.run(root, ["commit", "-m", subject]);
+      await this.run(root, ["commit", ...message]);
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
       // 新机器常无 git 身份配置：用工具身份兜底，不写入用户全局配置。
       if (/user\.(name|email)|Please tell me who you are|empty ident/i.test(text)) {
-        await this.run(root, [...FALLBACK_IDENTITY, "commit", "-m", subject]);
+        await this.run(root, [...FALLBACK_IDENTITY, "commit", ...message]);
         return;
       }
       throw cause;
@@ -366,4 +389,20 @@ function timeLabel(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+/** 先看标记行；没有标记行的旧提交按 0.7 及以前的中文标题识别。 */
+function checkpointKindOf(subject: string, body: string): CheckpointKind | null {
+  const marked = TRAILER_PATTERN.exec(body);
+  if (marked !== null) return marked[1] as CheckpointKind;
+  if (subject.startsWith(LEGACY_CHECKPOINT_AUTO_SUBJECT)) return "turn-start";
+  if (subject.startsWith(LEGACY_CHECKPOINT_MANUAL_PREFIX)) return "manual";
+  return null;
+}
+
+/** 手动检查点的说明：去掉任一语言的标题前缀；对不上任何前缀时整条标题就是说明。 */
+function manualNoteOf(subject: string): string {
+  const prefixes = [LEGACY_CHECKPOINT_MANUAL_PREFIX, ...allMessages().map((messages) => messages.checkpoint.manualPrefix)];
+  const prefix = prefixes.find((candidate) => subject.startsWith(candidate));
+  return prefix === undefined ? subject : subject.slice(prefix.length);
 }

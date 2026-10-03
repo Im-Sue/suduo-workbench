@@ -23,7 +23,7 @@ import { clearSetupPending, readSetupPending, type SetupPendingItem } from "../.
 import { settingsQuery } from "../../app/queries.js";
 import { classifyFailure } from "../../feedback/classify.js";
 import { InlineError } from "../../feedback/components/index.js";
-import { relativeTime } from "../../ui/format.js";
+import { formatRelativeTime } from "../../ui/format.js";
 import type { SessionUiStatus } from "../../ui/session-status.js";
 import { usePersistentChoice } from "../../ui/use-persistent-state.js";
 import { Button } from "@/components/ui/button";
@@ -329,7 +329,7 @@ function AttentionRow({
       return row({
         icon: <HandIcon className="size-4 shrink-0 text-warning" aria-hidden="true" />,
         title: `等你确认 · ${item.action.sessionTitle}`,
-        detail: `${item.action.projectName ?? "本机项目"} · ${item.action.pendingApprovals} 项等你确认${item.action.lastActivityAt === null ? "" : ` · ${relativeTime(item.action.lastActivityAt)}`}`,
+        detail: `${item.action.projectName ?? "本机项目"} · ${item.action.pendingApprovals} 项等你确认${item.action.lastActivityAt === null ? "" : ` · ${formatRelativeTime(item.action.lastActivityAt)}`}`,
         action: "去确认",
         onClick: () => onOpenSession(item.action.sessionId),
         testId: `workbench-action-pending_approval-${item.action.sessionId}`,
@@ -338,7 +338,7 @@ function AttentionRow({
       return row({
         icon: <AlertTriangleIcon className="size-4 shrink-0 text-danger" aria-hidden="true" />,
         title: `上一轮没能完成 · ${item.action.sessionTitle}`,
-        detail: `${item.action.projectName ?? "本机项目"}${item.action.lastActivityAt === null ? "" : ` · ${relativeTime(item.action.lastActivityAt)}`}`,
+        detail: `${item.action.projectName ?? "本机项目"}${item.action.lastActivityAt === null ? "" : ` · ${formatRelativeTime(item.action.lastActivityAt)}`}`,
         action: "查看原因",
         onClick: () => onOpenSession(item.action.sessionId),
         testId: `workbench-action-failed_turn-${item.action.sessionId}`,
@@ -474,7 +474,7 @@ function SessionCard({ session, status, onOpen }: { session: SessionListItemDto;
         <span className="flex w-full items-center gap-2">
           <SessionStatusDot status={status} />
           <span className="min-w-0 flex-1 truncate text-small font-medium text-foreground">{session.title || "未命名会话"}</span>
-          <span className="shrink-0 text-caption text-subtle-foreground">{relativeTime(at)}</span>
+          <span className="shrink-0 text-caption text-subtle-foreground">{formatRelativeTime(at)}</span>
         </span>
         <span className="truncate pl-5.5 text-caption text-subtle-foreground">
           {SESSION_CARD_TEXT[status](session)}
@@ -569,7 +569,7 @@ function RecentList({ items, onOpen }: { items: MyRequirement[]; onOpen(item: My
             </span>
             <span className="text-caption text-subtle-foreground">
               {item.status === null ? "" : `${REQUIREMENT_STATUS_LABELS[item.status]} · `}
-              {item.updatedAt === null ? "" : relativeTime(item.updatedAt)}
+              {item.updatedAt === null ? "" : formatRelativeTime(item.updatedAt)}
             </span>
           </button>
         </li>

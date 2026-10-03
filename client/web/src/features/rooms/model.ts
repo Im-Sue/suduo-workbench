@@ -12,7 +12,7 @@ import {
   type RoomMessageDto,
   type UserSummaryDto,
 } from "@suduo/cloud-contracts";
-import { format, isSameDay, isSameYear, subDays } from "date-fns";
+import { formatClock, formatMonthDay } from "../../ui/format.js";
 import { summaryPreview } from "../requirements/format.js";
 
 /**
@@ -342,7 +342,9 @@ export function expiresLabel(expiresAt: string | null, now: Date = new Date()): 
   if (expiresAt === null) return "直到关闭";
   const date = new Date(expiresAt);
   if (Number.isNaN(date.getTime())) return "";
-  return isSameDay(date, now) ? `到 ${format(date, "HH:mm")}` : `到 ${format(date, "M月d日 HH:mm")}`;
+  const sameDay =
+    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  return sameDay ? `到 ${formatClock(date)}` : `到 ${formatMonthDay(date)} ${formatClock(date)}`;
 }
 
 // ───────────────────────────── @ 候选 ─────────────────────────────
@@ -436,24 +438,3 @@ export function mentionHighlights(mentions: readonly RoomMentionDto[]): string[]
   return [...set].toSorted((left, right) => right.length - left.length);
 }
 
-// ───────────────────────────── 时间 ─────────────────────────────
-
-/** 消息流的日期分隔：今天 / 昨天 / 9月27日 / 2025年9月27日。 */
-export function dayLabel(value: string, now: Date = new Date()): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  if (isSameDay(date, now)) return "今天";
-  if (isSameDay(date, subDays(now, 1))) return "昨天";
-  if (isSameYear(date, now)) return format(date, "M月d日");
-  return format(date, "yyyy年M月d日");
-}
-
-export function dayKey(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : format(date, "yyyy-MM-dd");
-}
-
-export function clockLabel(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : format(date, "HH:mm");
-}

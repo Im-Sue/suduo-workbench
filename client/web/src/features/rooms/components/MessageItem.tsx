@@ -7,11 +7,11 @@ import { cn } from "@/lib/utils";
 import { avatarTone } from "@/components/ui/avatar";
 import { Markdown } from "../../../ui/markdown.js";
 import { UserAvatar } from "../../requirements/components/UserAvatar.js";
-import { formatFullTime, formatRelativeTime } from "../../requirements/format.js";
-import { agentName, clockLabel, mentionHighlights } from "../model.js";
+import { agentName, mentionHighlights } from "../model.js";
 import type { PendingRoomMessage } from "../pending.js";
 import { RoomFiles } from "./RoomFile.js";
 import { RunCard, RunStatusLine } from "./RunStatusLine.js";
+import { formatClock, formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /**
  * 一条房间消息（需求 4.3 / 十一）：头像 + 名字 + 时间；Agent 消息显示「<所有者> 的 Codex」与 Agent 标识；
@@ -58,7 +58,7 @@ export const MessageItem = memo(function MessageItem({
     );
   }
   const name = message.agent === null ? (message.author?.displayName ?? "有人") : agentName(message.agent);
-  const time = clockLabel(message.createdAt);
+  const time = formatClock(message.createdAt);
   const thread = message.thread;
   return (
     <article
@@ -77,7 +77,7 @@ export const MessageItem = memo(function MessageItem({
           <header className="flex min-w-0 items-baseline gap-2">
             <span className="truncate text-small font-semibold text-foreground">{name}</span>
             {message.agent === null ? null : <Badge variant="primary" className="h-4 px-1">Agent</Badge>}
-            <time className="shrink-0 text-caption text-subtle-foreground" dateTime={message.createdAt} title={formatFullTime(message.createdAt)}>
+            <time className="shrink-0 text-caption text-subtle-foreground" dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>
               {time}
             </time>
           </header>

@@ -21,7 +21,8 @@ const VERSION_008 = "008_audit_created_at_clock_timestamp.sql";
 const VERSION_009 = "009_requirement_reads.sql";
 const VERSION_010 = "010_comment_created_at_clock_timestamp.sql";
 const VERSION_011 = "011_rooms_and_shared_agents.sql";
-const LATEST_VERSION = VERSION_011;
+const VERSION_012 = "012_i18n_structured_texts.sql";
+const LATEST_VERSION = VERSION_012;
 const LEGACY_MIGRATIONS = [
   "001_initial.sql",
   "002_attachments.sql",
@@ -37,10 +38,11 @@ const ALL_MIGRATIONS = [
   VERSION_009,
   VERSION_010,
   VERSION_011,
+  VERSION_012,
 ];
 
 describe("迁移 005 审计项目归属", () => {
-  it("全新库可完整应用 001 至 011", async () => {
+  it("全新库可完整应用全部迁移", async () => {
     await withTemporaryDatabase(async (pool) => {
       await expect(runMigrations(pool)).resolves.toBe(LATEST_VERSION);
       const applied = await appliedVersions(pool);
@@ -252,6 +254,105 @@ describe("迁移 006 需求编号与负责人", () => {
         )).resolves.toMatchObject({
           rows: [{ index_name: "requirements_project_assignee_idx" }],
         });
+      });
+    } finally {
+      await rm(legacyDirectory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("迁移 012 系统评论存类型与参数", () => {
+  it("只回填挂在版本上、且正文逐字等于当时系统句式的评论", async () => {
+    const legacyDirectory = await legacyMigrationsDirectory(
+      ALL_MIGRATIONS.filter((version) => version !== VERSION_012),
+    );
+    try {
+      await withTemporaryDatabase(async (pool) => {
+        await expect(runMigrations(pool, legacyDirectory)).resolves.toBe(VERSION_011);
+        const actorId = randomUUID();
+        await pool.query(
+          `
+            INSERT INTO users (id, login_name, display_name, password_hash)
+            VALUES ($1, 'publish-user', 'Publish User', 'test-password-hash')
+          `,
+          [actorId],
+        );
+        const projectId = await insertLegacyProject(pool, actorId, "发布评论项目");
+        const requirementId = randomUUID();
+        await pool.query(
+          `
+            INSERT INTO requirements (
+              id, project_id, number, title, summary, status, created_by, updated_by
+            ) VALUES ($1, $2, 1, '历史需求', '', 'draft', $3, $3)
+          `,
+          [requirementId, projectId, actorId],
+        );
+        const attachmentIds = [randomUUID(), randomUUID()];
+        for (const attachmentId of attachmentIds) {
+          await pool.query(
+            `
+              INSERT INTO attachments (
+                id, requirement_id, storage_key, file_name, content_type,
+                size_bytes, sha256, uploaded_by
+              ) VALUES ($1, $2, $3, 'material.md', 'text/markdown', 7, $4, $5)
+            `,
+            [attachmentId, requirementId, `objects/${attachmentId.slice(0, 2)}/${attachmentId}`, "b".repeat(64), actorId],
+          );
+        }
+        const insertVersion = async (versionNumber: number, files: number, body: string) => {
+          const versionId = randomUUID();
+          await pool.query(
+            `
+              INSERT INTO requirement_artifact_versions (id, requirement_id, version_number, published_by)
+              VALUES ($1, $2, $3, $4)
+            `,
+            [versionId, requirementId, versionNumber, actorId],
+          );
+          for (const attachmentId of attachmentIds.slice(0, files)) {
+            await pool.query(
+              `
+                INSERT INTO requirement_artifact_version_files (
+                  id, version_id, attachment_id, file_name, size_bytes, sha256, storage_key
+                ) VALUES ($1, $2, $3, 'material.md', 7, $4, $5)
+              `,
+              [randomUUID(), versionId, attachmentId, "b".repeat(64), `objects/${attachmentId}`],
+            );
+          }
+          const commentId = randomUUID();
+          await pool.query(
+            `
+              INSERT INTO requirement_comments (id, requirement_id, artifact_version_id, body, author_id)
+              VALUES ($1, $2, $3, $4, $5)
+            `,
+            [commentId, requirementId, versionId, body, actorId],
+          );
+          return commentId;
+        };
+        const systemComment = await insertVersion(1, 1, "发布了产物 v1，含 1 个文件。");
+        const userNote = await insertVersion(2, 2, "按评审意见改了第三节");
+        const wrongCount = await insertVersion(3, 1, "发布了产物 v3，含 2 个文件。");
+        const plainComment = randomUUID();
+        await pool.query(
+          `
+            INSERT INTO requirement_comments (id, requirement_id, body, author_id)
+            VALUES ($1, $2, '发布了产物 v1，含 1 个文件。', $3)
+          `,
+          [plainComment, requirementId, actorId],
+        );
+
+        await expect(runMigrations(pool)).resolves.toBe(LATEST_VERSION);
+
+        const rows = await pool.query<{ id: string; system_kind: string | null; system_params: unknown }>(
+          "SELECT id, system_kind, system_params FROM requirement_comments",
+        );
+        const byId = new Map(rows.rows.map((row) => [row.id, row]));
+        expect(byId.get(systemComment)).toMatchObject({
+          system_kind: "artifact_published",
+          system_params: { versionNumber: 1, fileCount: 1 },
+        });
+        for (const id of [userNote, wrongCount, plainComment]) {
+          expect(byId.get(id)).toMatchObject({ system_kind: null, system_params: null });
+        }
       });
     } finally {
       await rm(legacyDirectory, { recursive: true, force: true });

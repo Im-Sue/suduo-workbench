@@ -3,9 +3,10 @@ import { REQUIREMENT_STATUS_LABELS } from "@suduo/cloud-contracts";
 import { MessageSquareIcon, PaperclipIcon, TerminalIcon } from "lucide-react";
 import { useId, type ComponentProps } from "react";
 import { cn } from "@/lib/utils";
-import { formatFullTime, formatRelativeTime, requirementCode, summaryPreview } from "../format.js";
+import { requirementCode, summaryPreview } from "../format.js";
 import { useRecentlyChanged } from "../highlight.js";
 import { UserAvatar } from "./UserAvatar.js";
+import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /**
  * 看板卡片（原型 Main · 看板）：编号、负责人、标题（两行）、描述（一行）、材料 / 评论 / 本机会话计数与更新时间。
@@ -83,7 +84,7 @@ export function RequirementCard({
             {requirement.localSessionCount}
           </span>
         ) : null}
-        <time className="ml-auto" dateTime={requirement.updatedAt} title={formatFullTime(requirement.updatedAt)}>
+        <time className="ml-auto" dateTime={requirement.updatedAt} title={formatDateTime(requirement.updatedAt)}>
           {formatRelativeTime(requirement.updatedAt)}
         </time>
       </span>

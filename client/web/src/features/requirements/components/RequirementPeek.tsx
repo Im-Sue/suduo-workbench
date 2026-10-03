@@ -10,7 +10,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RequirementRoomButton } from "../../rooms/sections/RequirementRoomButton.js";
-import { formatFullTime, formatRelativeTime, requirementCode } from "../format.js";
+import { requirementCode } from "../format.js";
 import { useRequirement, useUpdateRequirement } from "../queries.js";
 import { ActivityFeed } from "../sections/ActivityFeed.js";
 import { LocalSessions } from "../sections/LocalSessions.js";
@@ -18,6 +18,7 @@ import { MaterialsPreview } from "../sections/Materials.js";
 import { AssigneeMenu } from "./AssigneeMenu.js";
 import { StatusMenu } from "./StatusMenu.js";
 import { UserAvatar } from "./UserAvatar.js";
+import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /**
  * 需求速览（原型 Main · 速览）：看板 / 列表右侧 480px，不离开当前页面。
@@ -157,12 +158,12 @@ export function RequirementPeek({
               <dt className="text-subtle-foreground">创建</dt>
               <dd className="m-0">
                 {requirement.createdBy.displayName} ·{" "}
-                <time title={formatFullTime(requirement.createdAt)}>{formatRelativeTime(requirement.createdAt)}</time>
+                <time title={formatDateTime(requirement.createdAt)}>{formatRelativeTime(requirement.createdAt)}</time>
               </dd>
               <dt className="text-subtle-foreground">更新</dt>
               <dd className="m-0">
                 {requirement.updatedBy.displayName} ·{" "}
-                <time title={formatFullTime(requirement.updatedAt)}>{formatRelativeTime(requirement.updatedAt)}</time>
+                <time title={formatDateTime(requirement.updatedAt)}>{formatRelativeTime(requirement.updatedAt)}</time>
               </dd>
             </dl>
             {requirement.summary.trim() === "" ? (

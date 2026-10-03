@@ -20,6 +20,7 @@ const FROZEN: Record<string, string> = {
   "009_requirement_reads.sql": "464a67b582e015f4d8e54b46b8eb0f54b8ad18477a118732444a218f8eaf4ea9",
   "010_comment_created_at_clock_timestamp.sql": "d6473d74cfd94176268ec015d0c66aeed3c2c69528ed16904214bd151603c60f",
   "011_rooms_and_shared_agents.sql": "d872268eb9059f79f3fe429a711fcb22fcb989d89a0d5214145fd527b85698e4",
+  "012_i18n_structured_texts.sql": "3728b138fcee82da3742cf2baaafc22b62e93ed0f2404d963b75e073f30635c1",
 };
 
 const MIGRATIONS = new URL("../migrations/", import.meta.url);

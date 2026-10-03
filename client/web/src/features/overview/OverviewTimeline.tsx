@@ -2,7 +2,7 @@ import type { AuditEntryDto } from "@suduo/cloud-contracts";
 import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { formatTime, relativeTime } from "../../ui/format.js";
+import { formatClock, formatRelativeTime } from "../../ui/format.js";
 import { groupOverviewAudit, groupSummary, presentAudit, statusTransitionOf, type AuditTone } from "./timeline.js";
 
 const TONE_DOT: Record<AuditTone, string> = {
@@ -100,8 +100,8 @@ function TimelineEntry({ entry }: { entry: AuditEntryDto }) {
 
 function Time({ iso }: { iso: string }) {
   return (
-    <time dateTime={iso} className="shrink-0 text-caption text-subtle-foreground" title={formatTime(Date.parse(iso))}>
-      {relativeTime(Date.parse(iso))}
+    <time dateTime={iso} className="shrink-0 text-caption text-subtle-foreground" title={formatClock(Date.parse(iso))}>
+      {formatRelativeTime(Date.parse(iso))}
     </time>
   );
 }

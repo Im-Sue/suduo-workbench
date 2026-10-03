@@ -7,7 +7,13 @@ import { Button } from "@/components/ui/button";
 import { api, type RequirementDetailItemDto, type RequirementsAttachmentDto } from "../api/client.js";
 import { classifyFailure } from "../feedback/classify.js";
 import { RegionError } from "../feedback/components/index.js";
-import { formatBytes, formatFullTime, formatRelativeTime, inlineUrl, previewKind, requirementCode } from "../features/requirements/format.js";
+import {
+  formatBytes,
+  inlineUrl,
+  previewKind,
+  requirementCode,
+} from "../features/requirements/format.js";
+import { formatDateTime, formatRelativeTime } from "../ui/format.js";
 
 /** 外壳（会话列表）知道的关联需求。 */
 export interface LinkedRequirement {
@@ -177,7 +183,7 @@ function AttachmentRow({ attachment, index }: { attachment: RequirementsAttachme
         >
           {attachment.fileName}
         </a>
-        <span className="truncate text-caption text-subtle-foreground" title={formatFullTime(attachment.createdAt)}>{meta}</span>
+        <span className="truncate text-caption text-subtle-foreground" title={formatDateTime(attachment.createdAt)}>{meta}</span>
       </span>
       <Button asChild size="icon-sm" variant="ghost">
         <a href={downloadUrl} download={attachment.fileName} aria-label={`下载「${attachment.fileName}」`}>

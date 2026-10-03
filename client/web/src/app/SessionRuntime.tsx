@@ -34,7 +34,7 @@ import {
   loadEventCacheStart,
   saveEventCache,
 } from "../event-projection/cache.js";
-import { formatTime, messageOf } from "../ui/format.js";
+import { formatClock, messageOf } from "../ui/format.js";
 import { ChevronRightIcon, FileIcon as FileLucideIcon, FolderIcon as FolderLucideIcon, LockIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Group as PanelGroup, Panel, Separator as PanelSeparator, useDefaultLayout } from "react-resizable-panels";
@@ -928,8 +928,8 @@ export function SessionRuntime(props: {
                     ? ""
                     : `${
                         restoreTarget.ownAuto
-                          ? `项目文件会恢复到这一轮开始前自动存档时（${formatTime(restoreTarget.checkpoint.ts)}）的状态。`
-                          : `这一轮开始前没有它自己的自动存档；最近的是「${restoreTarget.checkpoint.subject}」（${formatTime(restoreTarget.checkpoint.ts)}），还原到它可能连带撤掉更早几轮的改动。`
+                          ? `项目文件会恢复到这一轮开始前自动存档时（${formatClock(restoreTarget.checkpoint.ts)}）的状态。`
+                          : `这一轮开始前没有它自己的自动存档；最近的是「${restoreTarget.checkpoint.subject}」（${formatClock(restoreTarget.checkpoint.ts)}），还原到它可能连带撤掉更早几轮的改动。`
                       }还原前会先自动存一份当前状态（包括新建的文件），需要时可以在检查面板的「环境」里还原回来。`
                 }
                 confirmLabel="回到开始前"

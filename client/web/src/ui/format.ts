@@ -1,3 +1,7 @@
+import type { Locale } from "@suduo/client-contracts";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor } from "../i18n/messages/index.js";
+
 export function formatBytes(value: number): string {
   if (value < 1024) {
     return `${String(value)} B`;
@@ -8,48 +12,128 @@ export function formatBytes(value: number): string {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function formatTime(ts: number): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(ts);
+/**
+ * 全站日期与时长的格式（中英双语技术设计 §4.3：日期与数字一律走这里）。
+ * 默认用当前界面语言；切换语言时整棵界面会重建，所以不订阅语言的调用方也会更新。
+ */
+export type DateInput = string | number | Date;
+
+function toDate(value: DateInput): Date | null {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** 会话列表用的相对时间：刚刚 / N 分钟前 / 今天 HH:mm / 昨天 HH:mm / MM-DD。 */
-export function relativeTime(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  if (diff < 60_000) {
-    return "刚刚";
-  }
-  if (diff < 3_600_000) {
-    return `${String(Math.floor(diff / 60_000))} 分钟前`;
-  }
-  const date = new Date(ts);
-  const today = new Date(now);
-  const sameDay = date.toDateString() === today.toDateString();
-  if (sameDay) {
-    return formatTime(ts);
-  }
-  const yesterday = new Date(now - 86_400_000);
-  if (date.toDateString() === yesterday.toDateString()) {
-    return `昨天 ${formatTime(ts)}`;
-  }
-  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" })
-    .format(ts)
-    .replace("/", "-");
+function sameDay(left: Date, right: Date): boolean {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
 }
 
-export function formatDuration(ms: number): string {
+function previousDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1);
+}
+
+/** 中文月份用「9月」（long），英文用「Sep」（short）。 */
+function monthStyle(locale: Locale): "long" | "short" {
+  return locale === "zh-CN" ? "long" : "short";
+}
+
+/** 时:分，24 小时制：14:32。 */
+export function formatClock(value: DateInput, locale: Locale = currentLocale()): string {
+  const date = toDate(value);
+  return date === null
+    ? ""
+    : new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+}
+
+/** 月日：9月27日 / Sep 27。 */
+export function formatMonthDay(value: DateInput, locale: Locale = currentLocale()): string {
+  const date = toDate(value);
+  return date === null
+    ? ""
+    : new Intl.DateTimeFormat(locale, { month: monthStyle(locale), day: "numeric" }).format(date);
+}
+
+/** 年月日：2025年9月27日 / Sep 27, 2025。 */
+export function formatDate(value: DateInput, locale: Locale = currentLocale()): string {
+  const date = toDate(value);
+  return date === null
+    ? ""
+    : new Intl.DateTimeFormat(locale, { year: "numeric", month: monthStyle(locale), day: "numeric" }).format(date);
+}
+
+/** 悬停时显示的完整时间：2025年9月27日 14:32:05 / Sep 27, 2025, 14:32:05。 */
+export function formatDateTime(value: DateInput, locale: Locale = currentLocale()): string {
+  const date = toDate(value);
+  return date === null
+    ? ""
+    : new Intl.DateTimeFormat(locale, {
+        year: "numeric",
+        month: monthStyle(locale),
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }).format(date);
+}
+
+/**
+ * 相对时间：1 分钟内「刚刚」，1 小时内「N 分钟前」，今天「14:32」，昨天「昨天 14:32」，
+ * 今年「9月27日」，更早「2025年9月27日」。今天 / 昨天都按传入的 now 判断，与相对时间同一个基准。
+ */
+export function formatRelativeTime(
+  value: DateInput,
+  now: Date = new Date(),
+  locale: Locale = currentLocale(),
+): string {
+  const date = toDate(value);
+  if (date === null) return "";
+  const text = messagesFor(locale).common.time;
+  const minutes = Math.floor((now.getTime() - date.getTime()) / 60_000);
+  if (minutes < 1) return text.justNow;
+  if (minutes < 60) return text.minutesAgo(minutes);
+  if (sameDay(date, now)) return formatClock(date, locale);
+  if (sameDay(date, previousDay(now))) return text.yesterdayAt(formatClock(date, locale));
+  if (date.getFullYear() === now.getFullYear()) return formatMonthDay(date, locale);
+  return formatDate(date, locale);
+}
+
+/** 按天分隔的标题：今天 / 昨天 / 9月27日 / 2025年9月27日。 */
+export function formatDayLabel(
+  value: DateInput,
+  now: Date = new Date(),
+  locale: Locale = currentLocale(),
+): string {
+  const date = toDate(value);
+  if (date === null) return "";
+  const text = messagesFor(locale).common.time;
+  if (sameDay(date, now)) return text.today;
+  if (sameDay(date, previousDay(now))) return text.yesterday;
+  if (date.getFullYear() === now.getFullYear()) return formatMonthDay(date, locale);
+  return formatDate(date, locale);
+}
+
+/** 本地日期键 yyyy-MM-dd（分组用，不显示）。 */
+export function dayKey(value: DateInput): string {
+  const date = toDate(value);
+  if (date === null) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** 时长：12 秒 / 3 分钟 / 3 分 5 秒；不足 1 秒按 1 秒。 */
+export function formatDuration(ms: number, locale: Locale = currentLocale()): string {
+  const text = messagesFor(locale).common.duration;
   const seconds = Math.max(1, Math.round(ms / 1000));
   if (seconds < 60) {
-    return `${String(seconds)} 秒`;
+    return text.seconds(seconds);
   }
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
-  return rest === 0
-    ? `${String(minutes)} 分钟`
-    : `${String(minutes)} 分 ${String(rest)} 秒`;
+  return rest === 0 ? text.minutes(minutes) : text.minutesSeconds(minutes, rest);
 }
 
 /** 新会话默认名：新会话 MM-DD HH:mm。 */

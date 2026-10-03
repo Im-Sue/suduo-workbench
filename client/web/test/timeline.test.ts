@@ -116,7 +116,7 @@ describe("会话时间线 · 多段回复与步骤交错", () => {
     const step = turn.blocks[0]?.kind === "steps" ? turn.blocks[0].steps[0] : undefined;
     expect(step).toMatchObject({ kind: "thinking", title: "思考：看结构", output: "**看结构**\n\n再看测试", status: "running" });
     expect(turn.status).toBe("running");
-    expect(turn.currentStep).toEqual({ title: "思考：看结构", detail: "" });
+    expect(turn.currentStep).toEqual({ kind: "thinking", title: "思考：看结构", detail: "" });
   });
 });
 
@@ -397,7 +397,7 @@ describe("会话时间线 · SuDuo 自定义工具（ADR-0008）", () => {
     expect(step?.title).toBe("发评论");
     expect(step?.status).toBe("running");
     expect(step?.detail).toBe(`「${body.slice(0, 60)}…」`);
-    expect(turn.currentStep).toEqual({ title: "发评论", detail: step?.detail });
+    expect(turn.currentStep).toEqual({ kind: "tool", title: "发评论", detail: step?.detail });
   });
 
   it("确认版号、需求编号一起列出；success=false 标成失败并显示原因", () => {

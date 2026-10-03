@@ -13,9 +13,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { cn } from "@/lib/utils";
 import { presentActivity, type ActivityKind } from "../activity.js";
-import { formatFullTime, formatRelativeTime } from "../format.js";
 import { activityQuery } from "../queries.js";
 import { UserAvatar } from "../components/UserAvatar.js";
+import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 export type ActivityFilter = "all" | "comments" | "changes";
 
@@ -116,7 +116,7 @@ export function ActivityFeed({
 function ActivityEntry({ entry, compact }: { entry: RequirementActivityEntryDto; compact: boolean }) {
   const view = presentActivity(entry);
   const time = (
-    <time className="text-caption text-subtle-foreground" dateTime={entry.createdAt} title={formatFullTime(entry.createdAt)}>
+    <time className="text-caption text-subtle-foreground" dateTime={entry.createdAt} title={formatDateTime(entry.createdAt)}>
       {formatRelativeTime(entry.createdAt)}
     </time>
   );

@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import { AssigneeMenu } from "./components/AssigneeMenu.js";
 import { StatusMenu } from "./components/StatusMenu.js";
 import { UserAvatar } from "./components/UserAvatar.js";
-import { formatFullTime, formatRelativeTime, requirementCode } from "./format.js";
+import { requirementCode } from "./format.js";
 import { requirementKeys } from "./keys.js";
 import { useCreateComment, useRequirement, useRequirementIdByRef, useUpdateRequirement } from "./queries.js";
 import { useReadMarker } from "./read-marker.js";
@@ -34,6 +34,7 @@ import { ActivityFeed, type ActivityFilter } from "./sections/ActivityFeed.js";
 import { LocalSessions } from "./sections/LocalSessions.js";
 import { MaterialsPanel } from "./sections/Materials.js";
 import { RequirementRooms } from "../rooms/sections/RequirementRooms.js";
+import { formatDateTime, formatRelativeTime } from "../../ui/format.js";
 
 /**
  * 需求详情（原型 Detail）：左栏标题、描述、材料与确认版、活动；右栏属性、本机代码目录、本机会话。
@@ -582,12 +583,12 @@ function PropertiesRail({
         <dt className="text-subtle-foreground">创建</dt>
         <dd className="m-0">
           {requirement.createdBy.displayName} ·{" "}
-          <time title={formatFullTime(requirement.createdAt)}>{formatRelativeTime(requirement.createdAt)}</time>
+          <time title={formatDateTime(requirement.createdAt)}>{formatRelativeTime(requirement.createdAt)}</time>
         </dd>
         <dt className="text-subtle-foreground">更新</dt>
         <dd className="m-0">
           {requirement.updatedBy.displayName} ·{" "}
-          <time title={formatFullTime(requirement.updatedAt)}>{formatRelativeTime(requirement.updatedAt)}</time>
+          <time title={formatDateTime(requirement.updatedAt)}>{formatRelativeTime(requirement.updatedAt)}</time>
         </dd>
       </dl>
       <LocalDirectory projectId={projectId} />

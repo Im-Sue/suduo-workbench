@@ -16,7 +16,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { api } from "../../api/client.js";
 import { useCurrentProject } from "../../app/project-context.js";
 import { classifyFailure } from "../../feedback/classify.js";
-import { relativeTime } from "../../ui/format.js";
+import { formatRelativeTime } from "../../ui/format.js";
 import { usePersistentChoice } from "../../ui/use-persistent-state.js";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -238,7 +238,7 @@ export function OverviewPage({ projectId }: { projectId: string }) {
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-small font-medium text-foreground">{item.title}</span>
                         <span className="truncate text-caption text-subtle-foreground">
-                          最后由 {item.lastUpdatedBy.displayName} 更新 · {relativeTime(Date.parse(item.updatedAt))}
+                          最后由 {item.lastUpdatedBy.displayName} 更新 · {formatRelativeTime(Date.parse(item.updatedAt))}
                         </span>
                       </span>
                       <span className={cn("flex shrink-0 flex-col items-end text-caption tabular-nums", item.level === "warning" ? "text-warning" : "text-subtle-foreground")}>

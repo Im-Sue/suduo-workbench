@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { SettingsDto, UpdateSettingsRequest } from "@suduo/client-contracts";
+import { isLocale } from "@suduo/client-contracts";
+import type { Locale, SettingsDto, UpdateSettingsRequest } from "@suduo/client-contracts";
 import { maxApprovalMode } from "./approval-mode-cap.js";
 import { ApiError } from "./api-error.js";
 import {
@@ -18,6 +19,8 @@ interface SettingsFile {
   httpsProxy: string;
   allProxy: string;
   noProxy: string;
+  /** 前端最近一次使用的界面语言；后台任务按它出文字。null = 还没收到过。 */
+  locale: Locale | null;
 }
 
 const DEFAULTS: SettingsFile = {
@@ -26,6 +29,7 @@ const DEFAULTS: SettingsFile = {
   gitAutoCheckpointDefault: true,
   defaultApprovalMode: "ask",
   ...EMPTY_PROXY_SETTINGS,
+  locale: null,
 };
 
 /**
@@ -55,6 +59,7 @@ export class SettingsService {
       ...(approvalModeCap === null ? {} : { maxApprovalMode: approvalModeCap }),
       approvalModeLocked: approvalModeCap !== null,
       ...this.proxySettings(),
+      locale: this.state.locale,
     };
   }
 
@@ -136,6 +141,18 @@ export class SettingsService {
     return this.state.defaultApprovalMode;
   }
 
+  /** 前端最近一次使用的界面语言；还没收到过为 null。 */
+  locale(): Locale | null {
+    return this.state.locale;
+  }
+
+  /** 记下前端当前的界面语言（由请求头带来）；没变化时不写文件。 */
+  rememberLocale(locale: Locale): void {
+    if (this.state.locale === locale) return;
+    this.state.locale = locale;
+    this.save();
+  }
+
   private globalSkillsEnvOverride(): boolean | null {
     const raw = this.env["SUDUO_GLOBAL_SKILLS"];
     if (raw === undefined || raw === "") {
@@ -168,6 +185,7 @@ export class SettingsService {
         httpsProxy: readStoredProxy(parsed.httpsProxy),
         allProxy: readStoredProxy(parsed.allProxy),
         noProxy: readStoredNoProxy(parsed.noProxy),
+        locale: isLocale(parsed.locale) ? parsed.locale : DEFAULTS.locale,
       };
     } catch {
       return { ...DEFAULTS };
