@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 import { presentActivity } from "../src/features/requirements/activity.js";
 import {
   formatBytes,
-  formatRelativeTime,
   inlineUrl,
   previewKind,
   requirementCode,
@@ -16,6 +15,7 @@ import {
 } from "../src/features/requirements/format.js";
 import { requirementKeys } from "../src/features/requirements/keys.js";
 import { findCachedItem, placeInColumns } from "../src/features/requirements/queries.js";
+import { formatRelativeTime } from "../src/ui/format.js";
 
 const alice = { id: "u1", displayName: "陈思远" };
 const bob = { id: "u2", displayName: "林雨" };

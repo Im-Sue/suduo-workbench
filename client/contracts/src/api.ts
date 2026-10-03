@@ -5,6 +5,7 @@ import type {
   TurnRef,
 } from "./events.js";
 import type { ApprovalMode, ReasoningEffort } from "./config.js";
+import type { CheckpointKind, Locale } from "./i18n.js";
 
 export type ErrorCode =
   | "VALIDATION_ERROR"
@@ -449,6 +450,10 @@ export interface GitCheckpointDto {
   subject: string;
   ts: number;
   auto: boolean;
+  /** SuDuo 写下的检查点类型（看提交里的标记行，旧提交看标题前缀）；不是 SuDuo 的提交为 null。 */
+  kind: CheckpointKind | null;
+  /** 手动检查点的说明（标题去掉前缀后的部分）；自动存档与非 SuDuo 提交为 null。 */
+  note: string | null;
 }
 
 export interface ListGitCheckpointsResponse {
@@ -509,6 +514,11 @@ export interface SettingsDto {
   allProxy: string;
   /** 不走代理的主机规则（NO_PROXY 格式）；空字符串表示不覆盖继承环境。 */
   noProxy: string;
+  /**
+   * 前端最近一次使用的界面语言（本机服务从请求头 X-SuDuo-Locale 记下，只读）；
+   * 后台任务（如共享 Agent）按它出文字。还没收到过带语言的请求时为 null。
+   */
+  locale: Locale | null;
 }
 
 export interface UpdateSettingsRequest {

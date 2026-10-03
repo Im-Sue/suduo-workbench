@@ -88,3 +88,19 @@ describe("EnvPanel 检查点两守卫按 ADR-0004 分裁（PR4）", () => {
     expect(q(node, "[data-testid='restore-checkpoint']")?.title).toBe("还原到此检查点");
   });
 });
+
+describe("检查点显示名按类型渲染，不看提交标题", () => {
+  it("自动存档、手动检查点（含英文标题）与普通提交", async () => {
+    apiMocks.gitCheckpoints.mockResolvedValue({
+      items: [
+        { hash: "a1", subject: "SuDuo auto-save: before turn", ts: Date.now(), auto: true, kind: "turn-start", note: null },
+        { hash: "a2", subject: "SuDuo checkpoint: fix login", ts: Date.now(), auto: false, kind: "manual", note: "fix login" },
+        { hash: "a3", subject: "feat: 用户自己的提交", ts: Date.now(), auto: false, kind: null, note: null },
+      ],
+    });
+    const node = await render(panel(false));
+    const labels = [...node.querySelectorAll("[data-testid='checkpoint-timeline'] li > span.truncate")]
+      .map((item) => item.textContent);
+    expect(labels).toEqual(["回合前自动存档", "检查点：fix login", "feat: 用户自己的提交"]);
+  });
+});

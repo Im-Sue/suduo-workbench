@@ -28,7 +28,6 @@ import {
 } from "@suduo/cloud-contracts";
 import { decodeCursor } from "../application/cursor.js";
 import { ApplicationError, notFound } from "../application/errors.js";
-import { systemPublishCommentBody } from "../application/publish-comment.js";
 import { insertAuditLog } from "./audit-log.js";
 import { cursorPage, cursorTimestampColumn, type CursorRow } from "./cursor-page.js";
 import type { Database, QueryExecutor } from "./database.js";
@@ -85,6 +84,7 @@ interface ActivityRow {
   artifact_version_number: number | null;
   artifact_file_count: number | null;
   artifact_note: string | null;
+  artifact_note_system_kind: string | null;
 }
 
 interface CommentRow {
@@ -92,6 +92,8 @@ interface CommentRow {
   requirement_id: string;
   artifact_version_id: string | null;
   body: string;
+  system_kind: string | null;
+  system_params: unknown;
   author_user: UserSummaryDto;
   created_at: Date;
 }
@@ -866,6 +868,8 @@ export class CollaborationRepository {
           c.requirement_id,
           c.artifact_version_id,
           c.body,
+          c.system_kind,
+          c.system_params,
           json_build_object('id', author.id, 'displayName', author.display_name) AS author_user,
           c.created_at,
           ${cursorTimestampColumn("c.created_at")}
@@ -974,7 +978,8 @@ export class CollaborationRepository {
             FROM requirement_artifact_version_files artifact_file
             WHERE artifact_file.version_id = artifact_version.id
           ) AS artifact_file_count,
-          publish_comment.body AS artifact_note
+          publish_comment.body AS artifact_note,
+          publish_comment.system_kind AS artifact_note_system_kind
         FROM audit_logs a
         JOIN users actor ON actor.id = a.actor_id
         LEFT JOIN requirement_comments activity_comment
@@ -1006,6 +1011,8 @@ export class CollaborationRepository {
           c.requirement_id,
           c.artifact_version_id,
           c.body,
+          c.system_kind,
+          c.system_params,
           json_build_object('id', author.id, 'displayName', author.display_name) AS author_user,
           c.created_at
         FROM requirement_comments c
@@ -1113,14 +1120,13 @@ function artifactVersionActivity(
 ): NonNullable<RequirementActivityEntryDto["artifactVersion"]> {
   const versionNumber = row.artifact_version_number ?? numberField(after, "versionNumber") ?? 0;
   const fileCount = row.artifact_file_count ?? numberField(after, "fileCount") ?? 0;
-  const note = row.artifact_note;
+  // 系统代写的评论（没写发布说明）按类型判断，不比较正文：正文会随语言变化（中英双语技术设计 §4.3）。
+  const note = row.artifact_note_system_kind === null ? row.artifact_note : null;
   return {
     id: row.resource_id,
     versionNumber,
     fileCount,
-    note: note === null || note === systemPublishCommentBody(versionNumber, fileCount)
-      ? null
-      : note,
+    note,
   };
 }
 
@@ -1228,7 +1234,18 @@ function mapComment(row: CommentRow): CommentDto {
     body: row.body,
     author: row.author_user,
     createdAt: row.created_at.toISOString(),
+    ...commentSystemFields(row),
   };
+}
+
+/** 认识的系统类型才带出类型 + 参数；不认识的（更新的云端写入的）只给正文，前端照常显示兜底文字。 */
+function commentSystemFields(row: CommentRow): Pick<CommentDto, "system"> {
+  if (row.system_kind !== "artifact_published") return {};
+  const params = row.system_params as Record<string, unknown> | null;
+  const versionNumber = params?.["versionNumber"];
+  const fileCount = params?.["fileCount"];
+  if (typeof versionNumber !== "number" || typeof fileCount !== "number") return {};
+  return { system: { kind: "artifact_published", params: { versionNumber, fileCount } } };
 }
 
 function mapAudit(row: AuditRow): AuditEntryDto {

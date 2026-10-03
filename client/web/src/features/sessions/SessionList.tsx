@@ -2,7 +2,7 @@ import type { SessionListItemDto } from "@suduo/client-contracts";
 import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import { ArchiveIcon, HashIcon, MessageCircleIcon, MessagesSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { relativeTime } from "../../ui/format.js";
+import { formatRelativeTime } from "../../ui/format.js";
 import type { SessionLiveRunState } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
 import {
@@ -291,7 +291,7 @@ function SessionRow({
                 {item.title || "未命名会话"}
               </span>
               <time className="shrink-0 text-caption text-subtle-foreground group-hover/row:invisible" dateTime={new Date(lastActivity(item)).toISOString()}>
-                {relativeTime(lastActivity(item))}
+                {formatRelativeTime(lastActivity(item))}
               </time>
             </span>
             <span className="flex w-full items-center gap-1.5 pl-5.5 text-caption text-subtle-foreground">

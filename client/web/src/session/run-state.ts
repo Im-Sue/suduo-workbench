@@ -1,5 +1,5 @@
 import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
-import type { ConversationProjection, TurnStatus } from "../event-projection/reducer.js";
+import type { ConversationProjection, CurrentStep, TurnStatus } from "../event-projection/reducer.js";
 
 /**
  * 运行态的本页内存态（PR3）：计时锚点与停止中间态。纯函数，SessionRuntime 只做接线。
@@ -121,19 +121,19 @@ export function lastTurnOutcomeOf(
     : null;
 }
 
-/** 状态行文案：当前步骤 → 「正在执行 pnpm test」这种人话；没有步骤时为 null。 */
-export function stepText(step: { title: string; detail: string } | null): string | null {
+/** 状态行文案：当前步骤 → 「正在执行 pnpm test」这种人话；没有步骤时为 null。按步骤类型说，不看标题文字。 */
+export function stepText(step: CurrentStep | null): string | null {
   if (step === null) {
     return null;
   }
-  if (step.title === "执行命令") {
-    return step.detail === "" ? "正在执行命令" : `正在执行 ${step.detail}`;
+  switch (step.kind) {
+    case "command":
+      return step.detail === "" ? "正在执行命令" : `正在执行 ${step.detail}`;
+    case "file":
+      return step.detail === "" ? "正在更新文件" : `正在更新 ${step.detail}`;
+    case "thinking":
+      return "正在思考";
+    case "tool":
+      return step.detail === "" ? `正在调用 ${step.title}` : `正在调用 ${step.title} · ${step.detail}`;
   }
-  if (step.title === "更新文件") {
-    return step.detail === "" ? "正在更新文件" : `正在更新 ${step.detail}`;
-  }
-  if (step.title === "思考") {
-    return "正在思考";
-  }
-  return step.detail === "" ? `正在调用 ${step.title}` : `正在调用 ${step.title} · ${step.detail}`;
 }

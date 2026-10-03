@@ -177,6 +177,8 @@ try {
   context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     colorScheme: "dark",
+    // 默认按中文验收（中英双语技术设计 §五）：浏览器语言决定「跟随系统」时的界面语言。
+    locale: "zh-CN",
   });
   await context.tracing.start({ screenshots: true, snapshots: true });
   const page = await context.newPage();

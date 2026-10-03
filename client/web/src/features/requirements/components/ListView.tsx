@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { cn } from "@/lib/utils";
-import { formatFullTime, formatRelativeTime, requirementCode } from "../format.js";
+import { requirementCode } from "../format.js";
 import type { RequirementListFilters } from "../keys.js";
 import { columnQuery, type ColumnState } from "../queries.js";
 import { useRecentlyChanged } from "../highlight.js";
 import { UserAvatar } from "./UserAvatar.js";
+import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /**
  * 列表视图：按状态分组（可折叠），与看板共用每个状态的分页查询，切换视图不重新加载。
@@ -223,7 +224,7 @@ function ListRow({
       <time
         className="w-20 shrink-0 text-right text-caption text-subtle-foreground"
         dateTime={requirement.updatedAt}
-        title={formatFullTime(requirement.updatedAt)}
+        title={formatDateTime(requirement.updatedAt)}
       >
         {formatRelativeTime(requirement.updatedAt)}
       </time>

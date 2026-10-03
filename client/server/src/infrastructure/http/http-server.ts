@@ -98,6 +98,7 @@ import {
 import { registerSessionListRoutes } from "./routes/session-list-routes.js";
 import { registerRoomsRoutes, type RoomsRouteDependencies } from "./routes/rooms-routes.js";
 import type { SessionListService } from "../../application/session-list-service.js";
+import { registerRequestLocale } from "../../i18n/locale.js";
 
 export interface HttpServerDependencies
   extends CodexStatusRouteDependencies,
@@ -174,6 +175,7 @@ export function buildHttpServer(
     dependencies.requestGuard.guard(request);
     dependencies.activity?.touch();
   });
+  registerRequestLocale(server, dependencies.settings);
 
   server.setErrorHandler((error, request, reply) => {
     if (error instanceof ApiError) {

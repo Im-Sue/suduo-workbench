@@ -13,3 +13,4 @@ export * from "./stats.js";
 export * from "./status.js";
 export * from "./rooms.js";
 export * from "./rooms-schemas.js";
+export * from "./i18n.js";

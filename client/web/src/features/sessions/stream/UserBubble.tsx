@@ -1,6 +1,6 @@
 import { ImageIcon, ZapIcon } from "lucide-react";
 import type { ConversationMessage, MessageAttribution } from "../../../event-projection/reducer.js";
-import { formatTime } from "../../../ui/format.js";
+import { formatClock } from "../../../ui/format.js";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,7 +48,7 @@ export function UserBubble({ message, inline = false }: { message: ConversationM
         ) : null}
       </div>
       <p className="m-0 text-caption text-subtle-foreground">
-        {formatTime(message.ts)} ·{" "}
+        {formatClock(message.ts)} ·{" "}
         <span
           data-testid="message-attribution"
           data-attribution={message.attribution}

@@ -7,7 +7,6 @@ import {
   canRetryRun,
   canStopRun,
   catchUpAfter,
-  dayLabel,
   endOfLocalDay,
   expiresLabel,
   shareDurationOf,
@@ -24,6 +23,7 @@ import {
   type MessagesData,
 } from "../src/features/rooms/model.js";
 import { agent, member, message, ME, room, run, share, WANG, ZHANG } from "./fixtures/rooms.js";
+import { formatDayLabel } from "../src/ui/format.js";
 
 const data = (items: MessagesData["items"], lastSeq = 0): MessagesData => ({ items, hasMoreBefore: false, lastSeq });
 
@@ -300,9 +300,9 @@ describe("时间", () => {
 
   it("日期分隔：今天 / 昨天 / 月日 / 年月日", () => {
     const now = new Date(2026, 8, 30, 12);
-    expect(dayLabel(new Date(2026, 8, 30, 8).toISOString(), now)).toBe("今天");
-    expect(dayLabel(new Date(2026, 8, 29, 8).toISOString(), now)).toBe("昨天");
-    expect(dayLabel(new Date(2026, 8, 2, 8).toISOString(), now)).toBe("9月2日");
-    expect(dayLabel(new Date(2025, 8, 2, 8).toISOString(), now)).toBe("2025年9月2日");
+    expect(formatDayLabel(new Date(2026, 8, 30, 8).toISOString(), now)).toBe("今天");
+    expect(formatDayLabel(new Date(2026, 8, 29, 8).toISOString(), now)).toBe("昨天");
+    expect(formatDayLabel(new Date(2026, 8, 2, 8).toISOString(), now)).toBe("9月2日");
+    expect(formatDayLabel(new Date(2025, 8, 2, 8).toISOString(), now)).toBe("2025年9月2日");
   });
 });

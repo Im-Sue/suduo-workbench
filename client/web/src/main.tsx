@@ -7,11 +7,13 @@ import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import { AppErrorBoundary } from "./app/AppErrorBoundary.js";
 import { AppRoot } from "./app/AppRoot.js";
+import { applyLocalePreference, loadLocalePreference } from "./i18n/locale.js";
 import { applyDensityPreference, loadDensityPreference } from "./ui/density.js";
 import { applyThemePreference, loadThemePreference } from "./ui/theme.js";
 import "./styles.css";
 
 applyThemePreference(loadThemePreference());
+applyLocalePreference(loadLocalePreference());
 applyDensityPreference(loadDensityPreference());
 
 const rootElement = document.getElementById("root");

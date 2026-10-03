@@ -6,7 +6,7 @@ import type {
 } from "@suduo/cloud-contracts";
 import { REQUIREMENTS_ARTIFACT_VERSION_FETCH_FILE_LIMIT } from "@suduo/cloud-contracts";
 import { ApplicationError } from "./errors.js";
-import { systemPublishCommentBody } from "./publish-comment.js";
+import { systemPublishComment } from "./publish-comment.js";
 import type {
   ArtifactVersionFileSnapshot,
   ArtifactVersionRepository,
@@ -95,7 +95,12 @@ export class ArtifactVersionService {
           projectId: requirement.projectId,
           requirementId,
           artifactVersionId: artifactVersion.id,
-          body: input.note ?? systemPublishComment(artifactVersion),
+          ...(input.note === undefined
+            ? systemPublishComment({
+                versionNumber: artifactVersion.versionNumber,
+                fileCount: artifactVersion.fileCount,
+              })
+            : { body: input.note, system: null }),
         },
         executor,
       );
@@ -166,8 +171,4 @@ function publishRequestDigest(request: PublishArtifactVersionRequest): string {
       note: request.note ?? null,
     }))
     .digest("hex");
-}
-
-function systemPublishComment(artifactVersion: ArtifactVersionDetailDto): string {
-  return systemPublishCommentBody(artifactVersion.versionNumber, artifactVersion.fileCount);
 }

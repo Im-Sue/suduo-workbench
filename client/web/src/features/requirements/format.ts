@@ -1,35 +1,15 @@
 import { attachmentInlinePreviewTypeForFileName } from "@suduo/client-contracts";
 import { formatRequirementNumber } from "@suduo/cloud-contracts";
-import { differenceInMinutes, format, isSameDay, isSameYear, subDays } from "date-fns";
 
 /**
  * 需求模块的展示格式（技术设计 §8 文案规范）。
  * - 需求用编号指代（REQ-128），不出现 UUID；
- * - 时间：1 小时内相对时间，今天 "14:32"，昨天 "昨天 14:32"，今年 "9月27日"，更早 "2025年9月27日"；
+ * - 时间统一走 ui/format.ts（formatRelativeTime / formatDateTime）；
  * - 大小用 KB / MB。
  */
 
 export function requirementCode(number: number | null | undefined): string {
   return typeof number === "number" && number > 0 ? formatRequirementNumber(number) : "REQ-—";
-}
-
-export function formatRelativeTime(value: string | number | Date, now: Date = new Date()): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const minutes = differenceInMinutes(now, date);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  // 今天 / 昨天 / 今年都按传入的 now 判断（不用 isToday 这类读系统时钟的函数），与相对时间同一个基准。
-  if (isSameDay(date, now)) return format(date, "HH:mm");
-  if (isSameDay(date, subDays(now, 1))) return `昨天 ${format(date, "HH:mm")}`;
-  if (isSameYear(date, now)) return format(date, "M月d日");
-  return format(date, "yyyy年M月d日");
-}
-
-/** 悬停时显示的完整时间。 */
-export function formatFullTime(value: string | number | Date): string {
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : format(date, "yyyy年M月d日 HH:mm:ss");
 }
 
 export function formatBytes(bytes: number): string {

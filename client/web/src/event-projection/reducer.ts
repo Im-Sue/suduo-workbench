@@ -60,8 +60,9 @@ export interface ToolStep {
   seq: number;
 }
 
-/** 状态行要说的「正在做什么」：running step 里 seq 最大的那个。 */
+/** 状态行要说的「正在做什么」：running step 里 seq 最大的那个。说法按 kind 决定，不看 title。 */
 export interface CurrentStep {
+  kind: ToolStep["kind"];
   title: string;
   detail: string;
 }
@@ -482,7 +483,7 @@ function currentStepOf(state: TurnState): CurrentStep | null {
       latest = step;
     }
   }
-  return latest === null ? null : { title: latest.title, detail: latest.detail };
+  return latest === null ? null : { kind: latest.kind, title: latest.title, detail: latest.detail };
 }
 
 function turnStatus(state: TurnState): TurnStatus {

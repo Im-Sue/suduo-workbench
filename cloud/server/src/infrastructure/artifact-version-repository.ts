@@ -3,6 +3,7 @@ import type {
   ArtifactVersionDetailDto,
   ArtifactVersionDto,
   ArtifactVersionFileDto,
+  CommentSystemContent,
   ListArtifactVersionsResponse,
   UserSummaryDto,
 } from "@suduo/cloud-contracts";
@@ -252,6 +253,8 @@ export class ArtifactVersionRepository {
       requirementId: string;
       artifactVersionId: string;
       body: string;
+      /** 系统代写时的类型 + 参数；用户写了说明时为 null。 */
+      system: CommentSystemContent | null;
     },
     executor: QueryExecutor,
   ): Promise<void> {
@@ -259,8 +262,8 @@ export class ArtifactVersionRepository {
     await executor.query(
       `
         INSERT INTO requirement_comments (
-          id, requirement_id, artifact_version_id, body, author_id
-        ) VALUES ($1, $2, $3, $4, $5)
+          id, requirement_id, artifact_version_id, body, author_id, system_kind, system_params
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
       `,
       [
         commentId,
@@ -268,6 +271,8 @@ export class ArtifactVersionRepository {
         input.artifactVersionId,
         input.body,
         input.actorId,
+        input.system?.kind ?? null,
+        input.system === null ? null : JSON.stringify(input.system.params),
       ],
     );
     await insertAuditLog(executor, {

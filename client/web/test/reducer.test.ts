@@ -431,11 +431,11 @@ describe("projectEvents · 当前步骤（PR3）", () => {
       sameTs("item.started", { item: { id: "b", type: "commandExecution", command: "pnpm test" } }, "T"),
     ];
     const running = projectEvents(events);
-    expect(running.turnMeta.get("T")?.currentStep).toEqual({ title: "执行命令", detail: "pnpm test" });
-    expect(running.turns[0]?.currentStep).toEqual({ title: "执行命令", detail: "pnpm test" });
+    expect(running.turnMeta.get("T")?.currentStep).toEqual({ kind: "command", title: "执行命令", detail: "pnpm test" });
+    expect(running.turns[0]?.currentStep).toEqual({ kind: "command", title: "执行命令", detail: "pnpm test" });
     // b 完成 → 当前步骤回落到仍在跑的 a
     const afterB = projectEvents([...events, sameTs("item.completed", { item: { id: "b", type: "commandExecution", command: "pnpm test" } }, "T")]);
-    expect(afterB.turnMeta.get("T")?.currentStep).toEqual({ title: "执行命令", detail: "pnpm install" });
+    expect(afterB.turnMeta.get("T")?.currentStep).toEqual({ kind: "command", title: "执行命令", detail: "pnpm install" });
     // 全完成 → null；终态收口未完成 step 后也是 null
     const done = projectEvents([...events, sameTs("turn.completed", {}, "T")]);
     expect(done.turnMeta.get("T")?.currentStep).toBeNull();

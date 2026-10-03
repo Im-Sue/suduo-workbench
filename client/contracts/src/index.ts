@@ -9,3 +9,4 @@ export * from "./attachment-preview.js";
 export * from "./local.js";
 export * from "./workbench.js";
 export * from "./rooms-local.js";
+export * from "./i18n.js";

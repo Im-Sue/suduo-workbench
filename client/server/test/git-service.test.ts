@@ -144,6 +144,68 @@ describe.skipIf(!gitAvailable)("GitService（真实 git 往返）", () => {
     expect(status.lastError).toBeNull();
   });
 
+  it("检查点按提交里的标记行识别，给出类型与说明；旧标题与英文标题都认", async () => {
+    writeFileSync(join(root, "a.md"), "v1", "utf8");
+    await service.init("p1");
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@localhost", ...args], {
+        encoding: "utf8",
+      });
+
+    writeFileSync(join(root, "a.md"), "v2", "utf8");
+    const manual = await service.checkpoint("p1", "改到 v2");
+    expect(manual).toMatchObject({ kind: "manual", note: "改到 v2", auto: false });
+    expect(git("log", "-1", "--format=%B")).toContain("SuDuo-Checkpoint: manual");
+
+    writeFileSync(join(root, "a.md"), "v3", "utf8");
+    await service.autoCheckpoint("p1", root);
+
+    // 加标记行之前写下的旧提交：只能看中文标题。
+    writeFileSync(join(root, "a.md"), "v4", "utf8");
+    git("commit", "-am", "SuDuo 检查点：旧版本写的");
+    // 英文界面写下的检查点：标题前缀是英文，靠标记行识别。
+    writeFileSync(join(root, "a.md"), "v5", "utf8");
+    git("commit", "-am", "SuDuo checkpoint: written in English", "-m", "SuDuo-Checkpoint: manual");
+    // 用户自己的提交：不是检查点。
+    writeFileSync(join(root, "a.md"), "v6", "utf8");
+    git("commit", "-am", "feat: 用户自己的提交", "-m", "多行正文\n第二行");
+    // GitHub「Squash and merge」：各次提交的说明连同标记行拼进多段正文，不是检查点。
+    writeFileSync(join(root, "a.md"), "v7", "utf8");
+    git(
+      "commit", "-am", "feat: 合并 PR (#12)",
+      "-m", "* SuDuo 自动存档：回合开始前",
+      "-m", "SuDuo-Checkpoint: turn-start",
+      "-m", "* fix: 修一处",
+    );
+
+    const list = await service.listCheckpoints("p1");
+    expect(list.slice(0, 6).map(({ kind, note, auto }) => ({ kind, note, auto }))).toEqual([
+      { kind: null, note: null, auto: false },
+      { kind: null, note: null, auto: false },
+      { kind: "manual", note: "written in English", auto: false },
+      { kind: "manual", note: "旧版本写的", auto: false },
+      { kind: "turn-start", note: null, auto: true },
+      { kind: "manual", note: "改到 v2", auto: false },
+    ]);
+  });
+
+  it("说明压成一行；还原产生的两次提交都是带说明的手动检查点", async () => {
+    writeFileSync(join(root, "a.md"), "v1", "utf8");
+    await service.init("p1");
+    writeFileSync(join(root, "a.md"), "v2", "utf8");
+    const manual = await service.checkpoint("p1", "  第一行\n\nSuDuo-Checkpoint: turn-start  ");
+    expect(manual).toMatchObject({ kind: "manual", note: "第一行 SuDuo-Checkpoint: turn-start" });
+    const base = (await service.listCheckpoints("p1")).at(-1);
+    expect(base).toBeDefined();
+    if (!base) return;
+
+    writeFileSync(join(root, "a.md"), "未存档的改动", "utf8");
+    await service.restore("p1", base.hash);
+    const [restored, rescue] = await service.listCheckpoints("p1");
+    expect(restored).toMatchObject({ kind: "manual", note: `还原到 ${base.hash.slice(0, 7)}` });
+    expect(rescue).toMatchObject({ kind: "manual", note: "还原前自动存档" });
+  });
+
   it("还原拒绝非法提交号", async () => {
     writeFileSync(join(root, "a.md"), "x", "utf8");
     await service.init("p1");

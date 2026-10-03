@@ -13,12 +13,13 @@ import { classifyFailure } from "../../../feedback/classify.js";
 import { EmptyState, FormDialog, InlineError, RegionError } from "../../../feedback/components/index.js";
 import type { Failure } from "../../../feedback/types.js";
 import { UserAvatar } from "../../requirements/components/UserAvatar.js";
-import { formatFullTime, formatRelativeTime, requirementCode } from "../../requirements/format.js";
+import { requirementCode } from "../../requirements/format.js";
 import { usersQuery } from "../../requirements/queries.js";
 import { upsertRoom } from "../cache.js";
 import { roomKeys } from "../keys.js";
 import { sortRooms } from "../model.js";
 import { requirementRoomsQuery } from "../queries.js";
+import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /**
  * 需求详情的「讨论」区块（需求 4.1）：本需求的房间（未读、最后一条）+「新建讨论」。
@@ -84,7 +85,7 @@ export function RequirementRooms({ requirement, me }: { requirement: Requirement
                     )}
                   </span>
                   {room.lastMessage === null ? null : (
-                    <time className="shrink-0 text-caption text-subtle-foreground" title={formatFullTime(room.lastMessage.createdAt)}>
+                    <time className="shrink-0 text-caption text-subtle-foreground" title={formatDateTime(room.lastMessage.createdAt)}>
                       {formatRelativeTime(room.lastMessage.createdAt)}
                     </time>
                   )}

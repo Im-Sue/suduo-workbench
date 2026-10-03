@@ -57,7 +57,7 @@ export function turnSummaryText(turn: TurnTimeline): string {
 }
 
 /** 计时显示：1:05、12:30、1:02:03。 */
-export function formatClock(ms: number): string {
+export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);

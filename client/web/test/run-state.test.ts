@@ -110,10 +110,17 @@ describe("run-state · 顶栏结局与状态行文案", () => {
 
   it("stepText 把步骤说成人话", () => {
     expect(stepText(null)).toBeNull();
-    expect(stepText({ title: "执行命令", detail: "pnpm test" })).toBe("正在执行 pnpm test");
-    expect(stepText({ title: "执行命令", detail: "" })).toBe("正在执行命令");
-    expect(stepText({ title: "更新文件", detail: "src/a.ts" })).toBe("正在更新 src/a.ts");
-    expect(stepText({ title: "思考", detail: "" })).toBe("正在思考");
-    expect(stepText({ title: "搜索", detail: "" })).toBe("正在调用 搜索");
+    expect(stepText({ kind: "command", title: "执行命令", detail: "pnpm test" })).toBe("正在执行 pnpm test");
+    expect(stepText({ kind: "command", title: "执行命令", detail: "" })).toBe("正在执行命令");
+    expect(stepText({ kind: "file", title: "更新文件", detail: "src/a.ts" })).toBe("正在更新 src/a.ts");
+    expect(stepText({ kind: "thinking", title: "思考", detail: "" })).toBe("正在思考");
+    expect(stepText({ kind: "tool", title: "搜索", detail: "" })).toBe("正在调用 搜索");
+    expect(stepText({ kind: "tool", title: "搜索", detail: "README" })).toBe("正在调用 搜索 · README");
+  });
+
+  it("stepText 只看步骤类型，不看标题文字（标题会随界面语言变化）", () => {
+    expect(stepText({ kind: "command", title: "Run command", detail: "ls" })).toBe("正在执行 ls");
+    expect(stepText({ kind: "thinking", title: "Thinking", detail: "" })).toBe("正在思考");
+    expect(stepText({ kind: "tool", title: "执行命令", detail: "" })).toBe("正在调用 执行命令");
   });
 });

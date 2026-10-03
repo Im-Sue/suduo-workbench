@@ -31,7 +31,7 @@ import { Markdown } from "../../../ui/markdown.js";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { collapseEmptyThinking, formatClock, stepGroupSummary, turnSummaryText } from "./describe.js";
+import { collapseEmptyThinking, formatElapsed, stepGroupSummary, turnSummaryText } from "./describe.js";
 import { UserBubble } from "./UserBubble.js";
 
 /**
@@ -155,7 +155,7 @@ function StepGroup({ steps, live, now }: { steps: TimelineStep[]; live: boolean;
           <>
             <Spinner size="sm" className="text-primary-text" />
             <span className="min-w-0 flex-1 truncate font-medium text-foreground">{running.title}</span>
-            <span className="shrink-0 font-mono text-caption text-subtle-foreground">{formatClock(now - started)}</span>
+            <span className="shrink-0 font-mono text-caption text-subtle-foreground">{formatElapsed(now - started)}</span>
           </>
         ) : waiting ? (
           <>
@@ -221,7 +221,7 @@ function StepRow({ step, now }: { step: TimelineStep; now: number }) {
         ) : null}
         {step.status === "aborted" && step.kind !== "approval" ? <span className="shrink-0 text-caption text-subtle-foreground">未完成</span> : null}
         <span className="w-12 shrink-0 text-right font-mono text-caption text-subtle-foreground">
-          {step.status === "running" ? formatClock(now - step.startedTs) : duration !== null && duration >= 1000 ? formatClock(duration) : ""}
+          {step.status === "running" ? formatElapsed(now - step.startedTs) : duration !== null && duration >= 1000 ? formatElapsed(duration) : ""}
         </span>
       </button>
       {open && hasBody ? <StepBody step={step} /> : null}

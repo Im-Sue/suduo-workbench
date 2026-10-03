@@ -222,16 +222,40 @@ describe("产物版本发布", () => {
       attachmentIds: [attachment.id],
     });
 
-    const comment = await pool.query<{ body: string; artifact_version_id: string }>(
-      "SELECT body, artifact_version_id FROM requirement_comments WHERE requirement_id = $1",
+    const comment = await pool.query<{
+      body: string;
+      artifact_version_id: string;
+      system_kind: string | null;
+      system_params: unknown;
+    }>(
+      "SELECT body, artifact_version_id, system_kind, system_params FROM requirement_comments WHERE requirement_id = $1",
       [seeded.requirementId],
     );
     expect(comment.rows).toEqual([
       {
         body: "发布了产物 v1，含 1 个文件。",
         artifact_version_id: result.artifactVersion.id,
+        system_kind: "artifact_published",
+        system_params: { versionNumber: 1, fileCount: 1 },
       },
     ]);
+  });
+
+  it("填写了说明时评论就是说明本身，不带系统类型", async () => {
+    const seeded = await seedRequirement();
+    const attachment = await createAttachment(seeded.requirementId, seeded.actorId, "with-note.md");
+
+    await service.publish(seeded.actorId, seeded.requirementId, {
+      operationKey: "publish-user-note",
+      attachmentIds: [attachment.id],
+      note: "发布了产物 v1，含 1 个文件。",
+    });
+
+    const comment = await pool.query<{ body: string; system_kind: string | null }>(
+      "SELECT body, system_kind FROM requirement_comments WHERE requirement_id = $1",
+      [seeded.requirementId],
+    );
+    expect(comment.rows).toEqual([{ body: "发布了产物 v1，含 1 个文件。", system_kind: null }]);
   });
 
   it("单版本超过 50 个文件时拒绝且不创建记录", async () => {

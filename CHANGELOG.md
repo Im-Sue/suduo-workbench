@@ -2,6 +2,16 @@
 
 [中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+### Changed
+
+- Groundwork for the English interface. The interface is still in Chinese; English arrives area by area in the next releases.
+- Dates older than yesterday in the session list, the overview timeline and the checkpoint list now read like the rest of the app (for example 9月27日, or 2025年9月27日 for earlier years, instead of 09-27).
+- A publish note that happens to read exactly like the automatic "published version" comment is now shown as a note in the activity feed.
+- Git checkpoints that SuDuo writes now end with a `SuDuo-Checkpoint:` line, so SuDuo recognises them whatever language their title is in. Older checkpoints are still recognised.
+- Cloud: comments that SuDuo writes when a confirmed version is published without a note are now stored as a type with parameters (database migration 012), so every client can show them in its own language.
+
 ## 0.7.0 — 2026-10-02
 
 The first public release. SuDuo is now source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE); companies can start right away and register within 30 days (see [COMMERCIAL.md](COMMERCIAL.md)).

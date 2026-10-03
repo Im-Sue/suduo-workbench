@@ -6,7 +6,7 @@ import {
   type SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
 import { formatRequirementNumber } from "@suduo/cloud-contracts";
-import { format } from "date-fns";
+import { formatClock } from "../ui/format.js";
 import { objectValue } from "./shared.js";
 
 /**
@@ -67,7 +67,7 @@ export function requirementLabel(requirement: { number: number | null; title: st
 /** 重复提示（只告知，不拒绝；ADR-0004）：「本会话 14:32 已发过相同内容」。 */
 export function duplicateNotice(confirmation: SuDuoToolConfirmationDto): string | null {
   if (confirmation.duplicateOf === null) return null;
-  const at = format(confirmation.duplicateOf.at, "HH:mm");
+  const at = formatClock(confirmation.duplicateOf.at);
   return confirmation.duplicateOf.pending === true
     ? `本会话还有一张相同内容的确认卡（${at}）`
     : `本会话 ${at} 已发过相同内容`;
