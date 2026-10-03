@@ -5,15 +5,17 @@ import type {
 } from "./pagination.js";
 import type { RequirementStatus } from "./status.js";
 
-/** 系统代写的评论类型；按类型 + 参数渲染，正文 body 只作兜底（中英双语技术设计 §4.3）。 */
-export const COMMENT_SYSTEM_KINDS = ["artifact_published"] as const;
-export type CommentSystemKind = (typeof COMMENT_SYSTEM_KINDS)[number];
-
 /** artifact_published：发布确认版时没写说明，系统代写的那条评论。 */
 export interface ArtifactPublishedCommentParams {
   versionNumber: number;
   fileCount: number;
 }
+
+/**
+ * 系统代写评论的类型 + 参数：前端按它用自己的语言渲染，正文 body 只作兜底（中英双语技术设计 §4.3）。
+ * 以后加类型就往这个联合里加。
+ */
+export type CommentSystemContent = { kind: "artifact_published"; params: ArtifactPublishedCommentParams };
 
 export interface CommentDto {
   id: string;
@@ -22,9 +24,8 @@ export interface CommentDto {
   body: string;
   author: UserSummaryDto;
   createdAt: string;
-  /** 系统代写的评论才有；用户写的评论没有这两个字段。 */
-  systemKind?: CommentSystemKind;
-  systemParams?: ArtifactPublishedCommentParams;
+  /** 系统代写的评论才有，前端按它渲染；用户写的评论没有这个字段。 */
+  system?: CommentSystemContent;
 }
 
 export interface CreateCommentRequest {

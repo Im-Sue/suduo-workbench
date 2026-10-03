@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type {
-  ArtifactPublishedCommentParams,
   ArtifactVersionDetailDto,
   ArtifactVersionDto,
   ArtifactVersionFileDto,
-  CommentSystemKind,
+  CommentSystemContent,
   ListArtifactVersionsResponse,
   UserSummaryDto,
 } from "@suduo/cloud-contracts";
@@ -255,7 +254,7 @@ export class ArtifactVersionRepository {
       artifactVersionId: string;
       body: string;
       /** 系统代写时的类型 + 参数；用户写了说明时为 null。 */
-      system: { kind: CommentSystemKind; params: ArtifactPublishedCommentParams } | null;
+      system: CommentSystemContent | null;
     },
     executor: QueryExecutor,
   ): Promise<void> {

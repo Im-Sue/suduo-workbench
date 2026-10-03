@@ -1239,13 +1239,13 @@ function mapComment(row: CommentRow): CommentDto {
 }
 
 /** 认识的系统类型才带出类型 + 参数；不认识的（更新的云端写入的）只给正文，前端照常显示兜底文字。 */
-function commentSystemFields(row: CommentRow): Pick<CommentDto, "systemKind" | "systemParams"> {
+function commentSystemFields(row: CommentRow): Pick<CommentDto, "system"> {
   if (row.system_kind !== "artifact_published") return {};
   const params = row.system_params as Record<string, unknown> | null;
   const versionNumber = params?.["versionNumber"];
   const fileCount = params?.["fileCount"];
   if (typeof versionNumber !== "number" || typeof fileCount !== "number") return {};
-  return { systemKind: "artifact_published", systemParams: { versionNumber, fileCount } };
+  return { system: { kind: "artifact_published", params: { versionNumber, fileCount } } };
 }
 
 function mapAudit(row: AuditRow): AuditEntryDto {

@@ -36,10 +36,15 @@ const I18N_SCOPE = [
   "web/src/**/*.{ts,tsx}",
   "server/src/**/*.ts",
   "contracts/src/**/*.ts",
-  "scripts/*.{ts,mjs}",
+  "scripts/**/*.{ts,mjs}",
 ];
-// 字典本身、开发用的设计系统页不受约束。
-const I18N_EXEMPT = ["web/src/i18n/messages/**", "server/src/i18n/messages/**", "web/src/dev/**"];
+// 字典本身、开发用的设计系统页不受约束；Windows 安装器与启动器暂缓，不在双语范围内（技术设计 §一「不覆盖」）。
+const I18N_EXEMPT = [
+  "web/src/i18n/messages/**",
+  "server/src/i18n/messages/**",
+  "web/src/dev/**",
+  "scripts/dist-win/**",
+];
 
 export default tseslint.config(
   {

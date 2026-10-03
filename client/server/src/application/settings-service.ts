@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { isLocale } from "@suduo/client-contracts";
 import type { Locale, SettingsDto, UpdateSettingsRequest } from "@suduo/client-contracts";
+import { UiLocaleStore, uiLocalePathFor } from "../i18n/ui-locale-store.js";
 import { maxApprovalMode } from "./approval-mode-cap.js";
 import { ApiError } from "./api-error.js";
 import {
@@ -19,8 +19,6 @@ interface SettingsFile {
   httpsProxy: string;
   allProxy: string;
   noProxy: string;
-  /** 前端最近一次使用的界面语言；后台任务按它出文字。null = 还没收到过。 */
-  locale: Locale | null;
 }
 
 const DEFAULTS: SettingsFile = {
@@ -29,7 +27,6 @@ const DEFAULTS: SettingsFile = {
   gitAutoCheckpointDefault: true,
   defaultApprovalMode: "ask",
   ...EMPTY_PROXY_SETTINGS,
-  locale: null,
 };
 
 /**
@@ -39,6 +36,8 @@ const DEFAULTS: SettingsFile = {
  */
 export class SettingsService {
   private state: SettingsFile;
+  /** 界面语言单独存（见 UiLocaleStore），请求路径上的写入不碰 settings.json。 */
+  private readonly uiLocale: UiLocaleStore;
   private onProxySettingsChanged: (() => Promise<void>) | null = null;
 
   constructor(
@@ -46,6 +45,7 @@ export class SettingsService {
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {
     this.state = this.load();
+    this.uiLocale = new UiLocaleStore(uiLocalePathFor(filePath));
   }
 
   get(): SettingsDto {
@@ -59,7 +59,7 @@ export class SettingsService {
       ...(approvalModeCap === null ? {} : { maxApprovalMode: approvalModeCap }),
       approvalModeLocked: approvalModeCap !== null,
       ...this.proxySettings(),
-      locale: this.state.locale,
+      locale: this.uiLocale.locale(),
     };
   }
 
@@ -143,14 +143,12 @@ export class SettingsService {
 
   /** 前端最近一次使用的界面语言；还没收到过为 null。 */
   locale(): Locale | null {
-    return this.state.locale;
+    return this.uiLocale.locale();
   }
 
-  /** 记下前端当前的界面语言（由请求头带来）；没变化时不写文件。 */
+  /** 记下前端当前的界面语言（由请求头带来）；没变化时不写文件，写失败只记日志。 */
   rememberLocale(locale: Locale): void {
-    if (this.state.locale === locale) return;
-    this.state.locale = locale;
-    this.save();
+    this.uiLocale.rememberLocale(locale);
   }
 
   private globalSkillsEnvOverride(): boolean | null {
@@ -185,7 +183,6 @@ export class SettingsService {
         httpsProxy: readStoredProxy(parsed.httpsProxy),
         allProxy: readStoredProxy(parsed.allProxy),
         noProxy: readStoredNoProxy(parsed.noProxy),
-        locale: isLocale(parsed.locale) ? parsed.locale : DEFAULTS.locale,
       };
     } catch {
       return { ...DEFAULTS };

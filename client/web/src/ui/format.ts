@@ -23,6 +23,19 @@ function toDate(value: DateInput): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// Intl 格式器创建开销不小，消息流里每条消息都要用：按语言与选项缓存。
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormat(locale: Locale, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let formatter = formatters.get(key);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 function sameDay(left: Date, right: Date): boolean {
   return (
     left.getFullYear() === right.getFullYear() &&
@@ -45,7 +58,7 @@ export function formatClock(value: DateInput, locale: Locale = currentLocale()):
   const date = toDate(value);
   return date === null
     ? ""
-    : new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+    : dateFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
 }
 
 /** 月日：9月27日 / Sep 27。 */
@@ -53,7 +66,7 @@ export function formatMonthDay(value: DateInput, locale: Locale = currentLocale(
   const date = toDate(value);
   return date === null
     ? ""
-    : new Intl.DateTimeFormat(locale, { month: monthStyle(locale), day: "numeric" }).format(date);
+    : dateFormat(locale, { month: monthStyle(locale), day: "numeric" }).format(date);
 }
 
 /** 年月日：2025年9月27日 / Sep 27, 2025。 */
@@ -61,7 +74,7 @@ export function formatDate(value: DateInput, locale: Locale = currentLocale()): 
   const date = toDate(value);
   return date === null
     ? ""
-    : new Intl.DateTimeFormat(locale, { year: "numeric", month: monthStyle(locale), day: "numeric" }).format(date);
+    : dateFormat(locale, { year: "numeric", month: monthStyle(locale), day: "numeric" }).format(date);
 }
 
 /** 悬停时显示的完整时间：2025年9月27日 14:32:05 / Sep 27, 2025, 14:32:05。 */
@@ -69,7 +82,7 @@ export function formatDateTime(value: DateInput, locale: Locale = currentLocale(
   const date = toDate(value);
   return date === null
     ? ""
-    : new Intl.DateTimeFormat(locale, {
+    : dateFormat(locale, {
         year: "numeric",
         month: monthStyle(locale),
         day: "numeric",

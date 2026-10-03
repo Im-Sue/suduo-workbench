@@ -5,6 +5,8 @@ import { Client, Pool } from "pg";
 import type {
   ArtifactVersionDetailDto,
   ListArtifactVersionsResponse,
+  ListCommentsResponse,
+  ListRequirementActivityResponse,
   RequirementsEventDto,
 } from "@suduo/cloud-contracts";
 import { ArtifactVersionService } from "../src/application/artifact-version-service.js";
@@ -254,6 +256,48 @@ describe("产物版本 HTTP 路由", () => {
         action: "artifact_version.published",
       },
     ]);
+  });
+
+  it("系统代写的评论带出类型与参数；活动流按类型判断有没有说明，不比较正文", async () => {
+    const seeded = await seedRequirement();
+    const attachment = await createAttachment(seeded.requirementId, seeded.actorId, "prd.md");
+    const withoutNote = await publish(seeded.actorId, seeded.requirementId, {
+      operationKey: "http-system-comment-v1",
+      attachmentIds: [attachment.id],
+    });
+    // 用户手写的说明恰好和系统句式一样：它仍是用户的说明。
+    const sameAsSystem = await publish(seeded.actorId, seeded.requirementId, {
+      operationKey: "http-system-comment-v2",
+      attachmentIds: [attachment.id],
+      note: "发布了产物 v2，含 1 个文件。",
+    });
+    const v1 = withoutNote.json<ArtifactVersionDetailDto>().id;
+    const v2 = sameAsSystem.json<ArtifactVersionDetailDto>().id;
+
+    const comments = await server.inject({
+      method: "GET",
+      url: `/v2/requirements/${seeded.requirementId}/comments`,
+      headers: authorization(seeded.actorId),
+    });
+    const items = comments.json<ListCommentsResponse>().items;
+    expect(items.find((item) => item.artifactVersionId === v1)).toMatchObject({
+      body: "发布了产物 v1，含 1 个文件。",
+      system: { kind: "artifact_published", params: { versionNumber: 1, fileCount: 1 } },
+    });
+    expect(items.find((item) => item.artifactVersionId === v2)).not.toHaveProperty("system");
+
+    const activity = await server.inject({
+      method: "GET",
+      url: `/v2/requirements/${seeded.requirementId}/activity`,
+      headers: authorization(seeded.actorId),
+    });
+    const published = activity.json<ListRequirementActivityResponse>().items
+      .filter((item) => item.action === "artifact_version.published")
+      .map((item) => item.artifactVersion);
+    expect(published).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: v1, note: null }),
+      expect.objectContaining({ id: v2, note: "发布了产物 v2，含 1 个文件。" }),
+    ]));
   });
 });
 

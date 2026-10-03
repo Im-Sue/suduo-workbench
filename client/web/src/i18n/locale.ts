@@ -4,7 +4,6 @@ import {
   type Locale,
   type LocalePreference,
 } from "@suduo/client-contracts";
-import { useSyncExternalStore } from "react";
 
 /** 与 public/assets/theme-init.js 的首屏脚本共用同一个键，改名需两处同步。 */
 export const LOCALE_STORAGE_KEY = "suduo.locale";
@@ -30,7 +29,7 @@ let preference: LocalePreference = loadLocalePreference();
 let locale: Locale = resolveUiLocale(preference);
 const listeners = new Set<() => void>();
 
-/** 当前界面语言。React 之外的代码（请求头、格式化函数）用它；组件里用 useLocale()。 */
+/** 当前界面语言。React 之外的代码（请求头、格式化函数）用它；组件里用 provider.tsx 的 useLocale()。 */
 export function currentLocale(): Locale {
   return locale;
 }
@@ -42,23 +41,29 @@ export function currentLocalePreference(): LocalePreference {
 /** 写入偏好，把解析出的语言落到 <html lang>，并通知订阅者。 */
 export function applyLocalePreference(next: LocalePreference): void {
   writeStorage(LOCALE_STORAGE_KEY, next);
+  setPreference(next);
+}
+
+function setPreference(next: LocalePreference): void {
   preference = next;
   locale = resolveUiLocale(next);
   if (typeof document !== "undefined") document.documentElement.lang = locale;
   for (const listener of listeners) listener();
 }
 
-function subscribe(listener: () => void): () => void {
+/** 订阅语言变化（React 里用 provider.tsx 的 useLocale）。 */
+export function subscribeLocale(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-export function useLocale(): Locale {
-  return useSyncExternalStore(subscribe, currentLocale, currentLocale);
-}
-
-export function useLocalePreference(): LocalePreference {
-  return useSyncExternalStore(subscribe, currentLocalePreference, currentLocalePreference);
+// 别的标签页改了语言：跟着切，免得两个标签页语言不同、轮流改写本机服务记下的语言。
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== LOCALE_STORAGE_KEY) return;
+    const next = isLocalePreference(event.newValue) ? event.newValue : "system";
+    if (next !== preference) setPreference(next);
+  });
 }
 
 function readStorage(key: string): string | null {

@@ -34,7 +34,7 @@ import { StatusIcon } from "@/components/ui/status-icon";
 import { cn } from "@/lib/utils";
 import { DirectoryPicker } from "../requirements/components/DirectoryPicker.js";
 import { SessionStatusDot } from "../sessions/SessionStatusDot.js";
-import { formatClock } from "../sessions/stream/describe.js";
+import { formatElapsed } from "../sessions/stream/describe.js";
 import { flattenSessions, sessionListQuery } from "../sessions/session-list.js";
 import {
   groupByStatus,
@@ -546,7 +546,7 @@ function Elapsed({ since }: { since: number }) {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  return <span className="tabular-nums"> · 已用 {formatClock(now - since)}</span>;
+  return <span className="tabular-nums"> · 已用 {formatElapsed(now - since)}</span>;
 }
 
 function RecentList({ items, onOpen }: { items: MyRequirement[]; onOpen(item: MyRequirement): void }) {

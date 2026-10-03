@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * 中英双语迁移期的待迁移清单（工作区根目录的 eslint.i18n-pending.js）只减不增（技术设计 §五）：
- * 条数不超过上限；每个文件都还在、而且还有写死的中文——迁完了就该从清单删掉，否则 lint 会一直放过它。
+ * 条数等于上限；每个文件都还在、而且还有写死的中文——迁完了就该从清单删掉，否则 lint 会一直放过它。
  */
 const WORKSPACE = new URL("../../", import.meta.url);
 const { I18N_PENDING_FILES, I18N_PENDING_MAX } = (await import(
@@ -41,8 +41,9 @@ function hasCjkText(path: string): boolean {
 }
 
 describe("中英双语待迁移清单只减不增", () => {
-  it("条数不超过上限，且没有重复、按字母排序", () => {
-    expect(I18N_PENDING_FILES.length).toBeLessThanOrEqual(I18N_PENDING_MAX);
+  it("条数等于上限，且没有重复、按字母排序", () => {
+    // 删条目时必须同步调低上限，不留空位；想加文件就得改上限，在评审里一眼可见。
+    expect(I18N_PENDING_FILES.length).toBe(I18N_PENDING_MAX);
     expect(new Set(I18N_PENDING_FILES).size).toBe(I18N_PENDING_FILES.length);
     expect(I18N_PENDING_FILES).toEqual([...I18N_PENDING_FILES].sort());
   });

@@ -44,7 +44,13 @@ export function registerRequestLocale(
   server.decorateRequest("locale", FALLBACK_LOCALE);
   server.addHook("onRequest", async (request) => {
     const header = request.headers[headerName];
-    if (isLocale(header)) store.rememberLocale(header);
+    if (isLocale(header)) {
+      try {
+        store.rememberLocale(header);
+      } catch {
+        // 记不下来只影响后台任务的语言，不能让这个请求失败。
+      }
+    }
     request.locale = resolveRequestLocale({
       header,
       stored: store.locale(),

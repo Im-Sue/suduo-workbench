@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
 import type { Locale } from "@suduo/client-contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SettingsService } from "../src/application/settings-service.js";
 import { registerRequestLocale, resolveRequestLocale } from "../src/i18n/locale.js";
 import { messagesFor } from "../src/i18n/messages/index.js";
@@ -48,21 +48,41 @@ describe("请求语言的回退链", () => {
   });
 });
 
-describe("设置里的 locale", () => {
-  it("默认为 null，记下后落盘，重启后读回", () => {
+describe("记下的界面语言", () => {
+  it("默认为 null；记下后存进 settings.locale.json，重启后读回", () => {
     const file = settingsFile();
     const settings = new SettingsService(file, {});
     expect(settings.get().locale).toBeNull();
     settings.rememberLocale("en");
     expect(settings.get().locale).toBe("en");
-    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ locale: "en" });
+    expect(JSON.parse(readFileSync(file.replace(/\.json$/, ".locale.json"), "utf8"))).toEqual({ locale: "en" });
+    expect(existsSync(file)).toBe(false);
     expect(new SettingsService(file, {}).get().locale).toBe("en");
   });
 
-  it("文件里的坏值当作没记过", () => {
+  it("不碰 settings.json：手改坏的设置文件保持原样，不会被覆盖成默认值", () => {
     const file = settingsFile();
-    writeFileSync(file, JSON.stringify({ schemaVersion: 1, locale: "system" }));
+    const broken = '{ "httpsProxy": "http://proxy.internal:3128", }';
+    writeFileSync(file, broken);
+    const settings = new SettingsService(file, {});
+    settings.rememberLocale("zh-CN");
+    expect(readFileSync(file, "utf8")).toBe(broken);
+  });
+
+  it("文件里的坏值当作没记过；写不进去只记日志、不抛错", () => {
+    const file = settingsFile();
+    writeFileSync(file.replace(/\.json$/, ".locale.json"), JSON.stringify({ locale: "system" }));
     expect(new SettingsService(file, {}).get().locale).toBeNull();
+
+    // 数据目录的位置被一个普通文件占着：建不了目录，写不进去。
+    const blocker = settingsFile();
+    writeFileSync(blocker, "");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const settings = new SettingsService(join(blocker, "settings.json"), {});
+    expect(() => settings.rememberLocale("en")).not.toThrow();
+    expect(settings.locale()).toBe("en");
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 });
 

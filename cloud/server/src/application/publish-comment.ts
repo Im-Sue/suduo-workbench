@@ -1,4 +1,4 @@
-import type { ArtifactPublishedCommentParams } from "@suduo/cloud-contracts";
+import type { ArtifactPublishedCommentParams, CommentSystemContent } from "@suduo/cloud-contracts";
 
 /**
  * 发布时未填写说明，系统代写的评论：存类型 + 参数，各人前端按自己的语言渲染（中英双语技术设计 §4.3）；
@@ -6,7 +6,7 @@ import type { ArtifactPublishedCommentParams } from "@suduo/cloud-contracts";
  */
 export function systemPublishComment(params: ArtifactPublishedCommentParams): {
   body: string;
-  system: { kind: "artifact_published"; params: ArtifactPublishedCommentParams };
+  system: CommentSystemContent;
 } {
   return {
     body: `发布了产物 v${String(params.versionNumber)}，含 ${String(params.fileCount)} 个文件。`,

@@ -30,10 +30,11 @@ afterEach(async () => {
   container?.remove();
   root = null;
   container = null;
-  applyLocalePreference("system");
-  window.localStorage.clear();
+  // 先恢复浏览器语言再重置偏好：顺序反了，「跟随系统」会按上一个用例的语言解析。
   vi.unstubAllGlobals();
   Object.defineProperty(navigator, "language", { value: "zh-CN", configurable: true });
+  applyLocalePreference("system");
+  window.localStorage.clear();
 });
 
 describe("界面语言偏好", () => {
@@ -52,6 +53,15 @@ describe("界面语言偏好", () => {
     expect(currentLocale()).toBe("en");
     applyLocalePreference("system");
     expect(document.documentElement.lang).toBe("zh-CN");
+  });
+
+  it("别的标签页改了语言，这里跟着切", () => {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, "en");
+    window.dispatchEvent(new StorageEvent("storage", { key: LOCALE_STORAGE_KEY, newValue: "en" }));
+    expect(currentLocale()).toBe("en");
+    expect(document.documentElement.lang).toBe("en");
+    window.dispatchEvent(new StorageEvent("storage", { key: "other", newValue: "zh-CN" }));
+    expect(currentLocale()).toBe("en");
   });
 
   it("存储里的坏值当作跟随系统", () => {

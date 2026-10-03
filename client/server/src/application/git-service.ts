@@ -19,7 +19,9 @@ import { ApiError } from "./api-error.js";
 
 const execFileAsync = promisify(execFile);
 
-const TRAILER_PATTERN = new RegExp(`^${CHECKPOINT_TRAILER}:\\s*(turn-start|manual)\\s*$`, "m");
+const TRAILER_LINE = new RegExp(`^${CHECKPOINT_TRAILER}:\\s*(turn-start|manual)\\s*$`);
+/** git trailer 的样子：`Token: value`。 */
+const TRAILER_SHAPE = /^[A-Za-z0-9-]+:\s/;
 const FALLBACK_IDENTITY = [
   "-c",
   "user.name=SuDuo",
@@ -249,7 +251,9 @@ export class GitService {
       return null;
     }
     const text = messagesFor(locale).checkpoint;
-    const note = message?.trim() ? message.trim() : timeLabel();
+    // 说明压成一行：提交正文只留标记行那一段，识别时才不会和多段正文混淆。
+    const oneLine = message?.replace(/\s+/g, " ").trim();
+    const note = oneLine ? oneLine : timeLabel();
     const kind: CheckpointKind = auto ? "turn-start" : "manual";
     const subject = auto ? text.autoSubject : text.manualPrefix + note;
     await this.commit(root, subject, kind);
@@ -393,11 +397,28 @@ function timeLabel(): string {
 
 /** 先看标记行；没有标记行的旧提交按 0.7 及以前的中文标题识别。 */
 function checkpointKindOf(subject: string, body: string): CheckpointKind | null {
-  const marked = TRAILER_PATTERN.exec(body);
-  if (marked !== null) return marked[1] as CheckpointKind;
+  const marked = trailerKindOf(body);
+  if (marked !== null) return marked;
   if (subject.startsWith(LEGACY_CHECKPOINT_AUTO_SUBJECT)) return "turn-start";
   if (subject.startsWith(LEGACY_CHECKPOINT_MANUAL_PREFIX)) return "manual";
   return null;
+}
+
+/**
+ * SuDuo 写的检查点，正文只有一段 trailer（标记行，可能还有钩子加的 Signed-off-by 之类）。
+ * 只在整个正文就是这样一段、且恰好一个标记值时才认：GitHub「Squash and merge」会把各次提交的说明
+ * 连同标记行拼进多段正文，不能因此把合并提交当成检查点。
+ */
+function trailerKindOf(body: string): CheckpointKind | null {
+  const text = body.trim();
+  if (text === "" || /\n\s*\n/.test(text)) return null;
+  const lines = text.split("\n").map((line) => line.trim());
+  if (!lines.every((line) => TRAILER_SHAPE.test(line))) return null;
+  const kinds = new Set(lines.flatMap((line) => {
+    const matched = TRAILER_LINE.exec(line);
+    return matched === null ? [] : [matched[1] as CheckpointKind];
+  }));
+  return kinds.size === 1 ? [...kinds][0] ?? null : null;
 }
 
 /** 手动检查点的说明：去掉任一语言的标题前缀；对不上任何前缀时整条标题就是说明。 */
