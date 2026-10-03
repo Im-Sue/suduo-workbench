@@ -1,0 +1,27 @@
+{
+  "name": "@suduo/client-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test:types": "tsc --noEmit -p tsconfig.test.json",
+    "test": "pnpm run test:types && vitest run",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@suduo/cloud-contracts": "link:../../cloud/contracts"
+  }
+}

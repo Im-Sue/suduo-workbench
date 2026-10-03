@@ -1,0 +1,220 @@
+import type {
+  CodexModelOptionDto,
+  ModelProviderSettingsDto,
+  SessionDto,
+} from "@suduo/client-contracts";
+import { REASONING_EFFORTS } from "@suduo/client-contracts";
+import { ChevronDownIcon, CpuIcon, Settings2Icon } from "lucide-react";
+import { useState } from "react";
+import { api } from "../../api/client.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
+
+/**
+ * 会话级模型与推理强度（需求 §4.5：输入框底栏「模型与推理强度（本会话）」）。
+ * 只改这个会话，下个回合生效；「跟随默认」回到设置页里的全局默认。
+ * 推理强度只列所选模型声明支持的档位（model/list 的 supportedReasoningEfforts）。
+ */
+/** 推理强度的用户词表（需求 §5.1）：不显示档位原值。 */
+export const EFFORT_LABEL: Record<string, string> = {
+  none: "不推理",
+  minimal: "最快",
+  low: "快速",
+  medium: "均衡",
+  high: "深入",
+  xhigh: "最深入",
+  max: "极致",
+  ultra: "极致+",
+};
+
+/** gpt-5.6-sol → 5.6 Sol；空值显示「默认模型」。 */
+export function prettifyModel(id: string | null): string {
+  if (id === null || id === "") return "默认模型";
+  const pretty = id
+    .replace(/^(gpt|openai)[-_]/i, "")
+    .split(/[-_]/)
+    .filter((part) => part !== "")
+    .map((part) => (/^[a-z]/.test(part) ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(" ");
+  return pretty === "" ? id : pretty;
+}
+
+const FOLLOW = "__follow_default__";
+
+/**
+ * 先不提供的档位：ultra（「极致+」）会让模型自动把任务分派给子代理，而子代理线程的审批与事件
+ * SuDuo 还挂不回父会话（审批会没人处理、回合卡住）。实测支持之前不在选项里给出；已保存的值照样保留。
+ */
+const WITHHELD_EFFORTS = new Set(["ultra"]);
+
+export function offeredEfforts(declared: readonly string[]): string[] {
+  return declared.filter((effort) => !WITHHELD_EFFORTS.has(effort));
+}
+
+export function effortLabel(value: string | null): string {
+  if (value === null) return "默认";
+  return EFFORT_LABEL[value] ?? value;
+}
+
+export function SessionModelSwitcher({
+  session,
+  provider,
+  onChanged,
+  onOpenSettings,
+  onError,
+}: {
+  session: SessionDto;
+  /** 全局默认（设置页里的 Codex 配置），用于说明「跟随默认」是什么。 */
+  provider: ModelProviderSettingsDto | null;
+  onChanged(next: SessionDto): void;
+  onOpenSettings(): void;
+  onError(cause: unknown): void;
+}) {
+  const [items, setItems] = useState<CodexModelOptionDto[] | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = (open: boolean) => {
+    if (!open || items !== null) return;
+    void api
+      .codexModels()
+      .then((result) =>
+        setItems(
+          result.items ??
+            result.models.map((id) => ({
+              id,
+              model: id,
+              displayName: prettifyModel(id),
+              isDefault: false,
+              supportedReasoningEfforts: [],
+              defaultReasoningEffort: null,
+            })),
+        ),
+      )
+      .catch(() => setItems([]));
+  };
+
+  const apply = async (patch: { model?: string | null; reasoningEffort?: string | null }) => {
+    setSaving(true);
+    try {
+      onChanged(await api.updateSession(session.id, patch));
+    } catch (cause) {
+      onError(cause);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 旧服务端的会话没有这两个字段：按「跟随默认」处理。
+  const sessionModel = session.model ?? null;
+  const sessionEffort = session.reasoningEffort ?? null;
+  const defaultModel = provider?.model ?? items?.find((item) => item.isDefault)?.model ?? null;
+  const effectiveModel = sessionModel ?? defaultModel;
+  const selected = items?.find((item) => item.model === effectiveModel || item.id === effectiveModel);
+  const efforts = offeredEfforts(
+    selected !== undefined && selected.supportedReasoningEfforts.length > 0
+      ? selected.supportedReasoningEfforts
+      : REASONING_EFFORTS.filter((value) => value !== "none" && value !== "max"),
+  );
+  const modelOptions = items ?? [];
+
+  return (
+    <DropdownMenu modal={false} onOpenChange={load}>
+      <DropdownMenuTrigger
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 data-[state=open]:bg-muted"
+        data-testid="model-chip"
+        disabled={saving}
+        title="模型与推理强度（本会话，下个回合生效）"
+      >
+        {saving ? <Spinner size="sm" /> : <CpuIcon className="size-3.5" aria-hidden="true" />}
+        {sessionModel === null ? (defaultModel === null ? "默认模型" : prettifyModel(defaultModel)) : prettifyModel(sessionModel)}
+        {sessionEffort !== null ? <span className="text-subtle-foreground">{effortLabel(sessionEffort)}</span> : null}
+        <ChevronDownIcon className="size-3 opacity-70" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="w-64" data-testid="model-menu">
+        <DropdownMenuLabel>本会话 · 下个回合生效</DropdownMenuLabel>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <span>模型</span>
+            <span className="ml-auto pl-6 text-caption text-muted-foreground">
+              {sessionModel === null ? "跟随默认" : prettifyModel(sessionModel)}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="max-h-80 w-64 overflow-y-auto">
+            <DropdownMenuRadioGroup
+              value={sessionModel ?? FOLLOW}
+              onValueChange={(value) => {
+                const model = value === FOLLOW ? null : value;
+                // 换了模型而当前指定的推理强度它不支持：一起改回跟随默认，免得下一轮带着不支持的档位失败。
+                const target = items?.find((item) => item.model === (model ?? defaultModel));
+                const unsupported =
+                  sessionEffort !== null &&
+                  target !== undefined &&
+                  target.supportedReasoningEfforts.length > 0 &&
+                  !target.supportedReasoningEfforts.includes(sessionEffort);
+                void apply(unsupported ? { model, reasoningEffort: null } : { model });
+              }}
+            >
+              <DropdownMenuRadioItem value={FOLLOW} disabled={saving}>
+                跟随默认
+                <span className="ml-auto pl-4 text-caption text-muted-foreground">{defaultModel === null ? "" : prettifyModel(defaultModel)}</span>
+              </DropdownMenuRadioItem>
+              {items === null ? <div className="px-2 py-1.5 text-caption text-subtle-foreground">正在获取可用模型…</div> : null}
+              {items !== null && modelOptions.length === 0 ? (
+                <div className="px-2 py-1.5 text-caption text-subtle-foreground">没能取到模型列表，可以到设置里配置模型服务</div>
+              ) : null}
+              {modelOptions.map((item) => (
+                <DropdownMenuRadioItem key={item.id} value={item.model} disabled={saving}>
+                  <span className="truncate">{item.displayName || prettifyModel(item.model)}</span>
+                  {item.isDefault ? <span className="ml-auto pl-3 text-caption text-muted-foreground">默认</span> : null}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <span>推理强度</span>
+            <span className="ml-auto pl-6 text-caption text-muted-foreground">
+              {sessionEffort === null ? "跟随默认" : effortLabel(sessionEffort)}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-52">
+            <DropdownMenuRadioGroup
+              value={sessionEffort ?? FOLLOW}
+              onValueChange={(value) => void apply({ reasoningEffort: value === FOLLOW ? null : value })}
+            >
+              <DropdownMenuRadioItem value={FOLLOW} disabled={saving}>
+                跟随默认
+                <span className="ml-auto pl-4 text-caption text-muted-foreground">
+                  {provider?.reasoningEffort ? effortLabel(provider.reasoningEffort) : ""}
+                </span>
+              </DropdownMenuRadioItem>
+              {efforts.map((value) => (
+                <DropdownMenuRadioItem key={value} value={value} disabled={saving}>
+                  {effortLabel(value)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onOpenSettings}>
+          <Settings2Icon />
+          全局默认与模型服务设置…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

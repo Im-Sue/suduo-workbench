@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Commercial use registration / 商用登记
+    url: https://github.com/Im-Sue/suduo-workbench/blob/main/COMMERCIAL.md
+    about: Companies register by email within 30 days of first use. / 企业在开始使用后 30 天内通过邮件登记。
+  - name: Security issue / 安全问题
+    url: https://github.com/Im-Sue/suduo-workbench/blob/main/CONTRIBUTING.md#before-you-start
+    about: Please report security issues by email, not in a public issue. / 安全问题请发邮件，不要公开提议题。

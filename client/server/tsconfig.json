@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../contracts"
+    },
+    {
+      "path": "../../cloud/contracts"
+    }
+  ]
+}

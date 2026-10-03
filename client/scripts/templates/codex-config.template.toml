@@ -1,0 +1,18 @@
+# SuDuo Codex 配置模板（写法按 OpenAI 官方的 Codex 配置文档：自定义模型服务）
+# 由试点运维按公司统一接入点填写；请勿把真实密钥提交进仓库。
+# 只写 Codex 认识的键：新版 Codex 遇到不认识的键，每次启动都会提醒（设置页「模型服务」会一直显示提醒）。
+
+model_provider = "company-gateway"
+
+[model_providers.company-gateway]
+name = "Company Gateway"
+base_url = "https://replace-with-company-gateway.example/v1"
+wire_api = "responses"
+
+# 密钥三选一，都不写在本文件：
+# 1. 取 Key 命令（官方推荐的凭证助手写法）：命令把 Key 打到标准输出，Codex 按需调用。
+#    [model_providers.company-gateway.auth]
+#    command = "/usr/local/bin/fetch-codex-token"
+#    args = ["--audience", "codex"]
+# 2. 环境变量：在上面的提供方表里加 env_key = "COMPANY_GATEWAY_API_KEY"。
+# 3. codex login --with-api-key（写进 CODEX_HOME/auth.json）。

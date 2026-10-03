@@ -1,0 +1,31 @@
+{
+  "name": "@suduo/cloud-server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "db:migrate": "node dist/migrate.js",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@fastify/busboy": "3.2.1",
+    "@fastify/jwt": "10.2.1",
+    "@suduo/cloud-contracts": "workspace:*",
+    "fastify": "5.11.3",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.21.0"
+  }
+}

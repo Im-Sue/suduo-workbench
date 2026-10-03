@@ -1,0 +1,431 @@
+{
+  "scope": "web/src/**/*.tsx",
+  "attribute": "data-testid",
+  "total": 280,
+  "files": {
+    "web/src/app/pages/BootScreens.tsx": [
+      "page-failure"
+    ],
+    "web/src/app/SessionRuntime.tsx": [
+      "drawer-loading",
+      "legacy-session-back",
+      "legacy-session-banner",
+      "room-task-readonly",
+      "session-inspector",
+      "session-runtime",
+      "stop-current-turn",
+      "stop-mismatch-notice"
+    ],
+    "web/src/app/shell/ConnectionBanner.tsx": [
+      "connection-banner"
+    ],
+    "web/src/app/shell/ProjectSettingsDialog.tsx": [
+      "project-settings-dialog"
+    ],
+    "web/src/app/shell/ProjectSwitcher.tsx": [
+      "project-switcher"
+    ],
+    "web/src/app/shell/ShortcutsDialog.tsx": [
+      "shortcuts-dialog"
+    ],
+    "web/src/app/shell/Sidebar.tsx": [
+      "app-nav",
+      "my-work-attention",
+      "rooms-unread",
+      "sessions-attention"
+    ],
+    "web/src/components/ApprovalModeSwitcher.tsx": [
+      "approval-mode"
+    ],
+    "web/src/components/ChangesPanel.tsx": [
+      "change-item",
+      "change-list",
+      "side-file-tree",
+      "side-tab-changes",
+      "side-tab-env",
+      "side-tab-files",
+      "side-tab-requirement"
+    ],
+    "web/src/components/Composer.tsx": [
+      "attach-image",
+      "attachment-chip",
+      "context-ring",
+      "interrupt-turn",
+      "message-input",
+      "palette-item",
+      "queue-item",
+      "queue-item-delete",
+      "queue-item-edit",
+      "queue-item-take",
+      "queue-message",
+      "queue-panel",
+      "queue-paused",
+      "queue-resume",
+      "run-status-approval-link",
+      "run-status-elapsed",
+      "run-status-line",
+      "run-status-step",
+      "send-message",
+      "skill-chip"
+    ],
+    "web/src/components/Drawer.tsx": [
+      "diff-view",
+      "file-preview",
+      "patch-view"
+    ],
+    "web/src/components/EnvPanel.tsx": [
+      "checkpoint-running-note",
+      "checkpoint-timeline",
+      "restore-checkpoint",
+      "save-checkpoint"
+    ],
+    "web/src/components/MonacoImpl.tsx": [
+      "monaco-surface"
+    ],
+    "web/src/components/OpenMenu.tsx": [
+      "open-menu"
+    ],
+    "web/src/components/RequirementMaterials.tsx": [
+      "requirement-material-attachment",
+      "requirement-material-error",
+      "requirement-material-open",
+      "requirement-material-status",
+      "requirement-material-title",
+      "requirement-material-version",
+      "requirement-materials"
+    ],
+    "web/src/components/TablePreview.tsx": [
+      "sheet-table"
+    ],
+    "web/src/features/my-work/MyWorkPage.tsx": [
+      "session-activity",
+      "setup-checklist",
+      "workbench-actions",
+      "workbench-activity",
+      "workbench-refresh",
+      "workbench-requirements",
+      "workbench-sessions"
+    ],
+    "web/src/features/overview/OverviewPage.tsx": [
+      "overview-realtime-state",
+      "overview-stale-requirements",
+      "overview-status-funnel",
+      "overview-transition-chart"
+    ],
+    "web/src/features/overview/OverviewTimeline.tsx": [
+      "overview-timeline"
+    ],
+    "web/src/features/requirements/components/BoardView.tsx": [
+      "requirements-board"
+    ],
+    "web/src/features/requirements/components/CreateRequirementDialog.tsx": [
+      "create-requirement-dialog",
+      "form-dialog-discard"
+    ],
+    "web/src/features/requirements/components/ListView.tsx": [
+      "requirement-row",
+      "requirements-list"
+    ],
+    "web/src/features/requirements/components/RequirementCard.tsx": [
+      "requirement-card"
+    ],
+    "web/src/features/requirements/components/RequirementPeek.tsx": [
+      "requirement-peek"
+    ],
+    "web/src/features/requirements/components/StartSessionDialog.tsx": [
+      "start-session-dialog"
+    ],
+    "web/src/features/requirements/RequirementDetailPage.tsx": [
+      "description-editor",
+      "requirement-detail",
+      "start-session"
+    ],
+    "web/src/features/requirements/RequirementsPage.tsx": [
+      "create-requirement",
+      "requirements-page",
+      "requirements-view-switch"
+    ],
+    "web/src/features/requirements/sections/ActivityFeed.tsx": [
+      "activity-comment"
+    ],
+    "web/src/features/requirements/sections/Materials.tsx": [
+      "artifact-version",
+      "materials-panel",
+      "upload-row"
+    ],
+    "web/src/features/requirements/sections/PublishArtifactDialog.tsx": [
+      "publish-artifact-dialog"
+    ],
+    "web/src/features/rooms/components/AgentRunDetail.tsx": [
+      "run-detail"
+    ],
+    "web/src/features/rooms/components/MentionPicker.tsx": [
+      "mention-option",
+      "mention-picker"
+    ],
+    "web/src/features/rooms/components/MessageItem.tsx": [
+      "room-message",
+      "room-message-pending",
+      "thread-summary"
+    ],
+    "web/src/features/rooms/components/MessageStream.tsx": [
+      "room-load-older",
+      "room-message-stream",
+      "room-new-messages"
+    ],
+    "web/src/features/rooms/components/RoomBody.tsx": [
+      "room-empty",
+      "room-window-divider",
+      "room-window-side"
+    ],
+    "web/src/features/rooms/components/RoomComposer.tsx": [
+      "room-attach",
+      "room-composer",
+      "room-composer-archived",
+      "room-composer-input",
+      "room-draft-file",
+      "room-send",
+      "room-send-error"
+    ],
+    "web/src/features/rooms/components/RoomFile.tsx": [
+      "room-file-card",
+      "room-files",
+      "room-video"
+    ],
+    "web/src/features/rooms/components/RoomHeader.tsx": [
+      "room-header",
+      "room-members-button"
+    ],
+    "web/src/features/rooms/components/RoomList.tsx": [
+      "room-list",
+      "room-list-item"
+    ],
+    "web/src/features/rooms/components/RunStatusLine.tsx": [
+      "run-card",
+      "run-retry",
+      "run-status",
+      "run-stop",
+      "run-view-detail"
+    ],
+    "web/src/features/rooms/components/ShareAgentPanel.tsx": [
+      "incoming-share-request",
+      "my-agent-active-run",
+      "my-agent-no-mapping",
+      "my-agent-section",
+      "my-agent-share-state",
+      "my-agent-switch",
+      "my-agent-unavailable",
+      "requestable-agent-row",
+      "share-agent-button",
+      "share-agent-panel",
+      "share-duration",
+      "shared-agent-row"
+    ],
+    "web/src/features/rooms/components/ThreadPanel.tsx": [
+      "thread-load-older",
+      "thread-messages",
+      "thread-panel"
+    ],
+    "web/src/features/rooms/RoomsPage.tsx": [
+      "room-view",
+      "rooms-page"
+    ],
+    "web/src/features/rooms/sections/RequirementRoomButton.tsx": [
+      "requirement-peek-new-room",
+      "requirement-peek-room-button",
+      "requirement-peek-room-item"
+    ],
+    "web/src/features/rooms/sections/RequirementRooms.tsx": [
+      "create-requirement-room",
+      "new-requirement-room",
+      "requirement-room-link",
+      "requirement-rooms"
+    ],
+    "web/src/features/rooms/window/RoomLauncher.tsx": [
+      "room-launcher",
+      "room-launcher-item",
+      "room-launcher-stack"
+    ],
+    "web/src/features/rooms/window/RoomWindow.tsx": [
+      "room-window",
+      "room-window-close",
+      "room-window-header",
+      "room-window-minimize",
+      "room-window-open-page",
+      "room-window-resize",
+      "room-window-switcher",
+      "room-window-switcher-item"
+    ],
+    "web/src/features/sessions/ApprovalDock.tsx": [
+      "approval-accept",
+      "approval-accept-session",
+      "approval-cancel",
+      "approval-card",
+      "approval-decline",
+      "approval-more",
+      "tool-confirm-comment",
+      "tool-confirm-duplicate",
+      "tool-confirm-file",
+      "tool-confirm-files",
+      "tool-confirm-note",
+      "tool-confirm-title"
+    ],
+    "web/src/features/sessions/SessionHeader.tsx": [
+      "rename-session",
+      "session-status",
+      "session-title",
+      "session-title-input",
+      "side-requirement-entry"
+    ],
+    "web/src/features/sessions/SessionList.tsx": [
+      "new-session",
+      "session-room-task",
+      "session-row",
+      "session-search",
+      "sessions-empty",
+      "sessions-rail"
+    ],
+    "web/src/features/sessions/SessionModelSwitcher.tsx": [
+      "model-chip",
+      "model-menu"
+    ],
+    "web/src/features/sessions/SessionsPage.tsx": [
+      "sessions-workbench"
+    ],
+    "web/src/features/sessions/stream/ConversationStream.tsx": [
+      "conversation-stream",
+      "stream-notice"
+    ],
+    "web/src/features/sessions/stream/TurnView.tsx": [
+      "assistant-text",
+      "assistant-turn-slot",
+      "change-card",
+      "plan-checklist",
+      "tool-card",
+      "turn",
+      "turn-card",
+      "turn-error",
+      "turn-summary"
+    ],
+    "web/src/features/sessions/stream/UserBubble.tsx": [
+      "attachment-chip",
+      "message-attribution",
+      "message-interrupted-note",
+      "user-message"
+    ],
+    "web/src/features/settings/components/frame.tsx": [
+      "settings-dirty-bar",
+      "settings-save"
+    ],
+    "web/src/features/settings/components/kit.tsx": [
+      "settings-lock-reason",
+      "settings-saved-flash"
+    ],
+    "web/src/features/settings/components/TestConnection.tsx": [
+      "settings-test-result"
+    ],
+    "web/src/features/settings/sections/AboutSection.tsx": [
+      "settings-app-version",
+      "settings-license",
+      "settings-open-config-file"
+    ],
+    "web/src/features/settings/sections/AccountSection.tsx": [
+      "settings-current-user",
+      "settings-logout"
+    ],
+    "web/src/features/settings/sections/AppearanceSection.tsx": [
+      "settings-density",
+      "settings-theme"
+    ],
+    "web/src/features/settings/sections/DiagnosticsSection.tsx": [
+      "doctor-check",
+      "doctor-remediation",
+      "health-item",
+      "settings-copy-doctor",
+      "settings-doctor-checks",
+      "settings-health-list",
+      "settings-run-doctor"
+    ],
+    "web/src/features/settings/sections/ExecutionSection.tsx": [
+      "settings-full-allowed",
+      "settings-git-checkpoint"
+    ],
+    "web/src/features/settings/sections/McpSection.tsx": [
+      "mcp-add",
+      "mcp-args",
+      "mcp-command",
+      "mcp-create-form",
+      "mcp-create-submit",
+      "mcp-degraded-banner",
+      "mcp-diagnose",
+      "mcp-enabled",
+      "mcp-env-vars",
+      "mcp-failure-detail",
+      "mcp-failure-reason",
+      "mcp-login",
+      "mcp-name",
+      "mcp-panel",
+      "mcp-server-list",
+      "mcp-server-row",
+      "mcp-startup-state",
+      "mcp-url"
+    ],
+    "web/src/features/settings/sections/ModelSection.tsx": [
+      "model-api-key-external",
+      "model-api-key-input",
+      "model-api-key-masked",
+      "model-api-key-replace-note",
+      "model-base-url",
+      "model-config-warning",
+      "model-context",
+      "model-degraded-banner",
+      "model-effort",
+      "model-first-time",
+      "model-name",
+      "model-origin-badge",
+      "model-restore",
+      "model-save-failure",
+      "model-save-result"
+    ],
+    "web/src/features/settings/sections/NotificationsSection.tsx": [
+      "settings-notify-blocked",
+      "settings-system-notify"
+    ],
+    "web/src/features/settings/sections/ServiceSection.tsx": [
+      "settings-base-url"
+    ],
+    "web/src/features/settings/sections/SkillsSection.tsx": [
+      "settings-global-skills",
+      "skill-install-path",
+      "skill-row",
+      "skill-scope",
+      "skills-degraded-banner",
+      "skills-list",
+      "skills-project-context",
+      "skills-project-context-empty",
+      "skills-project-context-required"
+    ],
+    "web/src/features/settings/sections/WorkspaceSection.tsx": [
+      "mapping-availability",
+      "settings-mapping-dialog",
+      "settings-mapping-list",
+      "settings-mapping-row"
+    ],
+    "web/src/features/settings/SettingsPage.tsx": [
+      "settings-page",
+      "settings-unsaved-dialog"
+    ],
+    "web/src/feedback/components/index.tsx": [
+      "confirm-dialog",
+      "empty-state",
+      "form-dialog",
+      "form-dialog-discard",
+      "inline-error",
+      "page-failure",
+      "region-error"
+    ],
+    "web/src/ui/message.tsx": [
+      "global-message"
+    ]
+  }
+}

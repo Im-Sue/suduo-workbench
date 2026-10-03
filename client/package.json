@@ -1,0 +1,60 @@
+{
+  "name": "suduo-client",
+  "version": "0.6.5",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=24.10.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ],
+    "overrides": {
+      "fast-uri@>=3.0.0 <3.1.5": "3.1.5",
+      "fast-uri@>=4.0.0 <4.1.2": "4.1.2",
+      "find-my-way@<=9.6.0": "9.7.0"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run build:contracts && pnpm --recursive --if-present run build",
+    "build:contracts": "tsc -b contracts",
+    "typecheck": "pnpm run build:contracts && pnpm --recursive --if-present run typecheck",
+    "lint": "eslint . --max-warnings=0",
+    "test": "pnpm run build:contracts && pnpm --recursive --if-present run test",
+    "clean": "pnpm --recursive --if-present run clean",
+    "protocol:generate": "node codex-protocol/scripts/schema.mjs generate",
+    "protocol:baseline": "node codex-protocol/scripts/schema.mjs baseline",
+    "protocol:diff": "node codex-protocol/scripts/schema.mjs diff",
+    "testid:baseline": "tsx server/test/gate-c/testid-baseline.ts --write",
+    "testid:check": "tsx server/test/gate-c/testid-baseline.ts --check",
+    "gate:a": "pnpm --filter @suduo/client-server run gate:a",
+    "gate:b": "pnpm --filter @suduo/client-server run gate:b",
+    "gate:c": "pnpm build && pnpm testid:check && tsx server/test/gate-c.real.ts",
+    "doctor": "tsx scripts/doctor.ts",
+    "dist:win:fetch": "node scripts/dist-win/fetch-assets.mjs",
+    "dist:win": "node scripts/dist-win/build.mjs",
+    "dist:win:offline": "node scripts/dist-win/build.mjs --offline",
+    "dist:win:clean": "node scripts/dist-win/clean.mjs",
+    "install:m1": "node scripts/install.mjs",
+    "uninstall:m1": "node scripts/uninstall.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@eslint/js": "10.0.1",
+    "@openai/codex": "0.159.2",
+    "@types/node": "26.1.1",
+    "esbuild": "^0.28.1",
+    "eslint": "10.6.0",
+    "fastify": "5.11.3",
+    "globals": "17.7.0",
+    "playwright": "1.61.1",
+    "tsx": "4.23.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.63.0",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "fixture": "isolated CODEX_HOME; no login, no model turn, no network MCP",
+  "codexCliVersion": "codex-cli 0.147.0",
+  "observed": {
+    "skills": {
+      "nativeType": "skills/changed",
+      "trigger": "register CODEX_HOME/skills with skills/list, then create SKILL.md"
+    },
+    "mcp": {
+      "nativeType": null,
+      "trigger": "configure a local stdio MCP responder with codex mcp add, then call config/mcpServer/reload",
+      "result": "mcpServerStatus/list confirmed the local responder, but no status notification was emitted by the isolated 0.147.0 app-server fixture; not whitelisted"
+    }
+  },
+  "inheritedVerified": [
+    "configWarning",
+    "remoteControl/status/changed"
+  ],
+  "oauthExtensionPoint": {
+    "nativeType": "mcpServer/oauthLogin/completed",
+    "whitelisted": false,
+    "reason": "requires a repeatable OAuth identity-provider fixture before inclusion"
+  }
+}

@@ -1,0 +1,33 @@
+node_modules/
+dist/
+coverage/
+.cache/
+.build/
+dist-installer/
+.env
+*.tsbuildinfo
+client/codex-protocol/generated/
+artifacts/
+.gstack/
+
+# CCB 运行时状态：agent session、绑定锁、provider 缓存（约 493MB），非项目真相源
+# 必须用前导斜杠只锁定仓库根，否则会连带排除被跟踪的 docs/.ccb/ 机器协调层
+/.ccb/
+
+# SuDuo 运行时状态：会话创建时对工作目录做的文件基线快照，用于后续算 diff。
+# 单个会话约 38MB，多跑几个会话即达数百 MB，且可由运行时重建，非项目真相源。
+# 同样用前导斜杠只锁定仓库根。
+/.suduo/
+
+# Windows 备用数据流残留
+*:Zone.Identifier
+
+# AI 协作过程中的草稿笔记（协商记录、拆分草稿的中间稿）。
+# 正式产物落 docs/，这里只是过程件。
+/scratchpad/
+
+# mise 本机专属配置（数据目录等机器相关路径），版本锁定在各端的 mise.toml
+mise.local.toml
+
+# Claude Code 子任务的隔离工作区（临时 git worktree）
+/.claude/worktrees/

@@ -1,0 +1,166 @@
+/* ============================================================
+   SuDuo 全局样式入口
+   - 设计令牌：design/tokens.css（v5，亮 / 暗 / 密度）
+   - 页面样式一律用 Tailwind 工具类 + 令牌；这里只剩基础 reset、Markdown 渲染与减少动效。
+   - 「存量变量桥」把旧变量名映射到新令牌，新代码不得再引用桥里的名字。
+   ============================================================ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@import "./design/tokens.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ---------- 存量变量桥（只读兼容层，禁止新增引用） ---------- */
+:root {
+  --panel: var(--card);
+  --surface-raised: var(--card);
+  --workspace-surface: var(--background);
+  --border-soft: var(--border);
+  --foreground-muted: var(--muted-foreground);
+  --foreground-faint: var(--subtle-foreground);
+  --primary-fill: var(--primary);
+  --primary-subtle: var(--primary-soft);
+  --primary-border: color-mix(in srgb, var(--primary) 45%, transparent);
+  --warn: var(--warning);
+  --warn-bg: var(--warning-soft);
+  --warn-border: color-mix(in srgb, var(--warning) 40%, transparent);
+  --ok: var(--success);
+  --ok-bg: var(--success-soft);
+  --danger-bg: var(--danger-soft);
+  --shadow-sm: var(--shadow-1);
+  --shadow-lg: var(--shadow-2);
+  --mono: var(--font-mono-stack);
+  --control-h: 28px;
+  --status-h: 19px;
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius: 8px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-code: 12px;
+  --text-base: 13px;
+  --text-lg: 14px;
+  --text-heading: 18px;
+  --bg: var(--background);
+  --surface: var(--card);
+  --surface-2: var(--muted);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --text: var(--foreground);
+  --text-2: var(--muted-foreground);
+  --text-3: var(--subtle-foreground);
+}
+
+/* 存量 Tailwind 工具类名（bg-panel / text-foreground-muted 等）继续可用 */
+@theme inline {
+  --color-panel: var(--panel);
+  --color-surface-raised: var(--surface-raised);
+  --color-border-soft: var(--border-soft);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-faint: var(--foreground-faint);
+}
+
+/* ---------- 基础 ---------- */
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: var(--text-base)/1.55 var(--font-sans-stack);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+/*
+  控件 reset 必须待在 `base` 层里。
+
+  这些是无 layer 的裸规则时，CSS 级联规定「无 layer 声明胜过任何 layer 内声明，
+  与选择器优先级无关」——于是 `button { border:0; background:none; padding:0 }`
+  会把 `@layer utilities` 里的 `.border` / `.bg-*` / `.px-*` 全部吃掉，
+  **基座 `<Button>` 的 variant 从引入起就从未真正生效**（实测 border-width 0、背景透明）。
+  放进 `base` 后 utilities 正常胜出，而未套工具类的裸 button 仍吃到同样的 reset。
+*/
+@layer base {
+  /*
+    进出场动效默认取令牌：tw-animate 的 animate-in / animate-out 读 --tw-duration 与 --tw-ease，
+    这里只给真正带进出场动画的元素（写了 animate-in / animate-out，含 data-[state=…]: 变体）一个统一的默认值，
+    不碰同样带 data-state 的触发按钮等（它们的 hover 过渡保持 Tailwind 默认）；
+    组件上写了 duration-* / ease-* 的仍以组件为准（utilities 层在 base 之后）。减少动效时令牌为 0。
+  */
+  [class*="animate-in"]:is([data-state="open"], [data-state="delayed-open"]), .animate-in { --tw-duration: var(--dur-base); --tw-ease: var(--ease-enter); }
+  [class*="animate-out"][data-state="closed"], .animate-out { --tw-duration: var(--dur-fast); --tw-ease: var(--ease-exit); }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  input, textarea, select { font: inherit; color: inherit; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Markdown ---------- */
+.md { min-width: 0; color: var(--foreground); overflow-wrap: anywhere; }
+.md > *:first-child { margin-top: 0; }
+.md > *:last-child { margin-bottom: 0; }
+.md p { margin: 0 0 9px; }
+.md ul, .md ol { margin: 0 0 9px; padding-left: 20px; }
+.md li { margin: 2px 0; }
+.md li::marker { color: var(--foreground-faint); }
+.md h1, .md h2, .md h3, .md h4 { margin: 13px 0 7px; line-height: 1.4; color: var(--foreground); }
+.md h1 { font-size: var(--text-heading); }
+.md h2 { font-size: var(--text-lg); }
+.md h3, .md h4 { font-size: var(--text-base); }
+.md blockquote {
+  margin: 0 0 9px; padding: 6px 10px; border-left: 3px solid var(--primary-border);
+  color: var(--foreground-muted); background: var(--panel); border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+.md hr { border: 0; border-top: 1px solid var(--border-soft); margin: 11px 0; }
+.md code {
+  font-family: var(--mono); font-size: var(--text-code); background: var(--panel);
+  border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 4px;
+}
+.md a { color: var(--primary-text); text-underline-offset: 2px; }
+.md-table-wrap { max-width: 100%; overflow-x: auto; margin: 4px 0 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-control); }
+.md table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: var(--text-base); }
+.md th, .md td { border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); padding: 6px 8px; text-align: left; white-space: nowrap; }
+.md th:last-child, .md td:last-child { border-right: 0; }
+.md tr:last-child td { border-bottom: 0; }
+.md th { background: var(--panel); font-weight: 600; color: var(--foreground-muted); }
+.md-code { margin: 4px 0 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-card); overflow: hidden; background: var(--workspace-surface); }
+.md-code-bar {
+  display: flex; align-items: center; justify-content: space-between; padding: 4px 8px;
+  background: var(--panel); border-bottom: 1px solid var(--border-soft);
+  font-size: var(--text-xs); color: var(--foreground-faint);
+}
+.md-code-bar button { display: inline-flex; align-items: center; gap: 4px; color: var(--foreground-muted); font-size: var(--text-xs); padding: 2px 5px; border-radius: 4px; }
+.md-code-bar button:hover { background: var(--accent); color: var(--foreground); }
+.md-code pre {
+  margin: 0; padding: 9px 10px; max-width: 100%; overflow-x: auto; white-space: pre;
+  font-family: var(--mono); font-size: var(--text-code); line-height: 1.6; color: var(--foreground);
+  background: var(--workspace-surface);
+}
+.md-code pre code { display: block; padding: 0; border: 0; background: none; font: inherit; }
+
+/* ---------- 代码高亮（rehype-highlight 运行时生成 hljs-* 类名，源码里搜不到，勿删；颜色来自语义令牌） ---------- */
+.hljs-comment, .hljs-quote { color: var(--code-cm); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-doctag { color: var(--code-kw); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-symbol, .hljs-bullet { color: var(--code-str); }
+.hljs-number, .hljs-deletion, .hljs-meta, .hljs-link { color: var(--code-num); }
+.hljs-title, .hljs-name, .hljs-selector-id, .hljs-selector-class { color: var(--code-fn); }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-type, .hljs-built_in { color: var(--code-attr); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
+/* ---------- 动效 / 响应式 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* 会话回答里可点击的文件路径：行内代码保留等宽灰底，加主色与下划线。 */
+.md .md-path code { color: var(--primary-text); text-decoration: inherit; }
+.md .md-path:hover code { border-color: var(--primary-text); }

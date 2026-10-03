@@ -1,0 +1,9 @@
+# 云端开发环境版本（mise：https://mise.jdx.dev）。进入 cloud/ 即自动切换，不影响全局版本。
+# - node 与 server/Dockerfile 的基础镜像版本一致
+# - pnpm 与 package.json 的 packageManager 一致
+# - PostgreSQL 与 server/compose.yaml 的镜像大版本一致，用于本机测试与联调
+# 本机专属路径（数据目录、临时目录）写在不提交的 mise.local.toml，见 scripts/dev-postgres.sh 说明。
+[tools]
+node = "24.10.0"
+pnpm = "10.25.0"
+postgres = "17.4"

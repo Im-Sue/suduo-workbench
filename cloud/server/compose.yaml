@@ -1,0 +1,40 @@
+name: suduo-requirements-service
+
+services:
+  postgres:
+    image: postgres:17.4-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?请先从 .env.example 创建 .env 并设置 POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?请先从 .env.example 创建 .env 并设置 POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请先从 .env.example 创建 .env 并设置 POSTGRES_PASSWORD}
+    volumes:
+      - requirements_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  requirements-service:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REQUIREMENTS_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "${REQUIREMENTS_PORT:-4100}:${REQUIREMENTS_PORT:-4100}"
+    volumes:
+      - requirements_attachments:/var/lib/suduo/attachments
+      - requirements_room_files:/var/lib/suduo/room-files
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  requirements_postgres_data:
+  requirements_attachments:
+  requirements_room_files:

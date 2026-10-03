@@ -1,0 +1,19 @@
+# Docker build context is the cloud/ workspace. Keep it limited to the two
+# packages needed to build this service and its contract package.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!contracts/
+!contracts/package.json
+!contracts/src/
+!contracts/src/**
+!contracts/tsconfig.json
+!server/
+!server/package.json
+!server/src/
+!server/src/**
+!server/migrations/
+!server/migrations/**
+!server/tsconfig.json

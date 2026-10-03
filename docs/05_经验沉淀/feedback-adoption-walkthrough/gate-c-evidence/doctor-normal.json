@@ -1,0 +1,369 @@
+{
+  "status": "PASS",
+  "codexHome": "/home/sue/.cache/zjwork-gatec-home",
+  "platform": "linux",
+  "mode": "source",
+  "configDir": "/home/sue/dev/su-workbench/.ccb/agents/slot4_claude/provider-state/claude/home/.config/zjwork",
+  "dataDir": "/home/sue/dev/su-workbench/.ccb/agents/slot4_claude/provider-state/claude/home/.local/share/zjwork",
+  "port": 42229,
+  "checkedAt": "2026-08-28T07:18:16.791Z",
+  "checks": [
+    {
+      "name": "Node.js",
+      "status": "pass",
+      "message": "24.10.0（已锁定）"
+    },
+    {
+      "name": "pnpm",
+      "status": "pass",
+      "message": "10.25.0（已锁定）"
+    },
+    {
+      "name": "Codex 官方诊断",
+      "status": "warn",
+      "message": "overallStatus=fail",
+      "officialStatus": "fail"
+    },
+    {
+      "name": "Codex CLI",
+      "status": "pass",
+      "message": "codex-cli 0.143.0（workspace 锁定版本）"
+    },
+    {
+      "name": "Codex · app-server · app_server.status",
+      "status": "pass",
+      "message": "background server is not running",
+      "id": "app_server.status",
+      "category": "app-server",
+      "details": {
+        "control socket": "/home/sue/.cache/zjwork-gatec-home/app-server-control/app-server-control.sock",
+        "daemon state dir": "/home/sue/.cache/zjwork-gatec-home/app-server-daemon",
+        "mode": "ephemeral",
+        "pid file": "/home/sue/.cache/zjwork-gatec-home/app-server-daemon/app-server.pid (missing)",
+        "settings": "/home/sue/.cache/zjwork-gatec-home/app-server-daemon/settings.json (missing)",
+        "status": "not running",
+        "update-loop pid file": "/home/sue/.cache/zjwork-gatec-home/app-server-daemon/app-server-updater.pid (missing)"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · auth · auth.credentials",
+      "status": "pass",
+      "message": "auth is provided by the active model provider",
+      "id": "auth.credentials",
+      "category": "auth",
+      "details": {
+        "auth env vars present": "OPENAI_API_KEY",
+        "auth file": "/home/sue/.cache/zjwork-gatec-home/auth.json",
+        "auth storage mode": "File",
+        "model provider requires OpenAI auth": "false",
+        "provider auth env var": "OPENAI_API_KEY (present)"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · config · config.load",
+      "status": "pass",
+      "message": "config loaded",
+      "id": "config.load",
+      "category": "config",
+      "details": {
+        "CODEX_HOME": "/home/sue/.cache/zjwork-gatec-home",
+        "config.toml": "/home/sue/.cache/zjwork-gatec-home/config.toml",
+        "config.toml parse": "ok",
+        "cwd": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001",
+        "enabled feature flags": "shell_tool, unified_exec, shell_snapshot, terminal_resize_reflow, sqlite, hooks, enable_request_compression, multi_agent, apps, tool_search_always_defer_mcp_tools, tool_suggest, plugins, in_app_browser, browser_use, browser_use_full_cdp_access, browser_use_external, computer_use, remote_plugin, plugin_sharing, image_generation, resize_all_images, skill_mcp_dependency_install, mentions_v2, steer, guardian_approval, goals, collaboration_modes, tool_call_mcp_elicitation, personality, fast_mode, tui_app_server, remote_compaction_v2, workspace_dependencies",
+        "feature flag overrides": "none",
+        "feature flags enabled": "33",
+        "log dir": "/home/sue/.cache/zjwork-gatec-home/log",
+        "mcp servers": "0",
+        "model": "gpt-5.6-terra",
+        "model provider": "myapi",
+        "sqlite home": "/home/sue/.cache/zjwork-gatec-home"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · git · git.environment",
+      "status": "pass",
+      "message": "git version 2.43.0",
+      "id": "git.environment",
+      "category": "git",
+      "details": {
+        ".git entry": "file -> /home/sue/dev/su-workbench/.git/worktrees/SU-CCB-req-zjwork-v2-feedback-interaction-language-001",
+        "PATH git #1": "/usr/bin/git",
+        "PATH git #2": "/bin/git",
+        "PATH git entries": "2",
+        "git branch": "ccb/req-zjwork-v2-feedback-interaction-language-001",
+        "git build options": "git version 2.43.0; cpu: x86_64; no commit associated with this build; sizeof-long: 8; sizeof-size_t: 8; shell-path: /bin/sh",
+        "git exec path": "/usr/lib/git-core",
+        "git version": "git version 2.43.0",
+        "repo detected": "true",
+        "repo root": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001",
+        "selected git": "/usr/bin/git"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · install · installation",
+      "status": "warn",
+      "message": "npm install -g @openai/codex would update a different install",
+      "id": "installation",
+      "category": "install",
+      "details": {
+        "PATH codex #1": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.bin/codex",
+        "PATH codex #2": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.bin/codex",
+        "PATH codex #3": "/home/sue/.local/npm-global/bin/codex",
+        "PATH codex entries": "3",
+        "current executable": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/bin/codex",
+        "install context": "npm (package /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl, bin /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/bin, resources /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex-resources, path /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex-path)",
+        "managed by bun": "false",
+        "managed by npm": "true",
+        "managed package root": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0/node_modules/@openai/codex",
+        "npm package root": "/home/sue/.nvm/versions/node/v24.10.0/lib/node_modules/@openai/codex",
+        "running package root": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0/node_modules/@openai/codex"
+      },
+      "remediation": "Fix PATH or npm prefix so the running package root (/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0/node_modules/@openai/codex) matches the npm global package root (/home/sue/.nvm/versions/node/v24.10.0/lib/node_modules/@openai/codex).",
+      "officialStatus": "fail"
+    },
+    {
+      "name": "Codex · mcp · mcp.config",
+      "status": "pass",
+      "message": "no MCP servers configured",
+      "id": "mcp.config",
+      "category": "mcp",
+      "details": {},
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · network · network.env",
+      "status": "pass",
+      "message": "network-related environment looks readable",
+      "id": "network.env",
+      "category": "network",
+      "details": {
+        "proxy env vars present": "HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY, http_proxy, https_proxy, all_proxy, no_proxy"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · reachability · network.provider_reachability",
+      "status": "pass",
+      "message": "active provider endpoints are reachable over HTTP",
+      "id": "network.provider_reachability",
+      "category": "reachability",
+      "details": {
+        "myapi API base URL": "https://relay.example.com/v1 reachable (HTTP 404)",
+        "myapi API route probe": "https://relay.example.com/v1/<redacted> route exists (HTTP 401)",
+        "reachability mode": "provider auth"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · websocket · network.websocket_reachability",
+      "status": "pass",
+      "message": "Responses WebSocket is not enabled for the active provider",
+      "id": "network.websocket_reachability",
+      "category": "websocket",
+      "details": {
+        "model provider": "myapi",
+        "provider name": "My API",
+        "proxy env vars present": "HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY, http_proxy, https_proxy, all_proxy, no_proxy",
+        "supports websockets": "false",
+        "wire API": "responses"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · runtime · runtime.provenance",
+      "status": "pass",
+      "message": "running npm on linux-x86_64",
+      "id": "runtime.provenance",
+      "category": "runtime",
+      "details": {
+        "commit": "unknown",
+        "current executable": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/bin/codex",
+        "install method": "npm (package /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl, bin /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/bin, resources /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex-resources, path /home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex-path)",
+        "platform": "linux-x86_64",
+        "version": "0.143.0"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · search · runtime.search",
+      "status": "pass",
+      "message": "search is OK (bundled)",
+      "id": "runtime.search",
+      "category": "search",
+      "details": {
+        "search command": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex-path/rg",
+        "search command readiness": "file exists",
+        "search provider": "bundled"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · sandbox · sandbox.helpers",
+      "status": "pass",
+      "message": "sandbox configuration is readable",
+      "id": "sandbox.helpers",
+      "category": "sandbox",
+      "details": {
+        "approval policy": "OnRequest",
+        "codex-linux-sandbox helper": "/home/sue/.cache/zjwork-gatec-home/tmp/arg0/codex-arg0tKVbB5/codex-linux-sandbox",
+        "execve wrapper helper": "/home/sue/.cache/zjwork-gatec-home/tmp/arg0/codex-arg0tKVbB5/codex-execve-wrapper",
+        "filesystem sandbox": "restricted",
+        "network sandbox": "restricted"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · state · state.paths",
+      "status": "pass",
+      "message": "state paths and databases are inspectable",
+      "id": "state.paths",
+      "category": "state",
+      "details": {
+        "CODEX_HOME": "/home/sue/.cache/zjwork-gatec-home (dir)",
+        "active rollout files": "0 files, 0 total bytes, 0 average bytes",
+        "archived rollout files": "0 files, 0 total bytes, 0 average bytes",
+        "goals DB": "/home/sue/.cache/zjwork-gatec-home/goals_1.sqlite (missing)",
+        "goals DB integrity": "skipped (missing)",
+        "log DB": "/home/sue/.cache/zjwork-gatec-home/logs_2.sqlite (missing)",
+        "log DB integrity": "skipped (missing)",
+        "log dir": "/home/sue/.cache/zjwork-gatec-home/log (missing)",
+        "memories DB": "/home/sue/.cache/zjwork-gatec-home/memories_1.sqlite (missing)",
+        "memories DB integrity": "skipped (missing)",
+        "sqlite home": "/home/sue/.cache/zjwork-gatec-home (dir)",
+        "state DB": "/home/sue/.cache/zjwork-gatec-home/state_5.sqlite (missing)",
+        "state DB integrity": "skipped (missing)"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · threads · state.rollout_db_parity",
+      "status": "pass",
+      "message": "no rollout/state DB inventory to compare",
+      "id": "state.rollout_db_parity",
+      "category": "threads",
+      "details": {
+        "default model provider": "myapi",
+        "rollout DB active files": "0",
+        "rollout DB archived files": "0",
+        "rollout DB malformed file names": "0",
+        "rollout DB rows": "skipped (state DB missing)",
+        "rollout DB scan cap reached": "false",
+        "rollout DB scan errors": "0"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · system · system.environment",
+      "status": "pass",
+      "message": "OS language en-US",
+      "id": "system.environment",
+      "category": "system",
+      "details": {
+        "EDITOR": "not set",
+        "LANG": "en_US.UTF-8",
+        "VISUAL": "not set",
+        "os": "Ubuntu 24.4.0 (noble) [64-bit]",
+        "os language": "en-US",
+        "os type": "Ubuntu",
+        "os version": "24.4.0"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · terminal · terminal.env",
+      "status": "pass",
+      "message": "terminal metadata was detected",
+      "id": "terminal.env",
+      "category": "terminal",
+      "details": {
+        "DISPLAY": "present",
+        "TERM": "xterm-256color",
+        "WAYLAND_DISPLAY": "present",
+        "WSL_DISTRO_NAME": "present",
+        "WSL_INTEROP": "present",
+        "color output": "disabled (stdout is not a terminal)",
+        "effective locale": "en_US.UTF-8",
+        "multiplexer": "tmux 3.4",
+        "stderr is terminal": "false",
+        "stdin is terminal": "false",
+        "stdout is terminal": "false",
+        "terminal": "unknown",
+        "terminal size": "80x24",
+        "tmux allow-passthrough": "on",
+        "tmux client termname": "xterm-256color",
+        "tmux extended-keys": "off",
+        "tmux focus-events": "on",
+        "tmux set-clipboard": "on",
+        "tmux xterm-keys": "on"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · title · terminal.title",
+      "status": "pass",
+      "message": "terminal title default",
+      "id": "terminal.title",
+      "category": "title",
+      "details": {
+        "terminal title activity": "true",
+        "terminal title items": "activity, project-name",
+        "terminal title project source": "git repo root",
+        "terminal title project value": "SU-CCB-req-zjwork-v2-...",
+        "terminal title source": "default"
+      },
+      "remediation": null,
+      "officialStatus": "ok"
+    },
+    {
+      "name": "Codex · updates · updates.status",
+      "status": "warn",
+      "message": "update would target a different npm install",
+      "id": "updates.status",
+      "category": "updates",
+      "details": {
+        "check for update on startup": "false",
+        "latest version": "0.150.1",
+        "latest version status": "newer version is available",
+        "npm package root": "/home/sue/.nvm/versions/node/v24.10.0/lib/node_modules/@openai/codex",
+        "running package root": "/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0/node_modules/@openai/codex",
+        "update action": "npm install -g @openai/codex",
+        "version cache": [
+          "/home/sue/.cache/zjwork-gatec-home/version.json",
+          "missing"
+        ]
+      },
+      "remediation": "Fix PATH or npm prefix so the running package root (/home/sue/dev/SU-CCB-req-zjwork-v2-feedback-interaction-language-001/node_modules/.pnpm/@openai+codex@0.143.0/node_modules/@openai/codex) matches the npm global package root (/home/sue/.nvm/versions/node/v24.10.0/lib/node_modules/@openai/codex).",
+      "officialStatus": "fail"
+    },
+    {
+      "name": "better-sqlite3",
+      "status": "pass",
+      "message": "原生 addon 可加载，临时库 migration/WAL 写读正常"
+    },
+    {
+      "name": "监听端口",
+      "status": "pass",
+      "message": "127.0.0.1:42229 可用"
+    }
+  ]
+}

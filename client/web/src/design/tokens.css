@@ -1,0 +1,292 @@
+/* ============================================================
+   SuDuo 设计令牌 v5 —— UI/UX 产品化重设计
+   规格：docs/03_开发计划/suduo-v2-UIUX产品化重设计-技术设计.md §三
+
+   - 语义层命名与 shadcn 对齐：组件只引用本文件的语义令牌，不写色值。
+   - 主题：根元素 data-theme="light|dark"，由 ui/theme.ts 解析「跟随系统」后写入；
+     index.html 的首屏脚本先写一次，避免闪烁。
+   - 密度：根元素 data-density="comfortable|compact"。
+   - 局部主题：data-theme-scope="light|dark" 让一块区域按另一套取值渲染（设置页的主题预览缩略图）。
+   - 亮暗两套取值一一对应；新增令牌必须同时给出两套值，并过 AA 对比度校核。
+   ============================================================ */
+
+:root,
+:root[data-theme="light"],
+[data-theme-scope="light"] {
+  color-scheme: light;
+
+  /* 表面 */
+  --background: #f5f6f8;
+  --card: #ffffff;
+  --card-foreground: #15171c;
+  --popover: #ffffff;
+  --popover-foreground: #15171c;
+  --popover-hover: #f0f1f4;
+  --muted: #f0f1f4;
+  --muted-strong: #e6e8ed;
+  --secondary: var(--muted);
+  --secondary-foreground: #15171c;
+  --accent: var(--muted);
+  --accent-foreground: #15171c;
+
+  /* 边框 */
+  --border: #e2e4e9;
+  --border-strong: #cbcfd7;
+  --input: #cbcfd7;
+  --ring: #7a90ee;
+
+  /* 文字 */
+  --foreground: #15171c;
+  --muted-foreground: #4f5562;
+  --subtle-foreground: #626874;
+  --disabled-foreground: #a2a7b1;
+
+  /* 品牌强调 */
+  --primary: #3451d1;
+  --primary-hover: #2a43b5;
+  --primary-soft: #eceffc;
+  --primary-text: #2a40a6;
+  --primary-foreground: #ffffff;
+
+  /* 语义 */
+  --success: #1a7743;
+  --success-soft: #e6f4ec;
+  --warning: #955500;
+  --warning-soft: #fbf0dd;
+  --danger: #b83232;
+  --danger-soft: #fbe9e9;
+  --destructive: #b83232;
+  --destructive-foreground: #ffffff;
+
+  /* 需求状态（形状另由 StatusIcon 编码） */
+  --status-draft: #8a909b;
+  --status-refine: #7b4fd6;
+  --status-todo: #4f5562;
+  --status-dev: #c27a0a;
+  --status-test: #0f8a8a;
+  --status-done: #1a7743;
+  --status-hold: #8c7560;
+
+  /* 代码与 diff */
+  --code-bg: #f6f7f9;
+  --diff-add-bg: #e4f4e9;
+  --diff-add-fg: #1d6b3e;
+  --diff-del-bg: #fbe7e7;
+  --diff-del-fg: #a42f2f;
+  --code-kw: #6d48a8;
+  --code-str: #176b43;
+  --code-num: #8a5800;
+  --code-fn: #24679a;
+  --code-cm: #6a707c;
+  --code-attr: #0b6c73;
+
+  /* 层级 */
+  --shadow-1: 0 1px 2px rgb(20 23 28 / 0.06), 0 0 0 1px rgb(20 23 28 / 0.04);
+  --shadow-2: 0 8px 24px rgb(20 23 28 / 0.1), 0 0 0 1px rgb(20 23 28 / 0.06);
+  --shadow-3: 0 24px 48px rgb(20 23 28 / 0.16), 0 0 0 1px rgb(20 23 28 / 0.06);
+  --scrim: rgb(20 23 28 / 0.32);
+}
+
+:root[data-theme="dark"],
+[data-theme-scope="dark"] {
+  color-scheme: dark;
+
+  --background: #0d0f13;
+  --card: #14171c;
+  --card-foreground: #e7e9ed;
+  --popover: #1a1e24;
+  --popover-foreground: #e7e9ed;
+  --popover-hover: #262b34;
+  --muted: #1a1e24;
+  --muted-strong: #232830;
+  --secondary-foreground: #e7e9ed;
+  --accent-foreground: #e7e9ed;
+
+  --border: #242931;
+  --border-strong: #343a45;
+  --input: #343a45;
+  --ring: #7c93f5;
+
+  --foreground: #e7e9ed;
+  --muted-foreground: #a9b0bc;
+  --subtle-foreground: #8a919e;
+  --disabled-foreground: #5a606b;
+
+  --primary: #4c66e6;
+  --primary-hover: #435ddb;
+  --primary-soft: rgb(106 131 244 / 0.16);
+  --primary-text: #9db0ff;
+  --primary-foreground: #ffffff;
+
+  --success: #48c27f;
+  --success-soft: rgb(72 194 127 / 0.14);
+  --warning: #e6a23c;
+  --warning-soft: rgb(230 162 60 / 0.14);
+  --danger: #f07171;
+  --danger-soft: rgb(240 113 113 / 0.14);
+  --destructive: #c93c3c;
+  --destructive-foreground: #ffffff;
+
+  --status-draft: #8a919e;
+  --status-refine: #a98bf5;
+  --status-todo: #c3c8d1;
+  --status-dev: #e6a23c;
+  --status-test: #3cc6c6;
+  --status-done: #48c27f;
+  --status-hold: #b39c86;
+
+  --code-bg: #0f1216;
+  --diff-add-bg: rgb(72 194 127 / 0.12);
+  --diff-add-fg: #7edba5;
+  --diff-del-bg: rgb(240 113 113 / 0.12);
+  --diff-del-fg: #f59c9c;
+  --code-kw: #b49fe3;
+  --code-str: #78c79d;
+  --code-num: #e8b968;
+  --code-fn: #86bae8;
+  --code-cm: #8a919e;
+  --code-attr: #77cfc0;
+
+  --shadow-1: 0 0 0 1px rgb(255 255 255 / 0.03);
+  --shadow-2: 0 12px 32px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-3: 0 24px 64px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.08);
+  --scrim: rgb(0 0 0 / 0.55);
+}
+
+/* ---------- 与主题无关的尺度 ---------- */
+:root {
+  --font-sans-stack: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans SC", system-ui, sans-serif;
+  --font-mono-stack: "JetBrains Mono", "SF Mono", Consolas, "Microsoft YaHei UI", monospace;
+
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 240ms;
+  --ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* 密度（默认舒适） */
+  --ctl-h: 32px;
+  --ctl-h-sm: 28px;
+  --ctl-h-lg: 36px;
+  --row-h: 36px;
+  --pad-x: 12px;
+}
+
+:root[data-density="compact"] {
+  --ctl-h: 28px;
+  --ctl-h-sm: 24px;
+  --ctl-h-lg: 32px;
+  --row-h: 32px;
+  --pad-x: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}
+
+/* ---------- Tailwind 映射：utilities 直接引用语义变量 ---------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover-hover: var(--popover-hover);
+  --color-muted: var(--muted);
+  --color-muted-strong: var(--muted-strong);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-disabled-foreground: var(--disabled-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-text: var(--primary-text);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-status-draft: var(--status-draft);
+  --color-status-refine: var(--status-refine);
+  --color-status-todo: var(--status-todo);
+  --color-status-dev: var(--status-dev);
+  --color-status-test: var(--status-test);
+  --color-status-done: var(--status-done);
+  --color-status-hold: var(--status-hold);
+  --color-code-bg: var(--code-bg);
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-add-fg: var(--diff-add-fg);
+  --color-diff-del-bg: var(--diff-del-bg);
+  --color-diff-del-fg: var(--diff-del-fg);
+  --color-scrim: var(--scrim);
+
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-raised: var(--shadow-1);
+  --shadow-overlay: var(--shadow-2);
+  --shadow-dialog: var(--shadow-3);
+
+  --text-caption: 12px;
+  --text-caption--line-height: 18px;
+  --text-small: 13px;
+  --text-small--line-height: 20px;
+  --text-body: 14px;
+  --text-body--line-height: 22px;
+  --text-section: 16px;
+  --text-section--line-height: 24px;
+  --text-page: 20px;
+  --text-page--line-height: 28px;
+  --text-display: 24px;
+  --text-display--line-height: 32px;
+
+  --animate-spin-fast: spin 0.7s linear infinite;
+  --animate-shimmer: suduo-shimmer 1.4s ease-in-out infinite;
+  --animate-breathe: suduo-breathe 1.6s ease-in-out infinite;
+  --animate-flash: suduo-flash 2s ease-out;
+  --animate-progress: suduo-progress 1.2s ease-in-out infinite;
+}
+
+@keyframes suduo-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes suduo-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* 不写终点帧：从强调底色渐回元素自身的背景（卡片、行各不相同）。 */
+@keyframes suduo-flash {
+  0%, 45% { background-color: var(--primary-soft); }
+}
+
+/* 顶部细进度条：请求进行中来回滑动。 */
+@keyframes suduo-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

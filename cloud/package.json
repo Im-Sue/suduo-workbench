@@ -1,0 +1,38 @@
+{
+  "name": "suduo-cloud",
+  "version": "0.6.5",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=24.10.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "overrides": {
+      "fast-uri@>=3.0.0 <3.1.5": "3.1.5",
+      "fast-uri@>=4.0.0 <4.1.2": "4.1.2",
+      "find-my-way@<=9.6.0": "9.7.0"
+    }
+  },
+  "scripts": {
+    "build": "pnpm --recursive --if-present run build",
+    "typecheck": "tsc -b contracts && pnpm --recursive --if-present run typecheck",
+    "lint": "eslint . --max-warnings=0",
+    "test": "tsc -b contracts && pnpm --recursive --if-present run test",
+    "clean": "pnpm --recursive --if-present run clean"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.1",
+    "eslint": "10.6.0",
+    "globals": "17.7.0",
+    "tsx": "4.23.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.63.0",
+    "vitest": "4.1.10"
+  }
+}

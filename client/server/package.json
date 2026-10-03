@@ -1,0 +1,33 @@
+{
+  "name": "@suduo/client-server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "gate:a": "tsx test/gate-a.real.ts",
+    "gate:b": "pnpm run build && tsx test/gate-b.real.ts",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@suduo/client-contracts": "workspace:*",
+    "@suduo/cloud-contracts": "link:../../cloud/contracts",
+    "better-sqlite3": "12.11.1",
+    "fastify": "5.11.3",
+    "fflate": "0.8.2",
+    "yaml": "2.8.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13"
+  }
+}

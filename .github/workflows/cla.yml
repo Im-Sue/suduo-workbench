@@ -1,0 +1,35 @@
+name: CLA
+
+# Checks that the pull request author ticked the CLA box in the description.
+# Runs on pull_request_target so it also works for forks; it never checks out or runs code from the pull request,
+# and it calls no API, so the token gets no permissions.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CLA agreement
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+            const exempt = new Set([context.repo.owner, "dependabot[bot]", "renovate[bot]", "github-actions[bot]"]);
+            if (exempt.has(author)) {
+              core.info(`${author} does not need to sign the CLA.`);
+              return;
+            }
+            const agreed = /^[ \t]*[-*][ \t]*\[[xX]\][ \t]*I have read and agree to the CLA\b/m.test(pr.body ?? "");
+            if (!agreed) {
+              core.setFailed(
+                "Please read CLA.md and tick \"I have read and agree to the CLA\" in the pull request description. " +
+                "请阅读 CLA.md，并在拉取请求描述里勾选「I have read and agree to the CLA」。",
+              );
+              return;
+            }
+            core.info(`${author} agreed to the CLA in this pull request.`);

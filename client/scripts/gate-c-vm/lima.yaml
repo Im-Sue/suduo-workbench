@@ -1,0 +1,49 @@
+# gate-c 的 Linux 主机（本机虚拟机，Ubuntu 24.04 + systemd）。由 scripts/gate-c-vm.sh 创建：
+# 镜像（先下载到 LIMA_HOME 并校验 sha256）与仓库挂载点按本机路径用 --set 填入，这里只放与机器无关的部分。
+minimumLimaVersion: 2.0.0
+
+# macOS 13+ 用 Apple 虚拟化框架，不需要 QEMU。
+vmType: vz
+cpus: 4
+memory: 8GiB
+disk: 40GiB
+
+images: []
+# 仓库以只读方式挂进来，sync 时再拷到虚拟机自己的磁盘上装依赖（node_modules 与构建产物不能和 macOS 共用）。
+mounts: []
+
+# gate-c 不用容器。
+containerd:
+  system: false
+  user: false
+
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    export DEBIAN_FRONTEND=noninteractive
+    # Lima 每次开机都跑 provision：装过就跳过，免得每次启动都联网。
+    packages="build-essential python3 rsync git curl ca-certificates xz-utils unzip bubblewrap apparmor-profiles apparmor-utils"
+    if ! dpkg -s $packages >/dev/null 2>&1; then
+      apt-get update
+      apt-get install -y --no-install-recommends $packages
+    fi
+    # 按 OpenAI 的 Linux 沙箱前置条件配成普通用户机器的样子（https://developers.openai.com/codex/concepts/sandboxing）：
+    # 装系统 bubblewrap；Ubuntu 24.04 默认用 AppArmor 限制非特权用户命名空间，再加载官方的 bwrap 放行配置。
+    # 不放开 kernel.apparmor_restrict_unprivileged_userns——SuDuo 自检的「Codex 沙箱」一项要在默认限制下验证通过。
+    rm -f /etc/sysctl.d/60-suduo-gate-c.conf
+    # 旧虚拟机开机时 systemd-sysctl 已按删掉前的文件放开过，这里恢复成 Ubuntu 的默认值。
+    sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 >/dev/null
+    if [ ! -f /etc/apparmor.d/bwrap-userns-restrict ]; then
+      install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+    fi
+    apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+- mode: user
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    # 用户级 systemd 在没有登录会话时也常驻（gate-c 用 systemctl --user 装 SuDuo 服务）。
+    sudo loginctl enable-linger "$USER"
+    # 与宿主机同一套版本管理：node / pnpm 版本读仓库的 client/mise.toml。
+    command -v mise >/dev/null || [ -x "$HOME/.local/bin/mise" ] || curl -fsSL https://mise.run | sh

@@ -1,0 +1,7 @@
+# 客户端开发环境版本（mise：https://mise.jdx.dev）。进入 client/ 即自动切换，不影响全局版本。
+# - node 与 Windows 安装器内置版本（scripts/dist-win/assets.mjs）、doctor 检查保持一致
+# - pnpm 与 package.json 的 packageManager 一致
+# 本机专属路径（数据目录、临时目录、gate-c 虚拟机）写在不提交的 mise.local.toml。
+[tools]
+node = "24.10.0"
+pnpm = "10.25.0"

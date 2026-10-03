@@ -1,0 +1,368 @@
+[
+  {
+    "type": "message.submitted",
+    "source": "suduo:api",
+    "payload": {
+      "content": [
+        {
+          "type": "text",
+          "text": "把测试跑一遍"
+        }
+      ],
+      "clientTurnId": "<clientTurnId:A>"
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": null
+  },
+  {
+    "type": "turn.started",
+    "source": "runtime:codex-local",
+    "payload": {
+      "threadId": "thread-1",
+      "turn": {
+        "id": "turn-real-1",
+        "items": [],
+        "itemsView": "notLoaded",
+        "status": "inProgress",
+        "error": null,
+        "startedAt": 1,
+        "completedAt": null,
+        "durationMs": null
+      },
+      "extensions": {
+        "codex": {
+          "nativeType": "turn/started",
+          "params": {
+            "threadId": "thread-1",
+            "turn": {
+              "id": "turn-real-1",
+              "items": [],
+              "itemsView": "notLoaded",
+              "status": "inProgress",
+              "error": null,
+              "startedAt": 1,
+              "completedAt": null,
+              "durationMs": null
+            }
+          }
+        }
+      }
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1"
+    }
+  },
+  {
+    "type": "item.started",
+    "source": "runtime:codex-local",
+    "payload": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1",
+      "startedAtMs": 1,
+      "item": {
+        "type": "userMessage",
+        "id": "item-a",
+        "clientId": "<clientTurnId:A>",
+        "content": [
+          {
+            "type": "text",
+            "text": "把测试跑一遍",
+            "text_elements": []
+          }
+        ]
+      },
+      "extensions": {
+        "codex": {
+          "nativeType": "item/started",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-real-1",
+            "startedAtMs": 1,
+            "item": {
+              "type": "userMessage",
+              "id": "item-a",
+              "clientId": "<clientTurnId:A>",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "把测试跑一遍",
+                  "text_elements": []
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1"
+    }
+  },
+  {
+    "type": "item.completed",
+    "source": "runtime:codex-local",
+    "payload": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1",
+      "item": {
+        "type": "userMessage",
+        "id": "item-a",
+        "clientId": "<clientTurnId:A>",
+        "content": [
+          {
+            "type": "text",
+            "text": "把测试跑一遍",
+            "text_elements": []
+          }
+        ]
+      },
+      "extensions": {
+        "codex": {
+          "nativeType": "item/completed",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-real-1",
+            "item": {
+              "type": "userMessage",
+              "id": "item-a",
+              "clientId": "<clientTurnId:A>",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "把测试跑一遍",
+                  "text_elements": []
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1"
+    }
+  },
+  {
+    "type": "message.submitted",
+    "source": "suduo:api",
+    "payload": {
+      "content": [
+        {
+          "type": "text",
+          "text": "顺便看下覆盖率"
+        }
+      ],
+      "clientTurnId": "<clientTurnId:B>"
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": null
+  },
+  {
+    "type": "item.started",
+    "source": "runtime:codex-local",
+    "payload": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1",
+      "startedAtMs": 2,
+      "item": {
+        "type": "userMessage",
+        "id": "item-b",
+        "clientId": "<clientTurnId:B>",
+        "content": [
+          {
+            "type": "text",
+            "text": "顺便看下覆盖率",
+            "text_elements": []
+          }
+        ]
+      },
+      "extensions": {
+        "codex": {
+          "nativeType": "item/started",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-real-1",
+            "startedAtMs": 2,
+            "item": {
+              "type": "userMessage",
+              "id": "item-b",
+              "clientId": "<clientTurnId:B>",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "顺便看下覆盖率",
+                  "text_elements": []
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1"
+    }
+  },
+  {
+    "type": "item.completed",
+    "source": "runtime:codex-local",
+    "payload": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1",
+      "item": {
+        "type": "userMessage",
+        "id": "item-b",
+        "clientId": "<clientTurnId:B>",
+        "content": [
+          {
+            "type": "text",
+            "text": "顺便看下覆盖率",
+            "text_elements": []
+          }
+        ]
+      },
+      "extensions": {
+        "codex": {
+          "nativeType": "item/completed",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-real-1",
+            "item": {
+              "type": "userMessage",
+              "id": "item-b",
+              "clientId": "<clientTurnId:B>",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "顺便看下覆盖率",
+                  "text_elements": []
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1"
+    }
+  },
+  {
+    "type": "item.completed",
+    "source": "runtime:codex-local",
+    "payload": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1",
+      "item": {
+        "type": "agentMessage",
+        "id": "msg-1",
+        "text": "done"
+      },
+      "extensions": {
+        "codex": {
+          "nativeType": "item/completed",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-real-1",
+            "item": {
+              "type": "agentMessage",
+              "id": "msg-1",
+              "text": "done"
+            }
+          }
+        }
+      }
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1"
+    }
+  },
+  {
+    "type": "turn.completed",
+    "source": "runtime:codex-local",
+    "payload": {
+      "threadId": "thread-1",
+      "turn": {
+        "id": "turn-real-1",
+        "items": [],
+        "itemsView": "notLoaded",
+        "status": "completed",
+        "error": null,
+        "startedAt": 1,
+        "completedAt": 2,
+        "durationMs": 1000
+      },
+      "extensions": {
+        "codex": {
+          "nativeType": "turn/completed",
+          "params": {
+            "threadId": "thread-1",
+            "turn": {
+              "id": "turn-real-1",
+              "items": [],
+              "itemsView": "notLoaded",
+              "status": "completed",
+              "error": null,
+              "startedAt": 1,
+              "completedAt": 2,
+              "durationMs": 1000
+            }
+          }
+        }
+      }
+    },
+    "threadRef": {
+      "runtimeId": "codex-local",
+      "runtimeKind": "codex",
+      "threadId": "thread-1"
+    },
+    "turnRef": {
+      "threadId": "thread-1",
+      "turnId": "turn-real-1"
+    }
+  }
+]
