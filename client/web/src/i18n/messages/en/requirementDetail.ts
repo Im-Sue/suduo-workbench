@@ -96,7 +96,7 @@ export const requirementDetail = {
     status: "Status",
     assignee: "Assignee",
     unassigned: "Unassigned",
-    assigneeButton: (name: string) => `Assignee: ${name}. Click to change`,
+    assigneeButton: (name: string) => `Assignee: ${name}, click to change`,
     number: "ID",
     created: "Created",
     updated: "Updated",
@@ -144,7 +144,7 @@ export const requirementDetail = {
     deleteConfirm: {
       title: (fileName: string) => `Delete “${fileName}”?`,
       description:
-        "No one on your team will be able to see this file, and it can't be restored. Published confirmed versions aren't affected.",
+        "No one on your team will be able to see this attachment, and it can't be restored. Published confirmed versions aren't affected.",
       confirm: "Delete",
     },
     dropToUpload: "Drop to upload",
@@ -170,7 +170,7 @@ export const requirementDetail = {
     // 失败原因多半自带句号：去掉后再接下一句，免得出现两个句号。
     failed: (error: string) => `${error.replace(/[.\s]+$/, "")}. Other files aren't affected.`,
     tooLarge: "Over 300 MB and can't be uploaded",
-    tooMany: (limit: number) => `Each requirement can have up to ${String(limit)} files. Delete some before uploading more`,
+    tooMany: (limit: number) => `Each requirement can have up to ${String(limit)} attachments. Delete some before uploading more`,
   },
   publish: {
     title: (versionNumber: number) => `Publish confirmed version ${String(versionNumber)}`,
@@ -180,7 +180,7 @@ export const requirementDetail = {
       `${who} just published version ${String(published)}. If you continue, yours becomes version ${String(next)}.`,
     included: (count: number) => `Included materials (${String(count)})`,
     new: "New",
-    selectAtLeastOne: "Select at least one file",
+    selectAtLeastOne: "Select at least one attachment",
     tooManyFiles: (limit: number) => `A version can include up to ${String(limit)} files`,
     noteLabel: "What changed in this version",
     noteHint: "Optional. It's shown in Activity so everyone can see what changed.",

@@ -34,16 +34,19 @@ export function presentAudit(entry: AuditEntryDto, t: Messages = messagesFor(cur
         ? "updated"
         : "neutral";
   const text = t.overview.audit;
-  const known = (text.actions as Readonly<Record<string, string>>)[action];
-  if (known !== undefined) return { tone, text: known };
-  const resourceLabel = (text.resources as Readonly<Record<string, string>>)[String(entry.resourceType)] ?? String(entry.resourceType);
+  const actions: Readonly<Record<string, string>> = text.actions;
+  if (Object.hasOwn(actions, action)) return { tone, text: actions[action] ?? action };
+  const resources: Readonly<Record<string, string>> = text.resources;
+  const resourceType = String(entry.resourceType);
+  const resourceLabel = Object.hasOwn(resources, resourceType) ? (resources[resourceType] ?? resourceType) : resourceType;
   return { tone, text: text.unknown(resourceLabel, action) };
 }
 
 /** 归并组的一句话：「更新了 3 条记录」。 */
 export function groupSummary(action: AuditAction, count: number, t: Messages = messagesFor(currentLocale())): string {
-  const summary = (t.overview.audit.groups as Readonly<Record<string, (count: number) => string>>)[String(action)];
-  return (summary ?? t.overview.audit.groupFallback)(count);
+  const groups: Readonly<Record<string, (count: number) => string>> = t.overview.audit.groups;
+  const key = String(action);
+  return (Object.hasOwn(groups, key) ? (groups[key] ?? t.overview.audit.groupFallback) : t.overview.audit.groupFallback)(count);
 }
 
 /** 状态流转写成「草稿 → 开发中」；取不到前后状态时给一句兜底。非状态变更返回 null。 */

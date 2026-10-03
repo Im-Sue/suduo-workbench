@@ -287,7 +287,7 @@ describe("英文界面：开始会话对话框", () => {
     await act(async () => buttonByText("Enter path manually")?.click());
     await act(async () => typeInto(document.body.querySelector<HTMLInputElement>("#directory-manual")!, "/code/p1"));
     await settle();
-    expect(dialog?.textContent).toContain("Readable and writable · Git repository · On branch main");
+    expect(dialog?.textContent).toContain("Can read and write · Git repository · On branch main");
     expect(buttonByText("Use this folder")).toBeDefined();
     expect(dialog?.textContent).not.toMatch(CJK);
   });

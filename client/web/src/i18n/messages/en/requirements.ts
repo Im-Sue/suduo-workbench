@@ -51,7 +51,7 @@ export const requirements = {
     region: "Requirements board",
     dragInstructions: "Press 1 to 7 to change the status.",
     drag: {
-      fallbackItem: "requirement",
+      fallbackItem: "the requirement",
       pickedUp: (item: string) => `Picked up ${item}`,
       overNone: "Not over a column",
       over: (column: string) => `Over “${column}”`,
@@ -186,7 +186,7 @@ export const requirements = {
     },
   },
   directoryPicker: {
-    manualLabel: "Absolute path to the code folder",
+    manualLabel: "Absolute path to the local folder",
     up: "Parent folder",
     location: "Current location",
     loading: "Reading folders",
@@ -206,9 +206,9 @@ export const requirements = {
       missing: "This path doesn't exist",
       notDirectory: "This isn't a folder",
       noAccess: "SuDuo needs to read and write this folder",
-      notGitRepo: "Readable and writable, but not a Git repository: sessions can't save checkpoints",
-      ok: "Readable and writable · Git repository",
-      okOnBranch: (branch: string) => `Readable and writable · Git repository · On branch ${branch}`,
+      notGitRepo: "Can read and write, but not a Git repository: sessions can't save checkpoints",
+      ok: "Can read and write · Git repository",
+      okOnBranch: (branch: string) => `Can read and write · Git repository · On branch ${branch}`,
     },
   },
 } satisfies Messages["requirements"];

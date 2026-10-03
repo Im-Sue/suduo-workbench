@@ -68,7 +68,7 @@ export const myWork = {
     workingUnavailableLabel: "requirements you're working on",
     listUnavailableLabel: "requirements assigned to or created by you",
     empty:
-      "Nothing is assigned to you, in progress with you, or created by you and still unassigned. Assign a requirement to yourself on the Requirements page, or start a session from one.",
+      "No requirements assigned to you, in progress, or created by you without an assignee. Assign one to yourself on the Requirements page, or start a session from a requirement.",
     statusUnknown: "Unknown status",
     drift: "Changed since you started",
     waiting: "Waiting for you",

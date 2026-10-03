@@ -229,7 +229,7 @@ describe("英文界面：需求详情", () => {
     const rail = node.querySelector("aside[aria-label='Requirement properties']");
     expect([...(rail?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent)).toEqual(["Status", "Assignee", "ID", "Created", "Updated"]);
     expect(rail?.textContent).toContain("Unassigned");
-    expect(rail?.querySelector("button[aria-label='Assignee: Unassigned. Click to change']")).not.toBeNull();
+    expect(rail?.querySelector("button[aria-label='Assignee: Unassigned, click to change']")).not.toBeNull();
     expect(rail?.textContent).toContain("Local folder");
     expect(rail?.textContent).toContain("Can read and write · Branch main");
     expect(rail?.textContent).toContain("Local sessions");

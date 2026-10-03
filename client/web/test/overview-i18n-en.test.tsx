@@ -169,7 +169,7 @@ describe("英文界面：概览", () => {
     expect(trend.textContent).toContain("4 status changes in the last 7 days");
     expect([...trend.querySelectorAll('[aria-label="Time range"] button')].map((item) => item.textContent)).toEqual(["7 days", "30 days"]);
     const table = trend.querySelector("table.sr-only")!;
-    expect(table.querySelector("caption")?.textContent).toBe("Times requirements moved to each status per day, last 7 days");
+    expect(table.querySelector("caption")?.textContent).toBe("Daily moves into each status, last 7 days");
     expect([...table.querySelectorAll("thead th")].map((item) => item.textContent)).toEqual([
       "Date",
       "Total",
@@ -180,7 +180,7 @@ describe("英文界面：概览", () => {
     const stale = block(page, "Stalled requirements");
     expect(stale.textContent).toContain("5 in total, showing the 2 most urgent");
     expect(stale.textContent).toContain(
-      "Listed after this long without changes: In development / In testing 3 days, Refining / Ready 7 days, Draft 14 days, On hold 30 days. Longest stalled first.",
+      "Listed when unchanged for: In development / In testing: 3 days, Refining / Ready: 7 days, Draft: 14 days, On hold: 30 days. Longest stalled first.",
     );
     const rows = stale.querySelectorAll('[data-testid="overview-stale-requirements"] button');
     expect(rows[0]?.textContent).toContain("Last updated by Alex Chen · ");

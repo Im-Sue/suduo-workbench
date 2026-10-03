@@ -131,7 +131,7 @@ describe("英文界面：我的工作", () => {
     expect(actions.textContent).toContain("All caught up. Nothing needs you right now.");
     const mine = section(page, "workbench-requirements");
     expect(mine.querySelector("h2")?.textContent).toBe("My requirements");
-    expect(mine.textContent).toContain("Nothing is assigned to you, in progress with you, or created by you and still unassigned.");
+    expect(mine.textContent).toContain("No requirements assigned to you, in progress, or created by you without an assignee.");
     expect(buttons(mine.querySelector<HTMLElement>('[aria-label="Requirement scope"]')!)).toEqual(["All projects", "Checkout"]);
     const sessions = section(page, "workbench-sessions");
     expect(sessions.querySelector("h2")?.textContent).toBe("Sessions");

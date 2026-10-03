@@ -57,7 +57,7 @@ export function presentActivity(
       return { kind: "assignee", text: text.assigneeChangedTo(change.to.displayName), body: null };
     }
     case "comment.created":
-      return { kind: "comment", text: text.commented, body: entry.comment === null ? null : commentText(entry.comment, t) };
+      return { kind: "comment", text: text.commented, body: entry.comment == null ? null : commentText(entry.comment, t) };
     case "attachment.created":
       return { kind: "material", text: text.uploaded(entry.attachment?.fileName ?? null), body: null };
     case "attachment.deleted":
