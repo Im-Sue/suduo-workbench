@@ -175,6 +175,7 @@ export async function buildHttpServer(
       const health: RequirementsHealthDto = {
         service: "suduo-requirements-service",
         status: "ok",
+        version: config.version ?? "dev",
         database: { status: "ok", schemaVersion },
         uptimeMs: Math.round(process.uptime() * 1_000),
       };

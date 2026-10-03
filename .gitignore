@@ -31,3 +31,6 @@ mise.local.toml
 
 # Claude Code 子任务的隔离工作区（临时 git worktree）
 /.claude/worktrees/
+
+# 云端部署的本机定制（见 cloud/DEPLOYMENT.md）
+cloud/server/compose.override.yaml

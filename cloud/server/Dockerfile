@@ -1,6 +1,13 @@
-# syntax=docker/dockerfile:1
+# 基础镜像与依赖源可替换：国内服务器用 ./scripts/suduo-cloud.sh install --mirror cn，
+# 或在 server/.env 里设置 SUDUO_IMAGE_REGISTRY / SUDUO_NPM_REGISTRY（compose 会作为构建参数传进来）。
+ARG NODE_IMAGE=node:24.10.0-bookworm-slim
 
-FROM node:24.10.0-bookworm-slim AS build
+FROM ${NODE_IMAGE} AS build
+
+ARG NPM_REGISTRY=https://registry.npmjs.org
+# pnpm 依赖与 corepack 下载 pnpm 本体都走同一个源。
+ENV npm_config_registry=${NPM_REGISTRY} \
+  COREPACK_NPM_REGISTRY=${NPM_REGISTRY}
 
 WORKDIR /workspace
 
@@ -18,9 +25,10 @@ COPY server/tsconfig.json server/tsconfig.json
 
 RUN pnpm --filter @suduo/cloud-contracts run build \
   && pnpm --filter @suduo/cloud-server run build \
-  && pnpm --filter @suduo/cloud-server --prod deploy --legacy /opt/requirements-service
+  && pnpm --filter @suduo/cloud-server --prod deploy --legacy /opt/requirements-service \
+  && node -p "require('./package.json').version" > /opt/requirements-service/SUDUO_VERSION
 
-FROM node:24.10.0-bookworm-slim AS runtime
+FROM ${NODE_IMAGE} AS runtime
 
 ENV NODE_ENV=production
 # 房间文件根目录的镜像内缺省值（对应下面预建的目录与 compose 的具名卷）；.env 里设置的值优先。

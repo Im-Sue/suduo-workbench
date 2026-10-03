@@ -1,0 +1,91 @@
+name: Cloud install
+
+# Installs the cloud with scripts/suduo-cloud.sh on fresh x86_64 Ubuntu runners and walks the full lifecycle:
+# install → seed data → backup → upgrade → purge → reinstall → restore → verify the data byte for byte,
+# then restore onto an instance that has other data and check that the other data is gone.
+on:
+  pull_request:
+    paths: ["cloud/**", ".github/workflows/cloud-install.yml"]
+  push:
+    branches: [main]
+    paths: ["cloud/**", ".github/workflows/cloud-install.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: cloud
+    env:
+      COMPOSE: docker compose --env-file server/.env -f server/compose.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck
+        run: shellcheck scripts/suduo-cloud.sh
+
+      - name: Install
+        run: sudo ./scripts/suduo-cloud.sh install
+
+      - name: Seed data
+        run: sudo $COMPOSE exec -T requirements-service node --input-type=module - seed < scripts/smoke.mjs > "$RUNNER_TEMP/smoke.json"
+
+      - name: Backup
+        run: |
+          sudo ./scripts/suduo-cloud.sh backup --to "$RUNNER_TEMP/backups"
+          backup="$(sudo find "$RUNNER_TEMP/backups" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test "$(sudo stat -c %a "$backup")" = 700
+          test "$(sudo stat -c %a "$backup/database.pgdump")" = 600
+          if sudo find "$RUNNER_TEMP/backups" -name '*.partial' | grep -q .; then echo "partial backup left behind" >&2; exit 1; fi
+
+      - name: Upgrade (backs up, rebuilds, starts)
+        run: sudo ./scripts/suduo-cloud.sh upgrade --backup-to "$RUNNER_TEMP/upgrade-backups"
+
+      - name: Purge without a terminal is refused
+        run: |
+          if sudo ./scripts/suduo-cloud.sh uninstall --purge < /dev/null; then
+            echo "purge ran without confirmation" >&2
+            exit 1
+          fi
+          sudo $COMPOSE ps --status running | grep -q requirements-service
+
+      - name: Purge, reinstall, restore
+        run: |
+          sudo SUDUO_ASSUME_YES=1 ./scripts/suduo-cloud.sh uninstall --purge
+          sudo ./scripts/suduo-cloud.sh install
+          backup="$(sudo find "$RUNNER_TEMP/backups" -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
+          sudo SUDUO_ASSUME_YES=1 ./scripts/suduo-cloud.sh restore "$backup"
+
+      - name: Verify restored data
+        run: sudo $COMPOSE exec -T -e SMOKE_STATE="$(cat "$RUNNER_TEMP/smoke.json")" requirements-service node --input-type=module - verify < scripts/smoke.mjs
+
+      - name: Restore onto an instance with other data
+        run: |
+          sudo $COMPOSE exec -T requirements-service node --input-type=module - seed < scripts/smoke.mjs > "$RUNNER_TEMP/smoke-other.json"
+          backup="$(sudo find "$RUNNER_TEMP/backups" -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
+          sudo SUDUO_ASSUME_YES=1 ./scripts/suduo-cloud.sh restore "$backup"
+          sudo $COMPOSE exec -T -e SMOKE_STATE="$(cat "$RUNNER_TEMP/smoke.json")" requirements-service node --input-type=module - verify < scripts/smoke.mjs
+          if sudo $COMPOSE exec -T -e SMOKE_STATE="$(cat "$RUNNER_TEMP/smoke-other.json")" requirements-service node --input-type=module - verify < scripts/smoke.mjs; then
+            echo "data created after the backup survived the restore" >&2
+            exit 1
+          fi
+          # 恢复前自动备份了当前数据，恢复可以撤回。
+          sudo find /var/backups/suduo -mindepth 2 -maxdepth 2 -path '*-pre-restore*/manifest.txt' | grep -q .
+
+      - name: Status
+        run: sudo ./scripts/suduo-cloud.sh status
+
+      - name: Logs
+        if: failure()
+        run: sudo $COMPOSE logs --no-color --tail 300

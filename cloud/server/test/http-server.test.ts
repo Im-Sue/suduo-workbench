@@ -39,6 +39,33 @@ describe("requirements-service HTTP lifecycle", () => {
     expect(response.statusCode).toBe(503);
   });
 
+  it("reports the product version and schema version when healthy", async () => {
+    const server = await buildHttpServer({
+      config: { ...testConfig(), version: "0.7.0" },
+      database: {
+        query: vi.fn().mockResolvedValue({ rows: [] }),
+        pool: { query: vi.fn().mockResolvedValue({ rows: [{ version: "011_rooms_and_shared_agents.sql" }] }) },
+      } as unknown as Database,
+      auth: {} as AuthService,
+      collaboration: {} as CollaborationService,
+      attachments: {} as AttachmentService,
+      artifactVersions: {} as ArtifactVersionService,
+      attachmentStorage: {} as AttachmentStorage,
+      events: new RequirementsEventHub(),
+    });
+    openServers.push(server);
+
+    const response = await server.inject({ method: "GET", url: "/v2/health" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      service: "suduo-requirements-service",
+      status: "ok",
+      version: "0.7.0",
+      database: { status: "ok", schemaVersion: "011_rooms_and_shared_agents.sql" },
+    });
+  });
+
   it("ends active SSE responses before releasing attachment ownership", async () => {
     const attachments = { close: vi.fn().mockResolvedValue(undefined) };
     const server = await buildHttpServer({
