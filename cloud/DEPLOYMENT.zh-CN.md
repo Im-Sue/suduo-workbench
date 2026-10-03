@@ -37,6 +37,8 @@ git checkout "$(git describe --tags --abbrev=0)"   # 最新的发布标签
 cd cloud
 ```
 
+仓库还没有发布标签时，留在 `main` 即可。
+
 请用发布标签，不要直接用 `main`。客户端和云端应使用相同版本，版本不一致时客户端会给出提示。
 
 ## 3. 安装
@@ -58,7 +60,7 @@ sudo ./scripts/suduo-cloud.sh install
 4. 等 `/v2/health` 报告就绪后，打印访问地址。
 
 ```text
-  ✓ SuDuo 云端已就绪（版本 0.7.0，数据库 schema 011_rooms_and_shared_agents.sql）
+  ✓ SuDuo 云端已就绪（版本 x.y.z，数据库 schema 011_rooms_and_shared_agents.sql）
 
   访问地址：http://10.0.0.12:4100
   下一步：在 SuDuo 客户端的设置里填上这个地址，第一个注册的人即可开始使用。
@@ -93,7 +95,7 @@ server {
     ssl_certificate     /etc/ssl/suduo/fullchain.pem;
     ssl_certificate_key /etc/ssl/suduo/privkey.pem;
 
-    client_max_body_size 300m;
+    client_max_body_size 310m;
 
     location / {
         proxy_pass http://127.0.0.1:4100;
@@ -112,7 +114,7 @@ Caddy（公网域名会自动申请证书）：
 ```caddy
 suduo.example.com {
     request_body {
-        max_size 300MB
+        max_size 310MiB
     }
     reverse_proxy 127.0.0.1:4100 {
         flush_interval -1
@@ -120,16 +122,16 @@ suduo.example.com {
 }
 ```
 
-代理和服务在同一台服务器上时，可以让服务端口只对本机开放，所有访问都必须经过代理。新建 `server/compose.override.yaml`（不进 git，脚本会自动带上；需要 Docker Compose 2.24 及以上）：
+代理和服务在同一台服务器上时，可以让服务端口只对本机开放，所有访问都必须经过代理。新建 `server/compose.override.yaml`（不进 git，脚本会自动带上；需要 Docker Compose 2.24.4 及以上）：
 
 ```yaml
 services:
   requirements-service:
     ports: !override
-      - "127.0.0.1:4100:4100"
+      - "127.0.0.1:${REQUIREMENTS_PORT:-4100}:${REQUIREMENTS_PORT:-4100}"
 ```
 
-然后执行 `sudo ./scripts/suduo-cloud.sh stop && sudo ./scripts/suduo-cloud.sh start` 生效。端口要和 `server/.env` 里的 `REQUIREMENTS_PORT` 一致。
+然后执行 `sudo ./scripts/suduo-cloud.sh stop && sudo ./scripts/suduo-cloud.sh start` 生效。
 
 ## 日常运维
 
@@ -141,8 +143,8 @@ services:
 | `sudo ./scripts/suduo-cloud.sh logs` | 跟随服务日志（`--db` 看 PostgreSQL 日志） |
 | `sudo ./scripts/suduo-cloud.sh stop` / `start` | 停止 / 启动，不动数据 |
 | `sudo ./scripts/suduo-cloud.sh backup` | 备份（见下文） |
-| `sudo ./scripts/suduo-cloud.sh restore <目录>` | 从备份恢复（见下文） |
-| `sudo ./scripts/suduo-cloud.sh upgrade` | 升级到当前检出的版本（见下文） |
+| `sudo ./scripts/suduo-cloud.sh restore <目录>` | 先备份当前数据，再从备份恢复，并按当前检出的版本启动（见下文） |
+| `sudo ./scripts/suduo-cloud.sh upgrade` | 先备份，再升级到当前检出的版本（见下文） |
 | `sudo ./scripts/suduo-cloud.sh uninstall` | 删除容器和镜像，数据与 `server/.env` 保留 |
 | `sudo ./scripts/suduo-cloud.sh uninstall --purge` | 连同全部数据一起删除。需要输入 `purge` 确认，无法撤销 |
 
@@ -154,13 +156,13 @@ git checkout v0.8.0            # 要升级到的版本
 sudo ./scripts/suduo-cloud.sh upgrade
 ```
 
-脚本会先备份，备份失败就停下来，不会继续升级。然后重新构建并启动，服务启动时自动迁移数据库。数据库迁移只能向前。
+脚本会先备份（到 `/var/backups/suduo/<时间戳>-pre-upgrade`，或用 `--backup-to <目录>` 指定）。备份失败就停下来，不会继续升级：可以修好后重试；如果已经有别的退路（例如服务器快照），可以加 `--no-backup`。然后重新构建并启动，服务启动时自动迁移数据库。数据库迁移只能向前。
 
-**回滚**：检出之前的标签，再恢复升级时做的那份备份：
+**回滚**：检出之前的标签，再恢复升级时做的那份备份。`restore` 会按当前检出的版本启动，所以旧版本和它的数据会一起回来：
 
 ```bash
 git checkout v0.7.0
-sudo ./scripts/suduo-cloud.sh restore /var/backups/suduo/<时间戳>
+sudo ./scripts/suduo-cloud.sh restore /var/backups/suduo/<时间戳>-pre-upgrade
 ```
 
 ### 备份
@@ -170,7 +172,7 @@ sudo ./scripts/suduo-cloud.sh backup              # 备份到 /var/backups/suduo
 sudo ./scripts/suduo-cloud.sh backup --to /data/backups
 ```
 
-一份备份是一个目录，里面有 `database.pgdump`（PostgreSQL）、`files.tar.gz`（附件与房间文件）和 `manifest.txt`（版本、schema、校验值）。备份期间脚本会把服务停几秒钟，保证数据库和文件对得上。
+一份备份是一个目录，里面有 `database.pgdump`（PostgreSQL）、`files.tar.gz`（附件与房间文件）和 `manifest.txt`（版本、schema、校验值），只有你（root）能读。备份期间脚本会暂停服务，保证数据库和文件对得上；暂停时长随数据量增加，备份失败或被中断时服务也会恢复运行。失败的备份不会留下残缺的目录。
 
 **不要把在线执行的 `pg_dump` 和另外在线拷贝的文件卷拼成一份备份。** 附件和房间文件的元数据在 PostgreSQL 里，文件本身在卷里；两次拷贝之间如果有人上传，恢复后两者就会对不上。要么让脚本停服备份，要么使用能在同一时刻覆盖数据库和两个卷的存储快照。
 
@@ -180,6 +182,8 @@ sudo ./scripts/suduo-cloud.sh backup --to /data/backups
 30 3 * * * cd /path/to/suduo-workbench/cloud && ./scripts/suduo-cloud.sh backup >> /var/log/suduo-backup.log 2>&1 && find /var/backups/suduo -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
 ```
 
+cron 以 root 身份运行脚本，所以代码目录必须归 root 所有、其他用户不可写，否则能改脚本的人就能以 root 身份执行命令。
+
 备份最好再拷一份到其他机器上。
 
 ### 恢复
@@ -188,23 +192,30 @@ sudo ./scripts/suduo-cloud.sh backup --to /data/backups
 sudo ./scripts/suduo-cloud.sh restore /var/backups/suduo/<时间戳>
 ```
 
-恢复会用备份**替换当前全部数据**。脚本会核对备份的校验值，要求你输入 `restore` 确认，然后停服、恢复数据库和文件、再启动服务。恢复后请下载几个附件抽查一下。
+恢复会用备份**替换当前全部数据**。脚本会：
+
+1. 核对备份的校验值，并确认数据库导出与文件归档都能读取；备份损坏时，在动任何数据之前就停下来；
+2. 要求你输入 `restore` 确认；
+3. 把当前数据备份到 `/var/backups/suduo/<时间戳>-pre-restore`，恢复本身也能撤回（`--no-pre-backup` 跳过这一步）；
+4. 停服，重建数据库并在单个事务里导入备份，再替换附件和房间文件；
+5. 按**当前检出的版本**重新构建并启动。如果当前版本比备份新，数据库会自动迁移到新版本；要回到备份时的版本，请先检出那个版本。
+
+某一步失败时，脚本会说明进行到了哪里。服务保持停止，可以用同一份备份再执行一次 `restore`。恢复后请下载几个附件抽查一下。
 
 也可以在一台新服务器上恢复：先在新服务器上安装（`install`），把备份目录拷过去，再执行 `restore`。
 
-在没有终端的自动化脚本里，设置 `SUDUO_ASSUME_YES=1` 可以跳过 `restore` 和 `uninstall --purge` 的输入确认。
+在没有终端的自动化脚本里，用 `sudo SUDUO_ASSUME_YES=1 ./scripts/suduo-cloud.sh restore <目录>` 跳过输入确认（`uninstall --purge` 同理）。
 
 ## 镜像源
 
 在国内，Docker Hub 和 npm 经常很慢或连不上。`--mirror cn` 会把下面几行写进 `server/.env`：
 
 ```dotenv
-SUDUO_NODE_IMAGE=docker.m.daocloud.io/library/node:24.10.0-bookworm-slim
-SUDUO_POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:17.4-bookworm
+SUDUO_IMAGE_REGISTRY=docker.m.daocloud.io/library
 SUDUO_NPM_REGISTRY=https://registry.npmmirror.com
 ```
 
-这些是第三方镜像源，可用性会变化。如果构建卡在拉取镜像或下载依赖上，把这几行改成你能访问的镜像源（任何能提供相同 Docker Hub 镜像的仓库、任何 npm 源都可以），再执行一次 `install`。之后的升级会沿用同样的设置。
+这里只记镜像仓库；Node.js 与 PostgreSQL 的版本写在 `server/compose.yaml` 里，升级时随代码一起更新。这些是第三方镜像源，可用性会变化。如果构建卡在拉取镜像或下载依赖上，把这两行改成你能访问的镜像源（任何以相同名称提供 Docker Hub 官方镜像的仓库、任何 npm 源都可以），再执行一次 `install`。
 
 ## 配置
 

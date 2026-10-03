@@ -2,7 +2,8 @@ name: suduo-requirements-service
 
 services:
   postgres:
-    image: ${SUDUO_POSTGRES_IMAGE:-postgres:17.4-bookworm}
+    # 镜像仓库前缀可替换（国内服务器：./scripts/suduo-cloud.sh install --mirror cn）；版本标签固定在这里，随代码升级。
+    image: ${SUDUO_IMAGE_REGISTRY:-docker.io/library}/postgres:17.4-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?请先从 .env.example 创建 .env 并设置 POSTGRES_DB}
@@ -21,7 +22,7 @@ services:
       context: ..
       dockerfile: server/Dockerfile
       args:
-        NODE_IMAGE: ${SUDUO_NODE_IMAGE:-node:24.10.0-bookworm-slim}
+        NODE_IMAGE: ${SUDUO_IMAGE_REGISTRY:-docker.io/library}/node:24.10.0-bookworm-slim
         NPM_REGISTRY: ${SUDUO_NPM_REGISTRY:-https://registry.npmjs.org}
     restart: unless-stopped
     env_file:

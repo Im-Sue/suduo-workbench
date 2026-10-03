@@ -1,5 +1,5 @@
 # 基础镜像与依赖源可替换：国内服务器用 ./scripts/suduo-cloud.sh install --mirror cn，
-# 或在 server/.env 里设置 SUDUO_NODE_IMAGE / SUDUO_NPM_REGISTRY（compose 会作为构建参数传进来）。
+# 或在 server/.env 里设置 SUDUO_IMAGE_REGISTRY / SUDUO_NPM_REGISTRY（compose 会作为构建参数传进来）。
 ARG NODE_IMAGE=node:24.10.0-bookworm-slim
 
 FROM ${NODE_IMAGE} AS build

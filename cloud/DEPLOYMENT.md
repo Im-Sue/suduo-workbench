@@ -35,6 +35,8 @@ git checkout "$(git describe --tags --abbrev=0)"   # the latest release tag
 cd cloud
 ```
 
+If the repository has no release tag yet, stay on `main`.
+
 Use a release tag rather than `main`. Clients and the cloud should run the same version; the client shows a hint when they differ.
 
 ## 3. Install
@@ -56,7 +58,7 @@ The script:
 4. waits until `/v2/health` reports ready, then prints the address.
 
 ```text
-  ✓ SuDuo cloud is ready (version 0.7.0, database schema 011_rooms_and_shared_agents.sql)
+  ✓ SuDuo cloud is ready (version x.y.z, database schema 011_rooms_and_shared_agents.sql)
 
   Address: http://10.0.0.12:4100
   Next: enter this address in the SuDuo client settings. Anyone can then register and start.
@@ -91,7 +93,7 @@ server {
     ssl_certificate     /etc/ssl/suduo/fullchain.pem;
     ssl_certificate_key /etc/ssl/suduo/privkey.pem;
 
-    client_max_body_size 300m;
+    client_max_body_size 310m;
 
     location / {
         proxy_pass http://127.0.0.1:4100;
@@ -110,7 +112,7 @@ Caddy (gets a certificate automatically for a public domain):
 ```caddy
 suduo.example.com {
     request_body {
-        max_size 300MB
+        max_size 310MiB
     }
     reverse_proxy 127.0.0.1:4100 {
         flush_interval -1
@@ -118,16 +120,16 @@ suduo.example.com {
 }
 ```
 
-With a proxy on the same server, publish the service port on the loopback address only, so the proxy is the only way in. Create `server/compose.override.yaml` (it stays out of git, and the script picks it up automatically; it needs Docker Compose 2.24 or later):
+With a proxy on the same server, publish the service port on the loopback address only, so the proxy is the only way in. Create `server/compose.override.yaml` (it stays out of git, and the script picks it up automatically; it needs Docker Compose 2.24.4 or later):
 
 ```yaml
 services:
   requirements-service:
     ports: !override
-      - "127.0.0.1:4100:4100"
+      - "127.0.0.1:${REQUIREMENTS_PORT:-4100}:${REQUIREMENTS_PORT:-4100}"
 ```
 
-Then apply it with `sudo ./scripts/suduo-cloud.sh stop && sudo ./scripts/suduo-cloud.sh start`. Use the same port as `REQUIREMENTS_PORT` in `server/.env`.
+Then apply it with `sudo ./scripts/suduo-cloud.sh stop && sudo ./scripts/suduo-cloud.sh start`.
 
 ## Operations
 
@@ -139,8 +141,8 @@ All commands run in the `cloud/` directory.
 | `sudo ./scripts/suduo-cloud.sh logs` | Follow the service logs (`--db` for PostgreSQL) |
 | `sudo ./scripts/suduo-cloud.sh stop` / `start` | Stop / start without touching data |
 | `sudo ./scripts/suduo-cloud.sh backup` | Back up (see below) |
-| `sudo ./scripts/suduo-cloud.sh restore <dir>` | Restore a backup (see below) |
-| `sudo ./scripts/suduo-cloud.sh upgrade` | Upgrade to the checked-out version (see below) |
+| `sudo ./scripts/suduo-cloud.sh restore <dir>` | Back up the current data, then restore a backup and start the checked-out version (see below) |
+| `sudo ./scripts/suduo-cloud.sh upgrade` | Back up, then upgrade to the checked-out version (see below) |
 | `sudo ./scripts/suduo-cloud.sh uninstall` | Remove containers and the image; data and `server/.env` stay |
 | `sudo ./scripts/suduo-cloud.sh uninstall --purge` | Also delete all data. Asks you to type `purge`. Cannot be undone |
 
@@ -152,13 +154,13 @@ git checkout v0.8.0            # the release you want
 sudo ./scripts/suduo-cloud.sh upgrade
 ```
 
-The script backs up first. If the backup fails, it stops and does not upgrade. Then it rebuilds, starts, and the service migrates the database on start. Database migrations only go forward.
+The script backs up first (to `/var/backups/suduo/<timestamp>-pre-upgrade`, or `--backup-to <dir>`). If the backup fails, it stops and does not upgrade; you can fix the problem and retry, or add `--no-backup` if you already have another way back, such as a server snapshot. Then it rebuilds, starts, and the service migrates the database on start. Database migrations only go forward.
 
-**To roll back**, check out the previous tag and restore the backup the upgrade made:
+**To roll back**, check out the previous tag and restore the backup the upgrade made. `restore` starts whatever version is checked out, so this brings back the old version together with its data:
 
 ```bash
 git checkout v0.7.0
-sudo ./scripts/suduo-cloud.sh restore /var/backups/suduo/<timestamp>
+sudo ./scripts/suduo-cloud.sh restore /var/backups/suduo/<timestamp>-pre-upgrade
 ```
 
 ### Backup
@@ -168,7 +170,7 @@ sudo ./scripts/suduo-cloud.sh backup              # to /var/backups/suduo/<times
 sudo ./scripts/suduo-cloud.sh backup --to /data/backups
 ```
 
-A backup is a directory with `database.pgdump` (PostgreSQL), `files.tar.gz` (attachments and room files) and `manifest.txt` (version, schema and checksums). The script stops the service for the few seconds the backup takes, so the database and the files match.
+A backup is a directory with `database.pgdump` (PostgreSQL), `files.tar.gz` (attachments and room files) and `manifest.txt` (version, schema and checksums). Only you (root) can read it. The script pauses the service while it copies, so the database and the files match; the pause grows with the amount of data, and the service comes back even if the backup fails or is interrupted. A failed backup leaves nothing behind.
 
 **Do not combine an online `pg_dump` with a separate online copy of the file volumes.** Attachment and room file metadata live in PostgreSQL, the files live in the volumes; uploads between the two copies leave them out of step after a restore. Either let the script stop the service, or use a storage snapshot that covers the database and both volumes at the same instant.
 
@@ -178,6 +180,8 @@ Daily backup with cron (as root), keeping 14 days:
 30 3 * * * cd /path/to/suduo-workbench/cloud && ./scripts/suduo-cloud.sh backup >> /var/log/suduo-backup.log 2>&1 && find /var/backups/suduo -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
 ```
 
+cron runs the script as root, so the checkout must be owned by root and not writable by other users: anyone who can change the script could otherwise run commands as root.
+
 Copy backups to another machine as well.
 
 ### Restore
@@ -186,23 +190,30 @@ Copy backups to another machine as well.
 sudo ./scripts/suduo-cloud.sh restore /var/backups/suduo/<timestamp>
 ```
 
-Restoring **replaces all current data** with the backup. The script checks the backup's checksums, asks you to type `restore`, stops the service, restores the database and the files, and starts the service again. Afterwards, download a few attachments to check them.
+Restoring **replaces all current data** with the backup. The script:
+
+1. checks the backup's checksums and that the database dump and the file archive can be read; a damaged backup is refused before anything changes;
+2. asks you to type `restore`;
+3. backs up the current data to `/var/backups/suduo/<timestamp>-pre-restore`, so the restore itself can be undone (`--no-pre-backup` skips this);
+4. stops the service, recreates the database and imports the backup in one transaction, then replaces the attachments and room files;
+5. rebuilds and starts **the version that is checked out**. If that version is newer than the backup, the database is migrated forward; to return to the backup's version, check that version out first.
+
+If a step fails, the script says how far it got. The service stays stopped, and you can run `restore` again with the same backup. Afterwards, download a few attachments to check them.
 
 You can restore on a new server too: install SuDuo there first (`install`), copy the backup directory over, then run `restore`.
 
-For scripted use without a terminal, `SUDUO_ASSUME_YES=1` skips the typed confirmation of `restore` and `uninstall --purge`.
+For scripted use without a terminal, `sudo SUDUO_ASSUME_YES=1 ./scripts/suduo-cloud.sh restore <dir>` skips the typed confirmation (the same works for `uninstall --purge`).
 
 ## Mirrors
 
 In mainland China, Docker Hub and npm are often slow or unreachable. `--mirror cn` writes these settings into `server/.env`:
 
 ```dotenv
-SUDUO_NODE_IMAGE=docker.m.daocloud.io/library/node:24.10.0-bookworm-slim
-SUDUO_POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:17.4-bookworm
+SUDUO_IMAGE_REGISTRY=docker.m.daocloud.io/library
 SUDUO_NPM_REGISTRY=https://registry.npmmirror.com
 ```
 
-These are third-party mirrors and their availability changes. If a build fails while pulling, edit these lines to point at a mirror you can reach (any registry that serves the same Docker Hub images, and any npm registry), then run `install` again. Upgrades keep using the same settings.
+Only the registry is stored; the Node.js and PostgreSQL versions stay in `server/compose.yaml` and change with the code when you upgrade. These are third-party mirrors and their availability changes. If a build fails while pulling, point these lines at a mirror you can reach (any registry that serves the Docker Hub official images under the same names, and any npm registry), then run `install` again.
 
 ## Configuration
 
