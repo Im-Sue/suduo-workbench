@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 280,
+  "total": 282,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -326,8 +326,10 @@
     ],
     "web/src/features/settings/sections/AboutSection.tsx": [
       "settings-app-version",
+      "settings-cloud-version",
       "settings-license",
-      "settings-open-config-file"
+      "settings-open-config-file",
+      "settings-version-mismatch"
     ],
     "web/src/features/settings/sections/AccountSection.tsx": [
       "settings-current-user",

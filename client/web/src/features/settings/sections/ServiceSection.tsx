@@ -11,6 +11,7 @@ import type { Failure } from "../../../feedback/types.js";
 import { SaveBar, useUnsavedChanges } from "../components/frame.js";
 import { rowDescId, SettingsRow, SettingsSection, StatusPill } from "../components/kit.js";
 import { formatMs, TestConnection, timed, type TestOutcome } from "../components/TestConnection.js";
+import { builtVersion, compareWithCloud } from "../version.js";
 
 const INPUT_ID = "settings-base-url";
 
@@ -86,8 +87,15 @@ export function ServiceSection() {
     const problem = validateServiceUrl(draft);
     if (problem !== null) return { ok: false, reason: problem };
     try {
-      const { ms } = await timed(() => api.testRequirementsSettings(draft.trim()));
-      return { ok: true, text: `连接正常 · ${formatMs(ms)}` };
+      const { value, ms } = await timed(() => api.testRequirementsSettings(draft.trim()));
+      const parts = [`连接正常 · ${formatMs(ms)}`];
+      const cloudVersion = typeof value.version === "string" ? value.version : null;
+      if (cloudVersion !== null) parts.push(`云端 ${cloudVersion}`);
+      // 版本不一致只提示，不拦截（ADR-0004）。
+      if (compareWithCloud(builtVersion(), cloudVersion) === "different") {
+        parts.push(`本机 ${builtVersion() ?? ""}，建议使用相同版本`);
+      }
+      return { ok: true, text: parts.join(" · ") };
     } catch (cause) {
       const failure = classifyFailure(cause);
       return {

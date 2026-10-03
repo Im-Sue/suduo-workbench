@@ -38,6 +38,7 @@ import { WorkspaceService } from "./application/workspace-service.js";
 import { openBetterSqlite3Database } from "./infrastructure/db/better-sqlite3-database.js";
 import type { DatabasePort } from "./infrastructure/db/database-port.js";
 import { runMigrations } from "./infrastructure/db/migration-runner.js";
+import { defaultCodexHome } from "./infrastructure/platform/host-platform.js";
 import { ApprovalRepository } from "./infrastructure/db/repositories/approval-repository.js";
 import { EventRepository } from "./infrastructure/db/repositories/event-repository.js";
 import { IdempotencyRepository } from "./infrastructure/db/repositories/idempotency-repository.js";
@@ -142,7 +143,7 @@ export function createSuDuoApplication(
   const ingestor = new RuntimeEventIngestor(threads, ledger, codexGlobalState);
 
   const codexHome =
-    options.codexHome ?? process.env["CODEX_HOME"] ?? resolve(process.cwd(), ".codex");
+    options.codexHome ?? process.env["CODEX_HOME"] ?? defaultCodexHome();
   const settingsService = new SettingsService(
     options.settingsFile ?? resolve(homedir(), ".suduo-settings.json"),
   );

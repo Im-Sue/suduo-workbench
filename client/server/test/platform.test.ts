@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  defaultCodexHome,
   defaultSuDuoConfigDir,
   defaultSuDuoDataDir,
 } from "../src/infrastructure/platform/host-platform.js";
@@ -39,7 +40,25 @@ describe("Windows platform adaptation", () => {
     ).toBe("C:\\Users\\pm\\AppData\\Roaming\\SuDuo");
     expect(
       defaultSuDuoDataDir({ platform: "win32", env, homeDir: "C:\\Users\\pm" }),
-    ).toBe("C:\\Users\\pm\\AppData\\Local\\SuDuo");
+    ).toBe("C:\\Users\\pm\\AppData\\Local\\SuDuo\\data");
+  });
+
+  it("defaults CODEX_HOME to ~/.codex, where Codex itself keeps its configuration", () => {
+    expect(defaultCodexHome({ platform: "darwin", homeDir: "/Users/pm" })).toBe("/Users/pm/.codex");
+    expect(defaultCodexHome({ platform: "win32", homeDir: "C:\\Users\\pm" })).toBe("C:\\Users\\pm\\.codex");
+  });
+
+  it("uses Application Support on macOS and XDG directories on Linux", () => {
+    expect(defaultSuDuoDataDir({ platform: "darwin", env: {}, homeDir: "/Users/pm" })).toBe(
+      "/Users/pm/Library/Application Support/SuDuo",
+    );
+    expect(defaultSuDuoConfigDir({ platform: "darwin", env: {}, homeDir: "/Users/pm" })).toBe(
+      "/Users/pm/Library/Application Support/SuDuo",
+    );
+    expect(defaultSuDuoDataDir({ platform: "linux", env: {}, homeDir: "/home/pm" })).toBe("/home/pm/.local/share/suduo");
+    expect(
+      defaultSuDuoDataDir({ platform: "linux", env: { XDG_DATA_HOME: "/data/xdg" }, homeDir: "/home/pm" }),
+    ).toBe("/data/xdg/suduo");
   });
 
   it("uses taskkill for a Windows process tree", () => {

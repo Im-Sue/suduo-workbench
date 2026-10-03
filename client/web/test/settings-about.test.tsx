@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const apiMocks = vi.hoisted(() => ({
   runDoctor: vi.fn(),
   openCodexConfigFile: vi.fn(),
+  requirementsSettings: vi.fn(),
+  testRequirementsSettings: vi.fn(),
 }));
 
 vi.mock("../src/api/client.js", () => ({ api: apiMocks }));
@@ -15,6 +17,7 @@ vi.mock("../src/api/client.js", () => ({ api: apiMocks }));
 import { LICENSE_LINKS, LICENSE_NAME } from "../src/features/settings/license.js";
 import { AboutSection } from "../src/features/settings/sections/AboutSection.js";
 import { searchSettings } from "../src/features/settings/sections.js";
+import { compareWithCloud } from "../src/features/settings/version.js";
 
 let root: Root | null = null;
 let node: HTMLDivElement | null = null;
@@ -28,8 +31,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function renderAbout(): Promise<HTMLDivElement> {
+const NOT_CONFIGURED = { configured: false, baseUrl: null, session: null, mappingCount: 0 };
+const CONFIGURED = { configured: true, baseUrl: "http://192.168.1.10:4100", session: null, mappingCount: 0 };
+
+async function renderAbout(settings: object = NOT_CONFIGURED): Promise<HTMLDivElement> {
   apiMocks.runDoctor.mockResolvedValue({ checks: [] });
+  apiMocks.requirementsSettings.mockResolvedValue(settings);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   node = document.createElement("div");
   document.body.append(node);
@@ -41,6 +48,12 @@ async function renderAbout(): Promise<HTMLDivElement> {
       </QueryClientProvider>,
     ),
   );
+  // 云端版本是两段异步查询（先读设置，再探测云端），等它们都落定。
+  for (let round = 0; round < 5; round += 1) {
+    await act(async () => {
+      await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+    });
+  }
   return node;
 }
 
@@ -73,9 +86,42 @@ describe("设置 · 关于 · 许可", () => {
     vi.stubGlobal("fetch", fetchSpy);
     await renderAbout();
     expect(fetchSpy).not.toHaveBeenCalled();
-    // 关于分组本来只查自检（读 Codex 版本）；许可行不能引入任何校验或上报。
+    // 关于分组只查自检（Codex 版本）与需求服务设置；许可行不能引入任何校验或上报。
     expect(apiMocks.runDoctor).toHaveBeenCalledTimes(1);
     expect(apiMocks.openCodexConfigFile).not.toHaveBeenCalled();
+    // 没配置需求服务时不去探测云端。
+    expect(apiMocks.testRequirementsSettings).not.toHaveBeenCalled();
+  });
+
+  it("云端版本与本机不同：显示云端版本并提示使用相同版本", async () => {
+    vi.stubGlobal("__SUDUO_VERSION__", "0.7.0");
+    apiMocks.testRequirementsSettings.mockResolvedValue({ baseUrl: CONFIGURED.baseUrl, reachable: true, message: "ok", version: "0.6.5" });
+    const container = await renderAbout(CONFIGURED);
+    expect(apiMocks.testRequirementsSettings).toHaveBeenCalledWith(CONFIGURED.baseUrl);
+    expect(container.querySelector('[data-testid="settings-cloud-version"]')?.textContent).toBe("0.6.5");
+    expect(container.querySelector('[data-testid="settings-version-mismatch"]')?.textContent).toContain("本机 0.7.0 与云端 0.6.5 版本不同");
+  });
+
+  it("版本相同不提示；较早的云端不报告版本时显示未知", async () => {
+    vi.stubGlobal("__SUDUO_VERSION__", "0.7.0");
+    apiMocks.testRequirementsSettings.mockResolvedValue({ baseUrl: CONFIGURED.baseUrl, reachable: true, message: "ok", version: "0.7.0" });
+    let container = await renderAbout(CONFIGURED);
+    expect(container.querySelector('[data-testid="settings-version-mismatch"]')).toBeNull();
+    await act(async () => root?.unmount());
+    node?.remove();
+    root = null;
+
+    apiMocks.testRequirementsSettings.mockResolvedValue({ baseUrl: CONFIGURED.baseUrl, reachable: true, message: "ok", version: null });
+    container = await renderAbout(CONFIGURED);
+    expect(container.querySelector('[data-testid="settings-cloud-version"]')?.textContent).toContain("未知");
+    expect(container.querySelector('[data-testid="settings-version-mismatch"]')).toBeNull();
+  });
+
+  it("版本比对：任一方未知时不下结论", () => {
+    expect(compareWithCloud("0.7.0", "0.7.0")).toBe("same");
+    expect(compareWithCloud("0.7.0", "0.6.5")).toBe("different");
+    expect(compareWithCloud(null, "0.6.5")).toBe("unknown");
+    expect(compareWithCloud("0.7.0", null)).toBe("unknown");
   });
 
   it("设置搜索能找到许可", () => {

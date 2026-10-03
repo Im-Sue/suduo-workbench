@@ -380,12 +380,23 @@ describe("Gate B HTTP", () => {
         baseUrl: "https://requirements-probe.example",
         reachable: true,
         message: "远程需求服务连接正常",
+        version: null,
       });
       expect(context.requirementsRemote.state.requests).toEqual([
         "https://requirements-probe.example/v2/health",
       ]);
       expect(snapshotTree(context.v2DataDirectory)).toEqual(before);
       expect(context.requirementsSettings.getBaseUrl()).toBeNull();
+
+      // 新版云端在健康检查里报告产品版本，连接测试原样带回，供设置页比对本机版本。
+      context.requirementsRemote.state.healthVersion = "0.7.0";
+      const withVersion = await context.server.inject({
+        method: "POST",
+        url: "/api/v2/requirements/settings/test",
+        headers: { host: context.host, origin: `http://${context.host}` },
+        payload: { baseUrl: "https://requirements-probe.example" },
+      });
+      expect(withVersion.json()).toMatchObject({ reachable: true, version: "0.7.0" });
     } finally {
       await context.server.close();
       context.database.close();
@@ -1438,6 +1449,8 @@ function createRequirementsRemoteClient(
 ) {
   const state: {
     connection: "ok" | "unavailable";
+    /** 健康检查里报告的云端版本；不设置时模拟不报告版本的较早云端。 */
+    healthVersion?: string;
     requests: string[];
     requirementVersion: number;
     attachmentCount: number;
@@ -1491,6 +1504,7 @@ function createRequirementsRemoteClient(
         JSON.stringify({
           service: "suduo-requirements-service",
           status: "ok",
+          ...(state.healthVersion === undefined ? {} : { version: state.healthVersion }),
           database: { status: "ok", schemaVersion: "fixture" },
           uptimeMs: 1,
         }),

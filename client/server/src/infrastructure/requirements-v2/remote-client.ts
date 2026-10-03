@@ -108,6 +108,8 @@ export class RequirementsRemoteClient {
     baseUrl: string;
     reachable: true;
     message: string;
+    /** 云端的产品版本；较早的云端不报告版本时为 null。 */
+    version: string | null;
   }> {
     let response: Response;
     try {
@@ -146,6 +148,7 @@ export class RequirementsRemoteClient {
       baseUrl,
       reachable: true,
       message: "远程需求服务连接正常",
+      version: typeof payload.version === "string" && payload.version !== "" ? payload.version : null,
     };
   }
 

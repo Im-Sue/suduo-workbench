@@ -436,7 +436,7 @@ export const api = {
 
   /** pr5：试一个**尚未保存**的需求服务地址，不写入任何配置。 */
   testRequirementsSettings: (baseUrl: string) =>
-    request<{ baseUrl: string; reachable: boolean; message: string }>(
+    request<{ baseUrl: string; reachable: boolean; message: string; version: string | null }>(
       "/api/v2/requirements/settings/test",
       { method: "POST", body: { baseUrl } },
     ),

@@ -112,7 +112,7 @@ export async function runDoctor(
     configDir: options.installed
       ? options.codexHome
       : defaultSuDuoConfigDir(),
-    dataDir: defaultSuDuoDataDir(),
+    dataDir: process.env["SUDUO_DATA_DIR"] ?? defaultSuDuoDataDir(),
     port: options.port,
     checkedAt: new Date().toISOString(),
     checks,
