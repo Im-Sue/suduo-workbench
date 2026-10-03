@@ -3,6 +3,7 @@ import {
   REQUIREMENTS_SERVICE_MAX_ACTIVE_ATTACHMENTS_PER_REQUIREMENT,
 } from "@suduo/cloud-contracts";
 import { DEFAULT_ROOM_FILE_EXTENSIONS } from "./application/rooms/file-types.js";
+import { resolveServiceVersion } from "./version.js";
 
 const MAX_ATTACHMENT_BYTES = 314_572_800;
 
@@ -29,6 +30,8 @@ export interface RequirementsServiceConfig {
   allowedRoomFileExtensions?: ReadonlySet<string>;
   runMigrations: boolean;
   logger: boolean;
+  /** 产品版本，健康检查对外报告；直接构造配置的测试可不传，按 "dev" 处理。 */
+  version?: string;
 }
 
 export function loadConfig(
@@ -105,6 +108,7 @@ export function loadConfig(
     ),
     runMigrations: boolean(environment, "REQUIREMENTS_RUN_MIGRATIONS", true),
     logger: boolean(environment, "REQUIREMENTS_LOGGER", true),
+    version: resolveServiceVersion(environment),
   };
 }
 

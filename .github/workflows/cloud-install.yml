@@ -1,0 +1,70 @@
+name: Cloud install
+
+# Installs the cloud with scripts/suduo-cloud.sh on fresh x86_64 Ubuntu runners and walks the full lifecycle:
+# install → seed data → backup → upgrade → purge → reinstall → restore → verify the data byte for byte.
+on:
+  pull_request:
+    paths: ["cloud/**", ".github/workflows/cloud-install.yml"]
+  push:
+    branches: [main]
+    paths: ["cloud/**", ".github/workflows/cloud-install.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: cloud
+    env:
+      COMPOSE: docker compose --env-file server/.env -f server/compose.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Shellcheck
+        run: shellcheck scripts/suduo-cloud.sh
+
+      - name: Install
+        run: sudo ./scripts/suduo-cloud.sh install
+
+      - name: Seed data
+        run: sudo $COMPOSE exec -T requirements-service node --input-type=module - seed < scripts/smoke.mjs > "$RUNNER_TEMP/smoke.json"
+
+      - name: Backup
+        run: sudo ./scripts/suduo-cloud.sh backup --to "$RUNNER_TEMP/backups"
+
+      - name: Upgrade (backs up, rebuilds, starts)
+        run: sudo ./scripts/suduo-cloud.sh upgrade --backup-to "$RUNNER_TEMP/upgrade-backups"
+
+      - name: Purge without a terminal is refused
+        run: |
+          if sudo ./scripts/suduo-cloud.sh uninstall --purge < /dev/null; then
+            echo "purge ran without confirmation" >&2
+            exit 1
+          fi
+          sudo $COMPOSE ps --status running | grep -q requirements-service
+
+      - name: Purge, reinstall, restore
+        run: |
+          sudo SUDUO_ASSUME_YES=1 ./scripts/suduo-cloud.sh uninstall --purge
+          sudo ./scripts/suduo-cloud.sh install
+          backup="$(ls -d "$RUNNER_TEMP"/backups/* | sort | head -n 1)"
+          sudo SUDUO_ASSUME_YES=1 ./scripts/suduo-cloud.sh restore "$backup"
+
+      - name: Verify restored data
+        run: sudo $COMPOSE exec -T -e SMOKE_STATE="$(cat "$RUNNER_TEMP/smoke.json")" requirements-service node --input-type=module - verify < scripts/smoke.mjs
+
+      - name: Status
+        run: sudo ./scripts/suduo-cloud.sh status
+
+      - name: Logs
+        if: failure()
+        run: sudo $COMPOSE logs --no-color --tail 300

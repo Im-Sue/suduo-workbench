@@ -79,7 +79,6 @@ cloud/server/
 ├── .env.example                    服务与 compose 的环境变量样例
 ├── Dockerfile                      多阶段、非 root 的服务镜像
 ├── compose.yaml                    PostgreSQL 与服务的部署示例
-├── DEPLOYMENT.md                   启动、健康检查、备份与恢复说明
 ├── migrations/                     SQL 迁移脚本
 │   ├── 001_initial.sql
 │   └── 002_attachments.sql
@@ -168,7 +167,7 @@ loadConfig()
 - 迁移：`db:migrate` → `node dist/migrate.js`（也可由 `runMigrations` 配置项在启动时执行）
 - `Dockerfile`：Node 24 多阶段构建，运行镜像以非 root 用户运行，并以 `GET /v2/health` 作为健康检查。
 - `compose.yaml`：在 `cloud/` 目录下用 `docker compose --env-file server/.env -f server/compose.yaml up --build -d` 启动（构建上下文是 `cloud/` 工作区）；仅映射服务端口，PostgreSQL 与附件分别使用具名持久卷。
-- `DEPLOYMENT.md`：提供启动、健康检查及备份恢复说明；在线单独执行 `pg_dump` 与在线附件卷拷贝不能组成可恢复的一致备份，须停服后同时备份或使用一致性快照。
+- 部署指南在 `cloud/DEPLOYMENT.md`（英文）与 `cloud/DEPLOYMENT.zh-CN.md`（中文），安装与运维脚本是 `cloud/scripts/suduo-cloud.sh`（安装、升级、备份、恢复、状态、日志、卸载）；在线单独执行 `pg_dump` 与在线附件卷拷贝不能组成可恢复的一致备份，脚本备份时会短暂停服，同时导出数据库与两个文件卷。
 
 `loadConfig()` 在建立数据库和监听前读取必填环境变量；缺失、附件目录非绝对路径或密钥不足 32 个字符都会使启动失败：
 

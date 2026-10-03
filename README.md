@@ -79,7 +79,7 @@ pnpm uninstall:m1 -- --purge-data
 
 ## 需求工作台：全新安装后的配置
 
-先由部署负责人按 [requirements-service 部署说明](cloud/server/DEPLOYMENT.md) 提供可访问的 HTTPS（或受控 HTTP）根地址，并确认其 `/v2/health` 可用。SuDuo 本机端不保存远程服务的管理员密钥。
+先由部署负责人按 [云端部署指南](cloud/DEPLOYMENT.zh-CN.md)（[English](cloud/DEPLOYMENT.md)）在服务器上装好云端，提供可访问的 HTTPS（或受控 HTTP）根地址，并确认其 `/v2/health` 可用。SuDuo 本机端不保存远程服务的管理员密钥。
 
 [`client/server/.env.example`](client/server/.env.example) 列出了本机端可用的环境变量，但服务不会自动读取这个文件：请把值放入实际启动环境。WSL/Linux 安装器版编辑 `~/.config/suduo/suduo.env` 后执行 `systemctl --user restart suduo.service`；源码手动启动时在启动命令所在的 shell 中导出变量。Windows 安装器版可直接在工作台的“V2 设置”页保存地址，无需修改安装包。
 

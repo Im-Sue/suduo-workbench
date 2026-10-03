@@ -2,7 +2,7 @@ name: suduo-requirements-service
 
 services:
   postgres:
-    image: postgres:17.4-bookworm
+    image: ${SUDUO_POSTGRES_IMAGE:-postgres:17.4-bookworm}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?请先从 .env.example 创建 .env 并设置 POSTGRES_DB}
@@ -20,12 +20,16 @@ services:
     build:
       context: ..
       dockerfile: server/Dockerfile
+      args:
+        NODE_IMAGE: ${SUDUO_NODE_IMAGE:-node:24.10.0-bookworm-slim}
+        NPM_REGISTRY: ${SUDUO_NPM_REGISTRY:-https://registry.npmjs.org}
     restart: unless-stopped
     env_file:
       - .env
     environment:
       REQUIREMENTS_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     ports:
+      # 默认在所有地址（IPv4 与 IPv6）上开放；只想对本机开放时用 server/compose.override.yaml 覆盖，见 cloud/DEPLOYMENT.md。
       - "${REQUIREMENTS_PORT:-4100}:${REQUIREMENTS_PORT:-4100}"
     volumes:
       - requirements_attachments:/var/lib/suduo/attachments
