@@ -2,13 +2,15 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { settingsQuery } from "../queries.js";
 import { LoginForm } from "./LoginForm.js";
+import { useT } from "../../i18n/provider.js";
 
 /** 登录页：居中聚焦布局，不显示侧栏。 */
 export function LoginPage() {
+  const t = useT();
   const baseUrl = useQuery(settingsQuery).data?.baseUrl ?? null;
   return (
     <main
-      aria-label="登录远程需求服务"
+      aria-label={t.setup.login.pageLabel}
       className="flex min-h-dvh w-full items-center justify-center bg-background p-6"
     >
       <div className="flex w-[min(400px,100%)] flex-col gap-6">
@@ -17,8 +19,8 @@ export function LoginPage() {
             SD
           </span>
           <div className="flex flex-col gap-1">
-            <h1 className="m-0 text-display font-semibold text-foreground">登录 SuDuo</h1>
-            <p className="m-0 text-body text-muted-foreground">登录后即可查看和协作团队的需求。</p>
+            <h1 className="m-0 text-display font-semibold text-foreground">{t.setup.login.title}</h1>
+            <p className="m-0 text-body text-muted-foreground">{t.setup.login.intro}</p>
           </div>
         </div>
         <div className="rounded-lg border border-border bg-card p-6 shadow-raised">
@@ -26,9 +28,10 @@ export function LoginPage() {
           <LoginForm onAuthenticated={() => undefined} />
         </div>
         <p className="m-0 text-caption text-subtle-foreground">
-          需求服务：<span className="font-mono">{baseUrl ?? "未配置"}</span>
+          {t.setup.login.serviceLabel}
+          <span className="font-mono">{baseUrl ?? t.setup.login.serviceNotConfigured}</span>
           <Link to="/setup" search={{ step: 1 }} className="ml-2 text-primary-text no-underline hover:underline">
-            更换
+            {t.setup.login.changeService}
           </Link>
         </p>
       </div>

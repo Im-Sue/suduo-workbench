@@ -1,0 +1,50 @@
+import type { Messages } from "../zh-CN/index.js";
+
+export const feedback = {
+  fallback: {
+    cancelled: "Canceled",
+    auth_expired: "Your sign-in has expired. Sign in again.",
+    not_configured: "Finish the required setup first.",
+    version_conflict: "This changed in the meantime. Refresh and try again.",
+    stale_state: "The state has changed. Refresh and try again.",
+    validation: "Check what you entered and try again.",
+    forbidden: "You don't have permission to do this.",
+    not_found: "This doesn't exist or has been removed.",
+    upstream_unavailable: "A service SuDuo depends on is unavailable. Try again later.",
+    runtime_failed: "SuDuo couldn't finish this. Try again later.",
+    transport_unknown: "Can't reach SuDuo right now. Try again later.",
+    unknown: "Something went wrong. Try again later.",
+  },
+  titled: (title: string, message: string) => `${title}: ${message}`,
+  retry: "Retry",
+  goToLogin: "Sign in",
+  page: {
+    authExpiredTitle: "Sign-in expired",
+    unavailableTitle: "This can't be shown right now",
+    loginUnavailable: "Sign-in isn't available. Refresh the page and try again.",
+    actionUnavailable: (label: string) => `${label} (unavailable)`,
+  },
+  dialog: {
+    confirm: "Confirm",
+    cancel: "Cancel",
+    close: "Close",
+    discardPrompt: "Discard what you entered?",
+    keepEditing: "Keep editing",
+    discard: "Discard",
+  },
+  markdown: {
+    pathAtLine: (path: string, line: number) => `${path}, line ${String(line)}`,
+    pathHint: "Click to preview in the file panel; ⌘ / Ctrl-click to open in your editor",
+    code: "Code",
+    copyCode: "Copy code",
+    copy: "Copy",
+    copied: "Copied",
+  },
+  sessionStatus: {
+    running: "Running",
+    approval: "Waiting for you",
+    completed: "Completed",
+    idle: "Idle",
+    error: "Error",
+  },
+} satisfies Messages["feedback"];

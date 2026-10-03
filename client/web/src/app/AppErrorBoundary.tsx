@@ -1,4 +1,6 @@
 import { Component, type ReactNode } from "react";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor } from "../i18n/messages/index.js";
 
 /**
  * 顶层错误边界：任何未捕获的渲染异常都落到这张可恢复卡片，而不是整窗白屏
@@ -44,14 +46,13 @@ export class AppErrorBoundary extends Component<
     if (this.state.error === null) {
       return this.props.children;
     }
+    // 边界在语言边界之外，不随切换重建；出错时按当时的界面语言取文字。
+    const text = messagesFor(currentLocale()).setup.crash;
     return (
       <div className="grid h-full w-full place-items-center bg-background p-6 text-foreground" role="alert">
         <div className="w-[480px] max-w-full rounded-lg border border-border bg-card p-8 shadow-overlay">
-          <h1 className="m-0 mb-2 text-page font-semibold">页面出了问题，暂时显示不了</h1>
-          <p className="m-0 mb-3.5 text-body text-muted-foreground">
-            你的会话和 Codex 的工作都还在这台电脑上，没有丢。先重新加载试试；如果反复出现，再清除本机缓存后重新加载，
-            历史记录会自动补回来。
-          </p>
+          <h1 className="m-0 mb-2 text-page font-semibold">{text.title}</h1>
+          <p className="m-0 mb-3.5 text-body text-muted-foreground">{text.body}</p>
           <pre className="m-0 mb-4.5 max-h-30 overflow-auto rounded-md border border-border bg-muted px-3 py-2.5 font-mono text-caption break-all whitespace-pre-wrap text-subtle-foreground">
             {this.state.error.message}
           </pre>
@@ -62,14 +63,14 @@ export class AppErrorBoundary extends Component<
               className="h-8 rounded-md bg-primary px-3 text-small font-medium text-primary-foreground hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               onClick={this.reload}
             >
-              重新加载
+              {text.reload}
             </button>
             <button
               type="button"
               className="h-8 rounded-md border border-border-strong bg-card px-3 text-small font-medium text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               onClick={this.clearCacheAndReload}
             >
-              清除本机缓存并重新加载
+              {text.clearCacheAndReload}
             </button>
           </div>
         </div>

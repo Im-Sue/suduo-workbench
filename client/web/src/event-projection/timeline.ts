@@ -1,6 +1,6 @@
 import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
 import type { ConversationMessage, CurrentStep, TurnMeta, TurnStatus } from "./reducer.js";
-import { completedAgentMessageText, describeCodexError, localizeTurnError, noticeOf, objectValue, describePermissions } from "./shared.js";
+import { completedAgentMessageText, codexErrorDescription, describeCodexError, localizeTurnError, noticeOf, objectValue, describePermissions } from "./shared.js";
 import {
   dynamicToolDetail,
   dynamicToolOutput,
@@ -8,6 +8,8 @@ import {
   suDuoToolConfirmationOf,
   suDuoToolConfirmationTitle,
 } from "./suduo-tools.js";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor, type Messages } from "../i18n/messages/index.js";
 
 /**
  * 会话时间线（技术设计 §10.1 P3a）：把事件投影成「用户消息 / 回合 / 会话提示」的有序列表，供消息流直接渲染。
@@ -18,6 +20,8 @@ import {
  * - 运行中插进来的话（并入当前回合）放在回合里它发生的位置；
  * - 计划取最新一版；回合失败 / 运行时错误落在所属回合的错误卡上（可重试的只是「正在重试」）；
  *   没有回合归属的错误成为会话提示，而不是一个无人读取的全局字符串。
+ *
+ * 步骤标题、审批与错误的文字按调用时的语言取（`t`，默认是当前语言的字典）；判断一律看类型与字段，不看文字。
  */
 
 export type StepKind =
@@ -144,6 +148,7 @@ export function buildTimeline(
   sortedEvents: readonly EventEnvelope<string, JsonValue>[],
   messages: readonly ConversationMessage[],
   turnMeta: ReadonlyMap<string, TurnMeta>,
+  t: Messages = messagesFor(currentLocale()),
 ): { timeline: TimelineEntry[]; usage: ContextUsage | null } {
   const entries: TimelineEntry[] = [];
   const turns = new Map<string, TurnDraft>();
@@ -237,7 +242,7 @@ export function buildTimeline(
       continue;
     }
 
-    const notice = noticeOf(event);
+    const notice = noticeOf(event, t);
     if (notice !== undefined) {
       if (notice !== null && !noticeTexts.has(notice.text)) {
         noticeTexts.add(notice.text);
@@ -267,11 +272,15 @@ export function buildTimeline(
         const retrying = payload["willRetry"] === true;
         // 已经收口的回合保留收口时的原因；可重试的错误只在回合还没结束时提示。
         if (turn.timeline.endedTs !== null && (retrying || turn.timeline.error !== null)) continue;
-        const described = Object.keys(error).length > 0 ? describeCodexError(error) : localizeTurnError(raw);
-        turn.timeline.error = { message: retrying && !/正在(重连|自动重试)/.test(described) ? retryText(raw) : described, retrying };
+        const described =
+          Object.keys(error).length > 0
+            ? codexErrorDescription(error, t)
+            : { text: localizeTurnError(raw, t), reconnectAttempt: false };
+        // 说法里已经带了第几次重连就照用；否则可重试的错误说成「正在自动重试」。
+        turn.timeline.error = { message: retrying && !described.reconnectAttempt ? retryText(raw, t) : described.text, retrying };
         continue;
       }
-      const text = event.type === "runtime.recovery-required" ? raw || "运行时连接已恢复，可以继续工作" : localizeTurnError(raw);
+      const text = event.type === "runtime.recovery-required" ? raw || t.timeline.notice.runtimeRecovered : localizeTurnError(raw, t);
       entries.push({
         kind: "notice",
         id: `notice:${event.eventId}`,
@@ -308,8 +317,8 @@ export function buildTimeline(
         const error = objectValue(nativeTurn["error"] ?? payload["error"]);
         turn.timeline.error = {
           message: Object.keys(error).length > 0
-            ? describeCodexError(error)
-            : localizeTurnError(String(payload["message"] ?? "")),
+            ? describeCodexError(error, t)
+            : localizeTurnError(String(payload["message"] ?? ""), t),
           retrying: false,
         };
       } else if (turn.timeline.error?.retrying === true) {
@@ -322,7 +331,7 @@ export function buildTimeline(
       }
       for (const step of turn.steps.values()) {
         if (step.status === "running" || step.status === "waiting") {
-          if (step.status === "waiting") step.title = approvalTitle(approvals.get(step.id.slice("approval:".length))?.kind ?? "other", step.detail, "orphaned");
+          if (step.status === "waiting") step.title = approvalTitle(approvals.get(step.id.slice("approval:".length))?.kind ?? "other", step.detail, "orphaned", t);
           step.status = step.status === "waiting" ? "aborted" : closedAs;
           step.endedTs = event.ts;
         }
@@ -348,14 +357,14 @@ export function buildTimeline(
       const itemId = typeof payload["itemId"] === "string" ? payload["itemId"] : null;
       if (itemId === null) continue;
       const turn = turnFor(turnId, event);
-      const step = turn.steps.get(itemId) ?? newStep(itemId, "thinking", "思考", event);
+      const step = turn.steps.get(itemId) ?? newStep(itemId, "thinking", t.timeline.step.thinking, event);
       if (!turn.steps.has(itemId)) placeStep(turn, step);
       const parts = turn.reasoningParts.get(itemId) ?? [];
       const index = numberOr(payload["summaryIndex"], parts.length === 0 ? 0 : parts.length - 1);
       while (parts.length <= index) parts.push("");
       if (event.type === "reasoning.summary-delta") parts[index] += String(payload["delta"] ?? "");
       turn.reasoningParts.set(itemId, parts);
-      applyReasoning(step, parts);
+      applyReasoning(step, parts, t);
       progressed(turn);
       continue;
     }
@@ -366,7 +375,7 @@ export function buildTimeline(
       const turn = turnFor(turnId, event);
       let step = turn.steps.get(itemId);
       if (step === undefined) {
-        step = newStep(itemId, "command", "运行命令", event);
+        step = newStep(itemId, "command", t.timeline.step.runCommand, event);
         placeStep(turn, step);
       }
       step.output += String(payload["delta"] ?? "");
@@ -400,11 +409,11 @@ export function buildTimeline(
       const request = objectValue(payload["request"]);
       // SuDuo 写工具的确认卡（发评论 / 发布确认版）：说成「发评论到 REQ-1「…」」。
       const toolConfirmation = suDuoToolConfirmationOf(event.payload);
-      step.detail = toolConfirmation === null ? approvalSubject(request) : suDuoToolConfirmationTitle(toolConfirmation);
+      step.detail = toolConfirmation === null ? approvalSubject(request, t) : suDuoToolConfirmationTitle(toolConfirmation, t);
       // v2 文件改动审批只带 itemId：从同一 item 的改动卡里取要改的文件。
       if (step.detail === "" && typeof request["itemId"] === "string") {
         const changes = turn.files.get(request["itemId"])?.changes ?? [];
-        if (changes.length > 0) step.detail = changes.length === 1 ? baseName(changes[0]?.path ?? "") : `${changes.length} 个文件`;
+        if (changes.length > 0) step.detail = changes.length === 1 ? baseName(changes[0]?.path ?? "") : t.timeline.approval.files(changes.length);
       }
       // 命令审批里 kind=writeStdin 是向已在运行的命令输入内容，单独说。
       const kind =
@@ -413,7 +422,7 @@ export function buildTimeline(
           : payload["kind"] === "command" && request["kind"] === "writeStdin"
             ? "stdin"
             : String(payload["kind"] ?? "other");
-      step.title = approvalTitle(kind, step.detail, "waiting");
+      step.title = approvalTitle(kind, step.detail, "waiting", t);
       step.output = typeof request["reason"] === "string" ? request["reason"] : "";
       placeStep(turn, step);
       approvals.set(ref, { turn, step, kind });
@@ -428,13 +437,13 @@ export function buildTimeline(
         const decision = String(payload["decision"] ?? "");
         const accepted = decision === "accept" || decision === "acceptForSession";
         step.status = accepted ? "completed" : "declined";
-        step.title = approvalTitle(kind, step.detail, decision);
+        step.title = approvalTitle(kind, step.detail, decision, t);
       } else if (event.type === "approval.orphaned") {
         step.status = "aborted";
-        step.title = approvalTitle(kind, step.detail, "orphaned");
+        step.title = approvalTitle(kind, step.detail, "orphaned", t);
       } else {
         step.status = "failed";
-        step.title = approvalTitle(kind, step.detail, "delivery-failed");
+        step.title = approvalTitle(kind, step.detail, "delivery-failed", t);
       }
       step.endedTs = event.ts;
       continue;
@@ -470,7 +479,7 @@ export function buildTimeline(
 
       const existing = turn.steps.get(itemId);
       const step = existing ?? newStep(itemId, "other", "", event);
-      describeItem(step, item, type);
+      describeItem(step, item, type, t);
       step.status = itemStatus(item["status"], completed);
       // 自定义工具：状态是 completed 但 success=false（工具返回失败）也标成失败。
       if (type === "dynamicToolCall" && item["success"] === false) step.status = "failed";
@@ -479,7 +488,7 @@ export function buildTimeline(
         const summary = Array.isArray(item["summary"]) ? item["summary"].map(String) : [];
         if (summary.length > 0) {
           turn.reasoningParts.set(itemId, summary);
-          applyReasoning(step, summary);
+          applyReasoning(step, summary, t);
         }
       }
       if (existing === undefined) placeStep(turn, step);
@@ -559,7 +568,8 @@ function newStep(id: string, kind: StepKind, title: string, event: EventEnvelope
 }
 
 /** 按 item 类型给步骤起标题：用动作短语，命令按 Codex 的解析归为查看 / 搜索 / 列目录。 */
-function describeItem(step: TimelineStep, item: Record<string, JsonValue>, type: string): void {
+function describeItem(step: TimelineStep, item: Record<string, JsonValue>, type: string, t: Messages): void {
+  const text = t.timeline.step;
   switch (type) {
     case "commandExecution": {
       const command = typeof item["command"] === "string" ? item["command"] : Array.isArray(item["command"]) ? item["command"].map(String).join(" ") : step.detail;
@@ -569,18 +579,18 @@ function describeItem(step: TimelineStep, item: Record<string, JsonValue>, type:
       if (actions.length > 0 && kinds.size === 1 && kinds.has("read")) {
         step.kind = "read";
         const names = actions.map((action) => String(action["name"] ?? action["path"] ?? ""));
-        step.title = names.length === 1 ? `查看 ${names[0]}` : `查看 ${names.length} 个文件`;
+        step.title = names.length === 1 ? text.read(names[0] ?? "") : text.readFiles(names.length);
       } else if (actions.length > 0 && kinds.size === 1 && kinds.has("search")) {
         step.kind = "search";
         const query = actions[0]?.["query"];
-        step.title = typeof query === "string" && query !== "" ? `搜索「${query}」` : "搜索代码";
+        step.title = typeof query === "string" && query !== "" ? text.search(query) : text.searchCode;
       } else if (actions.length > 0 && kinds.size === 1 && kinds.has("listFiles")) {
         step.kind = "list";
         const path = actions[0]?.["path"];
-        step.title = typeof path === "string" && path !== "" ? `列出 ${path}` : "列出文件";
+        step.title = typeof path === "string" && path !== "" ? text.listPath(path) : text.listFiles;
       } else {
         step.kind = "command";
-        step.title = `运行 ${firstLine(command)}`;
+        step.title = text.run(firstLine(command));
       }
       if (typeof item["exitCode"] === "number") step.exitCode = item["exitCode"];
       if (typeof item["durationMs"] === "number") step.durationMs = item["durationMs"];
@@ -589,11 +599,11 @@ function describeItem(step: TimelineStep, item: Record<string, JsonValue>, type:
     }
     case "reasoning":
       step.kind = "thinking";
-      if (step.title === "") step.title = "思考";
+      if (step.title === "") step.title = text.thinking;
       return;
     case "mcpToolCall": {
       step.kind = "tool";
-      step.title = `调用 ${String(item["server"] ?? "")} · ${String(item["tool"] ?? "")}`;
+      step.title = text.callMcpTool(String(item["server"] ?? ""), String(item["tool"] ?? ""));
       step.detail = compactJson(item["arguments"]);
       if (typeof item["durationMs"] === "number") step.durationMs = item["durationMs"];
       const error = objectValue(item["error"]);
@@ -603,112 +613,111 @@ function describeItem(step: TimelineStep, item: Record<string, JsonValue>, type:
       return;
     }
     case "dynamicToolCall": {
-      // SuDuo 工具（ADR-0008）：中文动作名 + 关键参数 + 返回的文字；未知工具显示原名。
+      // SuDuo 工具（ADR-0008）：动作名 + 关键参数 + 返回的文字；未知工具显示原名。
       const tool = typeof item["tool"] === "string" ? item["tool"] : "";
       step.kind = "tool";
-      step.title = dynamicToolTitle(tool);
-      step.detail = dynamicToolDetail(tool, item["arguments"]);
+      step.title = dynamicToolTitle(tool, t);
+      step.detail = dynamicToolDetail(tool, item["arguments"], t);
       if (typeof item["durationMs"] === "number") step.durationMs = item["durationMs"];
-      const output = dynamicToolOutput(item["contentItems"]);
+      const output = dynamicToolOutput(item["contentItems"], t);
       if (output !== "") step.output = output;
       return;
     }
     case "webSearch":
       step.kind = "web";
-      step.title = typeof item["query"] === "string" && item["query"] !== "" ? `搜索网页「${item["query"]}」` : "搜索网页";
+      step.title = typeof item["query"] === "string" && item["query"] !== "" ? text.webSearch(item["query"]) : text.webSearchAny;
       return;
     case "imageView":
       step.kind = "read";
-      step.title = `查看图片 ${baseName(String(item["path"] ?? ""))}`;
+      step.title = text.viewImage(baseName(String(item["path"] ?? "")));
       step.detail = String(item["path"] ?? "");
       return;
     case "contextCompaction":
-      step.title = "压缩了较早的对话，腾出上下文空间";
+      step.title = text.contextCompaction;
       return;
     case "enteredReviewMode":
-      step.title = "进入代码审查";
+      step.title = text.enterReview;
       return;
     case "exitedReviewMode":
-      step.title = "结束代码审查";
+      step.title = text.exitReview;
       return;
     case "sleep":
-      step.title = "等待";
+      step.title = text.sleep;
       if (typeof item["durationMs"] === "number") step.durationMs = item["durationMs"];
       return;
     case "imageGeneration":
-      step.title = "生成图片";
+      step.title = text.generateImage;
       return;
     case "collabAgentToolCall":
     case "subAgentActivity":
       step.kind = "tool";
-      step.title = "协作代理";
+      step.title = text.collabAgent;
       return;
     default:
-      if (step.title === "") step.title = type === "" ? "工具调用" : String(item["name"] ?? type);
+      if (step.title === "") step.title = type === "" ? text.toolCall : String(item["name"] ?? type);
   }
 }
 
 /** 审批请求要确认的对象：命令原文、要改的文件，或要的权限范围。 */
-function approvalSubject(request: Record<string, JsonValue>): string {
+function approvalSubject(request: Record<string, JsonValue>, t: Messages): string {
   const command = request["command"];
   if (typeof command === "string") return command;
   if (Array.isArray(command)) return command.map(String).join(" ");
   if (typeof request["path"] === "string") return request["path"];
-  const permissions = describePermissions(request["permissions"]);
+  const permissions = describePermissions(request["permissions"], t);
   if (permissions !== "") return permissions;
   const changes = request["changes"];
   if (changes !== null && typeof changes === "object" && !Array.isArray(changes)) {
     const paths = Object.keys(changes);
-    if (paths.length > 0) return paths.length === 1 ? (paths[0] ?? "") : `${paths.length} 个文件`;
+    if (paths.length > 0) return paths.length === 1 ? (paths[0] ?? "") : t.timeline.approval.files(paths.length);
   }
   return "";
 }
 
-const APPROVAL_VERB: Record<string, string> = {
-  command: "运行命令",
-  stdin: "向正在运行的命令输入内容",
-  "file-change": "修改文件",
-  permissions: "变更权限",
-};
-
-function approvalTitle(kind: string, subject: string, state: string): string {
-  const verb = APPROVAL_VERB[kind] ?? "继续";
-  const what =
-    kind === "suduo-tool" && subject !== ""
-      ? subject
-      : kind === "command" && subject !== ""
-        ? `运行 ${firstLine(subject)}`
-        : kind === "stdin" && subject !== ""
-          ? `向 ${firstLine(subject)} 输入内容`
-          : subject !== "" && kind === "file-change"
-            ? `修改 ${subject}`
-            : subject !== "" && kind === "permissions"
-              ? `${verb}（${subject.split("\n").join("、")}）`
-              : verb;
+/** 审批步骤的标题：「等你确认：运行 pnpm test」。kind 是审批类型，state 是等待中 / 决定 / 失效 / 没送达。 */
+function approvalTitle(kind: string, subject: string, state: string, t: Messages): string {
+  const text = t.timeline.approval;
+  const what = approvalWhat(kind, subject, text);
   switch (state) {
     case "waiting":
-      return `等你确认：${what}`;
+      return text.state.waiting(what);
     case "accept":
-      return `已批准：${what}`;
+      return text.state.accepted(what);
     case "acceptForSession":
-      return `已批准（本会话同类不再询问）：${what}`;
+      return text.state.acceptedForSession(what);
     case "decline":
-      return `已拒绝：${what}`;
+      return text.state.declined(what);
     case "cancel":
-      return `已拒绝并中断：${what}`;
+      return text.state.cancelled(what);
     case "delivery-failed":
-      return `审批没能送达：${what}`;
+      return text.state.deliveryFailed(what);
     default:
-      return `审批已失效：${what}`;
+      return text.state.expired(what);
   }
 }
 
+/** 要确认的事：有具体对象时带上对象（命令只取第一行），没有时只说动作。 */
+function approvalWhat(kind: string, subject: string, text: Messages["timeline"]["approval"]): string {
+  if (subject !== "") {
+    if (kind === "suduo-tool") return subject;
+    if (kind === "command") return text.subject.command(firstLine(subject));
+    if (kind === "stdin") return text.subject.stdin(firstLine(subject));
+    if (kind === "file-change") return text.subject.fileChange(subject);
+    if (kind === "permissions") return text.subject.permissions(subject.split("\n"));
+  }
+  if (kind === "command") return text.action.command;
+  if (kind === "stdin") return text.action.stdin;
+  if (kind === "file-change") return text.action.fileChange;
+  if (kind === "permissions") return text.action.permissions;
+  return text.action.other;
+}
+
 /** Codex 推理摘要常以「**标题**」开头：标题进步骤名，全文进输出。 */
-function applyReasoning(step: TimelineStep, parts: readonly string[]): void {
+function applyReasoning(step: TimelineStep, parts: readonly string[], t: Messages): void {
   const text = parts.filter((part) => part.trim() !== "").join("\n\n");
   step.output = text;
   const heading = /^\s*\*\*(.+?)\*\*/.exec(text)?.[1]?.trim();
-  step.title = heading === undefined || heading === "" ? "思考" : `思考：${heading}`;
+  step.title = heading === undefined || heading === "" ? t.timeline.step.thinking : t.timeline.step.thinkingAbout(heading);
 }
 
 function itemStatus(value: JsonValue | undefined, completed: boolean): StepStatus {
@@ -806,9 +815,8 @@ function summarize(turn: TurnTimeline): TurnSummary {
   };
 }
 
-function retryText(raw: string): string {
-  const reason = localizeTurnError(raw);
-  return raw === "" ? "模型服务暂时没有响应，正在自动重试…" : `${reason.replace(/[。.]$/, "")}，正在自动重试…`;
+function retryText(raw: string, t: Messages): string {
+  return raw === "" ? t.timeline.error.noResponseRetrying : t.timeline.error.retrying(localizeTurnError(raw, t));
 }
 
 function numberOr(value: JsonValue | undefined, fallback: number): number {

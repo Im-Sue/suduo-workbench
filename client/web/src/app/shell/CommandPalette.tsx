@@ -1,3 +1,4 @@
+import { LOCALES } from "@suduo/client-contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -30,6 +31,8 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { applyThemePreference } from "../../ui/theme.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
+import { useT } from "../../i18n/provider.js";
 import { rememberProjectId, useCurrentProject } from "../project-context.js";
 import { ProjectMark } from "./ProjectSwitcher.js";
 import { requirementCode } from "../../features/requirements/format.js";
@@ -38,9 +41,31 @@ import { useSessionLauncher } from "./SessionLauncher.js";
 import { keyLabel } from "../shortcuts.js";
 import { requestProjectAction, setCommandPaletteOpen, setShortcutsOpen, useCommandPaletteOpen } from "./shell-actions.js";
 
+/**
+ * 命令的搜索文本：所有语言的显示名与搜索词拼在一起，中文、英文都能搜到同一条命令；
+ * 显示仍用当前语言（中英双语技术设计 §4.3）。
+ */
+function searchText(pick: (messages: Messages) => string): string {
+  return LOCALES.map((locale) => pick(messagesFor(locale)))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+type NavCommand = "myWork" | "requirements" | "rooms" | "sessions" | "overview" | "settings";
+type ActionCommand = keyof Messages["shell"]["commandPalette"]["actions"];
+
+const navSearch = (key: NavCommand) =>
+  searchText((m) => `${m.shell.nav[key]} ${m.shell.commandPalette.keywords[key]}`);
+const actionSearch = (key: ActionCommand) =>
+  searchText((m) => `${m.shell.commandPalette.actions[key]} ${m.shell.commandPalette.keywords[key]}`);
+
 /** ⌘K 命令面板：跳转、搜需求（按标题）、切项目、常用动作。 */
 export function CommandPalette({ onToggleSidebar }: { onToggleSidebar(): void }) {
   const open = useCommandPaletteOpen();
+  const t = useT();
+  const nav = t.shell.nav;
+  const text = t.shell.commandPalette;
   const navigate = useNavigate();
   const { project, projects } = useCurrentProject();
   const launcher = useSessionLauncher();
@@ -72,20 +97,20 @@ export function CommandPalette({ onToggleSidebar }: { onToggleSidebar(): void })
         className="top-[18vh] translate-y-0 gap-0 overflow-hidden p-0"
         aria-describedby={undefined}
       >
-        <DialogTitle className="sr-only">搜索或执行命令</DialogTitle>
+        <DialogTitle className="sr-only">{text.title}</DialogTitle>
         <Command loop>
-          <CommandInput value={query} onValueChange={setQuery} placeholder="搜索需求标题或编号、页面、命令" />
+          <CommandInput value={query} onValueChange={setQuery} placeholder={text.placeholder} />
           <CommandList className="max-h-[420px]">
             <CommandEmpty>
               {search.isFetching ? (
-                <span className="inline-flex items-center gap-2"><Spinner />正在搜索…</span>
+                <span className="inline-flex items-center gap-2"><Spinner />{text.searching}</span>
               ) : (
-                "没有匹配的结果"
+                text.noMatch
               )}
             </CommandEmpty>
 
             {project !== null && deferred.length > 0 && (search.data?.items.length ?? 0) > 0 ? (
-              <CommandGroup heading={`需求 · ${project.name}`}>
+              <CommandGroup heading={text.requirementsIn(project.name)}>
                 {search.data?.items.map((item) => (
                   <CommandItem
                     key={item.id}
@@ -105,50 +130,50 @@ export function CommandPalette({ onToggleSidebar }: { onToggleSidebar(): void })
               </CommandGroup>
             ) : null}
 
-            <CommandGroup heading="跳转">
-              <CommandItem value="我的工作 my" onSelect={run(() => void navigate({ to: "/my" }))}>
-                <InboxIcon />我的工作
+            <CommandGroup heading={text.groups.goTo}>
+              <CommandItem value={navSearch("myWork")} onSelect={run(() => void navigate({ to: "/my" }))}>
+                <InboxIcon />{nav.myWork}
               </CommandItem>
               {project === null ? null : (
                 <CommandItem
-                  value="需求 看板 requirements"
+                  value={navSearch("requirements")}
                   onSelect={run(() => void navigate({ to: "/p/$projectId/requirements", params: { projectId: project.id } }))}
                 >
-                  <KanbanSquareIcon />需求
+                  <KanbanSquareIcon />{nav.requirements}
                 </CommandItem>
               )}
               {project === null ? null : (
                 <CommandItem
-                  value="讨论 房间 群聊 rooms chat"
+                  value={navSearch("rooms")}
                   onSelect={run(() => void navigate({ to: "/p/$projectId/rooms", params: { projectId: project.id } }))}
                 >
-                  <MessageCircleIcon />讨论
+                  <MessageCircleIcon />{nav.rooms}
                 </CommandItem>
               )}
-              <CommandItem value="会话 sessions" onSelect={run(() => void navigate({ to: "/sessions" }))}>
-                <MessagesSquareIcon />会话
+              <CommandItem value={navSearch("sessions")} onSelect={run(() => void navigate({ to: "/sessions" }))}>
+                <MessagesSquareIcon />{nav.sessions}
               </CommandItem>
               {project === null ? null : (
                 <CommandItem
-                  value="概览 overview"
+                  value={navSearch("overview")}
                   onSelect={run(() => void navigate({ to: "/p/$projectId/overview", params: { projectId: project.id } }))}
                 >
-                  <ChartColumnIcon />概览
+                  <ChartColumnIcon />{nav.overview}
                 </CommandItem>
               )}
-              <CommandItem value="设置 settings" onSelect={run(() => void navigate({ to: "/settings" }))}>
-                <SettingsIcon />设置
+              <CommandItem value={navSearch("settings")} onSelect={run(() => void navigate({ to: "/settings" }))}>
+                <SettingsIcon />{nav.settings}
               </CommandItem>
             </CommandGroup>
 
             {projects.length > 1 ? (
-              <CommandGroup heading="切换项目">
+              <CommandGroup heading={text.groups.switchProject}>
                 {projects
                   .filter((item) => item.id !== project?.id && !item.isArchived)
                   .map((item) => (
                     <CommandItem
                       key={item.id}
-                      value={`切换项目 ${item.name}`}
+                      value={`${searchText((m) => m.shell.commandPalette.groups.switchProject)} ${item.name}`}
                       onSelect={run(() => {
                         rememberProjectId(item.id);
                         void navigate({ to: "/p/$projectId/requirements", params: { projectId: item.id } });
@@ -161,33 +186,33 @@ export function CommandPalette({ onToggleSidebar }: { onToggleSidebar(): void })
               </CommandGroup>
             ) : null}
 
-            <CommandGroup heading="操作">
+            <CommandGroup heading={text.groups.actions}>
               {project === null ? null : (
                 <CommandItem
-                  value="新建项目会话 本机"
+                  value={actionSearch("startProjectSession")}
                   disabled={launcher.launching}
                   onSelect={run(() => void launcher.launch({ kind: "project", remoteProjectId: project.id }))}
                 >
-                  <MessageSquarePlusIcon />在本机开始项目会话
+                  <MessageSquarePlusIcon />{text.actions.startProjectSession}
                 </CommandItem>
               )}
-              <CommandItem value="新建项目" onSelect={run(() => requestProjectAction("create"))}>
-                <FolderPlusIcon />新建项目
+              <CommandItem value={actionSearch("newProject")} onSelect={run(() => requestProjectAction("create"))}>
+                <FolderPlusIcon />{text.actions.newProject}
               </CommandItem>
-              <CommandItem value="切换到浅色主题 light" onSelect={run(() => applyThemePreference("light"))}>
-                <SunIcon />切换到浅色主题
+              <CommandItem value={actionSearch("lightTheme")} onSelect={run(() => applyThemePreference("light"))}>
+                <SunIcon />{text.actions.lightTheme}
               </CommandItem>
-              <CommandItem value="切换到深色主题 dark" onSelect={run(() => applyThemePreference("dark"))}>
-                <MoonIcon />切换到深色主题
+              <CommandItem value={actionSearch("darkTheme")} onSelect={run(() => applyThemePreference("dark"))}>
+                <MoonIcon />{text.actions.darkTheme}
               </CommandItem>
-              <CommandItem value="主题跟随系统 system" onSelect={run(() => applyThemePreference("system"))}>
-                <MonitorIcon />主题跟随系统
+              <CommandItem value={actionSearch("systemTheme")} onSelect={run(() => applyThemePreference("system"))}>
+                <MonitorIcon />{text.actions.systemTheme}
               </CommandItem>
-              <CommandItem value="收起展开侧栏 sidebar" onSelect={run(onToggleSidebar)}>
-                <PanelLeftIcon />收起 / 展开侧栏<CommandShortcut>{keyLabel("mod")}\</CommandShortcut>
+              <CommandItem value={actionSearch("toggleSidebar")} onSelect={run(onToggleSidebar)}>
+                <PanelLeftIcon />{text.actions.toggleSidebar}<CommandShortcut>{keyLabel("mod")}\</CommandShortcut>
               </CommandItem>
-              <CommandItem value="快捷键一览 shortcuts keyboard" onSelect={run(() => setShortcutsOpen(true))}>
-                <KeyboardIcon />快捷键一览<CommandShortcut>?</CommandShortcut>
+              <CommandItem value={actionSearch("shortcuts")} onSelect={run(() => setShortcutsOpen(true))}>
+                <KeyboardIcon />{text.actions.shortcuts}<CommandShortcut>?</CommandShortcut>
               </CommandItem>
             </CommandGroup>
           </CommandList>

@@ -1,3 +1,6 @@
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
+
 /**
  * 把 /api/v1/doctor 的逐项检查（多为英文技术信息）汇总成用户能读懂的几条结论。
  * 原始检查仍可在「查看全部检查」里展开，供排障时复制。
@@ -23,27 +26,38 @@ export interface DoctorSummaryItem {
 const find = (checks: readonly DoctorCheck[], predicate: (name: string) => boolean) =>
   checks.find((check) => predicate(check.name));
 
-export function summarizeDoctor(checks: readonly DoctorCheck[]): DoctorSummaryItem[] {
+/** 「codex-cli 0.159.2（workspace 锁定版本）」→「已安装，版本 0.159.2」；认不出格式时原样显示。 */
+function codexVersionDetail(message: string, text: Messages["setup"]["doctor"]): string {
+  // 依赖服务端中文文字（去掉全角括号里的说明），S5 改为读结构化字段；正则字面量不触发 i18n 规则，不必加 eslint-disable。
+  const stripped = message.replace(/（.*?）/g, "");
+  const prefix = /^codex-cli\s*/i.exec(stripped);
+  return prefix === null ? stripped : text.codexInstalled(stripped.slice(prefix[0].length));
+}
+
+/** 文字按调用时的界面语言取；组件里可以传入 useT() 拿到的字典。 */
+export function summarizeDoctor(checks: readonly DoctorCheck[], t: Messages = messagesFor(currentLocale())): DoctorSummaryItem[] {
+  const text = t.setup.doctor;
+  const titles = text.titles;
   const items: DoctorSummaryItem[] = [];
 
   const cli = find(checks, (name) => name === "Codex CLI");
   items.push(
     cli === undefined
-      ? { key: "codex", title: "Codex 命令行", status: "warn", detail: "没有拿到检查结果" }
+      ? { key: "codex", title: titles.codex, status: "warn", detail: text.noResult }
       : cli.status === "pass"
-        ? { key: "codex", title: "Codex 命令行", status: "ok", detail: cli.message.replace(/（.*?）/g, "").replace(/^codex-cli\s*/i, "已安装，版本 ") }
-        : { key: "codex", title: "Codex 命令行", status: "fail", detail: "没有找到可用的 Codex 命令行，请重新安装 SuDuo" },
+        ? { key: "codex", title: titles.codex, status: "ok", detail: codexVersionDetail(cli.message, text) }
+        : { key: "codex", title: titles.codex, status: "fail", detail: text.codexMissing },
   );
 
   const auth = find(checks, (name) => name.endsWith("auth.credentials"));
   items.push(
     auth === undefined || auth.status === "pass"
-      ? { key: "model", title: "模型服务", status: "ok", detail: "凭据可用" }
+      ? { key: "model", title: titles.model, status: "ok", detail: text.modelReady }
       : {
           key: "model",
-          title: "模型服务",
+          title: titles.model,
           status: "warn",
-          detail: "还没有配置模型服务地址或 API Key，开始会话前需要补上",
+          detail: text.modelMissing,
           settingsSection: "model",
         },
   );
@@ -54,37 +68,39 @@ export function summarizeDoctor(checks: readonly DoctorCheck[]): DoctorSummaryIt
   if (reach !== undefined && reach.status === "fail") {
     items.push({
       key: "network",
-      title: "网络",
+      title: titles.network,
       status: "fail",
-      detail: "连不上模型服务。检查网络，或在设置里配置代理",
+      detail: text.networkUnreachable,
       settingsSection: "proxy",
     });
   } else if (socket !== undefined && socket.status !== "pass") {
-    items.push({ key: "network", title: "网络", status: "ok", detail: "可以连上模型服务（将使用 HTTPS 通道）" });
+    items.push({ key: "network", title: titles.network, status: "ok", detail: text.networkViaHttps });
   } else {
-    items.push({ key: "network", title: "网络", status: "ok", detail: "可以直连模型服务" });
+    items.push({ key: "network", title: titles.network, status: "ok", detail: text.networkDirect });
   }
 
   // 只有 Linux 上有这一项：沙箱起不来时需要审批或受限执行的命令都会失败，不能只藏在自检明细里。
+  // eslint-disable-next-line no-restricted-syntax -- 依赖服务端中文文字，S5 改为读结构化字段
   const sandbox = find(checks, (name) => name === "Codex 沙箱（Linux）");
   if (sandbox !== undefined) {
     items.push(
       sandbox.status === "pass"
-        ? { key: "sandbox", title: "命令沙箱", status: "ok", detail: "可用" }
-        : { key: "sandbox", title: "命令沙箱", status: "warn", detail: sandbox.message },
+        ? { key: "sandbox", title: titles.sandbox, status: "ok", detail: text.sandboxReady }
+        : { key: "sandbox", title: titles.sandbox, status: "warn", detail: sandbox.message },
     );
   }
 
+  // eslint-disable-next-line no-restricted-syntax -- 依赖服务端中文文字，S5 改为读结构化字段
   const runtimeNames = new Set(["Node.js", "pnpm", "better-sqlite3", "监听端口"]);
   const runtimeFailures = checks.filter((check) => runtimeNames.has(check.name) && check.status === "fail");
   items.push(
     runtimeFailures.length === 0
-      ? { key: "runtime", title: "本机运行环境", status: "ok", detail: "正常" }
+      ? { key: "runtime", title: titles.runtime, status: "ok", detail: text.runtimeReady }
       : {
           key: "runtime",
-          title: "本机运行环境",
+          title: titles.runtime,
           status: "warn",
-          detail: runtimeFailures.map((check) => `${check.name}：${check.message}`).join("；"),
+          detail: runtimeFailures.map((check) => text.runtimeFailure(check.name, check.message)).join(text.runtimeFailureSeparator),
         },
   );
 

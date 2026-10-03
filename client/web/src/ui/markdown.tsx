@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { CheckIcon, CopyIcon } from "lucide-react";
+import { useT } from "../i18n/provider.js";
 import { useFileExistence } from "./file-existence.js";
 import { MarkdownLinkContext, type MarkdownLinkHandlers } from "./markdown-link-context.js";
 import { markdownUrlTransform, pathTokenCandidates, resolveMarkdownLink, resolvePathText } from "./markdown-links.js";
@@ -101,12 +102,13 @@ function PathButton({
   onOpenPath: NonNullable<MarkdownLinkHandlers["onOpenPath"]>;
   children: ReactNode;
 }) {
-  const where = line === null ? path : `${path} 第 ${line} 行`;
+  const t = useT();
+  const where = line === null ? path : t.feedback.markdown.pathAtLine(path, line);
   return (
     <button
       type="button"
       className={PATH_BUTTON_CLASS}
-      title={`${where}\n点击在文件面板预览，⌘ / Ctrl 点击用编辑器打开`}
+      title={`${where}\n${t.feedback.markdown.pathHint}`}
       data-path={path}
       data-line={line ?? undefined}
       onClick={(event: MouseEvent) => onOpenPath(path, line, { external: event.metaKey || event.ctrlKey })}
@@ -180,6 +182,7 @@ function PathToken({ token }: { token: string }) {
 function PreBlock(props: ComponentProps<"pre"> & { node?: unknown }) {
   const { node, ...rest } = props;
   void node;
+  const t = useT();
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -195,10 +198,10 @@ function PreBlock(props: ComponentProps<"pre"> & { node?: unknown }) {
   return (
     <div className="md-code">
       <div className="md-code-bar">
-        <span>代码</span>
-        <button type="button" onClick={copy} title="复制代码">
+        <span>{t.feedback.markdown.code}</span>
+        <button type="button" onClick={copy} title={t.feedback.markdown.copyCode}>
           {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-          {copied ? "已复制" : "复制"}
+          {copied ? t.feedback.markdown.copied : t.feedback.markdown.copy}
         </button>
       </div>
       <InsidePre.Provider value={true}>

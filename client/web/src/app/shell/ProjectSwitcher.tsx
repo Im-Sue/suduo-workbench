@@ -14,6 +14,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useT } from "../../i18n/provider.js";
 import { rememberProjectId, useCurrentProject } from "../project-context.js";
 import { requestProjectAction } from "./shell-actions.js";
 
@@ -51,6 +52,7 @@ function sessionsFilterOnly(search: { filter?: string }): { filter?: "running" |
 
 export function ProjectSwitcher({ collapsed }: { collapsed: boolean }) {
   const navigate = useNavigate();
+  const text = useT().shell.projectSwitcher;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { project, projects, isLoading } = useCurrentProject();
   const [open, setOpen] = useState(false);
@@ -81,12 +83,12 @@ export function ProjectSwitcher({ collapsed }: { collapsed: boolean }) {
     requestProjectAction(action);
   };
 
-  const label = project === null ? (isLoading ? "正在加载项目" : "还没有项目") : project.name;
+  const label = project === null ? (isLoading ? text.loading : text.empty) : project.name;
 
   const trigger = (
     <button
       type="button"
-      aria-label={`切换项目：${label}`}
+      aria-label={text.trigger(label)}
       data-testid="project-switcher"
       className={cn(
         "flex h-11 w-full items-center gap-2.5 rounded-sm px-2 text-left text-foreground outline-none transition-colors",
@@ -121,11 +123,11 @@ export function ProjectSwitcher({ collapsed }: { collapsed: boolean }) {
       )}
       <PopoverContent align="start" className="w-[280px] p-0" side={collapsed ? "right" : "bottom"}>
         <Command>
-          <CommandInput placeholder="搜索项目" />
+          <CommandInput placeholder={text.searchPlaceholder} />
           <CommandList>
-            <CommandEmpty>没有匹配的项目</CommandEmpty>
+            <CommandEmpty>{text.noMatch}</CommandEmpty>
             {active.length === 0 ? null : (
-              <CommandGroup heading="项目">
+              <CommandGroup heading={text.projects}>
                 {active.map((item) => (
                   <CommandItem key={item.id} value={`${item.name} ${item.id}`} onSelect={() => select(item)}>
                     <ProjectMark project={item} size={20} />
@@ -136,7 +138,7 @@ export function ProjectSwitcher({ collapsed }: { collapsed: boolean }) {
               </CommandGroup>
             )}
             {archived.length === 0 ? null : (
-              <CommandGroup heading={`已归档 · ${archived.length}`}>
+              <CommandGroup heading={text.archived(archived.length)}>
                 {archived.map((item) => (
                   <CommandItem key={item.id} value={`${item.name} ${item.id}`} onSelect={() => select(item)}>
                     <ArchiveIcon />
@@ -148,14 +150,14 @@ export function ProjectSwitcher({ collapsed }: { collapsed: boolean }) {
             )}
             <CommandSeparator />
             <CommandGroup>
-              <CommandItem value="新建项目" onSelect={() => runAction("create")}>
+              <CommandItem value={text.newProject} onSelect={() => runAction("create")}>
                 <PlusIcon />
-                新建项目
+                {text.newProject}
               </CommandItem>
               {project === null ? null : (
-                <CommandItem value="管理项目" onSelect={() => runAction("manage")}>
+                <CommandItem value={text.manage} onSelect={() => runAction("manage")}>
                   <FolderCogIcon />
-                  管理项目
+                  {text.manage}
                 </CommandItem>
               )}
             </CommandGroup>

@@ -1,4 +1,6 @@
 import type { DoctorSummaryItem } from "./doctor-summary.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 
 /**
  * 首启向导里跳过的事（需求 §4.2）：留在「我的工作」顶部当清单，做完就消失。
@@ -49,9 +51,11 @@ export function recordEnvironmentPending(summary: readonly DoctorSummaryItem[]):
   write([...env, ...readSetupPending().filter((item) => item.key === "mapping")]);
 }
 
+/** 提醒文字按记下时的界面语言存。 */
 export function recordMappingPending(pending: boolean): void {
   const rest = readSetupPending().filter((item) => item.key !== "mapping");
-  write(pending ? [...rest, { key: "mapping", title: "关联本机代码目录", detail: "还没有告诉 SuDuo 项目代码在哪里，开始会话前需要选一次。" }] : rest);
+  const text = messagesFor(currentLocale()).setup.pending;
+  write(pending ? [...rest, { key: "mapping", title: text.mappingTitle, detail: text.mappingDetail }] : rest);
 }
 
 export function clearSetupPending(): void {

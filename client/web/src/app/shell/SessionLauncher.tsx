@@ -5,6 +5,7 @@ import type { SessionDto } from "@suduo/client-contracts";
 import { StartSessionDialog, type LaunchRequest } from "../../features/requirements/components/StartSessionDialog.js";
 import { requirementKeys } from "../../features/requirements/keys.js";
 import { invalidateProjectLists } from "../../features/requirements/queries.js";
+import { useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
 import { useProjects } from "../project-context.js";
 import { queryKeys } from "../queries.js";
@@ -25,13 +26,14 @@ const SessionLauncherContext = createContext<SessionLauncherValue | null>(null);
 
 export function useSessionLauncher(): SessionLauncherValue {
   const value = useContext(SessionLauncherContext);
-  if (value === null) throw new Error("useSessionLauncher 必须在 SessionLauncherProvider 内使用");
+  if (value === null) throw new Error("useSessionLauncher must be used inside SessionLauncherProvider");
   return value;
 }
 
 export function SessionLauncherProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const t = useT();
   const projects = useProjects().data ?? [];
   const [active, setActive] = useState<{ request: LaunchRequest; subject: string; key: number } | null>(null);
   const inBackground = useRef(new Set<string>());
@@ -56,15 +58,15 @@ export function SessionLauncherProvider({ children }: { children: ReactNode }) {
     (request: LaunchRequest & { subject?: string }) => {
       const key = backgroundKey(request);
       if (inBackground.current.has(key)) {
-        showMessage("这个会话还在后台准备，好了会提示你", "info", {
+        showMessage(t.shell.sessionLauncher.stillPreparing, "info", {
           id: `launch-${key}`,
-          action: { label: "仍要新开", onClick: () => open(request) },
+          action: { label: t.shell.sessionLauncher.openAnyway, onClick: () => open(request) },
         });
         return;
       }
       open(request);
     },
-    [open],
+    [open, t],
   );
 
   const onReady = useCallback(
@@ -79,15 +81,15 @@ export function SessionLauncherProvider({ children }: { children: ReactNode }) {
       }
       const enter = () => void navigate({ to: "/sessions/$sessionId", params: { sessionId: session.id } });
       if (detached) {
-        showMessage(`会话「${session.title || "未命名会话"}」已就绪`, "success", {
-          action: { label: "进入", onClick: enter },
+        showMessage(t.shell.sessionLauncher.ready(session.title || t.shell.sessionLauncher.untitled), "success", {
+          action: { label: t.shell.sessionLauncher.enter, onClick: enter },
         });
         return;
       }
       setActive(null);
       enter();
     },
-    [navigate, queryClient],
+    [navigate, queryClient, t],
   );
 
   const value = useMemo(() => ({ launch, launching: active !== null }), [active, launch]);

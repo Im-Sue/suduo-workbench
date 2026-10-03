@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getConnectivity, subscribeConnectivity } from "../../api/connectivity.js";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
+import { useT } from "../../i18n/provider.js";
 
 /**
  * 断线横幅：本机服务连不上时出现在内容区顶部并自动重试；恢复后显示 2 秒「已恢复」再消失。
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 export function ConnectionBanner() {
   const connectivity = useSyncExternalStore(subscribeConnectivity, getConnectivity, getConnectivity);
   const queryClient = useQueryClient();
+  const t = useT();
   const [recovered, setRecovered] = useState(false);
   const wasOffline = useRef(false);
 
@@ -46,18 +48,18 @@ export function ConnectionBanner() {
         data-testid="connection-banner"
         actions={
           <Button size="sm" variant="ghost" onClick={() => void queryClient.refetchQueries({ type: "active" })}>
-            立即重试
+            {t.shell.connection.retry}
           </Button>
         }
       >
-        与本机 SuDuo 服务的连接已断开，正在重连…
+        {t.shell.connection.offline}
       </Banner>
     );
   }
   if (recovered) {
     return (
       <Banner tone="success" className="mx-3 mt-3 shrink-0" data-testid="connection-banner">
-        连接已恢复
+        {t.shell.connection.recovered}
       </Banner>
     );
   }

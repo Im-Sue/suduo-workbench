@@ -1,3 +1,5 @@
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor } from "../i18n/messages/index.js";
 import { showMessage } from "../ui/message.js";
 import { classifyFailure } from "./classify.js";
 import {
@@ -19,14 +21,15 @@ export function reportFailure(cause: unknown, context: FeedbackContext): ReportR
   const failure = classifyFailure(cause);
   const route = routeFeedback(failure, context);
   if (route.outlet === "global") {
+    const text = messagesFor(currentLocale()).feedback;
     showMessage(
-      context.title === undefined ? failure.message : `${context.title}：${failure.message}`,
+      context.title === undefined ? failure.message : text.titled(context.title, failure.message),
       "error",
       {
         feedbackKind: failure.kind,
         ...(context.id === undefined ? {} : { id: context.id }),
         // 全局提示带「重试」（技术设计 §6.2）；页面级失败的重试由失败页自己的按钮承担。
-        ...(context.retry === undefined ? {} : { action: { label: "重试", onClick: context.retry } }),
+        ...(context.retry === undefined ? {} : { action: { label: text.retry, onClick: context.retry } }),
       },
     );
   } else if (route.outlet === "page") {

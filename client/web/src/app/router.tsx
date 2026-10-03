@@ -34,6 +34,7 @@ import { SetupPage } from "./pages/SetupPage.js";
 import { pickProject, readLastProjectId, rememberProjectId, useProjects } from "./project-context.js";
 import { queryKeys, settingsQuery } from "./queries.js";
 import { AppShell } from "./shell/AppShell.js";
+import { useT } from "../i18n/provider.js";
 
 /**
  * 路由表（技术设计 §9.1）。URL 是项目上下文与筛选条件的唯一真相。
@@ -326,6 +327,7 @@ function SessionsRoute() {
   const params = useParams({ strict: false }) as { sessionId?: string };
   const search = useSearch({ strict: false }) as SessionsSearch;
   const navigate = useNavigate();
+  const t = useT();
   const sessionId = params.sessionId ?? null;
   const session = useQuery({
     queryKey: queryKeys.session(sessionId ?? ""),
@@ -340,9 +342,9 @@ function SessionsRoute() {
 
   useEffect(() => {
     if (!sessionMissing) return;
-    showMessage("这个会话已不存在或已被删除", "warning", { id: "session-missing" });
+    showMessage(t.setup.router.sessionMissing, "warning", { id: "session-missing" });
     void navigate({ to: "/sessions", replace: true });
-  }, [navigate, sessionMissing]);
+  }, [navigate, sessionMissing, t]);
 
   const legacySessionId = sessionId === null && typeof search.sessionId === "string" && search.sessionId !== ""
     ? search.sessionId

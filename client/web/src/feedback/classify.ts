@@ -1,3 +1,5 @@
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor } from "../i18n/messages/index.js";
 import type { Failure, FailureKind } from "./types.js";
 
 const CODE_KINDS: Record<string, FailureKind> = {
@@ -95,20 +97,7 @@ function isCancelled(cause: unknown): boolean {
 }
 
 function fallbackMessage(kind: FailureKind): string {
-  const messages: Record<FailureKind, string> = {
-    cancelled: "操作已取消",
-    auth_expired: "登录状态已失效，请重新登录",
-    not_configured: "请先完成必要配置",
-    version_conflict: "数据已发生变化，请刷新后重试",
-    stale_state: "当前状态已变化，请刷新后重试",
-    validation: "请检查填写内容后重试",
-    forbidden: "你没有执行此操作的权限",
-    not_found: "请求的内容不存在或已被移除",
-    upstream_unavailable: "依赖服务暂时不可用，请稍后重试",
-    runtime_failed: "工作台暂时无法完成该操作，请稍后重试",
-    transport_unknown: "暂时无法连接工作台，请稍后重试",
-    unknown: "发生了未识别的问题，请稍后重试",
-  };
+  const messages: Record<FailureKind, string> = messagesFor(currentLocale()).feedback.fallback;
   return messages[kind];
 }
 

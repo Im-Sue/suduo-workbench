@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
+import { useT } from "../../i18n/provider.js";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +51,7 @@ export function RegionError({
   onRetry?: () => void;
   busy?: boolean;
 }) {
+  const t = useT();
   return (
     <section
       aria-busy={busy}
@@ -64,7 +66,7 @@ export function RegionError({
       {onRetry === undefined ? null : (
         <Button loading={busy} size="sm" type="button" onClick={onRetry}>
           {busy ? null : <RotateCwIcon />}
-          重试
+          {t.feedback.retry}
         </Button>
       )}
     </section>
@@ -82,7 +84,8 @@ export function PageFailure({
   onAction?: () => void;
   actionLabel?: string;
 }) {
-  const label = actionLabel ?? (failure.kind === "auth_expired" ? "去登录" : "重试");
+  const t = useT();
+  const label = actionLabel ?? (failure.kind === "auth_expired" ? t.feedback.goToLogin : t.feedback.retry);
   const unavailable = failure.kind === "auth_expired" && onAction === undefined;
   const Icon = failure.kind === "auth_expired" ? LockKeyholeIcon : AlertCircleIcon;
   return (
@@ -97,18 +100,18 @@ export function PageFailure({
         <Icon aria-hidden="true" className="size-5" />
       </span>
       <h2 className="m-0 text-section font-semibold text-foreground">
-        {failure.kind === "auth_expired" ? "登录已过期" : "这里暂时无法显示"}
+        {failure.kind === "auth_expired" ? t.feedback.page.authExpiredTitle : t.feedback.page.unavailableTitle}
       </h2>
       <p className="m-0 max-w-[460px] text-small text-muted-foreground">{failure.message}</p>
       {onAction === undefined && !unavailable ? null : (
         <Button
           disabled={unavailable}
-          disabledReason="登录入口暂不可用，请刷新页面后重试"
+          disabledReason={t.feedback.page.loginUnavailable}
           type="button"
           variant="primary"
           onClick={onAction}
         >
-          {unavailable ? `${label}（不可用）` : label}
+          {unavailable ? t.feedback.page.actionUnavailable(label) : label}
         </Button>
       )}
     </section>
@@ -207,13 +210,14 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = "确认",
+  confirmLabel,
   onConfirm,
   triggerRef,
 }: DialogBaseProps & {
   confirmLabel?: string;
   onConfirm: () => void;
 }) {
+  const t = useT();
   const cancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (open) queueMicrotask(() => cancelRef.current?.focus());
@@ -239,7 +243,7 @@ export function ConfirmDialog({
         </DialogHeader>
         <DialogFooter>
           <Button ref={cancelRef} type="button" onClick={close}>
-            取消
+            {t.feedback.dialog.cancel}
           </Button>
           <Button
             type="button"
@@ -249,7 +253,7 @@ export function ConfirmDialog({
               close();
             }}
           >
-            {confirmLabel}
+            {confirmLabel ?? t.feedback.dialog.confirm}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -275,6 +279,7 @@ export function FormDialog({
   hasUnsavedChanges?: boolean;
   size?: "sm" | "md" | "lg";
 }) {
+  const t = useT();
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   useEffect(() => {
     if (!open) setConfirmingDiscard(false);
@@ -316,14 +321,14 @@ export function FormDialog({
             className="flex items-center gap-2 rounded-md bg-warning-soft px-3 py-2 text-small"
             data-testid="form-dialog-discard"
             role="alertdialog"
-            aria-label="放弃已填写的内容？"
+            aria-label={t.feedback.dialog.discardPrompt}
           >
-            <span className="flex-1">放弃已填写的内容？</span>
+            <span className="flex-1">{t.feedback.dialog.discardPrompt}</span>
             <Button autoFocus size="sm" type="button" variant="ghost" onClick={() => setConfirmingDiscard(false)}>
-              继续编辑
+              {t.feedback.dialog.keepEditing}
             </Button>
             <Button size="sm" type="button" variant="danger" onClick={reallyClose}>
-              放弃
+              {t.feedback.dialog.discard}
             </Button>
           </div>
         ) : null}
