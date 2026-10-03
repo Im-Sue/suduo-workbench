@@ -68,6 +68,7 @@ Claude 为落地补充的执行细则（用户可随时修订）：
 - **受影响**：
   - 已更新：`CLAUDE.md` 协作段（去掉 CCB 托管标记）、`docs/00_项目总览.md` 项目约定。
   - 保留原样、处于休眠：`AGENTS.md`、`ccb.config`、`.claude/hooks/` 两个 CCB 钩子（均已核实当前不会触发）、`docs/.ccb/`、`docs/00_文档地图.md`。是否清理另行决定。
+  - 2026-10-03 补记：公开仓库 suduo-workbench 首发时未带入 `AGENTS.md`、`ccb.config`、`docs/.ccb/`、`docs/00_文档地图.md`；用户随后决定「旧的 ccb 清掉」，`.claude/` 两个钩子与 `.gitignore` 的 `/.ccb/` 规则随之删除，`CLAUDE.md` 去掉 CCB 用语。
 
 ---
 

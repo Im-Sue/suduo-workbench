@@ -97,7 +97,7 @@ export function isTransientFsError(cause: unknown): boolean {
   const code = (cause as NodeJS.ErrnoException).code;
   return code !== undefined && TRANSIENT_FS_ERROR_CODES.has(code);
 }
-// .ccb 是 CCB agent 的运行时状态目录（本仓库 3.1GB / 8.5 万文件），不属于用户改动；
+// .ccb 是 CCB 等 agent 工具的运行时状态目录（实测可达 3.1GB / 8.5 万文件），不属于用户改动；
 // 不排除会吃光快照的 5000 文件配额，让 listChanges 退化成十几秒的全盘读取+哈希。
 const IGNORED_DIRECTORIES = new Set([".git", ".suduo", ".ccb", "node_modules"]);
 
