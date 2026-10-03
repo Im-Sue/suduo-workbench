@@ -2,7 +2,7 @@
 
 **需求在团队，代码留在本机。**
 
-[English](README.md) · 源码公开 · [商业使用](COMMERCIAL.zh-CN.md) · [参与贡献](CONTRIBUTING.zh-CN.md)
+[English](README.md) · 源码公开 · [商业使用](COMMERCIAL.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [参与贡献](CONTRIBUTING.zh-CN.md)
 
 速舵 SuDuo 把团队共享的需求与讨论，接到每个人电脑上的 Codex CLI。需求、附件和讨论房间放在团队自己部署的服务器上；每个人从一条需求直接拉起本机的 Codex 会话，代码、仓库和会话都不离开自己的电脑。
 

@@ -1,0 +1,37 @@
+# 更新日志
+
+[English](CHANGELOG.md)
+
+> 本页为中文版。若与英文版 [CHANGELOG.md](CHANGELOG.md) 有出入，以英文版为准。
+
+## 0.7.0 — 2026-10-02
+
+首个公开版本。速舵 SuDuo 以 [PolyForm 非商业许可证 1.0.0](LICENSE) 源码公开；企业可以直接开始用，30 天内登记即可（见 [COMMERCIAL.zh-CN.md](COMMERCIAL.zh-CN.md)）。
+
+### 云端
+
+- 在装有 Docker 的 Ubuntu / Linux 上一条命令私有化部署：`cloud/scripts/suduo-cloud.sh install` 从源码构建、生成密钥、启动 PostgreSQL 与服务。
+- `upgrade` 先备份再升级；`backup` / `restore` 保证数据库与文件卷一致；`restore` 会先备份当前数据，并按当前检出的版本启动，所以回滚就是「检出旧版本标签，再恢复」。
+- `--mirror cn` 使用国内可访问的镜像源构建。
+- 健康检查报告产品版本。
+- 新的中英文部署指南：[cloud/DEPLOYMENT.zh-CN.md](cloud/DEPLOYMENT.zh-CN.md)。
+
+### 客户端
+
+- `pnpm start` 检查环境、按需构建、启动本机服务并打开浏览器，支持 macOS（Apple 芯片与 Intel）与 Windows 10 / 11；`Ctrl+C` 正常停止。
+- 「设置 → 关于」显示云端版本，与本机不同时给出提示。
+- 「设置 → 关于」显示许可证与商用登记方式。
+- macOS 的默认本机数据目录改为 `~/Library/Application Support/SuDuo`（原来是 `~/.local/share/suduo`；在旧位置发现数据时会提示）。
+
+### 修复
+
+- 没有设置 `CODEX_HOME` 时，本机服务让 Codex 使用仓库里一个不存在的目录，导致 Codex 无法启动。现在改用 `~/.codex`，不存在时自动创建。
+- Windows 上仓库路径含空格时 Codex 也能启动。
+- 在终端按 `Ctrl+C` 不再在关闭完成前直接结束本机服务。
+- SuDuo 正在运行时，自检不再因端口被占用而判定失败。
+
+### 已知限制
+
+- 界面目前只有中文，英文界面正在做。
+- 还没有安装包，请从源码运行客户端。
+- 云端没有管理员与邀请机制：能访问到它的人都能注册，请放在内网里。
