@@ -97,7 +97,7 @@ export const timeline = {
       },
       forbidden: {
         text: "The model service refused the request (403). The current credentials may not have access to this model.",
-        brief: "The model service refused the request (403)",
+        brief: "The model service refused the request (403). The credentials may not have access to this model",
       },
       serverError: {
         text: "The model service had a temporary error. Try again later.",
@@ -113,7 +113,8 @@ export const timeline = {
     connectionLost: "Lost the connection to the model service",
     reconnecting: (reason: string, attempt: number, max: number) =>
       `${reason}. Reconnecting (${String(attempt)}/${String(max)})…`,
-    retrying: (reason: string) => `${reason.replace(/\.$/, "")}. Retrying…`,
+    // 迁移期本机服务的原文可能是中文，以「。」结尾。
+    retrying: (reason: string) => `${reason.replace(/[。.]$/, "")}. Retrying…`,
     noResponseRetrying: "The model service isn't responding. Retrying…",
     codex: {
       contextWindowExceeded:

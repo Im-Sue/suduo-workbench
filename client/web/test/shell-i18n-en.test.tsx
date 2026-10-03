@@ -157,7 +157,7 @@ describe("应用外壳：英文界面", () => {
     await act(async () => setCommandPaletteOpen(true));
     await settle(2);
     const input = document.querySelector<HTMLInputElement>("[cmdk-input]");
-    expect(input?.placeholder).toBe("Search requirements by title or number, pages, and commands");
+    expect(input?.placeholder).toBe("Search requirements (title or number), pages, and commands");
 
     const visible = () => [...document.querySelectorAll<HTMLElement>("[cmdk-item]")].map((item) => item.textContent ?? "");
     expect(visible()).toContain("Settings");

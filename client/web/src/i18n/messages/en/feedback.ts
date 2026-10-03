@@ -2,7 +2,7 @@ import type { Messages } from "../zh-CN/index.js";
 
 export const feedback = {
   fallback: {
-    cancelled: "Cancelled",
+    cancelled: "Canceled",
     auth_expired: "Your sign-in has expired. Sign in again.",
     not_configured: "Finish the required setup first.",
     version_conflict: "This changed in the meantime. Refresh and try again.",

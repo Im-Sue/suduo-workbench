@@ -10,7 +10,7 @@ export const shell = {
     sessions: "Sessions",
     overview: "Overview",
     settings: "Settings",
-    noProject: "No projects yet. Create one at the top left first.",
+    noProject: "No projects yet — create one at the top left",
     withNote: (label: string, note: string) => `${label} (${note})`,
     withCount: (label: string, count: string) => `${label}, ${count}`,
     myWorkTodo: (count: number) =>
@@ -52,7 +52,7 @@ export const shell = {
   commandPalette: {
     title: "Search or run a command",
     sidebarLabel: "Search…",
-    placeholder: "Search requirements by title or number, pages, and commands",
+    placeholder: "Search requirements (title or number), pages, and commands",
     searching: "Searching…",
     noMatch: "No results",
     requirementsIn: (project: string) => `Requirements · ${project}`,
@@ -127,7 +127,7 @@ export const shell = {
         title: "Sessions",
         toggleInspector: "Show / hide the inspector panel (also works in text fields)",
         toggleSessionList: "Show / hide the session list",
-        approval: "When something needs your approval: approve / decline (focus on the approval card or on nothing)",
+        approval: "When something needs your approval: approve / decline (when the approval card has focus, or nothing does)",
       },
       settings: {
         title: "Settings",
@@ -192,7 +192,7 @@ export const shell = {
   },
   sessionLauncher: {
     stillPreparing: "This session is still being prepared in the background. You'll be notified when it's ready.",
-    openAnyway: "Start a new one anyway",
+    openAnyway: "Start anyway",
     ready: (title: string) => `Session “${title}” is ready`,
     untitled: "Untitled session",
     enter: "Open",
