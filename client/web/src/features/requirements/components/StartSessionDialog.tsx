@@ -22,6 +22,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { DirectoryPicker } from "./DirectoryPicker.js";
 import { formatRelativeTime } from "../../../ui/format.js";
+import { useT } from "../../../i18n/provider.js";
+import type { Messages } from "../../../i18n/messages/index.js";
 
 /**
  * 分步的「开始会话」（需求 §4.4 / 技术设计 §6.3）：
@@ -44,15 +46,15 @@ const SLOW_AFTER_MS = 15_000;
 /** 为什么要重新选目录。文案在本地拼，不直接显示服务端原话。 */
 type DirectoryNotice = { reason: "missing" | "unusable" | "unlinked"; path: string | null };
 
-function noticeText({ reason, path }: DirectoryNotice): string {
-  const where = path === null ? "之前关联的目录" : `之前关联的目录 ${path} `;
+function noticeText({ reason, path }: DirectoryNotice, t: Messages): string {
+  const text = t.requirements.startSession.directory;
   switch (reason) {
     case "missing":
-      return `${where}已经不存在了（可能被移动、改名或删除）。请重新选择这个项目的本机代码目录。`;
+      return text.missing(path);
     case "unusable":
-      return `SuDuo 读写不了${where.trimEnd()}。请换一个目录，或检查它的权限。`;
+      return text.unusable(path);
     case "unlinked":
-      return "这个项目在本机的代码目录关联已失效。请重新选择。";
+      return text.unlinked;
   }
 }
 
@@ -83,6 +85,7 @@ export function StartSessionDialog({
   /** 会话已就绪。detached=true 表示用户已关掉对话框，由调用方决定如何告知。 */
   onReady(session: SessionDto, detached: boolean): void;
 }) {
+  const t = useT();
   const [step, setStep] = useState<Step>({ name: "checking" });
   const [open, setOpen] = useState(true);
   const stepRef = useRef<Step>(step);
@@ -108,7 +111,7 @@ export function StartSessionDialog({
     (cause: unknown, retry: "check" | "create") => {
       if (ended.current === "cancelled") return;
       if (ended.current === "detached") {
-        reportFailure(cause, { surface: "action", title: "会话没能准备好" });
+        reportFailure(cause, { surface: "action", title: t.requirements.startSession.backgroundFailed });
         onBackgroundFailed?.();
         return;
       }
@@ -135,7 +138,7 @@ export function StartSessionDialog({
             if (state === "cancelled") return;
             if (state === "detached") {
               // 复查期间用户把对话框转到了后台：照常告知失败，让调用方撤掉「后台准备中」。
-              reportFailure(cause, { surface: "action", title: "会话没能准备好" });
+              reportFailure(cause, { surface: "action", title: t.requirements.startSession.backgroundFailed });
               onBackgroundFailed?.();
               return;
             }
@@ -150,7 +153,7 @@ export function StartSessionDialog({
       }
       update({ name: "failed", failure, retry });
     },
-    [close, onBackgroundFailed, update],
+    [close, onBackgroundFailed, t, update],
   );
 
   const create = useCallback(async () => {
@@ -215,7 +218,7 @@ export function StartSessionDialog({
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent size={step.name === "directory" ? "lg" : "md"} data-testid="start-session-dialog">
         <DialogHeader>
-          <DialogTitle>{step.name === "directory" ? "选择本机代码目录" : "开始会话"}</DialogTitle>
+          <DialogTitle>{step.name === "directory" ? t.requirements.startSession.directoryTitle : t.requirements.startSession.title}</DialogTitle>
           <DialogDescription className="truncate">{subject}</DialogDescription>
         </DialogHeader>
 
@@ -255,13 +258,13 @@ export function StartSessionDialog({
           <>
             <RegionError
               kind={step.failure.kind}
-              message={`没能开始会话：${step.failure.message}`}
+              message={t.requirements.startSession.failed(step.failure.message)}
             />
             <DialogFooter>
-              <Button variant="secondary" onClick={close}>关闭</Button>
+              <Button variant="secondary" onClick={close}>{t.feedback.dialog.close}</Button>
               <Button variant="primary" onClick={() => void (step.retry === "check" ? check() : create())}>
                 <RotateCwIcon />
-                重试
+                {t.feedback.retry}
               </Button>
             </DialogFooter>
           </>
@@ -280,8 +283,9 @@ function sessionActivity(session: SessionDto): number {
 }
 
 function CheckingBody() {
+  const t = useT();
   return (
-    <div className="flex flex-col gap-2 py-2" aria-busy="true" aria-label="正在检查本机代码目录和已有会话">
+    <div className="flex flex-col gap-2 py-2" aria-busy="true" aria-label={t.requirements.startSession.checking}>
       <Skeleton className="h-4 w-3/5" />
       <Skeleton className="h-4 w-2/5" />
     </div>
@@ -299,13 +303,13 @@ function ChooseBody({
   onCreate(): void;
   onCancel(): void;
 }) {
+  const t = useT();
+  const text = t.requirements.startSession.choose;
   const shown = existing.slice(0, 3);
   return (
     <>
-      <p className="m-0 text-small text-muted-foreground">
-        这个需求已经有 {existing.length} 个本机会话。继续之前的会话可以保留上下文；需求有较大变化时建议新开。
-      </p>
-      <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="已有会话">
+      <p className="m-0 text-small text-muted-foreground">{text.intro(existing.length)}</p>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label={text.listLabel}>
         {shown.map(({ session }, index) => (
           <li key={session.id}>
             <button
@@ -316,25 +320,24 @@ function ChooseBody({
             >
               <MessageSquareIcon className="size-4 shrink-0 text-subtle-foreground" />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-body font-medium">{session.title || "未命名会话"}</span>
+                <span className="truncate text-body font-medium">{session.title || text.untitled}</span>
                 <span className="text-caption text-subtle-foreground">
-                  {index === 0 ? "最近一次 · " : ""}
-                  {formatRelativeTime(sessionActivity(session))}活动
+                  {text.activity(formatRelativeTime(sessionActivity(session)), index === 0)}
                 </span>
               </span>
-              <span className="text-small font-medium text-primary-text">继续</span>
+              <span className="text-small font-medium text-primary-text">{text.resume}</span>
             </button>
           </li>
         ))}
       </ul>
       {existing.length > shown.length ? (
-        <p className="m-0 text-caption text-subtle-foreground">其余 {existing.length - shown.length} 个会话可以在「会话」里找到。</p>
+        <p className="m-0 text-caption text-subtle-foreground">{text.more(existing.length - shown.length)}</p>
       ) : null}
       <DialogFooter>
-        <Button variant="ghost" onClick={onCancel}>取消</Button>
+        <Button variant="ghost" onClick={onCancel}>{t.feedback.dialog.cancel}</Button>
         <Button variant="secondary" onClick={onCreate}>
           <MessageSquarePlusIcon />
-          新开一个会话
+          {text.createNew}
         </Button>
       </DialogFooter>
     </>
@@ -354,6 +357,7 @@ function DirectoryBody({
   onCancel(): void;
   onSaved(path: string): void;
 }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const [path, setPath] = useState(initialPath);
   const [valid, setValid] = useState(false);
@@ -384,22 +388,20 @@ function DirectoryBody({
   return (
     <>
       <p className="m-0 text-small text-muted-foreground">
-        {notice === null
-          ? "会话在这个项目的本机代码目录里运行。选一次即可，之后同一项目的会话都用它，可以在项目设置里修改。"
-          : noticeText(notice)}
+        {notice === null ? t.requirements.startSession.directory.intro : noticeText(notice, t)}
       </p>
       <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} />
       {error === null ? null : <InlineError kind={error.kind}>{error.message}</InlineError>}
       <DialogFooter>
-        <Button variant="ghost" onClick={onCancel}>取消</Button>
+        <Button variant="ghost" onClick={onCancel}>{t.feedback.dialog.cancel}</Button>
         <Button
           variant="primary"
           loading={saving}
           disabled={!valid}
-          disabledReason="先选一个可以读写的目录"
+          disabledReason={t.requirements.startSession.directory.useDisabledReason}
           onClick={() => void save()}
         >
-          使用这个目录
+          {t.requirements.startSession.directory.use}
         </Button>
       </DialogFooter>
     </>
@@ -417,6 +419,8 @@ function PreparingBody({
   forRequirement: boolean;
   onHide(): void;
 }) {
+  const t = useT();
+  const text = t.requirements.startSession.preparing;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
@@ -428,21 +432,17 @@ function PreparingBody({
   return (
     <>
       <ol className="m-0 flex list-none flex-col gap-3 p-0">
-        <Stage state="done" title="本机代码目录可用" detail={rootPath} />
-        <Stage
-          state="active"
-          title={forRequirement ? "同步需求材料并启动会话" : "启动会话"}
-          detail={`已用 ${elapsed} 秒`}
-        />
-        <Stage state="pending" title="进入会话" detail={null} />
+        <Stage state="done" title={text.directoryReady} detail={rootPath} />
+        <Stage state="active" title={forRequirement ? text.syncAndStart : text.start} detail={text.elapsed(elapsed)} />
+        <Stage state="pending" title={text.enter} detail={null} />
       </ol>
       {slow ? (
         <p className="m-0 text-caption text-subtle-foreground" role="status">
-          比平时慢一些：首次启动 Codex 或需求附件较大时会更久。可以先关掉，准备好后会提示你。
+          {text.slow}
         </p>
       ) : null}
       <DialogFooter>
-        <Button variant="ghost" onClick={onHide}>在后台继续</Button>
+        <Button variant="ghost" onClick={onHide}>{text.background}</Button>
       </DialogFooter>
     </>
   );

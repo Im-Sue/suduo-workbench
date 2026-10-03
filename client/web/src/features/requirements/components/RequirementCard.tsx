@@ -1,5 +1,4 @@
 import { type RequirementListItemDto } from "@suduo/client-contracts";
-import { REQUIREMENT_STATUS_LABELS } from "@suduo/cloud-contracts";
 import { MessageSquareIcon, PaperclipIcon, TerminalIcon } from "lucide-react";
 import { useId, type ComponentProps } from "react";
 import { cn } from "@/lib/utils";
@@ -7,6 +6,8 @@ import { requirementCode, summaryPreview } from "../format.js";
 import { useRecentlyChanged } from "../highlight.js";
 import { UserAvatar } from "./UserAvatar.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
+import { requirementStatusLabel } from "../../../ui/requirement-status.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 看板卡片（原型 Main · 看板）：编号、负责人、标题（两行）、描述（一行）、材料 / 评论 / 本机会话计数与更新时间。
@@ -27,10 +28,12 @@ export function RequirementCard({
   /** 跟随指针的拖拽影像。 */
   overlay?: boolean;
 } & ComponentProps<"button">) {
+  const t = useT();
   const changed = useRecentlyChanged(requirement.id);
   const descriptionId = useId();
   const summary = summaryPreview(requirement.summary);
   const code = requirementCode(requirement.number);
+  const assigneeName = requirement.assignee?.displayName ?? t.requirements.assignee.unassigned;
   return (
     <button
       type="button"
@@ -53,11 +56,11 @@ export function RequirementCard({
       {...props}
     >
       <span id={descriptionId} className="sr-only">
-        {`${REQUIREMENT_STATUS_LABELS[requirement.status]} · 负责人 ${requirement.assignee?.displayName ?? "未指派"} · 按 1–7 修改状态`}
+        {t.requirements.card.description(requirementStatusLabel(requirement.status, t), assigneeName)}
       </span>
       <span className="flex w-full items-center gap-2">
         <span className="font-mono text-caption text-subtle-foreground">{code}</span>
-        <span className="ml-auto" title={requirement.assignee?.displayName ?? "未指派"}>
+        <span className="ml-auto" title={assigneeName}>
           <UserAvatar user={requirement.assignee} />
         </span>
       </span>
@@ -67,19 +70,19 @@ export function RequirementCard({
       )}
       <span className="mt-0.5 flex w-full items-center gap-2.5 text-caption text-subtle-foreground">
         {requirement.attachmentCount > 0 ? (
-          <span className="inline-flex items-center gap-0.5" title={`${requirement.attachmentCount} 份材料`}>
+          <span className="inline-flex items-center gap-0.5" title={t.requirements.card.attachments(requirement.attachmentCount)}>
             <PaperclipIcon className="size-3.5" aria-hidden="true" />
             {requirement.attachmentCount}
           </span>
         ) : null}
         {requirement.commentCount > 0 ? (
-          <span className="inline-flex items-center gap-0.5" title={`${requirement.commentCount} 条评论`}>
+          <span className="inline-flex items-center gap-0.5" title={t.requirements.card.comments(requirement.commentCount)}>
             <MessageSquareIcon className="size-3.5" aria-hidden="true" />
             {requirement.commentCount}
           </span>
         ) : null}
         {requirement.localSessionCount > 0 ? (
-          <span className="inline-flex items-center gap-0.5" title={`本机有 ${requirement.localSessionCount} 个会话`}>
+          <span className="inline-flex items-center gap-0.5" title={t.requirements.card.localSessions(requirement.localSessionCount)}>
             <TerminalIcon className="size-3.5" aria-hidden="true" />
             {requirement.localSessionCount}
           </span>

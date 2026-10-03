@@ -215,8 +215,9 @@ describe("英文界面：非组件文字", () => {
     });
   });
 
-  it("「稍后再关联」的提醒按记下时的语言存", () => {
+  it("「稍后再关联」的提醒只存类型，文字按读取时的语言取", () => {
     recordMappingPending(true);
+    expect(JSON.parse(localStorage.getItem("suduo.setup.pending") ?? "null")).toEqual([{ key: "mapping" }]);
     expect(readSetupPending()).toEqual([
       {
         key: "mapping",

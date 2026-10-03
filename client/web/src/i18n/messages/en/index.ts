@@ -8,5 +8,9 @@ import { feedback } from "./feedback.js";
 import { settings } from "./settings.js";
 import { settingsConnection } from "./settingsConnection.js";
 import { settingsAgent } from "./settingsAgent.js";
+import { requirements } from "./requirements.js";
+import { requirementDetail } from "./requirementDetail.js";
+import { myWork } from "./myWork.js";
+import { overview } from "./overview.js";
 
-export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent } satisfies Messages;
+export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview } satisfies Messages;

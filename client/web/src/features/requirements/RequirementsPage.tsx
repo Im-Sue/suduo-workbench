@@ -5,7 +5,6 @@ import {
   REQUIREMENT_ASSIGNEE_FILTER_ME,
   REQUIREMENT_ASSIGNEE_FILTER_NONE,
   REQUIREMENT_STATUSES,
-  REQUIREMENT_STATUS_LABELS,
   type RequirementStatus,
 } from "@suduo/cloud-contracts";
 import {
@@ -47,6 +46,8 @@ import { requirementCode } from "./format.js";
 import type { RequirementListFilters } from "./keys.js";
 import { findCachedItem, usersQuery, useRequirementIdByRef, useUpdateRequirement, type ColumnState } from "./queries.js";
 import { useRequirementsRealtimeState } from "./realtime.js";
+import { requirementStatusLabel } from "../../ui/requirement-status.js";
+import { useT } from "../../i18n/provider.js";
 
 /**
  * 需求页（原型 Main）：看板 / 列表 + 右侧速览。筛选、视图、速览都记在 URL 里，可分享、可回退。
@@ -108,6 +109,7 @@ function overlayOpen(): boolean {
 }
 
 export function RequirementsPage({ projectId }: { projectId: string }) {
+  const t = useT();
   const search = useSearch({ strict: false }) as RequirementsSearch;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -199,7 +201,7 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
   const visible = statuses.map((status) => columns[status]);
   const allLoaded = visible.every((state) => state?.loaded === true);
   const total = visible.reduce((sum, state) => sum + (state?.count ?? 0), 0);
-  const totalLabel = allLoaded ? `${total}${visible.some((state) => state?.hasMore === true) ? "+" : ""} 条` : null;
+  const totalLabel = allLoaded ? t.requirements.page.total(total, visible.some((state) => state?.hasMore === true)) : null;
   const filtered = search.q !== undefined || search.assignee !== undefined || search.status !== undefined;
   const noResult = filtered && allLoaded && total === 0;
 
@@ -335,60 +337,60 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
     search.assignee === undefined
       ? null
       : search.assignee === REQUIREMENT_ASSIGNEE_FILTER_ME
-        ? "我负责的"
+        ? t.requirements.filter.mine
         : search.assignee === REQUIREMENT_ASSIGNEE_FILTER_NONE
-          ? "未指派"
-          : (users.data?.items.find((user) => user.id === search.assignee)?.displayName ?? "指定成员");
+          ? t.requirements.assignee.unassigned
+          : (users.data?.items.find((user) => user.id === search.assignee)?.displayName ?? t.requirements.filter.someone);
 
   return (
     <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden" data-testid="requirements-page">
       <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border pr-4 pl-5">
-        <h1 className="m-0 text-section font-semibold">需求</h1>
+        <h1 className="m-0 text-section font-semibold">{t.requirements.page.title}</h1>
         {totalLabel === null ? null : <span className="text-caption text-subtle-foreground">{totalLabel}</span>}
         <SegmentedControl
           className="ml-2"
           size="sm"
-          aria-label="视图"
+          aria-label={t.requirements.page.view}
           data-testid="requirements-view-switch"
           value={view}
           onValueChange={setView}
           options={[
-            { value: "board", label: "看板", icon: <ColumnsIcon className="size-3.5" /> },
-            { value: "list", label: "列表", icon: <ListIcon className="size-3.5" /> },
+            { value: "board", label: t.requirements.page.viewBoard, icon: <ColumnsIcon className="size-3.5" /> },
+            { value: "list", label: t.requirements.page.viewList, icon: <ListIcon className="size-3.5" /> },
           ]}
         />
         <div className="flex-1" />
         {realtime === "reconnecting" ? (
-          <span className="text-caption text-warning" role="status">实时更新已断开，正在重连…</span>
+          <span className="text-caption text-warning" role="status">{t.requirements.page.reconnecting}</span>
         ) : null}
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" aria-label="更多操作">
+            <Button size="icon" variant="ghost" aria-label={t.requirements.page.moreActions}>
               <MoreHorizontalIcon />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onSelect={() => requestProjectAction("manage")}>
               <SettingsIcon />
-              项目设置
+              {t.requirements.page.projectSettings}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button variant="primary" onClick={() => createIn(search.status ?? "draft")} data-testid="create-requirement">
           <PlusIcon />
-          新建需求
+          {t.requirements.page.create}
           <Kbd className="ml-1">C</Kbd>
         </Button>
       </header>
 
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border pr-4 pl-5">
         <label className="relative flex w-62 items-center">
-          <span className="sr-only">搜索需求</span>
+          <span className="sr-only">{t.requirements.page.searchLabel}</span>
           <SearchIcon className="pointer-events-none absolute left-2.5 size-3.5 text-subtle-foreground" aria-hidden="true" />
           <Input
             ref={searchRef}
             className="h-7 pr-7 pl-8"
-            placeholder="搜索标题或编号"
+            placeholder={t.requirements.page.searchPlaceholder}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onCompositionStart={() => setComposing(true)}
@@ -405,7 +407,7 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
           ) : (
             <button
               type="button"
-              aria-label="清除搜索"
+              aria-label={t.requirements.page.clearSearch}
               className="absolute right-1.5 inline-flex size-5 items-center justify-center rounded-xs text-subtle-foreground hover:bg-muted hover:text-foreground"
               onClick={() => clearSearch()}
             >
@@ -420,12 +422,12 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
               {search.status === undefined ? (
                 <>
                   <PlusIcon className="size-3.5" />
-                  状态
+                  {t.requirements.filter.status}
                 </>
               ) : (
                 <>
                   <StatusIcon status={search.status} aria-hidden="true" className="size-3.5" />
-                  状态：{REQUIREMENT_STATUS_LABELS[search.status]}
+                  {t.requirements.filter.statusValue(requirementStatusLabel(search.status))}
                 </>
               )}
             </FilterChip>
@@ -434,14 +436,14 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
             {REQUIREMENT_STATUSES.map((status) => (
               <DropdownMenuItem key={status} onSelect={() => setSearch({ status: search.status === status ? undefined : status })}>
                 <StatusIcon status={status} aria-hidden="true" />
-                <span className="flex-1">{REQUIREMENT_STATUS_LABELS[status]}</span>
+                <span className="flex-1">{requirementStatusLabel(status)}</span>
                 {search.status === status ? <CheckIcon className="size-4 text-primary-text!" /> : null}
               </DropdownMenuItem>
             ))}
             {search.status === undefined ? null : (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setSearch({ status: undefined })}>显示全部状态</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setSearch({ status: undefined })}>{t.requirements.filter.allStatuses}</DropdownMenuItem>
               </>
             )}
           </DropdownMenuContent>
@@ -453,12 +455,12 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
               {assigneeLabel === null ? (
                 <>
                   <PlusIcon className="size-3.5" />
-                  负责人
+                  {t.requirements.filter.assignee}
                 </>
               ) : (
                 <>
                   <UserRoundIcon className="size-3.5" />
-                  负责人：{assigneeLabel}
+                  {t.requirements.filter.assigneeValue(assigneeLabel)}
                 </>
               )}
             </FilterChip>
@@ -476,7 +478,7 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
             variant="ghost"
             onClick={() => clearSearch({ status: undefined, assignee: undefined })}
           >
-            清除筛选
+            {t.requirements.page.clearFilters}
           </Button>
         ) : null}
       </div>
@@ -486,10 +488,12 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
           <div className="flex flex-1 items-center justify-center bg-background">
             <EmptyState
               size="page"
-              title={search.q === undefined ? "没有符合条件的需求" : `没有找到「${search.q}」`}
-              description={search.q === undefined ? "换个筛选条件试试。" : "换个关键词，或按编号搜索，例如 REQ-128"}
+              title={search.q === undefined ? t.requirements.noResult.filteredTitle : t.requirements.noResult.searchTitle(search.q)}
+              description={
+                search.q === undefined ? t.requirements.noResult.filteredDescription : t.requirements.noResult.searchDescription
+              }
               action={{
-                label: "清除筛选",
+                label: t.requirements.page.clearFilters,
                 onClick: () => clearSearch({ status: undefined, assignee: undefined }),
               }}
             />
@@ -523,7 +527,7 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
         </div>
         {search.peek === undefined ? null : peekId === null ? (
           <PeekMissing
-            label={peek.number === null ? `「${String(search.peek)}」` : requirementCode(peek.number)}
+            label={peek.number === null ? t.requirements.peekMissing.quoted(String(search.peek)) : requirementCode(peek.number)}
             state={peek.invalid || peek.notFound ? "not_found" : peek.lookup.isError ? "failed" : "loading"}
             busy={peek.lookup.isFetching}
             onRetry={() => void peek.lookup.refetch()}
@@ -602,17 +606,18 @@ function AssigneeFilterMenu({
   currentUserId: string | null;
   onChange(value: string | undefined): void;
 }) {
+  const t = useT();
   const users = useQuery(usersQuery);
   const pick = (next: string) => onChange(value === next ? undefined : next);
   const check = (candidate: string) => (value === candidate ? <CheckIcon className="size-4 text-primary-text!" /> : null);
   return (
     <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
       <DropdownMenuItem onSelect={() => pick(REQUIREMENT_ASSIGNEE_FILTER_ME)}>
-        <span className="flex-1">我负责的</span>
+        <span className="flex-1">{t.requirements.filter.mine}</span>
         {check(REQUIREMENT_ASSIGNEE_FILTER_ME)}
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => pick(REQUIREMENT_ASSIGNEE_FILTER_NONE)}>
-        <span className="flex-1">未指派</span>
+        <span className="flex-1">{t.requirements.assignee.unassigned}</span>
         {check(REQUIREMENT_ASSIGNEE_FILTER_NONE)}
       </DropdownMenuItem>
       {(users.data?.items ?? []).filter((user) => user.id !== currentUserId).length > 0 ? <DropdownMenuSeparator /> : null}
@@ -627,7 +632,7 @@ function AssigneeFilterMenu({
       {value === undefined ? null : (
         <>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => onChange(undefined)}>不按负责人筛选</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onChange(undefined)}>{t.requirements.filter.anyAssignee}</DropdownMenuItem>
         </>
       )}
     </DropdownMenuContent>
@@ -647,9 +652,10 @@ function PeekMissing({
   onRetry(): void;
   onClose(): void;
 }) {
+  const t = useT();
   return (
     <aside
-      aria-label="需求速览"
+      aria-label={t.requirements.peek.label}
       aria-busy={state === "loading" || undefined}
       className="absolute inset-y-0 right-0 z-20 flex w-[min(480px,100%)] flex-col items-center justify-center gap-3 border-l border-border bg-card p-6 text-center shadow-2 min-[1440px]:static min-[1440px]:w-[480px] min-[1440px]:shrink-0 min-[1440px]:shadow-none"
     >
@@ -661,17 +667,17 @@ function PeekMissing({
         </div>
       ) : state === "not_found" ? (
         <>
-          <p className="m-0 text-body font-medium">找不到 {label}</p>
-          <p className="m-0 text-small text-muted-foreground">它可能不在这个项目里，或者编号写错了。</p>
-          <Button variant="secondary" onClick={onClose}>关闭</Button>
+          <p className="m-0 text-body font-medium">{t.requirements.peekMissing.notFound(label)}</p>
+          <p className="m-0 text-small text-muted-foreground">{t.requirements.peekMissing.notFoundDetail}</p>
+          <Button variant="secondary" onClick={onClose}>{t.feedback.dialog.close}</Button>
         </>
       ) : (
         <>
-          <p className="m-0 text-body font-medium">没能打开 {label}</p>
-          <p className="m-0 text-small text-muted-foreground">可能是网络或服务暂时不可用。</p>
+          <p className="m-0 text-body font-medium">{t.requirements.peekMissing.failed(label)}</p>
+          <p className="m-0 text-small text-muted-foreground">{t.requirements.peekMissing.failedDetail}</p>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={onClose}>关闭</Button>
-            <Button variant="primary" loading={busy} onClick={onRetry}>重试</Button>
+            <Button variant="secondary" onClick={onClose}>{t.feedback.dialog.close}</Button>
+            <Button variant="primary" loading={busy} onClick={onRetry}>{t.feedback.retry}</Button>
           </div>
         </>
       )}

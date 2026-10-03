@@ -1,7 +1,7 @@
 import type { RequirementStatus } from "@suduo/cloud-contracts";
-import { REQUIREMENT_STATUS_LABELS } from "@suduo/cloud-contracts";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
+import { requirementStatusLabel } from "../../ui/requirement-status.js";
 
 /**
  * 需求状态图标：形状 + 颜色双编码（技术设计 §3.2），色弱与灰度下依然可分。
@@ -23,7 +23,7 @@ function StatusIcon({
   title,
   ...props
 }: Omit<ComponentProps<"svg">, "children"> & { status: RequirementStatus; title?: string }) {
-  const label = title ?? REQUIREMENT_STATUS_LABELS[status];
+  const label = title ?? requirementStatusLabel(status);
   return (
     <svg
       viewBox="0 0 14 14"
@@ -71,7 +71,7 @@ function StatusLabel({ status, className }: { status: RequirementStatus; classNa
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-small text-foreground", className)}>
       <StatusIcon status={status} aria-hidden="true" />
-      {REQUIREMENT_STATUS_LABELS[status]}
+      {requirementStatusLabel(status)}
     </span>
   );
 }

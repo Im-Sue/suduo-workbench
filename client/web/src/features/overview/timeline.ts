@@ -1,14 +1,17 @@
 import {
   REQUIREMENT_STATUSES,
-  REQUIREMENT_STATUS_LABELS,
   type AuditAction,
   type AuditEntryDto,
   type RequirementStatus,
 } from "@suduo/cloud-contracts";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
+import { requirementStatusLabel } from "../../ui/requirement-status.js";
 
 /**
  * 概览「最近动态」的纯逻辑：审计条目语义化、相邻同类归并、状态流转文案。
- * 渲染层（OverviewTimeline）只负责摆放。
+ * 渲染层（OverviewTimeline）只负责摆放。文字在字典 overview.audit 里，按调用时的界面语言取，
+ * 组件里可以传入 useT() 拿到的字典。
  */
 
 export type AuditTone = "created" | "updated" | "deleted" | "neutral";
@@ -20,34 +23,8 @@ export interface AuditPresentation {
   text: string;
 }
 
-const RESOURCE_LABELS: Readonly<Record<string, string>> = {
-  project: "项目",
-  requirement: "需求",
-  comment: "评论",
-  attachment: "附件",
-};
-
-/**
- * 键是契约里的完整 `AuditAction`，写整句而不是「动作词 + 资源词」拼装（中文语序不是简单拼接）。
- * 类型标注为 `Record<AuditAction, string>`：契约新增动作时编译期即报缺键。
- */
-const AUDIT_TEXTS: Readonly<Record<AuditAction, string>> = {
-  "project.created": "创建了项目",
-  "project.updated": "更新了项目",
-  "project.archived": "归档了项目",
-  "project.restored": "恢复了项目",
-  "requirement.created": "创建了需求",
-  "requirement.updated": "更新了需求",
-  "requirement.status_changed": "变更了需求状态",
-  "comment.created": "发表了评论",
-  "attachment.created": "上传了附件",
-  "attachment.downloaded": "下载了附件",
-  "attachment.deleted": "删除了附件",
-  "artifact_version.published": "发布了产物版本",
-};
-
 /** 未知取值一律回落为原文而不是丢弃：审计不能因为前端不认识就少显示一条。 */
-export function presentAudit(entry: AuditEntryDto): AuditPresentation {
+export function presentAudit(entry: AuditEntryDto, t: Messages = messagesFor(currentLocale())): AuditPresentation {
   const action = String(entry.action);
   const tone: AuditTone = action.includes("creat") || action.includes("restor")
     ? "created"
@@ -56,40 +33,30 @@ export function presentAudit(entry: AuditEntryDto): AuditPresentation {
       : action.includes("updat") || action.includes("status") || action.includes("archiv")
         ? "updated"
         : "neutral";
-  const known = AUDIT_TEXTS[entry.action] as string | undefined;
-  if (known !== undefined) return { tone, text: known };
-  const resourceLabel = RESOURCE_LABELS[String(entry.resourceType)] ?? String(entry.resourceType);
-  return { tone, text: `对${resourceLabel}执行了 ${action}` };
+  const text = t.overview.audit;
+  const actions: Readonly<Record<string, string>> = text.actions;
+  if (Object.hasOwn(actions, action)) return { tone, text: actions[action] ?? action };
+  const resources: Readonly<Record<string, string>> = text.resources;
+  const resourceType = String(entry.resourceType);
+  const resourceLabel = Object.hasOwn(resources, resourceType) ? (resources[resourceType] ?? resourceType) : resourceType;
+  return { tone, text: text.unknown(resourceLabel, action) };
 }
 
-const GROUP_VERBS: Readonly<Record<AuditAction, string>> = {
-  "project.created": "创建了",
-  "project.updated": "更新了",
-  "project.archived": "归档了",
-  "project.restored": "恢复了",
-  "requirement.created": "创建了",
-  "requirement.updated": "更新了",
-  "requirement.status_changed": "变更了",
-  "comment.created": "发表了",
-  "attachment.created": "上传了",
-  "attachment.downloaded": "下载了",
-  "attachment.deleted": "删除了",
-  "artifact_version.published": "发布了",
-};
-
 /** 归并组的一句话：「更新了 3 条记录」。 */
-export function groupSummary(action: AuditAction, count: number): string {
-  return `${GROUP_VERBS[action] ?? "处理了"} ${String(count)} 条记录`;
+export function groupSummary(action: AuditAction, count: number, t: Messages = messagesFor(currentLocale())): string {
+  const groups: Readonly<Record<string, (count: number) => string>> = t.overview.audit.groups;
+  const key = String(action);
+  return (Object.hasOwn(groups, key) ? (groups[key] ?? t.overview.audit.groupFallback) : t.overview.audit.groupFallback)(count);
 }
 
 /** 状态流转写成「草稿 → 开发中」；取不到前后状态时给一句兜底。非状态变更返回 null。 */
-export function statusTransitionOf(entry: AuditEntryDto): string | null {
+export function statusTransitionOf(entry: AuditEntryDto, t: Messages = messagesFor(currentLocale())): string | null {
   if (entry.action !== "requirement.status_changed") return null;
   const before = statusOf(entry.before?.["status"]);
   const after = statusOf(entry.after?.["status"]);
   return before !== null && after !== null
-    ? `${REQUIREMENT_STATUS_LABELS[before]} → ${REQUIREMENT_STATUS_LABELS[after]}`
-    : "状态已变更";
+    ? `${requirementStatusLabel(before, t)} → ${requirementStatusLabel(after, t)}`
+    : t.overview.audit.statusChanged;
 }
 
 function statusOf(value: unknown): RequirementStatus | null {

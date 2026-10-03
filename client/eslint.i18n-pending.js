@@ -1,7 +1,7 @@
 // 中英双语迁移期的「待迁移文件」清单（技术设计 §三）：这些文件里还有写死的中文，暂时只查品牌写法。
 // 一个文件迁完就从这里删掉，并把 I18N_PENDING_MAX 调成新的条数。清单只减不增：
 // server/test/i18n-pending.test.ts 检查条数等于上限、每个文件都还有中文（迁完了却没删会报出来）。
-export const I18N_PENDING_MAX = 143;
+export const I18N_PENDING_MAX = 120;
 
 export const I18N_PENDING_FILES = [
   "contracts/src/config.ts",
@@ -89,29 +89,6 @@ export const I18N_PENDING_FILES = [
   "web/src/components/OpenMenu.tsx",
   "web/src/components/RequirementMaterials.tsx",
   "web/src/components/TablePreview.tsx",
-  "web/src/features/my-work/MyWorkPage.tsx",
-  "web/src/features/overview/OverviewPage.tsx",
-  "web/src/features/overview/OverviewTimeline.tsx",
-  "web/src/features/overview/TransitionChart.tsx",
-  "web/src/features/overview/timeline.ts",
-  "web/src/features/requirements/RequirementDetailPage.tsx",
-  "web/src/features/requirements/RequirementsPage.tsx",
-  "web/src/features/requirements/activity.ts",
-  "web/src/features/requirements/components/AssigneeMenu.tsx",
-  "web/src/features/requirements/components/BoardView.tsx",
-  "web/src/features/requirements/components/CreateRequirementDialog.tsx",
-  "web/src/features/requirements/components/DirectoryPicker.tsx",
-  "web/src/features/requirements/components/ListView.tsx",
-  "web/src/features/requirements/components/RequirementCard.tsx",
-  "web/src/features/requirements/components/RequirementPeek.tsx",
-  "web/src/features/requirements/components/StartSessionDialog.tsx",
-  "web/src/features/requirements/components/StatusMenu.tsx",
-  "web/src/features/requirements/queries.ts",
-  "web/src/features/requirements/sections/ActivityFeed.tsx",
-  "web/src/features/requirements/sections/LocalSessions.tsx",
-  "web/src/features/requirements/sections/Materials.tsx",
-  "web/src/features/requirements/sections/PublishArtifactDialog.tsx",
-  "web/src/features/requirements/upload-queue.ts",
   "web/src/features/rooms/RoomsPage.tsx",
   "web/src/features/rooms/components/AgentRunDetail.tsx",
   "web/src/features/rooms/components/MentionPicker.tsx",

@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { type RequirementListItemDto } from "@suduo/client-contracts";
-import { REQUIREMENT_STATUS_LABELS, type RequirementStatus } from "@suduo/cloud-contracts";
+import { type RequirementStatus } from "@suduo/cloud-contracts";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { classifyFailure } from "../../../feedback/classify.js";
@@ -15,6 +15,8 @@ import { columnQuery, type ColumnState } from "../queries.js";
 import { useRecentlyChanged } from "../highlight.js";
 import { UserAvatar } from "./UserAvatar.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
+import { requirementStatusLabel } from "../../../ui/requirement-status.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 列表视图：按状态分组（可折叠），与看板共用每个状态的分页查询，切换视图不重新加载。
@@ -40,6 +42,7 @@ export function ListView({
   /** 每列载入结果（条数、是否还有下一页），页面用来显示总数和「没有找到」。 */
   onColumnState?(status: RequirementStatus, state: ColumnState): void;
 }) {
+  const t = useT();
   const [collapsed, setCollapsed] = useState<ReadonlySet<RequirementStatus>>(new Set());
   const toggle = (status: RequirementStatus) =>
     setCollapsed((current) => {
@@ -50,13 +53,15 @@ export function ListView({
     });
 
   return (
-    <div role="region" aria-label="需求列表" className="min-h-0 min-w-0 flex-1 overflow-auto" data-testid="requirements-list">
+    <div role="region" aria-label={t.requirements.list.region} className="min-h-0 min-w-0 flex-1 overflow-auto" data-testid="requirements-list">
       <div className="sticky top-0 z-10 flex h-8 items-center gap-3 border-b border-border bg-card px-5 text-caption text-subtle-foreground">
-        <span className="w-[72px] shrink-0">编号</span>
-        <span className="min-w-0 flex-1">标题</span>
-        <span className="w-28 shrink-0">负责人</span>
-        <span className="w-28 shrink-0">材料 · 评论 · 会话</span>
-        <span className="w-20 shrink-0 text-right">更新</span>
+        <span className="w-[72px] shrink-0">{t.requirements.list.header.number}</span>
+        <span className="min-w-0 flex-1">{t.requirements.list.header.title}</span>
+        <span className="w-28 shrink-0">{t.requirements.list.header.assignee}</span>
+        <span className="w-28 shrink-0 truncate" title={t.requirements.list.header.counts}>
+          {t.requirements.list.header.counts}
+        </span>
+        <span className="w-20 shrink-0 text-right">{t.requirements.list.header.updated}</span>
       </div>
       {statuses.map((status) => (
         <ListGroup
@@ -100,6 +105,7 @@ function ListGroup({
   onCreate(): void;
   onState?(status: RequirementStatus, state: ColumnState): void;
 }) {
+  const t = useT();
   const query = useInfiniteQuery(columnQuery(projectId, status, filters));
   const items = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
   const loaded = query.data !== undefined;
@@ -107,7 +113,7 @@ function ListGroup({
   useEffect(() => {
     onState?.(status, { count: items.length, hasMore, loaded });
   }, [onState, status, items.length, hasMore, loaded]);
-  const label = REQUIREMENT_STATUS_LABELS[status];
+  const label = requirementStatusLabel(status);
   // 筛选后没有条目的组整组隐藏，减少噪音；未筛选时保留空组，方便就地新建。
   const filtered = (filters.search ?? "") !== "" || filters.assignee !== undefined;
   if (filtered && query.isSuccess && items.length === 0) return null;
@@ -138,7 +144,7 @@ function ListGroup({
           size="icon-sm"
           variant="ghost"
           className="ml-auto size-6 opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
-          aria-label={`在「${label}」新建需求`}
+          aria-label={t.requirements.column.createIn(label)}
           onClick={onCreate}
         >
           <PlusIcon className="size-3.5" />
@@ -150,13 +156,13 @@ function ListGroup({
           {query.isError && query.data === undefined ? (
             <RegionError
               kind={classifyFailure(query.error).kind}
-              message={`没能加载「${label}」：${classifyFailure(query.error).message}`}
+              message={t.requirements.column.loadFailed(label, classifyFailure(query.error).message)}
               busy={query.isFetching}
               onRetry={() => void query.refetch()}
             />
           ) : null}
           {query.isSuccess && items.length === 0 ? (
-            <p className="m-0 border-b border-border px-5 py-2.5 text-caption text-subtle-foreground">暂无</p>
+            <p className="m-0 border-b border-border px-5 py-2.5 text-caption text-subtle-foreground">{t.requirements.column.empty}</p>
           ) : null}
           {items.map((requirement) => (
             <ListRow
@@ -170,7 +176,7 @@ function ListGroup({
           {query.hasNextPage ? (
             <div className="border-b border-border px-5 py-1.5">
               <Button variant="ghost" size="sm" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
-                加载更多
+                {t.requirements.column.loadMore}
               </Button>
             </div>
           ) : null}
@@ -191,6 +197,7 @@ function ListRow({
   onFocus(): void;
   onClick(): void;
 }) {
+  const t = useT();
   const changed = useRecentlyChanged(requirement.id);
   const code = requirementCode(requirement.number);
   return (
@@ -215,7 +222,7 @@ function ListRow({
       <span className="flex w-28 shrink-0 items-center gap-1.5 text-small">
         <UserAvatar user={requirement.assignee} />
         <span className={cn("truncate", requirement.assignee === null && "text-subtle-foreground")}>
-          {requirement.assignee?.displayName ?? "未指派"}
+          {requirement.assignee?.displayName ?? t.requirements.assignee.unassigned}
         </span>
       </span>
       <span className="w-28 shrink-0 font-mono text-caption text-subtle-foreground">

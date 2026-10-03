@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Spinner } from "@/components/ui/spinner";
 import { usersQuery } from "../queries.js";
 import { UserAvatar } from "./UserAvatar.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 负责人选择：可搜索；「未指派」和「我」固定在最前。
@@ -27,6 +28,7 @@ export function AssigneeMenu({
   align?: "start" | "end";
   disabled?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const users = useQuery({ ...usersQuery, enabled: open });
   const items = users.data?.items ?? [];
@@ -45,30 +47,30 @@ export function AssigneeMenu({
       </PopoverTrigger>
       <PopoverContent align={align} className="w-60 p-0">
         <Command>
-          <CommandInput placeholder="搜索成员" />
+          <CommandInput placeholder={t.requirements.assignee.search} />
           <CommandList>
             {users.isPending ? (
               <div className="flex items-center gap-2 px-3 py-2.5 text-small text-subtle-foreground">
                 <Spinner size="sm" />
-                正在加载成员…
+                {t.requirements.assignee.loading}
               </div>
             ) : null}
             {users.isError ? (
-              <div className="px-3 py-2.5 text-small text-danger">没能加载成员列表</div>
+              <div className="px-3 py-2.5 text-small text-danger">{t.requirements.assignee.loadFailed}</div>
             ) : null}
-            <CommandEmpty>没有匹配的成员</CommandEmpty>
+            <CommandEmpty>{t.requirements.assignee.empty}</CommandEmpty>
             <CommandGroup>
-              <CommandItem value="未指派 none" onSelect={() => pick(null)}>
+              <CommandItem value={t.requirements.assignee.unassignedKeywords} onSelect={() => pick(null)}>
                 <UserAvatar user={null} />
-                <span className="flex-1">未指派</span>
+                <span className="flex-1">{t.requirements.assignee.unassigned}</span>
                 {assignee === null ? <CheckIcon className="size-4 text-primary-text!" /> : null}
               </CommandItem>
               {me === null ? null : (
-                <CommandItem value={`我 me ${me.displayName}`} onSelect={() => pick(me)}>
+                <CommandItem value={t.requirements.assignee.meKeywords(me.displayName)} onSelect={() => pick(me)}>
                   <UserAvatar user={me} />
                   <span className="flex-1 truncate">
                     {me.displayName}
-                    <span className="ml-1 text-subtle-foreground">（我）</span>
+                    <span className="ml-1 text-subtle-foreground">{t.requirements.assignee.meSuffix}</span>
                   </span>
                   {assignee?.id === me.id ? <CheckIcon className="size-4 text-primary-text!" /> : null}
                 </CommandItem>
