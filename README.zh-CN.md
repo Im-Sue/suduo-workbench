@@ -1,143 +1,210 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
+  <img src=".github/assets/logo.svg" width="88" height="88" alt="SuDuo 标志">
+</picture>
+
 # 速舵 SuDuo
 
 **需求在团队，代码留在本机。**
 
-[English](README.md) · 源码公开 · [商业使用](COMMERCIAL.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [参与贡献](CONTRIBUTING.zh-CN.md)
+给用 Codex CLI 开发的团队准备的、可以自己部署的需求协作工作台。
 
-速舵 SuDuo 把团队共享的需求与讨论，接到每个人电脑上的 Codex CLI。需求、附件和讨论房间放在团队自己部署的服务器上；每个人从一条需求直接拉起本机的 Codex 会话，代码、仓库和会话都不离开自己的电脑。
+[![Release](https://img.shields.io/github/v/release/Im-Sue/suduo-workbench?color=3451D1&label=release)](https://github.com/Im-Sue/suduo-workbench/releases)
+[![CI](https://github.com/Im-Sue/suduo-workbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Im-Sue/suduo-workbench/actions/workflows/ci.yml)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-3451D1)](LICENSE.zh-CN.md)
+[![Client: macOS | Windows](https://img.shields.io/badge/client-macOS%20%7C%20Windows-12A594)](client/README.zh-CN.md)
+[![Server: Linux + Docker](https://img.shields.io/badge/server-Linux%20%2B%20Docker-12A594)](cloud/DEPLOYMENT.zh-CN.md)
+
+[快速开始](#快速开始) · [工作方式](#工作方式) · [商业使用](COMMERCIAL.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [English](README.md)
+
+</div>
 
 > 本页为中文版。若与英文版 [README.md](README.md) 有出入，以英文版为准。
 
+![SuDuo 的需求详情页：左边是需求描述、讨论和活动记录，右边是状态、本机代码目录和本机会话，右上角是「开始会话」](.github/assets/screenshot-requirement.png)
+
+## 速舵是什么
+
+速舵 SuDuo 让开发团队在一个地方管理需求和讨论，每个开发者再从需求出发，在自己电脑上拉起 Codex 会话干活。
+
+- **需求共享，放在自己的服务器上。** 需求、附件和讨论房间都存在团队自己部署的服务器上，所有人看的是同一块看板。
+- **从需求到 Codex，一步开工。** 在任意一条需求上直接拉起本机 Codex 会话。Codex 通过 SuDuo 提供的工具读取需求，并把结论写回去。
+- **代码留在自己电脑上。** 代码仓库、Codex 会话和模型凭据都留在每个开发者的电脑上，中间没有任何 SuDuo 的服务。
+
 ## 工作方式
 
-```text
- 团队服务器（cloud/，自己部署）                 每个人的电脑（client/）
-┌──────────────────────────────────┐        ┌──────────────────────────────────────┐
-│ 项目 · 需求                       │        │ 浏览器里的 SuDuo                      │
-│ 评论 · 附件 · 讨论房间            │ ◀────▶ │ 本机服务（只监听 127.0.0.1）          │
-│ PostgreSQL + 文件卷               │  HTTP  │ 你的代码仓库 · Codex 会话             │
-└──────────────────────────────────┘        │ 用你自己模型账号的 Codex CLI          │
-                                            └──────────────────────────────────────┘
-```
+<img src=".github/assets/architecture.zh-CN.svg" width="100%" alt="团队服务器保存项目、需求、评论、附件和讨论房间。每个人的电脑上运行浏览器里的 SuDuo、只监听 127.0.0.1 的本机服务、Codex CLI 和代码仓库。Codex 直接调用你的模型服务。">
 
-- **共享需求与讨论**：需求看板、带评论和附件的需求详情、项目与需求讨论房间、活动记录。
-- **从需求开工**：在需求上直接拉起本机 Codex 会话，Codex 通过 SuDuo 提供的工具读取需求、记录结论。
-- **共享 Agent**：把自己的 Codex 共享进房间，队友可以向它提问；它在你的电脑上只读执行，回答发在房间里。
-- **自己部署**：服务器跑在你们自己的环境里。SuDuo 没有中心化服务，也接触不到你们的代码。
+| 在团队服务器上 | 在每个人的电脑上 |
+|---|---|
+| 项目、需求、评论和附件 | 代码仓库 |
+| 讨论房间、消息和房间文件 | Codex 会话、审批和历史记录 |
+| 账号和活动记录 | Codex 配置和模型凭据 |
+| 成员共享进房间的 Agent 给出的回答 | 哪个项目对应本机哪个目录 |
+
+1. **部署服务器**：每个团队一次，在装有 Docker 的 Linux 服务器上执行一条命令。
+2. **运行客户端**：每个人在自己电脑上运行，并连上团队服务器。
+3. **选择目录**：为每个项目选择它的代码所在的本机目录。
+4. **讨论需求，然后从需求开始会话。** Codex 在那个目录里干活。
+
+## 功能
+
+**需求**
+
+- 看板和列表两种视图，七种状态，负责人，`REQ-n` 编号
+- 需求详情支持 Markdown、评论、附件和完整的活动记录
+- 确认版：把商定好的一组材料发布出来，大家按同一份文件开发
+- 概览：状态分布、流转趋势、停滞的需求
+- 我的工作：等你处理的事、你负责的需求、你的会话和最近动态
+
+**讨论房间**
+
+- 每个项目一个房间，单条需求也可以建自己的讨论
+- 话题、@ 提及、文件和视频
+- 共享 Agent：把自己的 Codex 共享进房间，队友可以 @ 它；它在你的电脑上只读执行，在话题里回复
+- 悬浮讨论窗口，切换页面时保持打开
+
+**本机 Codex 工作台**
+
+- 会话和需求关联，Codex 可以用工具读取需求、记录结论
+- 审批、命令、文件改动和差异对比都在一条时间线上
+- Git 检查点：可选在每轮开始前自动存档，一键还原
+- 输入框支持 Skill、`@` 引用文件和消息排队
+- 回答里的文件路径可以点开预览到对应行，或用 VS Code 打开
+- 亮色和暗色主题、快捷键、命令面板
+
+**自己部署**
+
+- 一个脚本完成服务器的安装、升级、备份和恢复
+- 备份同时包含数据库和文件卷；升级前自动备份
+- `--mirror cn` 使用国内镜像源
+- 客户端与服务器版本不一致时会提示
+
+<table>
+  <tr>
+    <td width="50%"><img src=".github/assets/screenshot-board.png" alt="需求看板，每种状态一列"></td>
+    <td width="50%"><img src=".github/assets/screenshot-discussion.png" alt="项目讨论房间，四位成员的消息"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>需求看板</sub></td>
+    <td align="center"><sub>项目讨论</sub></td>
+  </tr>
+</table>
 
 ## 快速开始
 
-### 1. 部署云端（每个团队一次）
+| | 需要 |
+|---|---|
+| 团队服务器 | Ubuntu 22.04 / 24.04（其他 Linux 尽力支持），2 核 CPU、4 GB 内存，Docker 与 Compose，git |
+| 每个人的电脑 | macOS 13.5+（Apple 芯片或 Intel）或 Windows 10 / 11（x64）；Node.js 24 LTS（24.10+）、pnpm 10.25、git |
+| 模型 | Codex 的 ChatGPT 登录，或 OpenAI / 兼容服务的 API Key |
 
-按[部署指南](cloud/DEPLOYMENT.zh-CN.md)操作。在装有 Docker 的 Ubuntu 服务器上，进入代码的 `cloud/` 目录执行一条命令：
-
-```bash
-cd suduo-workbench/cloud
-sudo ./scripts/suduo-cloud.sh install
-```
-
-### 2. 运行客户端（每个人）
-
-系统要求：
-
-- **macOS 13.5 或更新**（Apple 芯片或 Intel），或 **Windows 10 / 11**（x64）
-- **Node.js 24 LTS**（24.x 中的 24.10 或更新）：从 <https://nodejs.org/> 安装，或用 mise、nvm、fnm 等版本管理工具。更高的大版本没有测试过，而且从 Node 25 起不再自带 `corepack`
-- **pnpm 10.25**：`corepack enable pnpm`（Windows 上以管理员身份运行；macOS 上 Node 装在系统目录时加 `sudo`），或 `npm install -g pnpm@10.25.0`
-- **git**
-
-macOS（终端）：
+**1. 部署服务器**（每个团队一次，在服务器上执行）：
 
 ```bash
 git clone https://github.com/Im-Sue/suduo-workbench.git
 cd suduo-workbench
 git checkout "$(git describe --tags --abbrev=0)"   # 最新的发布版本
-cd client
-pnpm install
-pnpm start
+cd cloud
+sudo ./scripts/suduo-cloud.sh install --mirror cn   # 在国内用镜像源；海外去掉 --mirror cn
 ```
 
-Windows（PowerShell）：
+服务器就绪后脚本会打印访问地址。升级、备份和 HTTPS 见[部署指南](cloud/DEPLOYMENT.zh-CN.md)。
 
-```powershell
-git clone https://github.com/Im-Sue/suduo-workbench.git
-cd suduo-workbench
-git checkout (git describe --tags --abbrev=0)      # 最新的发布版本
-cd client
-pnpm install
-pnpm start
-```
-
-`pnpm start` 会检查环境，首次运行时构建（约 1–2 分钟），在 `http://127.0.0.1:8787` 启动本机服务并打开浏览器；SuDuo 已经在运行时，直接打开浏览器。按 `Ctrl+C` 停止。参数：`pnpm start --port 18787`、`--no-open`、`--rebuild`。
-
-仓库还没有发布标签时，留在 `main` 即可。
-
-请使用和团队云端相同的版本。版本不一致时，**设置 → 关于**里会有提示。
-
-### 3. 配置 Codex
-
-SuDuo 使用 `client/` 里锁定版本的 Codex CLI，以及你自己在 `~/.codex` 里的 Codex 配置（和你自己的 Codex CLI 是同一个目录）。两种方式任选：
-
-- 在 SuDuo 的 **设置 → 模型服务** 里配置：SuDuo 把服务地址和 API Key 交给 Codex，由 Codex 存进 `~/.codex`。这会同时改变你自己的 Codex CLI 使用的配置，也可能替换原来的 ChatGPT 登录；
-- 或在 `client/` 目录下登录：`pnpm exec codex login`
-
-SuDuo 自己不保存密钥副本，也不会把任何东西发给 SuDuo 的作者。
-
-### 4. 连接并开始
-
-1. **设置 → 需求服务**：填入团队云端的地址，注册或登录。
-2. 为每个项目选择它的代码在你电脑上的目录。
-3. 打开一条需求，开始会话。
-
-## 更新
-
-先停掉 SuDuo（在运行 `pnpm start` 的窗口按 `Ctrl+C`；Windows 上 SuDuo 还占用着文件时 `pnpm install` 会失败），然后在 `client/` 目录下：
+**2. 运行客户端**（每个人在自己电脑上执行；终端和 PowerShell 用同样的命令）：
 
 ```bash
-git fetch --tags
-git checkout v0.8.0     # 团队使用的版本
+git clone https://github.com/Im-Sue/suduo-workbench.git
+cd suduo-workbench
+git checkout "$(git describe --tags --abbrev=0)"   # 和服务器用同一个版本
+cd client
 pnpm install
-pnpm start              # 会自动重新构建
+pnpm start
 ```
 
-本机数据会在启动时自动迁移。本机数据库不支持退回旧版本：如果可能需要退回，先备份数据目录。
+`pnpm start` 会检查环境，首次运行时构建（约 1–2 分钟），在 `http://127.0.0.1:8787` 启动并打开浏览器。
 
-## 文件在哪
+**3. 连接。** 用 `pnpm exec codex login` 登录 Codex，或在 SuDuo 的 **设置 → 模型服务** 里配置模型服务。然后在 **设置 → 需求服务** 里填入服务器地址并注册，为项目选择代码目录，打开一条需求，开始会话。
 
-| | macOS | Windows |
-|---|---|---|
-| 本机数据（会话、设置） | `~/Library/Application Support/SuDuo`（0.7 之前是 `~/.local/share/suduo`） | `%LOCALAPPDATA%\SuDuo` |
-| 日志 | `<数据目录>/logs/suduo.log` | `<数据目录>\logs\suduo.log` |
-| Codex 配置 | `~/.codex` | `%USERPROFILE%\.codex` |
+Codex 配置细节、更新、数据位置和常见问题见[客户端指南](client/README.zh-CN.md)。
 
-用 `SUDUO_DATA_DIR` 指定其他数据目录，用 `SUDUO_CODEX_HOME`（或 `CODEX_HOME`）指定其他 Codex 目录。全部设置见 [`client/server/.env.example`](client/server/.env.example)。
+## 当前状态
 
-## 常见问题
+速舵处于早期版本，0.7.0 是第一个公开版本。
 
-| 问题 | 怎么办 |
+- 界面目前只有中文，英文界面正在做。
+- 还没有安装包，客户端从源码运行。
+- 服务器暂时没有管理员和邀请机制：能访问到它的人都能注册，请放在内网里。
+- 在 macOS（Apple 芯片）和 Ubuntu 22.04 / 24.04 服务器上测试过；Windows 和 Intel Mac 也支持，但测试得少一些。
+
+版本变化见[更新日志](CHANGELOG.zh-CN.md)和 [Releases](https://github.com/Im-Sue/suduo-workbench/releases)。
+
+## 常见疑问
+
+<details>
+<summary><b>代码会传到服务器上吗？</b></summary>
+<br>
+
+不会。Codex 在你的电脑上、在你选的目录里运行。服务器只收到你自己发上去的内容：需求、评论、消息和你上传的附件。如果你把自己的 Agent 共享进房间，它的回答会发在房间里，其中可能引用代码。
+
+</details>
+
+<details>
+<summary><b>SuDuo 能看到我的模型凭据或请求吗？</b></summary>
+<br>
+
+不能。Codex 的配置保存在它自己的 `~/.codex` 里，并直接请求你的模型服务。在 SuDuo 设置里配置模型服务时，SuDuo 只是把配置交给 Codex，自己不留副本，也不会把任何东西发给 SuDuo 的作者。
+
+</details>
+
+<details>
+<summary><b>需要另外安装 Codex 吗？</b></summary>
+<br>
+
+不需要。`pnpm install` 会安装这个 SuDuo 版本测试过的 Codex CLI（SuDuo 0.7.0 对应 0.159.2）。它和你可能已经装好的 Codex CLI 共用 `~/.codex`。
+
+</details>
+
+<details>
+<summary><b>公司可以用吗？</b></summary>
+<br>
+
+可以。直接开始用，30 天内发一封邮件登记即可，目前免费。见下方[许可与商业使用](#许可与商业使用)。
+
+</details>
+
+<details>
+<summary><b>客户端能在 Linux 上运行吗？</b></summary>
+<br>
+
+Linux 不是正式支持的客户端平台，但开发和测试时可以在 Linux 上运行，见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
+
+</details>
+
+## 许可与商业使用
+
+速舵 SuDuo **源码公开，但不是开源软件**。它以 [PolyForm Noncommercial License 1.0.0](LICENSE)（[中文参考译文](LICENSE.zh-CN.md)）授权，著作权人 sue。
+
+| 谁在用 | 怎么做 |
 |---|---|
-| 出了问题但不知道原因 | 在 `client/` 下执行 `pnpm run doctor`，或看 **设置 → 诊断**，或打开 `http://127.0.0.1:8787/doctor` |
-| `pnpm install` 卡在 `better-sqlite3` | 它会下载预编译文件，网络不通时改为本地编译，需要编译工具：macOS 执行 `xcode-select --install`；Windows 安装 Visual Studio Build Tools 并勾选「使用 C++ 的桌面开发」。然后重新 `pnpm install` |
-| 从 npm 下载很慢或失败（例如在国内） | `pnpm config set registry https://registry.npmmirror.com`，再 `pnpm install` |
-| 在公司代理后面 | `pnpm install` 时设置 `HTTPS_PROXY`；Codex 的代理在 **设置 → 网络代理** 里配置 |
-| 8787 端口被占用 | `pnpm start --port 18787` |
-| Codex 总是提醒 `preferred_auth_method` | 从 `~/.codex/config.toml` 删掉这一行，新版 Codex 不再使用它 |
+| 个人：学习、研究、没有商业用途预期的业余项目 | 免费，不用登记 |
+| 学校、公共研究机构、公益组织、政府机构 | 免费，不用登记 |
+| 公司和其他营利组织，包括只在内部使用 | 直接开始用，**30 天内**发邮件到 im.suyejian@gmail.com 登记，目前免费 |
 
-## 仓库结构
+什么算商业使用、登记邮件写什么，见 [COMMERCIAL.zh-CN.md](COMMERCIAL.zh-CN.md)。参与贡献需要同意[贡献者许可协议](CLA.zh-CN.md)。第三方依赖的许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-```text
-client/   装在每个人电脑上：web（前端）、server（本机服务）、contracts、codex-protocol、scripts
-cloud/    部署在团队服务器上：server（需求服务，Docker）、contracts、scripts
-docs/     需求、架构、技术设计与决策记录
-```
+## 参与和联系
 
-Linux 不是正式支持的客户端平台，但开发和测试时客户端可以在 Linux 上运行，见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
+- **问题反馈与提问**：[GitHub Issues](https://github.com/Im-Sue/suduo-workbench/issues)
+- **参与贡献**：[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)
+- **安全问题**：请发邮件到 im.suyejian@gmail.com，不要公开提 issue
+- **商用登记**：im.suyejian@gmail.com
 
-## 许可
+Codex 与 OpenAI 是 OpenAI 的商标，SuDuo 与 OpenAI 没有隶属或背书关系，见 [TRADEMARKS.zh-CN.md](TRADEMARKS.zh-CN.md)。
 
-速舵 SuDuo 以 [PolyForm Noncommercial License 1.0.0](LICENSE)（[中文参考译文](LICENSE.zh-CN.md)）源码公开，著作权人 sue。
-
-- 没有商业用途预期的个人学习、研究、业余项目，以及教育、公共研究、公益、政府等机构的使用免费，不用登记。
-- 公司和其他营利组织的使用（包括只在内部团队使用）一般属于商业使用：**可以直接开始用，在开始使用后 30 天内**发邮件到 im.suyejian@gmail.com 登记即可，目前免费。详见 [COMMERCIAL.zh-CN.md](COMMERCIAL.zh-CN.md)。
-- 外部贡献需同意[贡献者许可协议](CLA.md)。
-- 第三方依赖的许可清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-- Codex 与 OpenAI 是 OpenAI 的商标，SuDuo 与其没有隶属关系，见 [TRADEMARKS.zh-CN.md](TRADEMARKS.zh-CN.md)。
+<div align="center">
+<br>
+<sub>速舵 SuDuo · © 2026 sue</sub>
+</div>
