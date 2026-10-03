@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 282,
+  "total": 283,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -337,6 +337,7 @@
     ],
     "web/src/features/settings/sections/AppearanceSection.tsx": [
       "settings-density",
+      "settings-locale",
       "settings-theme"
     ],
     "web/src/features/settings/sections/DiagnosticsSection.tsx": [

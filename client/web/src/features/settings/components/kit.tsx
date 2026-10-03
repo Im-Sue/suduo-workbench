@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState, type ComponentProps, type Rea
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { sectionMeta, settingAnchorId, type SettingsSectionId } from "../sections.js";
+import { useT } from "../../../i18n/provider.js";
+import { settingAnchorId, type SettingsSectionId } from "../sections.js";
 
 /**
  * 设置页的行式布局（需求 §4.7）：每组一个标题 + 说明，下面一行一项——左边标题与说明，右边控件。
@@ -23,7 +24,7 @@ export function SettingsSection({
   actions?: ReactNode;
   children: ReactNode;
 }) {
-  const title = sectionMeta(id).title;
+  const title = useT().settings.sections[id];
   return (
     <section aria-labelledby={`settings-${id}-title`} className="flex flex-col" data-testid={`settings-group-${id}`}>
       <header className="mb-2 flex flex-col gap-1">
@@ -154,18 +155,19 @@ export function useSaveIndicator(): [SaveState, (work: Promise<unknown> | (() =>
 }
 
 export function SaveStatus({ state }: { state: SaveState }) {
+  const text = useT().settings.saveStatus;
   return (
     <span aria-live="polite" className="inline-flex items-center">
       {state === "saving" ? (
         <span className="inline-flex items-center gap-1 text-caption text-subtle-foreground">
           <Spinner size="sm" />
-          正在保存…
+          {text.saving}
         </span>
       ) : null}
       {state === "saved" ? (
         <span className="inline-flex items-center gap-1 text-caption text-success" data-testid="settings-saved-flash">
           <CheckIcon aria-hidden="true" className="size-3.5" />
-          已保存
+          {text.saved}
         </span>
       ) : null}
     </span>

@@ -14,6 +14,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { settingsQuery } from "../../app/queries.js";
+import { useT } from "../../i18n/provider.js";
 import { configWarningOf, useCodexStatus } from "./codex-status.js";
 import { SettingsFrameContext, type SettingsFrameValue } from "./components/frame.js";
 import { useNotifyState } from "./notify-preference.js";
@@ -23,7 +24,7 @@ import {
   searchSettings,
   sectionMeta,
   settingAnchorId,
-  SETTINGS_SECTIONS,
+  settingsSections,
   type SettingsSectionId,
 } from "./sections.js";
 import { AboutSection } from "./sections/AboutSection.js";
@@ -45,6 +46,8 @@ import { WorkspaceSection } from "./sections/WorkspaceSection.js";
  * 表单分组有未保存的更改时，离开分组或页面前提醒（放弃 / 继续编辑）；关闭标签页时交给浏览器提醒。
  */
 export function SettingsPage({ section }: { section: SettingsSectionId }) {
+  const t = useT();
+  const text = t.settings.unsaved;
   const [host, setHost] = useState<HTMLElement | null>(null);
   const dirty = useRef(new Map<string, string>());
   const [, setDirtyVersion] = useState(0);
@@ -112,18 +115,15 @@ export function SettingsPage({ section }: { section: SettingsSectionId }) {
           }}
         >
           <DialogHeader>
-            <DialogTitle>有未保存的更改</DialogTitle>
-            <DialogDescription>
-              {dirtyTitles.length === 0 ? "这里" : dirtyTitles.map((title) => `「${title}」`).join("、")}
-              的更改还没有保存，离开后会丢失。
-            </DialogDescription>
+            <DialogTitle>{text.title}</DialogTitle>
+            <DialogDescription>{text.description(dirtyTitles)}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" autoFocus onClick={() => blocker.reset?.()}>
-              继续编辑
+              {text.keepEditing}
             </Button>
             <Button type="button" variant="danger" onClick={() => blocker.proceed?.()}>
-              放弃更改
+              {text.discard}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -227,12 +227,14 @@ function useSectionAlerts(): Partial<Record<SettingsSectionId, Alert>> {
 }
 
 function SettingsNav({ section }: { section: SettingsSectionId }) {
+  const t = useT();
+  const text = t.settings.nav;
   const navigate = useNavigate();
   const alerts = useSectionAlerts();
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const results = useMemo(() => searchSettings(query), [query]);
+  const results = useMemo(() => searchSettings(query, t), [query, t]);
   const searching = query.trim() !== "";
 
   // 「/」聚焦设置搜索（输入时不抢）。
@@ -272,17 +274,17 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
   let band = "";
   return (
     <nav
-      aria-label="设置分组"
+      aria-label={text.label}
       className="flex w-[232px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border px-2.5 py-3.5"
     >
-      <h1 className="m-0 mb-2.5 ml-2 text-section font-semibold text-foreground">设置</h1>
+      <h1 className="m-0 mb-2.5 ml-2 text-section font-semibold text-foreground">{text.title}</h1>
       <div className="relative mb-2.5 flex items-center">
         <SearchIcon aria-hidden="true" className="pointer-events-none absolute left-2.5 size-3.5 text-subtle-foreground" />
         <input
           ref={searchRef}
           type="search"
-          aria-label="搜索设置"
-          placeholder="搜索设置"
+          aria-label={text.searchLabel}
+          placeholder={text.searchPlaceholder}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -311,7 +313,7 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
         ) : (
           <button
             type="button"
-            aria-label="清除搜索"
+            aria-label={text.clearSearch}
             className="absolute right-1.5 inline-flex size-5 items-center justify-center rounded-xs text-subtle-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               setQuery("");
@@ -327,15 +329,15 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
         {searching ? (
           results.length === 0 ? (
             <p className="m-0 px-2.5 py-2 text-small text-subtle-foreground" role="status">
-              没有找到相关设置
+              {text.noResults}
             </p>
           ) : (
             <>
               <p className="m-0 px-2.5 pt-1 pb-1 text-caption text-subtle-foreground" role="status">
-                {results.length} 个结果
+                {text.resultCount(results.length)}
               </p>
               {results.map((item) => {
-                const meta = sectionMeta(item.section);
+                const meta = sectionMeta(item.section, t);
                 const Icon = meta.icon;
                 return (
                   <Link
@@ -348,7 +350,7 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
                   >
                     <Icon aria-hidden="true" />
                     <span className="flex min-w-0 flex-1 flex-col py-1 leading-4">
-                      <span className="truncate text-foreground">{item.title}</span>
+                      <span className="truncate text-foreground" title={item.title}>{item.title}</span>
                       <span className="truncate text-caption font-normal text-subtle-foreground">{meta.title}</span>
                     </span>
                   </Link>
@@ -357,7 +359,7 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
             </>
           )
         ) : (
-          SETTINGS_SECTIONS.map((item) => {
+          settingsSections(t).map((item) => {
             const Icon = item.icon;
             const showBand = item.band !== band;
             band = item.band;
@@ -365,7 +367,7 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
             const active = item.id === section;
             return (
               <div key={item.id} className="flex flex-col">
-                {showBand ? <span className="px-2.5 pt-3 pb-1 text-caption text-subtle-foreground first:pt-1">{item.band}</span> : null}
+                {showBand ? <span className="px-2.5 pt-3 pb-1 text-caption text-subtle-foreground first:pt-1">{t.settings.bands[item.band]}</span> : null}
                 <Link
                   to="/settings/$section"
                   params={{ section: item.id }}
@@ -383,7 +385,7 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
                         data-alert={alert}
                         className={cn("size-1.5 shrink-0 rounded-full", alert === "danger" ? "bg-danger" : "bg-warning")}
                       />
-                      <span className="sr-only">（{alert === "danger" ? "有问题" : "需要留意"}）</span>
+                      <span className="sr-only">{text.alertNote(alert === "danger" ? t.settings.status.fail : t.settings.status.warn)}</span>
                     </>
                   )}
                 </Link>

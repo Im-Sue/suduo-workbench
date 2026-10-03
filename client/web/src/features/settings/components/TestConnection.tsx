@@ -3,6 +3,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { FEEDBACK_TIMING_MS } from "../../../feedback/routes.js";
+import { currentLocale } from "../../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../../i18n/messages/index.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 统一的「测试连接」（技术设计 §7 设置：测试连接统一组件）。
@@ -18,7 +21,7 @@ export function TestConnection({
   run,
   resetKey,
   disabledReason,
-  label = "测试连接",
+  label,
   hint,
   onTestingChange,
 }: {
@@ -31,6 +34,7 @@ export function TestConnection({
   hint?: ReactNode;
   onTestingChange?(testing: boolean): void;
 }) {
+  const text = useT().settings.testConnection;
   const [state, setState] = useState<Phase>({ phase: "idle" });
   const [still, setStill] = useState(false);
   const runId = useRef(0);
@@ -76,11 +80,11 @@ export function TestConnection({
           {...(disabledReason === undefined ? {} : { disabledReason })}
           onClick={() => void start()}
         >
-          {label}
+          {label ?? text.test}
         </Button>
         {state.phase === "testing" && still ? (
           <span className="text-caption text-subtle-foreground" role="status">
-            仍在测试…
+            {text.stillTesting}
           </span>
         ) : null}
         {hint === undefined || outcome !== null ? null : <span className="text-caption text-subtle-foreground">{hint}</span>}
@@ -129,6 +133,8 @@ export async function timed<T>(work: () => Promise<T>): Promise<{ value: T; ms: 
   return { value, ms: Math.max(1, Math.round(performance.now() - started)) };
 }
 
-export function formatMs(ms: number): string {
-  return ms < 1_000 ? `${ms} 毫秒` : `${(ms / 1_000).toFixed(1)} 秒`;
+/** 文字按调用时的界面语言取；组件里可以传入 useT() 拿到的字典。 */
+export function formatMs(ms: number, t: Messages = messagesFor(currentLocale())): string {
+  const text = t.settings.testConnection;
+  return ms < 1_000 ? text.milliseconds(ms) : text.seconds((ms / 1_000).toFixed(1));
 }

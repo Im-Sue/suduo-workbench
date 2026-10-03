@@ -7,6 +7,8 @@ import { REASONING_EFFORTS } from "@suduo/client-contracts";
 import { ChevronDownIcon, CpuIcon, Settings2Icon } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api/client.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,17 +29,11 @@ import { Spinner } from "@/components/ui/spinner";
  * 只改这个会话，下个回合生效；「跟随默认」回到设置页里的全局默认。
  * 推理强度只列所选模型声明支持的档位（model/list 的 supportedReasoningEfforts）。
  */
-/** 推理强度的用户词表（需求 §5.1）：不显示档位原值。 */
-export const EFFORT_LABEL: Record<string, string> = {
-  none: "不推理",
-  minimal: "最快",
-  low: "快速",
-  medium: "均衡",
-  high: "深入",
-  xhigh: "最深入",
-  max: "极致",
-  ultra: "极致+",
-};
+/** 推理强度档位的显示名（需求 §5.1：不显示档位原值）；不认识的档位显示原值。 */
+export function effortName(value: string, t: Messages = messagesFor(currentLocale())): string {
+  const names: Readonly<Record<string, string>> = t.sessions.effort;
+  return Object.hasOwn(names, value) ? (names[value] ?? value) : value;
+}
 
 /** gpt-5.6-sol → 5.6 Sol；空值显示「默认模型」。 */
 export function prettifyModel(id: string | null): string {
@@ -65,7 +61,7 @@ export function offeredEfforts(declared: readonly string[]): string[] {
 
 export function effortLabel(value: string | null): string {
   if (value === null) return "默认";
-  return EFFORT_LABEL[value] ?? value;
+  return effortName(value);
 }
 
 export function SessionModelSwitcher({

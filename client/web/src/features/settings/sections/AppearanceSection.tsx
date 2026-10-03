@@ -1,23 +1,34 @@
+import type { LocalePreference } from "@suduo/client-contracts";
 import { useState } from "react";
 import { RadioGroup, RadioTile } from "@/components/ui/radio-group";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { applyLocalePreference, UI_LOCALES } from "../../../i18n/locale.js";
+import { useLocalePreference, useT } from "../../../i18n/provider.js";
 import { applyDensityPreference, loadDensityPreference, type DensityPreference } from "../../../ui/density.js";
 import { applyThemePreference, useThemePreference, type ThemePreference } from "../../../ui/theme.js";
 import { rowDescId, rowLabelId, SaveStatus, SettingsRow, SettingsSection, useSaveIndicator } from "../components/kit.js";
 
-/** 外观：主题三选一（带预览缩略图）、密度两档。只存在这台电脑的浏览器里，改完立即生效。 */
+/** 外观：主题三选一（带预览缩略图）、密度两档、界面语言。只存在这台电脑的浏览器里，改完立即生效。 */
 export function AppearanceSection() {
+  const t = useT();
+  const text = t.settingsAgent.appearance;
   const theme = useThemePreference();
+  const localePreference = useLocalePreference();
+  const localeChoices: LocalePreference[] = [
+    "system",
+    ...UI_LOCALES,
+    ...(localePreference !== "system" && !UI_LOCALES.includes(localePreference) ? [localePreference] : []),
+  ];
   const [density, setDensity] = useState<DensityPreference>(() => loadDensityPreference());
   const [themeSaved, trackTheme] = useSaveIndicator();
   const [densitySaved, trackDensity] = useSaveIndicator();
 
   return (
-    <SettingsSection id="appearance" description="改动立即生效，只影响这台电脑。">
+    <SettingsSection id="appearance" description={text.description}>
       <SettingsRow
         anchor="theme"
-        title="主题"
-        description="跟随系统时，会随电脑的深浅色设置自动切换。"
+        title={text.theme.title}
+        description={text.theme.description}
         status={<SaveStatus state={themeSaved} />}
         stacked
       >
@@ -32,15 +43,15 @@ export function AppearanceSection() {
           className="flex flex-wrap gap-3"
           data-testid="settings-theme"
         >
-          <RadioTile value="light" className="w-[152px]" aria-label="浅色">
+          <RadioTile value="light" className="w-[152px]" aria-label={text.theme.light}>
             <ThemeThumb scope="light" />
-            <span className="px-1">浅色</span>
+            <span className="px-1">{text.theme.light}</span>
           </RadioTile>
-          <RadioTile value="dark" className="w-[152px]" aria-label="深色">
+          <RadioTile value="dark" className="w-[152px]" aria-label={text.theme.dark}>
             <ThemeThumb scope="dark" />
-            <span className="px-1">深色</span>
+            <span className="px-1">{text.theme.dark}</span>
           </RadioTile>
-          <RadioTile value="system" className="w-[152px]" aria-label="跟随系统（推荐）">
+          <RadioTile value="system" className="w-[152px]" aria-label={text.theme.systemRecommended}>
             {/* 左半边浅色、右半边深色：两张完整缩略图各露出一半。 */}
             <span className="relative flex h-[84px] overflow-hidden rounded-md border border-border">
               <span className="relative w-1/2 overflow-hidden">
@@ -55,8 +66,8 @@ export function AppearanceSection() {
               </span>
             </span>
             <span className="flex items-center gap-1.5 px-1">
-              跟随系统
-              <span className="text-caption font-normal text-subtle-foreground">推荐</span>
+              {text.theme.system}
+              <span className="text-caption font-normal text-subtle-foreground">{text.theme.recommended}</span>
             </span>
           </RadioTile>
         </RadioGroup>
@@ -64,8 +75,8 @@ export function AppearanceSection() {
 
       <SettingsRow
         anchor="density"
-        title="界面密度"
-        description="紧凑时列表和控件更矮，一屏能看到更多内容。"
+        title={text.density.title}
+        description={text.density.description}
         status={<SaveStatus state={densitySaved} />}
       >
         <div>
@@ -74,8 +85,8 @@ export function AppearanceSection() {
             data-testid="settings-density"
             value={density}
             options={[
-              { value: "comfortable", label: "舒适" },
-              { value: "compact", label: "紧凑" },
+              { value: "comfortable", label: text.density.comfortable },
+              { value: "compact", label: text.density.compact },
             ]}
             onValueChange={(next) => {
               trackDensity(() => applyDensityPreference(next));
@@ -84,6 +95,25 @@ export function AppearanceSection() {
           />
         </div>
       </SettingsRow>
+
+      {/*
+        语言：可选的固定语言只有一种时（迁移期 UI_LOCALES 只有中文）不显示这一行；
+        但手动固定过一种还没做完的语言（如开发时把 suduo.locale 设成 en）时要显示，让人能从界面切回来。
+        切换后 LocaleBoundary 按新语言重建整棵界面，所以说明里提醒未保存的内容可能丢失。
+      */}
+      {localeChoices.length > 2 ? (
+        <SettingsRow anchor="locale" title={text.locale.title} description={text.locale.description}>
+          <div>
+            <SegmentedControl
+              aria-labelledby={rowLabelId("locale")}
+              data-testid="settings-locale"
+              value={localePreference}
+              options={localeChoices.map((value) => ({ value, label: t.common.localeOption[value] }))}
+              onValueChange={(next) => applyLocalePreference(next)}
+            />
+          </div>
+        </SettingsRow>
+      ) : null}
     </SettingsSection>
   );
 }

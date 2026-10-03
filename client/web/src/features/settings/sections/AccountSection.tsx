@@ -8,11 +8,13 @@ import { settingsQuery } from "../../../app/queries.js";
 import { useLogout } from "../../../app/shell/use-logout.js";
 import { ConfirmDialog } from "../../../feedback/components/index.js";
 import { needsConfirm } from "../../../feedback/confirm-policy.js";
+import { useT } from "../../../i18n/provider.js";
 import { SettingsRow, SettingsSection } from "../components/kit.js";
 import { formatDay } from "../format.js";
 
 /** 账号：当前登录的是谁、登录到什么时候、退出登录。 */
 export function AccountSection() {
+  const text = useT().settings.account;
   const settings = useQuery(settingsQuery).data;
   const session = settings?.session ?? null;
   const logout = useLogout();
@@ -31,13 +33,13 @@ export function AccountSection() {
   };
 
   return (
-    <SettingsSection id="account" description="登录信息只保存在这台电脑上。">
-      <SettingsRow anchor="current-user" title="当前账号" description="在团队的需求服务上使用的身份。">
+    <SettingsSection id="account" description={text.description}>
+      <SettingsRow anchor="current-user" title={text.currentTitle} description={text.currentDescription}>
         {session === null ? (
           <div className="flex items-center gap-3">
-            <span className="text-small text-muted-foreground">未登录</span>
+            <span className="text-small text-muted-foreground">{text.signedOut}</span>
             <Button size="sm" variant="primary" type="button" onClick={() => void navigate({ to: "/login" })}>
-              去登录
+              {text.signIn}
             </Button>
           </div>
         ) : (
@@ -51,13 +53,13 @@ export function AccountSection() {
               </span>
               <span className="truncate text-caption text-subtle-foreground">{session.user.loginName}</span>
             </span>
-            <span className="ml-auto text-caption text-subtle-foreground">登录有效期至 {formatDay(session.expiresAt)}</span>
+            <span className="ml-auto text-caption text-subtle-foreground">{text.expiresOn(formatDay(session.expiresAt))}</span>
           </div>
         )}
       </SettingsRow>
 
       {session === null ? null : (
-        <SettingsRow anchor="logout" title="退出登录" description="退出后需要重新输入账号和密码。本机的会话和代码不受影响。">
+        <SettingsRow anchor="logout" title={text.logoutTitle} description={text.logoutDescription}>
           <div>
             <Button
               ref={logoutRef}
@@ -71,7 +73,7 @@ export function AccountSection() {
               }}
             >
               <LogOutIcon />
-              退出登录
+              {text.logout}
             </Button>
           </div>
         </SettingsRow>
@@ -81,9 +83,9 @@ export function AccountSection() {
         open={confirming}
         onOpenChange={setConfirming}
         triggerRef={logoutRef}
-        title="退出登录？"
-        description="退出后需要重新登录才能查看和修改需求。"
-        confirmLabel="退出登录"
+        title={text.logoutConfirm.title}
+        description={text.logoutConfirm.description}
+        confirmLabel={text.logoutConfirm.confirm}
         onConfirm={() => void runLogout()}
       />
     </SettingsSection>

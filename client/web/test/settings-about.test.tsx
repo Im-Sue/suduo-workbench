@@ -14,7 +14,7 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock("../src/api/client.js", () => ({ api: apiMocks }));
 
-import { LICENSE_LINKS, LICENSE_NAME } from "../src/features/settings/license.js";
+import { LICENSE_NAME, licenseLinks } from "../src/features/settings/license.js";
 import { AboutSection } from "../src/features/settings/sections/AboutSection.js";
 import { searchSettings } from "../src/features/settings/sections.js";
 import { compareWithCloud } from "../src/features/settings/version.js";
@@ -70,13 +70,13 @@ describe("设置 · 关于 · 许可", () => {
     }));
     const newTab = "（在新标签页打开）";
     expect(links).toEqual([
-      { text: LICENSE_NAME + newTab, href: LICENSE_LINKS.license, target: "_blank", rel: "noreferrer" },
-      { text: "中文参考译文" + newTab, href: LICENSE_LINKS.licenseTranslation, target: "_blank", rel: "noreferrer" },
-      { text: "查看登记说明" + newTab, href: LICENSE_LINKS.commercial, target: "_blank", rel: "noreferrer" },
-      { text: "查看许可清单" + newTab, href: LICENSE_LINKS.thirdParty, target: "_blank", rel: "noreferrer" },
+      { text: LICENSE_NAME + newTab, href: licenseLinks("zh-CN").license, target: "_blank", rel: "noreferrer" },
+      { text: "中文参考译文" + newTab, href: licenseLinks("zh-CN").licenseTranslation, target: "_blank", rel: "noreferrer" },
+      { text: "查看登记说明" + newTab, href: licenseLinks("zh-CN").commercial, target: "_blank", rel: "noreferrer" },
+      { text: "查看许可清单" + newTab, href: licenseLinks("zh-CN").thirdParty, target: "_blank", rel: "noreferrer" },
     ]);
     // 许可证名称指向具有法律效力的英文原文，而不是参考译文。
-    expect(LICENSE_LINKS.license.endsWith("/LICENSE")).toBe(true);
+    expect(licenseLinks("zh-CN").license.endsWith("/LICENSE")).toBe(true);
     expect(container.textContent).toContain("企业使用请在开始使用后 30 天内登记");
   });
 

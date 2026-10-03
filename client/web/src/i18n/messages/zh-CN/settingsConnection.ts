@@ -1,0 +1,225 @@
+export const settingsConnection = {
+  /** 试连模型服务失败的原因（按本机服务给出的类型与网络错误码说明）。 */
+  network: {
+    /** 常见网络错误码的说法；原码放在括号里便于排查。 */
+    codes: {
+      ECONNREFUSED: "对方拒绝连接，端口上可能没有服务",
+      ECONNRESET: "连接被中断",
+      ETIMEDOUT: "连接超时",
+      ENOTFOUND: "找不到这个地址",
+      EAI_AGAIN: "暂时解析不了这个地址",
+      EHOSTUNREACH: "网络不可达",
+      ENETUNREACH: "网络不可达",
+      CERT_HAS_EXPIRED: "对方的证书已过期",
+      UNABLE_TO_VERIFY_LEAF_SIGNATURE: "无法验证对方的证书",
+      SELF_SIGNED_CERT_IN_CHAIN: "对方使用了自签名证书",
+    },
+    withCode: (text: string, code: string) => `${text}（${code}）`,
+    invalidBaseUrl: "当前模型服务地址无效，无法进行连通性检查",
+    invalidProxy: "当前启动环境里的代理变量无效，无法进行连通性检查",
+    connectionFailed: "连接失败",
+  },
+  /** 设置 › 模型服务。 */
+  model: {
+    /** 有未保存更改时，离开提示里的分组名。 */
+    groupName: "模型服务",
+    intro: "Codex 通过这里调用模型。",
+    description: "Codex 通过这里调用模型。API Key 只保存在这台电脑上。保存后从下一个回合开始生效。",
+    loading: "正在读取模型服务配置",
+    loadFailedPill: "读不到配置",
+    loadFailed: (message: string) => `暂时读不到 Codex 的模型配置：${message}`,
+    status: {
+      notConfigured: "未配置",
+      warning: "有提醒",
+      unreachable: "连不上",
+      connected: "已连接",
+      checking: "检查中",
+    },
+    /** Codex 配置层来源；来自你自己的配置时不显示。 */
+    origin: {
+      project: "项目配置",
+      system: "系统配置",
+      sessionFlags: "启动参数",
+      managed: "管理员配置",
+      other: "其他配置",
+      badge: (label: string) => `来自${label}`,
+      badgeTitle: (label: string) => `当前生效的值来自${label}，在这里修改可能不会生效`,
+    },
+    validation: {
+      baseUrlRequired: "先填写模型服务地址，例如 https://llm-gateway.example.com/v1",
+      baseUrlProtocol: "地址要以 http:// 或 https:// 开头",
+      baseUrlInvalid: "这不是一个有效的地址，例如 https://llm-gateway.example.com/v1",
+      apiKeyIncomplete: "API Key 看起来不完整，请整段粘贴",
+      apiKeyRequired: "改用团队的模型服务需要填写它的 API Key",
+      modelName: "模型名称只能包含字母、数字和 . _ : / -",
+      contextWindowInteger: "请输入整数，例如 200000",
+      contextWindowRange: "请输入 4000 到 100000000 之间的整数",
+    },
+    banner: {
+      warningTitle: "Codex 对当前配置有提醒",
+      warningFallback: "配置中有 Codex 不认识的项，模型服务可能按默认方式运行。",
+      details: "查看详情",
+      firstTimeTitle: "目前用的是 Codex 内置的默认模型服务",
+      firstTimeBody:
+        "要改用团队的模型服务：填写它的地址和 API Key 后保存。保存只写入配置，之后会实际连一次地址告诉你结果；随时可以点「测试连接」再确认。",
+      degradedTitle: "暂时取不到 Codex 的模型清单",
+      degradedBody: "下面是已保存的配置，可以照常修改。",
+      overriddenTitle: "已保存，但没有生效",
+      restore: "还原到保存前",
+      saveFailedTitle: "没能保存",
+    },
+    save: {
+      saved: "模型服务已保存，下一个回合开始生效。",
+      savedUnreachable: (reason: string) =>
+        `模型服务已保存，但现在连不上这个地址：${reason}。检查地址或网络代理后点「测试连接」再试。`,
+      restored: "已还原到保存前的配置",
+      restoreFailed: "没能还原",
+    },
+    baseUrl: {
+      label: "服务地址",
+      description: "兼容 OpenAI 接口的地址。",
+    },
+    apiKey: {
+      label: "API Key",
+      description: "为安全起见不显示完整内容；保存后替换旧的。",
+      placeholder: "粘贴新的 API Key",
+      cancelReplace: "取消更换",
+      notConfigured: "未配置",
+      add: "填写",
+      replace: "更换",
+      fromCommand: "Key 由 Codex 配置里的取 Key 命令提供（例如从钥匙串读取），不经过这里；要换 Key，改那条命令读取的内容。",
+      fromEnv: "Key 从 Codex 配置指定的环境变量读取，不经过这里；要换 Key，改启动 SuDuo 时的这个环境变量。",
+      replaceNote: "保存后会用这个 Key 替换 Codex 当前的登录（包括用 ChatGPT 账号的登录）。",
+    },
+    defaultModel: {
+      label: "默认模型",
+      description: "新会话默认使用的模型，每个会话都可以单独切换。",
+      loadingPlaceholder: "正在读取可用模型…",
+      unavailablePlaceholder: "读不到模型清单，可以直接填写模型名称",
+      followCodex: "跟随 Codex 默认",
+    },
+    effort: {
+      label: "默认推理强度",
+      descriptionUnset: "未设置时由 Codex 决定。每个会话都可以单独调整。",
+      description: "每个会话都可以单独调整。",
+    },
+    contextWindow: {
+      label: "上下文上限",
+      description:
+        "单位是 token。留空时用 Codex 对该模型的已知上限（它不认识的模型按约 27 万估算）；填写只能调小，模型实际上限更小时在这里填实际值。",
+      placeholder: "例如 200000",
+    },
+    test: {
+      label: "连接测试",
+      description: "用已保存的配置试一次：Codex 能不能读到模型清单、服务地址连不连得上。",
+      dirty: "有未保存的更改：先保存，再测试",
+      ok: (count: number, elapsed: string) => `连接正常 · 可用模型 ${String(count)} 个 · ${elapsed}`,
+      okBuiltin: (count: number) => `Codex 能读取模型清单 · ${String(count)} 个 · 用的是内置默认服务，没有地址可实连`,
+      unreachable: (reason: string) => `连不上模型服务：${reason}`,
+      unreachableSuggestion: "检查服务地址是否正确；公司网络需要代理时，在「网络代理」里配置。",
+      openProxy: "去设置网络代理",
+      noModels: (message: string) => `模型服务没有返回可用的模型：${message}`,
+      noModelsSuggestion: "确认 API Key 有效、没有过期；也可以在「诊断」里查看更多信息。",
+    },
+  },
+  /** 设置 › 网络代理。 */
+  proxy: {
+    /** 有未保存更改时，离开提示里的分组名。 */
+    groupName: "网络代理",
+    intro: "Codex 连接模型服务时使用的代理。",
+    description:
+      "Codex 连接模型服务时使用的代理。都留空时沿用本机服务启动时的代理环境变量（HTTP_PROXY 等，没有就直连）。保存后 Codex 会重新连接一次，正在运行的回合会被中断。",
+    loading: "正在读取代理设置",
+    loadFailed: (message: string) => `没能读取代理设置：${message}`,
+    fields: {
+      httpProxy: { label: "HTTP 代理", description: "访问 http:// 地址时使用。" },
+      httpsProxy: { label: "HTTPS 代理", description: "访问 https:// 地址时使用，模型服务通常走这一项。" },
+      allProxy: { label: "其他连接的代理", description: "上面两项没填时的兜底，也用于其他协议，支持 SOCKS。" },
+      noProxy: { label: "不走代理的地址", description: "多个用逗号分隔，例如内网域名、localhost。" },
+    },
+    validation: {
+      invalid: "这不是一个有效的代理地址，例如 http://127.0.0.1:7890",
+      protocol: "只支持 http、https、socks5 代理",
+      host: "代理地址里要有主机名或 IP",
+      credentials: "暂不支持带账号密码的代理",
+      path: "代理地址只写到端口，不带路径",
+      noProxyNewline: "不能换行，多个地址用逗号分隔",
+    },
+    saved: "代理已保存，Codex 已按新设置重新连接。",
+    saveFailedTitle: "没能保存",
+    test: {
+      label: "连接测试",
+      descriptionDraft: "用当前填写的内容试连模型服务一次，不会保存。",
+      descriptionEnv: "按本机服务启动时的代理环境变量（没有就直连）试连模型服务。",
+      descriptionSaved: "用已保存的代理试连模型服务。",
+      fixFirst: "先改正上面标红的地址再测试。",
+      noTarget: "还没有模型服务地址可以测：Codex 目前用的是内置的默认服务，或模型服务还没填地址。",
+      noTargetSuggestion: "在「模型服务」里填好地址后再来测代理。",
+      viaProxy: "经代理",
+      direct: "直连",
+      /** target 为空时不写（没有可显示的目标地址）。 */
+      ok: (route: string, elapsed: string, target: string) =>
+        `能连上模型服务 · ${route} · ${elapsed}${target === "" ? "" : ` · ${target}`}`,
+      unreachable: (route: string, reason: string) => `连不上模型服务（${route}）：${reason}`,
+      suggestionProxy: "检查代理地址和端口是否正确、代理软件是否在运行；内网地址可以加到「不走代理的地址」里。",
+      suggestionDirect: "如果公司网络需要代理才能访问模型服务，在上面填写代理地址后再试。",
+    },
+    /** 保存会让 Codex 重新连接：先说明会影响几个会话。 */
+    interrupt: {
+      titleUnknown: "保存后 Codex 会重新连接",
+      titleBusy: (count: number) => `有 ${String(count)} 个会话正在运行或等你确认`,
+      descriptionUnknown:
+        "没能确认有没有会话正在运行。保存后 Codex 会重新连接，正在进行的回合会被中断、等你确认的操作会被取消。",
+      descriptionBusy:
+        "保存后 Codex 会重新连接，这些会话正在进行的回合会被中断、等你确认的操作会被取消。可以先等它们结束再保存。",
+      confirm: "仍然保存",
+    },
+  },
+  /** 设置 › 代码目录（每个项目在本机对应的代码目录）。 */
+  workspace: {
+    description: "每个项目在你电脑上对应的代码目录。会话会在这里读写代码，代码不会上传到需求服务。",
+    recheck: "重新检查",
+    link: "关联代码目录",
+    linkedProjects: "已关联的项目",
+    loading: "正在读取代码目录",
+    loadFailed: (message: string) => `没能读取代码目录：${message}`,
+    empty: {
+      title: "还没有关联代码目录",
+      description: "关联后才能在本机开始会话。第一次开始会话时也会请你选择。",
+    },
+    availability: {
+      ok: "可用",
+      missing: "目录已不存在",
+      noPermission: "SuDuo 没有权限读写这个目录",
+      unavailable: "目录暂时不可用",
+    },
+    /** 读屏念的一行：项目名与目录状态。 */
+    rowLabel: (name: string, status: string) => `${name}：${status}`,
+    change: "更改目录",
+    reselect: "重新选择",
+    moreActions: (name: string) => `「${name}」的更多操作`,
+    unlink: "解除关联",
+    unlinkFailed: "没能解除关联",
+    unavailableHint: "目录可能被移动、删除或改了权限。点「重新选择」换一个目录；把原目录恢复后，点「重新检查」。",
+    unlinkConfirm: {
+      title: (name: string) => `解除「${name}」的代码目录？`,
+      description: "解除后，开始这个项目的会话前需要重新选择目录。目录里的代码不会被删除。",
+      confirm: "解除关联",
+    },
+    dialog: {
+      titleLink: "关联代码目录",
+      titleChange: (name: string) => `更改「${name}」的代码目录`,
+      description: "选择这个项目的代码在你电脑上的目录。SuDuo 需要能读写这个目录。",
+      project: "项目",
+      projectPlaceholder: "选择项目",
+      /** 接在项目名后面。 */
+      alreadyLinked: "（已关联，会替换原目录）",
+      projectRequired: "先选择项目",
+      pathRequired: "先选一个代码目录",
+      pathUnusable: "这个目录现在用不了，换一个可以读写的目录",
+      cancel: "取消",
+      link: "关联",
+      useFolder: "使用这个目录",
+    },
+  },
+};

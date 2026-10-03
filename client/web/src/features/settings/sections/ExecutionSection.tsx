@@ -7,6 +7,7 @@ import { RadioCard, RadioGroup } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog, RegionError } from "../../../feedback/components/index.js";
 import { needsConfirm } from "../../../feedback/confirm-policy.js";
+import { useT } from "../../../i18n/provider.js";
 import {
   LockNote,
   rowDescId,
@@ -20,26 +21,7 @@ import {
 import { localSettingsQuery, useUpdateLocalSettings } from "../queries.js";
 import { useQueryFailure } from "../use-query-failure.js";
 
-/** 审批档的用户词表（需求 §5.1）。 */
-export const APPROVAL_LABEL: Readonly<Record<ApprovalMode, string>> = {
-  ask: "每步确认",
-  auto: "越界时确认",
-  full: "完全访问",
-};
-
-const APPROVAL_DESCRIPTION: Readonly<Record<ApprovalMode, string>> = {
-  ask: "运行命令、修改文件前都先问你。最稳妥，也最常被打断。",
-  auto: "在代码目录内读写、运行常规命令时直接执行；联网、访问目录外的文件时问你。",
-  full: "不再询问，命令与网络全部放行。只在你完全信任当前任务时使用，切换时会再确认一次。",
-};
-
-/** 三种方式的实际权限：让人看清「选了会发生什么」。 */
-const APPROVAL_MATRIX: readonly { mode: ApprovalMode; files: string; network: string }[] = [
-  { mode: "ask", files: "只读，写入前问你", network: "不允许" },
-  { mode: "auto", files: "代码目录内可写", network: "不允许" },
-  { mode: "full", files: "不受限制", network: "允许" },
-];
-
+/** 审批档的名称、说明与实际权限见字典 settingsAgent.execution（需求 §5.1）。 */
 const ORDER: readonly ApprovalMode[] = ["ask", "auto", "full"];
 
 const FULL_APPROVAL_CONFIRMATION = {
@@ -52,6 +34,7 @@ const FULL_APPROVAL_CONFIRMATION = {
 
 /** 执行与安全：新会话默认怎么确认 Codex 的操作、回合前是否自动存档。 */
 export function ExecutionSection() {
+  const text = useT().settingsAgent.execution;
   const local = useQuery(localSettingsQuery);
   const failure = useQueryFailure(local);
   const update = useUpdateLocalSettings();
@@ -61,17 +44,17 @@ export function ExecutionSection() {
 
   if (local.isPending) {
     return (
-      <SettingsSection id="execution" description="新会话默认用哪种方式确认 Codex 的操作。">
-        <SectionSkeleton rows={3} label="正在读取执行与安全设置" />
+      <SettingsSection id="execution" description={text.description}>
+        <SectionSkeleton rows={3} label={text.loading} />
       </SettingsSection>
     );
   }
   if (local.isError) {
     return (
-      <SettingsSection id="execution" description="新会话默认用哪种方式确认 Codex 的操作。">
+      <SettingsSection id="execution" description={text.description}>
         <RegionError
           kind={failure?.kind ?? "unknown"}
-          message={`没能读取本机设置：${failure?.message ?? ""}`}
+          message={text.loadFailed(failure?.message ?? "")}
           busy={local.isFetching}
           onRetry={() => void local.refetch()}
         />
@@ -82,18 +65,17 @@ export function ExecutionSection() {
   const settings = local.data;
   const maxMode = settings.approvalModeLocked ? settings.maxApprovalMode : undefined;
   const blocked = (mode: ApprovalMode) => maxMode !== undefined && ORDER.indexOf(mode) > ORDER.indexOf(maxMode);
-  const lockReason =
-    maxMode === undefined ? null : `管理员已限制最高权限为「${APPROVAL_LABEL[maxMode]}」，更高的选项不可用。需要时请联系管理员。`;
+  const lockReason = maxMode === undefined ? null : text.approval.lockReason(text.modes[maxMode].label);
 
   const setMode = (mode: ApprovalMode) => {
     trackApproval(update.mutateAsync({ defaultApprovalMode: mode }));
   };
 
   return (
-    <SettingsSection id="execution" description="新会话默认用哪种方式确认 Codex 的操作。每个会话都可以在输入框下方单独调整。">
+    <SettingsSection id="execution" description={text.descriptionWithSessionNote}>
       <SettingsRow
         anchor="approval"
-        title="新会话默认确认方式"
+        title={text.approval.title}
         status={<SaveStatus state={approvalSaved} />}
         stacked
       >
@@ -115,16 +97,16 @@ export function ExecutionSection() {
               key={mode}
               value={mode}
               disabled={blocked(mode)}
-              title={APPROVAL_LABEL[mode]}
-              description={blocked(mode) ? "管理员已限制，不可选" : APPROVAL_DESCRIPTION[mode]}
+              title={text.modes[mode].label}
+              description={blocked(mode) ? text.approval.blocked : text.modes[mode].description}
               badge={
                 blocked(mode) ? (
                   <Badge variant="warning">
                     <LockKeyholeIcon />
-                    已限制
+                    {text.approval.blockedBadge}
                   </Badge>
                 ) : mode === "auto" ? (
-                  <span className="text-caption font-normal text-subtle-foreground">推荐</span>
+                  <span className="text-caption font-normal text-subtle-foreground">{text.approval.recommended}</span>
                 ) : undefined
               }
               data-testid={`settings-approval-${mode}`}
@@ -132,20 +114,20 @@ export function ExecutionSection() {
           ))}
         </RadioGroup>
         {lockReason === null ? null : <LockNote>{lockReason}</LockNote>}
-        <table className="w-full border-collapse text-small" aria-label="三种方式的实际权限">
+        <table className="w-full border-collapse text-small" aria-label={text.matrix.label}>
           <thead>
             <tr className="text-left text-caption text-subtle-foreground">
-              <th className="py-1.5 pr-3 font-normal">方式</th>
-              <th className="py-1.5 pr-3 font-normal">文件</th>
-              <th className="py-1.5 font-normal">联网</th>
+              <th className="py-1.5 pr-3 font-normal">{text.matrix.mode}</th>
+              <th className="py-1.5 pr-3 font-normal">{text.matrix.files}</th>
+              <th className="py-1.5 font-normal">{text.matrix.network}</th>
             </tr>
           </thead>
           <tbody>
-            {APPROVAL_MATRIX.map((row) => (
-              <tr key={row.mode} className="border-t border-border">
-                <td className="py-1.5 pr-3 text-foreground">{APPROVAL_LABEL[row.mode]}</td>
-                <td className="py-1.5 pr-3 text-muted-foreground">{row.files}</td>
-                <td className="py-1.5 text-muted-foreground">{row.network}</td>
+            {ORDER.map((mode) => (
+              <tr key={mode} className="border-t border-border">
+                <td className="py-1.5 pr-3 text-foreground">{text.modes[mode].label}</td>
+                <td className="py-1.5 pr-3 text-muted-foreground">{text.matrix.rows[mode].files}</td>
+                <td className="py-1.5 text-muted-foreground">{text.matrix.rows[mode].network}</td>
               </tr>
             ))}
           </tbody>
@@ -154,18 +136,18 @@ export function ExecutionSection() {
 
       <SettingsRow
         anchor="full-access"
-        title="会话可切换到完全访问"
-        description="决定会话里能不能把确认方式切到「完全访问」。"
+        title={text.fullAccess.title}
+        description={text.fullAccess.description}
       >
         <span className="text-small text-muted-foreground" data-testid="settings-full-allowed">
-          {blocked("full") ? "不可以（管理员已限制）" : "可以"}
+          {blocked("full") ? text.fullAccess.blocked : text.fullAccess.allowed}
         </span>
       </SettingsRow>
 
       <SettingsRow
         anchor="checkpoint"
-        title="回合前自动存档"
-        description="项目启用版本管理时，默认在每个回合开始前存一个检查点，改坏了可以回到开始前。"
+        title={text.checkpoint.title}
+        description={text.checkpoint.description}
         status={<SaveStatus state={checkpointSaved} />}
       >
         <div>
@@ -182,9 +164,9 @@ export function ExecutionSection() {
       <ConfirmDialog
         open={confirmFull}
         onOpenChange={setConfirmFull}
-        title="默认使用完全访问？"
-        description="新会话将不再询问，命令与网络全部放行。只在完全信任的代码目录里使用。"
-        confirmLabel="设为完全访问"
+        title={text.fullConfirm.title}
+        description={text.fullConfirm.description}
+        confirmLabel={text.fullConfirm.confirm}
         onConfirm={() => setMode("full")}
       />
     </SettingsSection>
