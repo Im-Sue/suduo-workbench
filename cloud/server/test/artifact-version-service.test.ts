@@ -9,6 +9,7 @@ import { Database } from "../src/infrastructure/database.js";
 import { AttachmentRepository } from "../src/infrastructure/attachment-repository.js";
 import { ArtifactVersionRepository } from "../src/infrastructure/artifact-version-repository.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 const TEST_DATABASE = process.env["SUDUO_ARTIFACT_VERSION_TEST_DB"] ??
   `suduo_artifact_versions_${randomUUID().replaceAll("-", "")}`;
@@ -34,7 +35,7 @@ beforeAll(async () => {
   } finally {
     await admin.end();
   }
-  pool = new Pool({ ...PG_CONFIG, database: TEST_DATABASE });
+  pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: TEST_DATABASE }));
   await runMigrations(pool);
   repository = new ArtifactVersionRepository(new Database(pool));
   service = new ArtifactVersionService(repository);

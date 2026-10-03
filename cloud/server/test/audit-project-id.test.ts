@@ -35,6 +35,7 @@ import { CollaborationRepository } from "../src/infrastructure/collaboration-rep
 import { Database } from "../src/infrastructure/database.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
 import { LocalDiskBlobStore } from "../src/infrastructure/storage/local-disk-blob-store.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 const TEST_DATABASE = process.env["SUDUO_AUDIT_PROJECT_ID_TEST_DB"] ??
   `suduo_audit_project_id_${randomUUID().replaceAll("-", "")}`;
@@ -61,7 +62,7 @@ beforeAll(async () => {
   } finally {
     await admin.end();
   }
-  pool = new Pool({ ...PG_CONFIG, database: TEST_DATABASE });
+  pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: TEST_DATABASE }));
   await runMigrations(pool);
   database = new Database(pool);
   storageRoot = await mkdtemp(join(tmpdir(), "suduo-audit-project-id-"));

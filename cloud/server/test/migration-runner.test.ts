@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Client, Pool } from "pg";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 const PG_CONFIG = {
   host: "127.0.0.1",
@@ -372,7 +373,7 @@ async function withTemporaryDatabase(work: (pool: Pool) => Promise<void>): Promi
     await admin.end();
   }
 
-  const pool = new Pool({ ...PG_CONFIG, database: databaseName });
+  const pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: databaseName }));
   try {
     await work(pool);
   } finally {
