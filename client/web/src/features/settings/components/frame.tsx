@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 设置页外框与分组之间的约定：
@@ -41,6 +42,7 @@ export function SaveBar({
   onDiscard(): void;
 }) {
   const frame = useContext(SettingsFrameContext);
+  const labels = useT().settings.saveBar;
   const visible = dirty || saving;
   const saveRef = useRef(onSave);
   saveRef.current = onSave;
@@ -70,11 +72,11 @@ export function SaveBar({
   }, [saving, visible]);
 
   if (!visible) return null;
-  const text = saving ? "正在保存…" : problems > 0 ? `有 ${problems} 处需要修改后才能保存` : "有未保存的更改";
+  const text = saving ? labels.saving : problems > 0 ? labels.problems(problems) : labels.dirty;
   const bar = (
     <div
       role="region"
-      aria-label="未保存的更改"
+      aria-label={labels.label}
       data-testid="settings-dirty-bar"
       onFocusCapture={() => {
         focusInside.current = true;
@@ -95,10 +97,10 @@ export function SaveBar({
         {text}
       </span>
       <Button size="sm" variant="ghost" type="button" disabled={saving} onClick={onDiscard}>
-        放弃
+        {labels.discard}
       </Button>
       <Button size="sm" variant="primary" type="button" loading={saving} data-testid="settings-save" onClick={onSave}>
-        保存
+        {labels.save}
         <Kbd aria-hidden="true">⌘S</Kbd>
       </Button>
     </div>

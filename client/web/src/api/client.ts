@@ -48,6 +48,7 @@ import type {
   RequirementDetailItemDto,
   RequirementListItemDto,
   LocalAgentStateDto,
+  ProxyConnectivityDto,
 } from "@suduo/client-contracts";
 import type {
   ArtifactVersionDetailDto,
@@ -465,13 +466,7 @@ export const api = {
     allProxy?: string;
     noProxy?: string;
   }) =>
-    request<{
-      reachable: boolean;
-      targetOrigin: string;
-      statusCode?: number;
-      usingProxy: boolean;
-      message: string;
-    }>("/api/v1/settings/proxy/test", { method: "POST", body: draft }),
+    request<ProxyConnectivityDto>("/api/v1/settings/proxy/test", { method: "POST", body: draft }),
 
   removeRequirementsMapping: (projectId: string) =>
     request(

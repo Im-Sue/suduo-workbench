@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import type { RequirementsWorkspaceMappingDto } from "../../../api/client.js";
 import { projectsQuery, queryKeys, settingsQuery } from "../../../app/queries.js";
 import { classifyFailure } from "../../../feedback/classify.js";
+import { useT } from "../../../i18n/provider.js";
 import { showMessage } from "../../../ui/message.js";
 import { configWarningOf, useCodexStatus } from "../codex-status.js";
 import { ItemList, ItemRow, SettingsRow, SettingsSection } from "../components/kit.js";
@@ -45,20 +46,15 @@ const STATUS_ICON: Record<HealthStatus, ReactNode> = {
   unknown: <CircleHelpIcon aria-hidden="true" className="size-4 shrink-0 text-subtle-foreground" />,
 };
 
-const STATUS_TEXT: Record<HealthStatus, string> = {
-  ok: "正常",
-  warn: "需要留意",
-  fail: "有问题",
-  checking: "检查中",
-  unknown: "没能检查",
-};
-
 function probe<T>(query: { data: T | undefined; error: unknown; isPending: boolean }): Probe<T> {
   return { data: query.data, error: query.error, pending: query.isPending };
 }
 
 /** 诊断：一页看清哪一环有问题、怎么修；可以复制诊断信息发给同事或管理员。 */
 export function DiagnosticsSection() {
+  const t = useT();
+  const text = t.settings.diagnostics;
+  const statusText = t.settings.status;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const settings = useQuery(settingsQuery).data;
@@ -82,14 +78,14 @@ export function DiagnosticsSection() {
   );
 
   const items: HealthItem[] = [
-    serviceHealth(settings, baseUrl === "" ? { pending: false } : probe(service)),
-    loginHealth(settings),
-    doctorHealth(probe(doctor), "codex"),
-    modelHealth(probe(provider), probe(models), warning),
-    networkHealth(probe(network)),
-    mcpHealth(probe(mcp)),
-    workspaceHealth(probe(mappings), projectName),
-    doctorHealth(probe(doctor), "runtime"),
+    serviceHealth(settings, baseUrl === "" ? { pending: false } : probe(service), t),
+    loginHealth(settings, t),
+    doctorHealth(probe(doctor), "codex", t),
+    modelHealth(probe(provider), probe(models), warning, t),
+    networkHealth(probe(network), t),
+    mcpHealth(probe(mcp), t),
+    workspaceHealth(probe(mappings), projectName, t),
+    doctorHealth(probe(doctor), "runtime", t),
   ];
   const checking = items.some((item) => item.status === "checking");
   const fetching = [service, doctor, provider, models, network, mcp, mappings].some((query) => query.isFetching);
@@ -102,39 +98,41 @@ export function DiagnosticsSection() {
   };
 
   const copy = async () => {
+    // 诊断信息是发给人看的：键名与说明都按界面语言。
+    const key = text.report;
     const report = {
-      生成时间: new Date().toISOString(),
-      SuDuo版本: appVersion(),
-      浏览器: navigator.userAgent,
-      结论: items.map((item) => ({ 项: item.title, 状态: STATUS_TEXT[item.status], 说明: item.detail })),
-      需求服务: { 地址: settings?.baseUrl ?? null, 已登录: settings?.session?.user.loginName ?? null, 连接: service.isSuccess ? "正常" : service.isError ? classifyFailure(service.error).message : "未检查" },
-      本机设置: local.data ?? (local.error === null ? null : classifyFailure(local.error).message),
-      审批上限说明: local.data?.approvalModeLocked === true ? "由部署环境变量 SUDUO_MAX_APPROVAL_MODE 限制" : null,
-      个人Skills目录说明: local.data?.globalSkillsLocked === true ? "由部署环境变量 SUDUO_GLOBAL_SKILLS 固定" : null,
-      模型服务: provider.data ?? (provider.error === null ? null : classifyFailure(provider.error).message),
-      模型清单: models.data?.models ?? (models.error === null ? null : classifyFailure(models.error).message),
-      网络: network.data ?? (network.error === null ? null : classifyFailure(network.error).message),
-      Codex通知: codexStatus.entries,
-      MCP服务:
+      [key.generatedAt]: new Date().toISOString(),
+      [key.appVersion]: appVersion(t),
+      [key.browser]: navigator.userAgent,
+      [key.conclusions]: items.map((item) => ({ [key.item]: item.title, [key.status]: statusText[item.status], [key.detail]: item.detail })),
+      [key.service]: { [key.address]: settings?.baseUrl ?? null, [key.signedInAs]: settings?.session?.user.loginName ?? null, [key.connection]: service.isSuccess ? key.connectionOk : service.isError ? classifyFailure(service.error).message : key.notChecked },
+      [key.localSettings]: local.data ?? (local.error === null ? null : classifyFailure(local.error).message),
+      [key.approvalLockNote]: local.data?.approvalModeLocked === true ? key.approvalLocked : null,
+      [key.globalSkillsLockNote]: local.data?.globalSkillsLocked === true ? key.globalSkillsLocked : null,
+      [key.modelService]: provider.data ?? (provider.error === null ? null : classifyFailure(provider.error).message),
+      [key.modelList]: models.data?.models ?? (models.error === null ? null : classifyFailure(models.error).message),
+      [key.network]: network.data ?? (network.error === null ? null : classifyFailure(network.error).message),
+      [key.codexNotices]: codexStatus.entries,
+      [key.mcpServers]:
         mcp.data?.items.map((item) => ({
-          名称: item.name,
-          方式: item.transport,
-          启用: item.enabled,
-          连接: item.status.startupState,
-          登录: item.status.authenticationStatus,
-          工具数: item.status.toolCount,
-          原因: item.status.startupFailureReason,
+          [key.mcp.name]: item.name,
+          [key.mcp.transport]: item.transport,
+          [key.mcp.enabled]: item.enabled,
+          [key.mcp.connection]: item.status.startupState,
+          [key.mcp.login]: item.status.authenticationStatus,
+          [key.mcp.toolCount]: item.status.toolCount,
+          [key.mcp.reason]: item.status.startupFailureReason,
         })) ?? null,
-      代码目录:
-        mappings.data?.map((item) => ({ 项目: projectName(item), 路径: item.rootPath, 可用: item.verification?.available ?? null, 说明: item.verification?.message ?? null })) ??
+      [key.workspaces]:
+        mappings.data?.map((item) => ({ [key.workspace.project]: projectName(item), [key.workspace.path]: item.rootPath, [key.workspace.available]: item.verification?.available ?? null, [key.workspace.detail]: item.verification?.message ?? null })) ??
         null,
-      本机自检: doctor.data ?? (doctor.error === null ? null : classifyFailure(doctor.error).message),
+      [key.selfCheck]: doctor.data ?? (doctor.error === null ? null : classifyFailure(doctor.error).message),
     };
     try {
       await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
-      showMessage("诊断信息已复制，可以直接发给同事或管理员", "success");
+      showMessage(text.copied, "success");
     } catch {
-      showMessage("没能写入剪贴板，请检查浏览器是否允许复制", "warning");
+      showMessage(text.copyFailed, "warning");
     }
   };
 
@@ -143,28 +141,28 @@ export function DiagnosticsSection() {
   return (
     <SettingsSection
       id="diagnostics"
-      description="一眼看清哪一环有问题，以及怎么修。"
+      description={text.description}
       actions={
         <>
           <Button size="sm" type="button" data-testid="settings-copy-doctor" onClick={() => void copy()}>
             <CopyIcon />
-            复制诊断信息
+            {text.copy}
           </Button>
           <Button size="sm" variant="primary" type="button" loading={fetching && !checking} disabled={checking} data-testid="settings-run-doctor" onClick={recheck}>
             <RotateCwIcon />
-            重新检查
+            {text.recheck}
           </Button>
         </>
       }
     >
-      <SettingsRow anchor="health" title="健康检查" stacked>
-        <ItemList label="健康检查" data-testid="settings-health-list" aria-busy={checking}>
+      <SettingsRow anchor="health" title={text.healthTitle} stacked>
+        <ItemList label={text.healthTitle} data-testid="settings-health-list" aria-busy={checking}>
           {items.map((item) => (
             <ItemRow key={item.key} data-testid="health-item" data-key={item.key} data-status={item.status}>
               {STATUS_ICON[item.status]}
               <span className="min-w-0 flex-1 text-small">
                 <b className="font-medium text-foreground">{item.title}</b>
-                <span className="sr-only">：{STATUS_TEXT[item.status]}</span>
+                <span className="sr-only">{text.statusNote(statusText[item.status])}</span>
                 <span className="text-muted-foreground"> · {item.detail}</span>
               </span>
               {item.fix === undefined ? null : (
@@ -188,26 +186,26 @@ export function DiagnosticsSection() {
 
       <SettingsRow
         anchor="all-checks"
-        title="本机自检明细"
-        description="逐项的原始检查结果与处理建议；排查问题时可以连同诊断信息一起发给管理员。"
+        title={text.checksTitle}
+        description={text.checksDescription}
         stacked
       >
         {doctor.isPending ? (
-          <div className="flex flex-col gap-2" aria-busy="true" aria-label="正在自检">
+          <div className="flex flex-col gap-2" aria-busy="true" aria-label={text.checksLoading}>
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
         ) : doctor.data === undefined ? (
-          <p className="m-0 text-small text-danger">没能完成自检：{classifyFailure(doctor.error).message}</p>
+          <p className="m-0 text-small text-danger">{text.checksFailed(classifyFailure(doctor.error).message)}</p>
         ) : (
           <div className="flex flex-col gap-2" data-testid="settings-doctor-checks">
             {problems.length === 0 ? (
               <p className="m-0 flex items-center gap-1.5 text-small text-success">
                 <CircleCheckIcon aria-hidden="true" className="size-4" />
-                全部 {doctor.data.checks.length} 项检查都通过了
+                {text.allPassed(doctor.data.checks.length)}
               </p>
             ) : (
-              <ul className="m-0 flex list-none flex-col gap-1.5 p-0" aria-label="需要处理的检查项">
+              <ul className="m-0 flex list-none flex-col gap-1.5 p-0" aria-label={text.problemsLabel}>
                 {problems.map((check, index) => (
                   <li
                     key={`${check.name}-${index}`}
@@ -222,7 +220,7 @@ export function DiagnosticsSection() {
                     <span className="text-caption text-muted-foreground">{check.message}</span>
                     {check.remediation === undefined || check.remediation === null || check.remediation === "" ? null : (
                       <span className="text-caption text-warning" data-testid="doctor-remediation">
-                        处理建议：{check.remediation}
+                        {text.remediation(check.remediation)}
                       </span>
                     )}
                   </li>
@@ -232,7 +230,7 @@ export function DiagnosticsSection() {
             <Collapsible>
               <CollapsibleTrigger className="group inline-flex items-center gap-1 text-small text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
                 <ChevronDownIcon aria-hidden="true" className="size-3.5 transition-transform group-data-[state=open]:rotate-180" />
-                查看全部 {doctor.data.checks.length} 项检查
+                {text.showAll(doctor.data.checks.length)}
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <ul className="m-0 mt-2 flex max-h-72 list-none flex-col gap-1 overflow-y-auto rounded-md bg-code-bg p-3 font-mono text-caption text-muted-foreground">

@@ -13,6 +13,9 @@ import {
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
+import { LOCALES } from "@suduo/client-contracts";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 
 /**
  * 设置分组（需求 §4.7）。分组即路由：`/settings/$section`。
@@ -35,28 +38,35 @@ export const SETTINGS_SECTION_IDS = [
 
 export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number];
 
+export type SettingsBand = keyof Messages["settings"]["bands"];
+
 export interface SettingsSectionMeta {
   id: SettingsSectionId;
   title: string;
   icon: LucideIcon;
-  /** 分组导航里的分段标题。 */
-  band: "通用" | "Codex" | "其他";
+  /** 分组导航里的分段（文字见字典 settings.bands）。 */
+  band: SettingsBand;
 }
 
-export const SETTINGS_SECTIONS: readonly SettingsSectionMeta[] = [
-  { id: "appearance", title: "外观", icon: PaletteIcon, band: "通用" },
-  { id: "notifications", title: "通知", icon: BellIcon, band: "通用" },
-  { id: "account", title: "账号", icon: UserRoundIcon, band: "通用" },
-  { id: "service", title: "需求服务", icon: ServerIcon, band: "通用" },
-  { id: "workspace", title: "代码目录", icon: FolderGit2Icon, band: "通用" },
-  { id: "model", title: "模型服务", icon: SparklesIcon, band: "Codex" },
-  { id: "execution", title: "执行与安全", icon: ShieldCheckIcon, band: "Codex" },
-  { id: "skills", title: "Skills", icon: PuzzleIcon, band: "Codex" },
-  { id: "mcp", title: "MCP 服务", icon: PlugIcon, band: "Codex" },
-  { id: "proxy", title: "网络代理", icon: GlobeIcon, band: "Codex" },
-  { id: "diagnostics", title: "诊断", icon: StethoscopeIcon, band: "其他" },
-  { id: "about", title: "关于", icon: InfoIcon, band: "其他" },
+const SECTION_LAYOUT: readonly Omit<SettingsSectionMeta, "title">[] = [
+  { id: "appearance", icon: PaletteIcon, band: "general" },
+  { id: "notifications", icon: BellIcon, band: "general" },
+  { id: "account", icon: UserRoundIcon, band: "general" },
+  { id: "service", icon: ServerIcon, band: "general" },
+  { id: "workspace", icon: FolderGit2Icon, band: "general" },
+  { id: "model", icon: SparklesIcon, band: "codex" },
+  { id: "execution", icon: ShieldCheckIcon, band: "codex" },
+  { id: "skills", icon: PuzzleIcon, band: "codex" },
+  { id: "mcp", icon: PlugIcon, band: "codex" },
+  { id: "proxy", icon: GlobeIcon, band: "codex" },
+  { id: "diagnostics", icon: StethoscopeIcon, band: "other" },
+  { id: "about", icon: InfoIcon, band: "other" },
 ];
+
+/** 分组清单；分组名按调用时的界面语言取，组件里可以传入 useT() 拿到的字典。 */
+export function settingsSections(t: Messages = messagesFor(currentLocale())): SettingsSectionMeta[] {
+  return SECTION_LAYOUT.map((section) => ({ ...section, title: t.settings.sections[section.id] }));
+}
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "appearance";
 
@@ -64,8 +74,9 @@ export function isSettingsSection(value: unknown): value is SettingsSectionId {
   return typeof value === "string" && (SETTINGS_SECTION_IDS as readonly string[]).includes(value);
 }
 
-export function sectionMeta(id: SettingsSectionId): SettingsSectionMeta {
-  return SETTINGS_SECTIONS.find((section) => section.id === id) ?? SETTINGS_SECTIONS[0]!;
+export function sectionMeta(id: SettingsSectionId, t: Messages = messagesFor(currentLocale())): SettingsSectionMeta {
+  const layout = SECTION_LAYOUT.find((section) => section.id === id) ?? SECTION_LAYOUT[0]!;
+  return { ...layout, title: t.settings.sections[layout.id] };
 }
 
 /** 旧版 `/settings#组` 的锚点 → 新分组。 */
@@ -106,56 +117,78 @@ export function rememberSection(section: SettingsSectionId): void {
 }
 
 /**
- * 设置搜索的索引：每一项对应页面上的一行（`anchor` 即行的锚点）。
+ * 设置搜索的索引：每一项对应页面上的一行（`anchor` 即行的锚点，`key` 是字典 settings.search 里的标题与关键词）。
  * 关键词写用户会搜的说法，也收常见英文与旧叫法。
  */
+export type SettingsSearchKey = keyof Messages["settings"]["search"];
+
+export interface SettingsSearchEntry {
+  section: SettingsSectionId;
+  anchor: string;
+  key: SettingsSearchKey;
+}
+
 export interface SettingsSearchItem {
   section: SettingsSectionId;
   anchor: string;
   title: string;
-  keywords: string;
 }
 
-export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchItem[] = [
-  { section: "appearance", anchor: "theme", title: "主题", keywords: "外观 浅色 亮色 深色 暗色 跟随系统 dark light theme" },
-  { section: "appearance", anchor: "density", title: "界面密度", keywords: "紧凑 舒适 行高 字号 density" },
-  { section: "notifications", anchor: "system-notify", title: "系统通知", keywords: "通知 提醒 完成 失败 等你确认 桌面 notification" },
-  { section: "account", anchor: "current-user", title: "当前账号", keywords: "账号 登录 用户 身份" },
-  { section: "account", anchor: "logout", title: "退出登录", keywords: "登出 注销 logout" },
-  { section: "service", anchor: "service-url", title: "需求服务地址", keywords: "需求服务 服务地址 测试连接 url 内网" },
-  { section: "workspace", anchor: "mappings", title: "项目的代码目录", keywords: "代码目录 目录 路径 关联 映射 仓库 工作目录 workspace" },
-  { section: "model", anchor: "model-url", title: "模型服务地址", keywords: "模型 服务地址 base url 接口" },
-  { section: "model", anchor: "api-key", title: "API Key", keywords: "密钥 key 凭据 token" },
-  { section: "model", anchor: "model-name", title: "默认模型", keywords: "模型 model" },
-  { section: "model", anchor: "reasoning", title: "默认推理强度", keywords: "推理 思考 强度 effort" },
-  { section: "model", anchor: "context-window", title: "上下文上限", keywords: "上下文 token 窗口 context" },
-  { section: "model", anchor: "model-test", title: "测试模型服务连接", keywords: "测试连接 连通 模型" },
-  { section: "execution", anchor: "approval", title: "新会话默认确认方式", keywords: "审批 权限 确认 完全访问 每步确认 越界 approval" },
-  { section: "execution", anchor: "full-access", title: "会话可切换到完全访问", keywords: "完全访问 限制 管理员 锁定" },
-  { section: "execution", anchor: "checkpoint", title: "回合前自动存档", keywords: "检查点 存档 git 回退 checkpoint" },
-  { section: "skills", anchor: "global-skills", title: "使用个人 Skills 目录", keywords: "skill 全局 个人目录" },
-  { section: "skills", anchor: "install-skill", title: "安装 Skill", keywords: "skill 安装 导入" },
-  { section: "skills", anchor: "skill-list", title: "已安装的 Skills", keywords: "skill 启用 停用 卸载" },
-  { section: "mcp", anchor: "mcp-servers", title: "MCP 服务", keywords: "mcp 工具 服务器 连接 测试连接 登录" },
-  { section: "proxy", anchor: "proxy-http", title: "HTTP 代理", keywords: "代理 proxy http 网络" },
-  { section: "proxy", anchor: "proxy-https", title: "HTTPS 代理", keywords: "代理 proxy https 网络" },
-  { section: "proxy", anchor: "proxy-all", title: "其他连接的代理", keywords: "代理 proxy socks all" },
-  { section: "proxy", anchor: "no-proxy", title: "不走代理的地址", keywords: "代理 例外 直连 no proxy 白名单" },
-  { section: "proxy", anchor: "proxy-test", title: "测试代理连接", keywords: "测试连接 代理 连通" },
-  { section: "diagnostics", anchor: "health", title: "健康检查", keywords: "诊断 自检 排查 doctor 问题" },
-  { section: "diagnostics", anchor: "all-checks", title: "全部检查项", keywords: "诊断 详细 处理建议" },
-  { section: "about", anchor: "version", title: "版本", keywords: "版本 关于 codex version" },
-  { section: "about", anchor: "license", title: "许可", keywords: "许可 许可证 授权 商用 登记 源码 license commercial" },
-  { section: "about", anchor: "config-file", title: "直接编辑 Codex 配置文件", keywords: "配置文件 config toml 高级" },
+export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
+  { section: "appearance", anchor: "theme", key: "theme" },
+  { section: "appearance", anchor: "density", key: "density" },
+  { section: "notifications", anchor: "system-notify", key: "systemNotify" },
+  { section: "account", anchor: "current-user", key: "currentUser" },
+  { section: "account", anchor: "logout", key: "logout" },
+  { section: "service", anchor: "service-url", key: "serviceUrl" },
+  { section: "workspace", anchor: "mappings", key: "mappings" },
+  { section: "model", anchor: "model-url", key: "modelUrl" },
+  { section: "model", anchor: "api-key", key: "apiKey" },
+  { section: "model", anchor: "model-name", key: "modelName" },
+  { section: "model", anchor: "reasoning", key: "reasoning" },
+  { section: "model", anchor: "context-window", key: "contextWindow" },
+  { section: "model", anchor: "model-test", key: "modelTest" },
+  { section: "execution", anchor: "approval", key: "approval" },
+  { section: "execution", anchor: "full-access", key: "fullAccess" },
+  { section: "execution", anchor: "checkpoint", key: "checkpoint" },
+  { section: "skills", anchor: "global-skills", key: "globalSkills" },
+  { section: "skills", anchor: "install-skill", key: "installSkill" },
+  { section: "skills", anchor: "skill-list", key: "skillList" },
+  { section: "mcp", anchor: "mcp-servers", key: "mcpServers" },
+  { section: "proxy", anchor: "proxy-http", key: "proxyHttp" },
+  { section: "proxy", anchor: "proxy-https", key: "proxyHttps" },
+  { section: "proxy", anchor: "proxy-all", key: "proxyAll" },
+  { section: "proxy", anchor: "no-proxy", key: "noProxy" },
+  { section: "proxy", anchor: "proxy-test", key: "proxyTest" },
+  { section: "diagnostics", anchor: "health", key: "health" },
+  { section: "diagnostics", anchor: "all-checks", key: "allChecks" },
+  { section: "about", anchor: "version", key: "version" },
+  { section: "about", anchor: "license", key: "license" },
+  { section: "about", anchor: "config-file", key: "configFile" },
 ];
 
-export function searchSettings(query: string): SettingsSearchItem[] {
+/**
+ * 一项的搜索文本：所有语言的标题、分组名与关键词拼在一起，中文、英文都能搜到同一行；
+ * 显示仍用当前语言（中英双语技术设计 §4.3）。
+ */
+function searchText(entry: SettingsSearchEntry): string {
+  return LOCALES.map((locale) => {
+    const text = messagesFor(locale).settings;
+    const item = text.search[entry.key];
+    return `${item.title} ${text.sections[entry.section]} ${item.keywords}`;
+  })
+    .join(" ")
+    .toLowerCase();
+}
+
+/** 搜索设置；结果的标题按调用时的界面语言取，组件里可以传入 useT() 拿到的字典。 */
+export function searchSettings(query: string, t: Messages = messagesFor(currentLocale())): SettingsSearchItem[] {
   const terms = query.trim().toLowerCase().split(/\s+/).filter((term) => term !== "");
   if (terms.length === 0) return [];
-  return SETTINGS_SEARCH_INDEX.filter((item) => {
-    const haystack = `${item.title} ${sectionMeta(item.section).title} ${item.keywords}`.toLowerCase();
+  return SETTINGS_SEARCH_INDEX.filter((entry) => {
+    const haystack = searchText(entry);
     return terms.every((term) => haystack.includes(term));
-  });
+  }).map((entry) => ({ section: entry.section, anchor: entry.anchor, title: t.settings.search[entry.key].title }));
 }
 
 /** 行锚点在 DOM 里的 id。 */

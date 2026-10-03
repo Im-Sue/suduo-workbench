@@ -31,22 +31,32 @@ import { ItemList, ItemRow, SettingsRow, SettingsSection } from "../components/k
 import { shortenPath } from "../format.js";
 import { workspaceMappingsQuery } from "../queries.js";
 import { useQueryFailure } from "../use-query-failure.js";
+import { currentLocale } from "../../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../../i18n/messages/index.js";
+import { useT } from "../../../i18n/provider.js";
 
 type VerifiedMapping = RequirementsWorkspaceMappingDto & { verification?: WorkspaceMappingVerification };
 
 /** 目录不可用的人话原因。 */
-export function availabilityText(verification: WorkspaceMappingVerification | undefined): { ok: boolean; text: string } {
-  if (verification === undefined) return { ok: true, text: "可用" };
-  if (verification.available) return { ok: true, text: "可用" };
-  if (!verification.exists) return { ok: false, text: "目录已不存在" };
+export function availabilityText(
+  verification: WorkspaceMappingVerification | undefined,
+  t: Messages = messagesFor(currentLocale()),
+): { ok: boolean; text: string } {
+  const text = t.settingsConnection.workspace.availability;
+  if (verification === undefined) return { ok: true, text: text.ok };
+  if (verification.available) return { ok: true, text: text.ok };
+  if (!verification.exists) return { ok: false, text: text.missing };
   if (!verification.readable || !verification.writable || !verification.executable) {
-    return { ok: false, text: "SuDuo 没有权限读写这个目录" };
+    return { ok: false, text: text.noPermission };
   }
-  return { ok: false, text: verification.message || "目录暂时不可用" };
+  // 其他原因显示本机服务写的说明。
+  return { ok: false, text: verification.message || text.unavailable };
 }
 
 /** 代码目录：每个项目在这台电脑上对应的代码目录；会话在这里读写代码。 */
 export function WorkspaceSection() {
+  const t = useT();
+  const text = t.settingsConnection.workspace;
   const queryClient = useQueryClient();
   const mappings = useQuery(workspaceMappingsQuery);
   const mappingsFailure = useQueryFailure(mappings);
@@ -72,7 +82,7 @@ export function WorkspaceSection() {
       await api.removeRequirementsMapping(mapping.remoteProjectId);
       await refresh();
     } catch (cause) {
-      reportFailure(cause, { surface: "action", title: "没能解除关联", retry: () => void remove(mapping) });
+      reportFailure(cause, { surface: "action", title: text.unlinkFailed, retry: () => void remove(mapping) });
     } finally {
       setBusyId(null);
     }
@@ -82,7 +92,7 @@ export function WorkspaceSection() {
   return (
     <SettingsSection
       id="workspace"
-      description="每个项目在你电脑上对应的代码目录。会话会在这里读写代码，代码不会上传到需求服务。"
+      description={text.description}
       actions={
         <>
           <Button
@@ -93,46 +103,46 @@ export function WorkspaceSection() {
             onClick={() => void mappings.refetch()}
           >
             <RotateCwIcon />
-            重新检查
+            {text.recheck}
           </Button>
           <Button ref={addRef} size="sm" variant="primary" type="button" onClick={() => setEditing({ projectId: null })}>
             <FolderPlusIcon />
-            关联代码目录
+            {text.link}
           </Button>
         </>
       }
     >
-      <SettingsRow anchor="mappings" title="已关联的项目" stacked>
+      <SettingsRow anchor="mappings" title={text.linkedProjects} stacked>
         {mappings.isPending ? (
-          <div className="flex flex-col gap-2" aria-busy="true" aria-label="正在读取代码目录">
+          <div className="flex flex-col gap-2" aria-busy="true" aria-label={text.loading}>
             <Skeleton className="h-14 w-full" />
             <Skeleton className="h-14 w-full" />
           </div>
         ) : mappings.isError ? (
           <RegionError
             kind={mappingsFailure?.kind ?? "unknown"}
-            message={`没能读取代码目录：${mappingsFailure?.message ?? ""}`}
+            message={text.loadFailed(mappingsFailure?.message ?? "")}
             busy={mappings.isFetching}
             onRetry={() => void mappings.refetch()}
           />
         ) : items.length === 0 ? (
           <EmptyState
             kind="prerequisite"
-            title="还没有关联代码目录"
-            description="关联后才能在本机开始会话。第一次开始会话时也会请你选择。"
-            action={{ label: "关联代码目录", onClick: () => setEditing({ projectId: null }) }}
+            title={text.empty.title}
+            description={text.empty.description}
+            action={{ label: text.link, onClick: () => setEditing({ projectId: null }) }}
           />
         ) : (
-          <ItemList label="已关联的项目" data-testid="settings-mapping-list">
+          <ItemList label={text.linkedProjects} data-testid="settings-mapping-list">
             {items.map((mapping) => {
               const name = projectName(mapping);
-              const availability = availabilityText(mapping.verification);
+              const availability = availabilityText(mapping.verification, t);
               return (
                 <ItemRow
                   key={mapping.remoteProjectId}
                   data-testid="settings-mapping-row"
                   data-available={availability.ok ? "true" : "false"}
-                  aria-label={`${name}：${availability.text}`}
+                  aria-label={text.rowLabel(name, availability.text)}
                 >
                   <span
                     aria-hidden="true"
@@ -163,11 +173,11 @@ export function WorkspaceSection() {
                     type="button"
                     onClick={() => setEditing({ projectId: mapping.remoteProjectId })}
                   >
-                    {availability.ok ? "更改目录" : "重新选择"}
+                    {availability.ok ? text.change : text.reselect}
                   </Button>
                   <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
-                      <Button size="icon-sm" variant="ghost" type="button" aria-label={`「${name}」的更多操作`} disabled={busyId === mapping.remoteProjectId}>
+                      <Button size="icon-sm" variant="ghost" type="button" aria-label={text.moreActions(name)} disabled={busyId === mapping.remoteProjectId}>
                         <MoreHorizontalIcon />
                       </Button>
                     </DropdownMenuTrigger>
@@ -180,13 +190,13 @@ export function WorkspaceSection() {
                         }}
                       >
                         <UnlinkIcon />
-                        解除关联
+                        {text.unlink}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                   {availability.ok ? null : (
                     <p className="m-0 basis-full pl-[38px] text-caption text-muted-foreground">
-                      目录可能被移动、删除或改了权限。点「重新选择」换一个目录；把原目录恢复后，点「重新检查」。
+                      {text.unavailableHint}
                     </p>
                   )}
                 </ItemRow>
@@ -211,9 +221,9 @@ export function WorkspaceSection() {
         onOpenChange={(open) => {
           if (!open) setRemoving(null);
         }}
-        title={`解除「${removing === null ? "" : projectName(removing)}」的代码目录？`}
-        description="解除后，开始这个项目的会话前需要重新选择目录。目录里的代码不会被删除。"
-        confirmLabel="解除关联"
+        title={text.unlinkConfirm.title(removing === null ? "" : projectName(removing))}
+        description={text.unlinkConfirm.description}
+        confirmLabel={text.unlinkConfirm.confirm}
         onConfirm={() => {
           if (removing !== null) void remove(removing);
         }}
@@ -237,6 +247,7 @@ function MappingDialog({
   onOpenChange(open: boolean): void;
   onSaved(): Promise<void>;
 }) {
+  const text = useT().settingsConnection.workspace.dialog;
   const active = useMemo(() => projects.filter((project) => !project.isArchived), [projects]);
   const existing = presetProjectId === null ? undefined : mappings.find((item) => item.remoteProjectId === presetProjectId);
   const [projectId, setProjectId] = useState("");
@@ -263,7 +274,7 @@ function MappingDialog({
   const save = async () => {
     // 提交按钮不禁用（技术设计 §6.2）：点了再说哪里不对。
     const problem =
-      projectId === "" ? "先选择项目" : path.trim() === "" ? "先选一个代码目录" : !valid ? "这个目录现在用不了，换一个可以读写的目录" : null;
+      projectId === "" ? text.projectRequired : path.trim() === "" ? text.pathRequired : !valid ? text.pathUnusable : null;
     setHint(problem);
     if (problem !== null) return;
     setSaving(true);
@@ -284,23 +295,23 @@ function MappingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg" data-testid="settings-mapping-dialog">
         <DialogHeader>
-          <DialogTitle>{presetProjectId === null ? "关联代码目录" : `更改「${projectLabel}」的代码目录`}</DialogTitle>
-          <DialogDescription>选择这个项目的代码在你电脑上的目录。SuDuo 需要能读写这个目录。</DialogDescription>
+          <DialogTitle>{presetProjectId === null ? text.titleLink : text.titleChange(projectLabel)}</DialogTitle>
+          <DialogDescription>{text.description}</DialogDescription>
         </DialogHeader>
         {presetProjectId === null ? (
           <div className="flex flex-col gap-1.5">
             <label htmlFor="settings-map-project" className="text-small font-medium text-foreground">
-              项目
+              {text.project}
             </label>
             <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger id="settings-map-project" aria-label="项目">
-                <SelectValue placeholder="选择项目" />
+              <SelectTrigger id="settings-map-project" aria-label={text.project}>
+                <SelectValue placeholder={text.projectPlaceholder} />
               </SelectTrigger>
               <SelectContent>
                 {active.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.name}
-                    {mappings.some((item) => item.remoteProjectId === project.id) ? "（已关联，会替换原目录）" : ""}
+                    {mappings.some((item) => item.remoteProjectId === project.id) ? text.alreadyLinked : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -312,7 +323,7 @@ function MappingDialog({
         {failure === null ? null : <InlineError kind={failure.kind}>{failure.message}</InlineError>}
         <DialogFooter>
           <Button type="button" onClick={() => onOpenChange(false)}>
-            取消
+            {text.cancel}
           </Button>
           <Button
             type="button"
@@ -320,7 +331,7 @@ function MappingDialog({
             loading={saving}
             onClick={() => void save()}
           >
-            {presetProjectId === null ? "关联" : "使用这个目录"}
+            {presetProjectId === null ? text.link : text.useFolder}
           </Button>
         </DialogFooter>
       </DialogContent>

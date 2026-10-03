@@ -22,7 +22,7 @@ import { RegionError } from "../../../feedback/components/index.js";
 import { reportFailure } from "../../../feedback/report.js";
 import type { Failure } from "../../../feedback/types.js";
 import { showMessage } from "../../../ui/message.js";
-import { EFFORT_LABEL, offeredEfforts } from "../../sessions/SessionModelSwitcher.js";
+import { effortName, offeredEfforts } from "../../sessions/SessionModelSwitcher.js";
 import { configWarningOf, useCodexStatus } from "../codex-status.js";
 import { SaveBar, useUnsavedChanges } from "../components/frame.js";
 import { rowDescId, rowLabelId, SectionSkeleton, SettingsRow, SettingsSection, StatusPill } from "../components/kit.js";
@@ -31,6 +31,10 @@ import { humanizeModelMessage } from "../format.js";
 import { networkReason } from "./ProxySection.js";
 import { codexModelsQuery, modelProviderQuery, settingsKeys } from "../queries.js";
 import { useQueryFailure } from "../use-query-failure.js";
+import type { ProxyConnectivityDto } from "@suduo/client-contracts";
+import { currentLocale } from "../../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../../i18n/messages/index.js";
+import { useT } from "../../../i18n/provider.js";
 
 /** 拿不到模型声明的档位时（旧服务端 / 模型不在清单里）给的常见几档。 */
 const FALLBACK_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
@@ -72,47 +76,53 @@ function draftOf(settings: ModelProviderSettingsDto): ModelDraft {
 }
 
 /** 上下文上限：留空表示不声明；否则必须是 4000 ~ 1 亿之间的整数（修复：非数字不再提交成 NaN）。 */
-export function parseContextWindow(raw: string): { ok: true; value: number | null } | { ok: false; message: string } {
+export function parseContextWindow(
+  raw: string,
+  t: Messages = messagesFor(currentLocale()),
+): { ok: true; value: number | null } | { ok: false; message: string } {
+  const text = t.settingsConnection.model.validation;
   const trimmed = raw.trim().replace(/[,_，\s]/g, "");
   if (trimmed === "") return { ok: true, value: null };
-  if (!/^\d+$/.test(trimmed)) return { ok: false, message: "请输入整数，例如 200000" };
+  if (!/^\d+$/.test(trimmed)) return { ok: false, message: text.contextWindowInteger };
   const value = Number(trimmed);
   if (!Number.isSafeInteger(value) || value < 4_000 || value > 100_000_000) {
-    return { ok: false, message: "请输入 4000 到 100000000 之间的整数" };
+    return { ok: false, message: text.contextWindowRange };
   }
   return { ok: true, value };
 }
 
-function validateDraft(draft: ModelDraft, saved: ModelDraft, firstTime = false): Partial<Record<keyof ModelDraft, string>> {
+function validateDraft(draft: ModelDraft, saved: ModelDraft, firstTime: boolean, t: Messages): Partial<Record<keyof ModelDraft, string>> {
+  const text = t.settingsConnection.model.validation;
   const errors: Partial<Record<keyof ModelDraft, string>> = {};
   if (firstTime && draft.baseUrl.trim() === "") {
-    errors.baseUrl = "先填写模型服务地址，例如 https://llm-gateway.example.com/v1";
+    errors.baseUrl = text.baseUrlRequired;
   } else if (draft.baseUrl.trim() !== saved.baseUrl) {
     try {
       const url = new URL(draft.baseUrl.trim());
-      if (url.protocol !== "http:" && url.protocol !== "https:") errors.baseUrl = "地址要以 http:// 或 https:// 开头";
+      if (url.protocol !== "http:" && url.protocol !== "https:") errors.baseUrl = text.baseUrlProtocol;
     } catch {
-      errors.baseUrl = "这不是一个有效的地址，例如 https://llm-gateway.example.com/v1";
+      errors.baseUrl = text.baseUrlInvalid;
     }
   }
   if (draft.apiKey !== "") {
     const key = draft.apiKey.trim();
-    if (key.length < 8 || key.length > 512 || /[\r\n]/.test(key)) errors.apiKey = "API Key 看起来不完整，请整段粘贴";
+    if (key.length < 8 || key.length > 512 || /[\r\n]/.test(key)) errors.apiKey = text.apiKeyIncomplete;
   } else if (firstTime) {
     // 改用团队的模型服务要带上它的 Key：不然 Codex 可能拿着原来的登录凭据去请求团队的地址。
-    errors.apiKey = "改用团队的模型服务需要填写它的 API Key";
+    errors.apiKey = text.apiKeyRequired;
   }
   if (draft.model.trim() !== "" && !/^[A-Za-z0-9._:/-]{1,128}$/.test(draft.model.trim())) {
-    errors.model = "模型名称只能包含字母、数字和 . _ : / -";
+    errors.model = text.modelName;
   }
-  const context = parseContextWindow(draft.contextWindow);
+  const context = parseContextWindow(draft.contextWindow, t);
   if (!context.ok) errors.contextWindow = context.message;
   return errors;
 }
 
 /** Codex 配置层来源 → 人话；来自你自己的配置时不显示。 */
-export function originLabel(origin: ModelProviderConfigOrigin | null): string | null {
+export function originLabel(origin: ModelProviderConfigOrigin | null, t: Messages = messagesFor(currentLocale())): string | null {
   if (origin === null) return null;
+  const text = t.settingsConnection.model.origin;
   const raw: JsonValue = origin.name;
   const type =
     typeof raw === "string"
@@ -121,24 +131,28 @@ export function originLabel(origin: ModelProviderConfigOrigin | null): string | 
         ? raw["type"]
         : "";
   if (type === "" || type === "user") return null;
-  if (type === "project") return "项目配置";
-  if (type === "system") return "系统配置";
-  if (type === "sessionFlags") return "启动参数";
-  if (/mdm|managed|enterprise/i.test(type)) return "管理员配置";
-  return "其他配置";
+  if (type === "project") return text.project;
+  if (type === "system") return text.system;
+  if (type === "sessionFlags") return text.sessionFlags;
+  if (/mdm|managed|enterprise/i.test(type)) return text.managed;
+  return text.other;
 }
 
 function OriginNote({ origin }: { origin: ModelProviderConfigOrigin | null }) {
-  const label = originLabel(origin);
+  const t = useT();
+  const label = originLabel(origin, t);
   if (label === null) return null;
+  const text = t.settingsConnection.model.origin;
   return (
-    <Badge variant="warning" data-testid="model-origin-badge" title={`当前生效的值来自${label}，在这里修改可能不会生效`}>
-      来自{label}
+    <Badge variant="warning" data-testid="model-origin-badge" title={text.badgeTitle(label)}>
+      {text.badge(label)}
     </Badge>
   );
 }
 
 export function ModelSection() {
+  const t = useT();
+  const text = t.settingsConnection.model;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const provider = useQuery(modelProviderQuery);
@@ -148,17 +162,17 @@ export function ModelSection() {
 
   if (provider.isPending) {
     return (
-      <SettingsSection id="model" description="Codex 通过这里调用模型。">
-        <SectionSkeleton rows={5} label="正在读取模型服务配置" />
+      <SettingsSection id="model" description={text.intro}>
+        <SectionSkeleton rows={5} label={text.loading} />
       </SettingsSection>
     );
   }
   if (provider.isError) {
     return (
-      <SettingsSection id="model" description="Codex 通过这里调用模型。" badge={<StatusPill tone="danger">读不到配置</StatusPill>}>
+      <SettingsSection id="model" description={text.intro} badge={<StatusPill tone="danger">{text.loadFailedPill}</StatusPill>}>
         <RegionError
           kind={failure?.kind ?? "unknown"}
-          message={`暂时读不到 Codex 的模型配置：${failure?.message ?? ""}`}
+          message={text.loadFailed(failure?.message ?? "")}
           busy={provider.isFetching}
           onRetry={() => void provider.refetch()}
         />
@@ -192,6 +206,8 @@ function ModelForm({
   onSaved(next: ModelProviderSettingsDto): void;
   onOpenProxy(): void;
 }) {
+  const t = useT();
+  const text = t.settingsConnection.model;
   const queryClient = useQueryClient();
   const saved = draftOf(settings);
   const [draft, setDraft] = useState<ModelDraft>(saved);
@@ -218,13 +234,13 @@ function ModelForm({
     if (untouched) setDraft(draftOf(settings));
   }
 
-  useUnsavedChanges("model", dirty, "模型服务");
+  useUnsavedChanges("model", dirty, text.groupName);
 
   // Codex 里还没有模型服务：这是第一次配置，保存时建立（地址必填）。
   const firstTime = settings.configured === false;
   // Key 由配置里的命令或环境变量提供：这里的「更换」写的是 Codex 登录，对这个服务不起作用，不给入口。
   const externalKey = settings.apiKeySource === "command" || settings.apiKeySource === "env";
-  const errors = validateDraft(draft, saved, firstTime);
+  const errors = validateDraft(draft, saved, firstTime, t);
   const visibleErrors = attempted ? errors : pickTouched(errors, draft, saved);
   const problemCount = Object.keys(errors).length;
   const set = (field: keyof ModelDraft, value: string) => {
@@ -248,7 +264,7 @@ function ModelForm({
       else fieldRefs.current[firstInvalid]?.focus();
       return;
     }
-    const context = parseContextWindow(draft.contextWindow);
+    const context = parseContextWindow(draft.contextWindow, t);
     if (!context.ok) return;
     setSaving(true);
     setSaveFailure(null);
@@ -273,9 +289,9 @@ function ModelForm({
         // 保存只写配置；顺手实际连一次地址，把结果告诉你（连不上也不撤销保存）。
         const network = result.settings.baseUrl === "" ? null : await api.testProxySettings({}).catch(() => null);
         if (network !== null && !network.reachable) {
-          showMessage(`模型服务已保存，但现在连不上这个地址：${networkReason(network.message)}。检查地址或网络代理后点「测试连接」再试。`, "warning");
+          showMessage(text.save.savedUnreachable(networkReason(network, t)), "warning");
         } else {
-          showMessage("模型服务已保存，下一个回合开始生效。", "success");
+          showMessage(text.save.saved, "success");
         }
       }
     } catch (cause) {
@@ -300,9 +316,9 @@ function ModelForm({
       setDraft(draftOf(result.settings));
       onSaved(result.settings);
       setOverridden(null);
-      showMessage("已还原到保存前的配置", "success");
+      showMessage(text.save.restored, "success");
     } catch (cause) {
-      reportFailure(cause, { surface: "action", title: "没能还原" });
+      reportFailure(cause, { surface: "action", title: text.save.restoreFailed });
     } finally {
       setRestoring(false);
     }
@@ -310,22 +326,22 @@ function ModelForm({
 
   const configured = settings.baseUrl !== "" && settings.apiKeyMasked !== null;
   const pill = !configured ? (
-    <StatusPill tone="danger">未配置</StatusPill>
+    <StatusPill tone="danger">{text.status.notConfigured}</StatusPill>
   ) : warning !== null ? (
-    <StatusPill tone="warning">有提醒</StatusPill>
+    <StatusPill tone="warning">{text.status.warning}</StatusPill>
   ) : models.isError ? (
-    <StatusPill tone="danger">连不上</StatusPill>
+    <StatusPill tone="danger">{text.status.unreachable}</StatusPill>
   ) : models.isSuccess ? (
-    <StatusPill tone="success">已连接</StatusPill>
+    <StatusPill tone="success">{text.status.connected}</StatusPill>
   ) : (
-    <StatusPill tone="neutral">检查中</StatusPill>
+    <StatusPill tone="neutral">{text.status.checking}</StatusPill>
   );
 
-  const unreachable = (message: string): TestOutcome => ({
+  const unreachable = (network: ProxyConnectivityDto): TestOutcome => ({
     ok: false,
-    reason: `连不上模型服务：${networkReason(message)}`,
-    suggestion: "检查服务地址是否正确；公司网络需要代理时，在「网络代理」里配置。",
-    action: { label: "去设置网络代理", onClick: onOpenProxy },
+    reason: text.test.unreachable(networkReason(network, t)),
+    suggestion: text.test.unreachableSuggestion,
+    action: { label: text.test.openProxy, onClick: onOpenProxy },
   });
 
   const test = async (): Promise<TestOutcome> => {
@@ -339,20 +355,20 @@ function ModelForm({
       }));
       // 清单写回缓存：之前「连不上」的状态、横幅与导航提示点随之更新，不等缓存过期。
       queryClient.setQueryData(settingsKeys.codexModels, value.models);
-      if (value.network !== null && !value.network.reachable) return unreachable(value.network.message);
+      if (value.network !== null && !value.network.reachable) return unreachable(value.network);
       if (!probe) {
-        return { ok: true, text: `Codex 能读取模型清单 · ${value.models.models.length} 个 · 用的是内置默认服务，没有地址可实连` };
+        return { ok: true, text: text.test.okBuiltin(value.models.models.length) };
       }
-      return { ok: true, text: `连接正常 · 可用模型 ${value.models.models.length} 个 · ${formatMs(ms)}` };
+      return { ok: true, text: text.test.ok(value.models.models.length, formatMs(ms)) };
     } catch (cause) {
       const failure = classifyFailure(cause);
       // 再试一次网络：分清是「连不上」还是「连上了但被拒绝」，给对应的建议。
       const network = await api.testProxySettings({}).catch(() => null);
-      if (network !== null && !network.reachable) return unreachable(network.message);
+      if (network !== null && !network.reachable) return unreachable(network);
       return {
         ok: false,
-        reason: `模型服务没有返回可用的模型：${failure.message}`,
-        suggestion: "确认 API Key 有效、没有过期；也可以在「诊断」里查看更多信息。",
+        reason: text.test.noModels(failure.message),
+        suggestion: text.test.noModelsSuggestion,
       };
     }
   };
@@ -368,15 +384,15 @@ function ModelForm({
     <SettingsSection
       id="model"
       badge={pill}
-      description="Codex 通过这里调用模型。API Key 只保存在这台电脑上。保存后从下一个回合开始生效。"
+      description={text.description}
     >
       {warning === null ? null : (
-        <Banner tone="warning" title="Codex 对当前配置有提醒" className="mb-2 items-start" data-testid="model-config-warning">
-          {warning.summary ?? "配置中有 Codex 不认识的项，模型服务可能按默认方式运行。"}
+        <Banner tone="warning" title={text.banner.warningTitle} className="mb-2 items-start" data-testid="model-config-warning">
+          {warning.summary ?? text.banner.warningFallback}
           {warning.details === null ? null : (
             <Collapsible>
               <CollapsibleTrigger className="mt-1 text-caption text-muted-foreground underline-offset-2 hover:underline">
-                查看详情
+                {text.banner.details}
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <pre className="m-0 mt-1 max-h-40 overflow-auto rounded-sm bg-code-bg p-2 font-mono text-caption whitespace-pre-wrap text-muted-foreground">
@@ -388,18 +404,18 @@ function ModelForm({
         </Banner>
       )}
       {firstTime ? (
-        <Banner tone="info" title="目前用的是 Codex 内置的默认模型服务" className="mb-2" data-testid="model-first-time">
-          要改用团队的模型服务：填写它的地址和 API Key 后保存。保存只写入配置，之后会实际连一次地址告诉你结果；随时可以点「测试连接」再确认。
+        <Banner tone="info" title={text.banner.firstTimeTitle} className="mb-2" data-testid="model-first-time">
+          {text.banner.firstTimeBody}
         </Banner>
       ) : models.isError ? (
-        <Banner tone="warning" title="暂时取不到 Codex 的模型清单" className="mb-2" data-testid="model-degraded-banner">
-          下面是已保存的配置，可以照常修改。
+        <Banner tone="warning" title={text.banner.degradedTitle} className="mb-2" data-testid="model-degraded-banner">
+          {text.banner.degradedBody}
         </Banner>
       ) : null}
       {overridden === null ? null : (
         <Banner
           tone="warning"
-          title="已保存，但没有生效"
+          title={text.banner.overriddenTitle}
           className="mb-2"
           data-testid="model-save-result"
           data-status="okOverridden"
@@ -408,7 +424,7 @@ function ModelForm({
             overridden.before.configured === false ? undefined : (
               <Button size="sm" type="button" loading={restoring} onClick={() => void restore()} data-testid="model-restore">
                 <RotateCcwIcon />
-                还原到保存前
+                {text.banner.restore}
               </Button>
             )
           }
@@ -417,16 +433,16 @@ function ModelForm({
         </Banner>
       )}
       {saveFailure === null ? null : (
-        <Banner tone="danger" title="没能保存" className="mb-2" data-testid="model-save-failure">
+        <Banner tone="danger" title={text.banner.saveFailedTitle} className="mb-2" data-testid="model-save-failure">
           {humanizeModelMessage(saveFailure.message)}
         </Banner>
       )}
 
       <SettingsRow
         anchor="model-url"
-        title="服务地址"
+        title={text.baseUrl.label}
         htmlFor="model-base-url"
-        description="兼容 OpenAI 接口的地址。"
+        description={text.baseUrl.description}
         status={<OriginNote origin={settings.origins.baseUrl} />}
       >
         <Input
@@ -447,8 +463,8 @@ function ModelForm({
 
       <SettingsRow
         anchor="api-key"
-        title="API Key"
-        description="为安全起见不显示完整内容；保存后替换旧的。"
+        title={text.apiKey.label}
+        description={text.apiKey.description}
         {...(replacingKey ? { htmlFor: "model-api-key" } : {})}
       >
         {replacingKey ? (
@@ -463,7 +479,7 @@ function ModelForm({
               autoFocus
               data-testid="model-api-key-input"
               className="font-mono"
-              placeholder="粘贴新的 API Key"
+              placeholder={text.apiKey.placeholder}
               value={draft.apiKey}
               aria-invalid={visibleErrors.apiKey === undefined ? undefined : true}
               aria-describedby={describedBy("api-key", visibleErrors.apiKey, "model-api-key")}
@@ -477,7 +493,7 @@ function ModelForm({
                 set("apiKey", "");
               }}
             >
-              取消更换
+              {text.apiKey.cancelReplace}
             </Button>
           </div>
         ) : (
@@ -487,34 +503,32 @@ function ModelForm({
               data-testid="model-api-key-masked"
               aria-labelledby={rowLabelId("api-key")}
             >
-              {settings.apiKeyMasked ?? "未配置"}
+              {settings.apiKeyMasked ?? text.apiKey.notConfigured}
             </span>
             {externalKey ? null : (
               <Button type="button" onClick={() => setReplacingKey(true)}>
-                {settings.apiKeyMasked === null ? "填写" : "更换"}
+                {settings.apiKeyMasked === null ? text.apiKey.add : text.apiKey.replace}
               </Button>
             )}
           </div>
         )}
         {externalKey ? (
           <p className="m-0 text-caption text-muted-foreground" data-testid="model-api-key-external">
-            {settings.apiKeySource === "command"
-              ? "Key 由 Codex 配置里的取 Key 命令提供（例如从钥匙串读取），不经过这里；要换 Key，改那条命令读取的内容。"
-              : "Key 从 Codex 配置指定的环境变量读取，不经过这里；要换 Key，改启动 SuDuo 时的这个环境变量。"}
+            {settings.apiKeySource === "command" ? text.apiKey.fromCommand : text.apiKey.fromEnv}
           </p>
         ) : null}
         <FieldError id="model-api-key" message={visibleErrors.apiKey} />
         {replacingKey && settings.apiKeyMasked !== null ? (
           <p className="m-0 text-caption text-muted-foreground" data-testid="model-api-key-replace-note">
-            保存后会用这个 Key 替换 Codex 当前的登录（包括用 ChatGPT 账号的登录）。
+            {text.apiKey.replaceNote}
           </p>
         ) : null}
       </SettingsRow>
 
       <SettingsRow
         anchor="model-name"
-        title="默认模型"
-        description="新会话默认使用的模型，每个会话都可以单独切换。"
+        title={text.defaultModel.label}
+        description={text.defaultModel.description}
         htmlFor="model-name"
         status={<OriginNote origin={settings.origins.model} />}
       >
@@ -527,7 +541,7 @@ function ModelForm({
               id="model-name"
               data-testid="model-name"
               className="font-mono"
-              placeholder={models.isPending ? "正在读取可用模型…" : "读不到模型清单，可以直接填写模型名称"}
+              placeholder={models.isPending ? text.defaultModel.loadingPlaceholder : text.defaultModel.unavailablePlaceholder}
               value={draft.model}
               aria-invalid={visibleErrors.model === undefined ? undefined : true}
               onChange={(event) => set("model", event.target.value)}
@@ -540,7 +554,7 @@ function ModelForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={DEFAULT_MODEL}>跟随 Codex 默认</SelectItem>
+              <SelectItem value={DEFAULT_MODEL}>{text.defaultModel.followCodex}</SelectItem>
               {draft.model !== "" && !modelItems.some((item) => item.id === draft.model) ? (
                 <SelectItem value={draft.model}>{draft.model}</SelectItem>
               ) : null}
@@ -556,8 +570,8 @@ function ModelForm({
 
       <SettingsRow
         anchor="reasoning"
-        title="默认推理强度"
-        description={saved.effort === "" ? "未设置时由 Codex 决定。每个会话都可以单独调整。" : "每个会话都可以单独调整。"}
+        title={text.effort.label}
+        description={saved.effort === "" ? text.effort.descriptionUnset : text.effort.description}
         status={<OriginNote origin={settings.origins.reasoningEffort} />}
       >
         <div className="overflow-x-auto">
@@ -565,7 +579,7 @@ function ModelForm({
             aria-labelledby={rowLabelId("reasoning")}
             data-testid="model-effort"
             value={draft.effort}
-            options={effortOptions(models.data, draft.model.trim(), draft.effort).map((effort) => ({ value: effort, label: EFFORT_LABEL[effort] ?? effort }))}
+            options={effortOptions(models.data, draft.model.trim(), draft.effort).map((effort) => ({ value: effort, label: effortName(effort) }))}
             onValueChange={(value) => set("effort", value)}
           />
         </div>
@@ -573,9 +587,9 @@ function ModelForm({
 
       <SettingsRow
         anchor="context-window"
-        title="上下文上限"
+        title={text.contextWindow.label}
         htmlFor="model-context"
-        description="单位是 token。留空时用 Codex 对该模型的已知上限（它不认识的模型按约 27 万估算）；填写只能调小，模型实际上限更小时在这里填实际值。"
+        description={text.contextWindow.description}
         status={<OriginNote origin={settings.origins.contextWindow} />}
       >
         <Input
@@ -586,7 +600,7 @@ function ModelForm({
           data-testid="model-context"
           inputMode="numeric"
           className="max-w-60 font-mono"
-          placeholder="例如 200000"
+          placeholder={text.contextWindow.placeholder}
           value={draft.contextWindow}
           aria-invalid={visibleErrors.contextWindow === undefined ? undefined : true}
           aria-describedby={describedBy("context-window", visibleErrors.contextWindow, "model-context")}
@@ -595,10 +609,10 @@ function ModelForm({
         <FieldError id="model-context" message={visibleErrors.contextWindow} />
       </SettingsRow>
 
-      <SettingsRow anchor="model-test" title="连接测试" description="用已保存的配置试一次：Codex 能不能读到模型清单、服务地址连不连得上。">
+      <SettingsRow anchor="model-test" title={text.test.label} description={text.test.description}>
         <TestConnection
           run={test}
-          {...(dirty ? { disabledReason: "有未保存的更改：先保存，再测试" } : {})}
+          {...(dirty ? { disabledReason: text.test.dirty } : {})}
         />
       </SettingsRow>
 

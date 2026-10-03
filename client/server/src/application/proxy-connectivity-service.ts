@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import net from "node:net";
 import tls from "node:tls";
+import type { ProxyConnectivityDto } from "@suduo/client-contracts";
 import type { ProxySettings } from "./proxy-settings.js";
 import type { SettingsService } from "./settings-service.js";
 
@@ -10,13 +11,7 @@ export interface ModelGatewayBaseUrlProvider {
   modelGatewayBaseUrl(): Promise<string>;
 }
 
-export interface ProxyConnectivityResult {
-  reachable: boolean;
-  targetOrigin: string;
-  statusCode?: number;
-  usingProxy: boolean;
-  message: string;
-}
+export type ProxyConnectivityResult = ProxyConnectivityDto;
 
 export type ModelGatewayProbe = (
   baseUrl: string,
@@ -64,6 +59,7 @@ export async function probeModelGateway(
       targetOrigin: "",
       usingProxy: false,
       message: "当前模型网关地址无效，无法进行连通性检查",
+      failure: { reason: "invalid-base-url" },
     };
   }
   let proxy: URL | null;
@@ -75,6 +71,7 @@ export async function probeModelGateway(
       targetOrigin: target.origin,
       usingProxy: false,
       message: "当前代理环境变量无效，无法进行连通性检查",
+      failure: { reason: "invalid-proxy" },
     };
   }
   try {
@@ -95,6 +92,7 @@ export async function probeModelGateway(
       targetOrigin: target.origin,
       usingProxy: proxy !== null,
       message: "无法连接模型网关：" + readableNetworkError(error),
+      failure: { reason: "unreachable", networkCode: networkErrorCode(error) },
     };
   }
 }
@@ -382,8 +380,13 @@ class BufferedSocket {
 }
 
 function readableNetworkError(error: unknown): string {
+  return networkErrorCode(error) ?? "连接失败";
+}
+
+/** 网络错误码（ECONNREFUSED 之类）；没有错误码时为 null。 */
+function networkErrorCode(error: unknown): string | null {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
     return error.code;
   }
-  return "连接失败";
+  return null;
 }

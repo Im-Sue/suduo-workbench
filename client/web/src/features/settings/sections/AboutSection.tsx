@@ -6,9 +6,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "../../../api/client.js";
 import { settingsQuery } from "../../../app/queries.js";
 import { reportFailure } from "../../../feedback/report.js";
+import { useLocale, useT } from "../../../i18n/provider.js";
 import { showMessage } from "../../../ui/message.js";
 import { SettingsRow, SettingsSection } from "../components/kit.js";
-import { LICENSE_LINKS, LICENSE_NAME } from "../license.js";
+import { LICENSE_NAME, licenseLinks } from "../license.js";
 import { doctorQuery, serviceHealthQuery } from "../queries.js";
 import { appVersion, builtVersion, compareWithCloud } from "../version.js";
 
@@ -17,6 +18,9 @@ const LINK_CLASS =
 
 /** 关于：版本、Codex 命令行版本、许可、高级入口（直接编辑 Codex 配置文件、本机诊断页）。 */
 export function AboutSection() {
+  const t = useT();
+  const text = t.settings.about;
+  const links = licenseLinks(useLocale());
   const doctor = useQuery(doctorQuery);
   const cli = doctor.data?.checks.find((check) => check.name === "Codex CLI");
   const [opening, setOpening] = useState(false);
@@ -27,35 +31,36 @@ export function AboutSection() {
   const match = compareWithCloud(builtVersion(), cloudVersion);
 
   return (
-    <SettingsSection id="about" description="速舵 SuDuo：团队共享需求，本机 Codex 写代码。代码和对话只留在你的电脑上。">
-      <SettingsRow anchor="version" title="版本">
+    <SettingsSection id="about" description={text.description}>
+      <SettingsRow anchor="version" title={text.versionTitle}>
         <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-small">
           <dt className="text-muted-foreground">SuDuo</dt>
           <dd className="m-0 font-mono text-foreground" data-testid="settings-app-version">
-            {appVersion()}
+            {appVersion(t)}
           </dd>
-          <dt className="text-muted-foreground">Codex 命令行</dt>
+          <dt className="text-muted-foreground">{text.codexCli}</dt>
           <dd className="m-0 font-mono text-foreground">
             {doctor.isPending ? (
               <Skeleton className="h-4 w-24" />
             ) : cli === undefined ? (
-              <span className="font-sans text-subtle-foreground">没能读取</span>
+              <span className="font-sans text-subtle-foreground">{text.unreadable}</span>
             ) : (
+              // 依赖本机服务的中文文字（去掉全角括号里的说明），S5 改为读结构化字段；正则字面量不触发 i18n 规则。
               cli.message.replace(/^codex-cli\s*/i, "").replace(/（.*?）/g, "")
             )}
           </dd>
-          <dt className="text-muted-foreground">云端</dt>
+          <dt className="text-muted-foreground">{text.cloud}</dt>
           <dd className="m-0 font-mono text-foreground" data-testid="settings-cloud-version">
             {settings.isPending || (baseUrl !== "" && service.isPending) ? (
               <Skeleton className="h-4 w-24" />
             ) : settings.isError ? (
-              <span className="font-sans text-subtle-foreground">没能读取</span>
+              <span className="font-sans text-subtle-foreground">{text.unreadable}</span>
             ) : baseUrl === "" ? (
-              <span className="font-sans text-subtle-foreground">还没有配置需求服务</span>
+              <span className="font-sans text-subtle-foreground">{text.serviceNotConfigured}</span>
             ) : service.isError ? (
-              <span className="font-sans text-subtle-foreground">连不上</span>
+              <span className="font-sans text-subtle-foreground">{text.unreachable}</span>
             ) : cloudVersion === null || cloudVersion === undefined ? (
-              <span className="font-sans text-subtle-foreground">未知（较早的云端不报告版本）</span>
+              <span className="font-sans text-subtle-foreground">{text.cloudVersionUnknown}</span>
             ) : (
               cloudVersion
             )}
@@ -63,37 +68,37 @@ export function AboutSection() {
         </dl>
         {match === "different" ? (
           <p role="status" className="m-0 mt-2 text-caption text-warning" data-testid="settings-version-mismatch">
-            本机 {builtVersion()} 与云端 {cloudVersion} 版本不同，建议使用相同版本：请管理员升级云端，或把本机切换到对应的发布版本。
+            {text.versionMismatch(builtVersion() ?? "", cloudVersion ?? "")}
           </p>
         ) : null}
       </SettingsRow>
 
       <SettingsRow
         anchor="license"
-        title="许可"
-        description="源码公开。个人非商业使用，以及教育、公益与政府机构免费；企业使用请在开始使用后 30 天内登记，目前免费。"
+        title={text.licenseTitle}
+        description={text.licenseDescription}
       >
         <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-small" data-testid="settings-license">
-          <dt className="text-muted-foreground">许可证</dt>
+          <dt className="text-muted-foreground">{text.license}</dt>
           <dd className="m-0 flex flex-wrap gap-x-4">
-            <ExternalLink href={LICENSE_LINKS.license}>{LICENSE_NAME}</ExternalLink>
-            <ExternalLink href={LICENSE_LINKS.licenseTranslation}>中文参考译文</ExternalLink>
+            <ExternalLink href={links.license}>{LICENSE_NAME}</ExternalLink>
+            <ExternalLink href={links.licenseTranslation}>{text.licenseTranslation}</ExternalLink>
           </dd>
-          <dt className="text-muted-foreground">商用登记</dt>
+          <dt className="text-muted-foreground">{text.commercial}</dt>
           <dd className="m-0">
-            <ExternalLink href={LICENSE_LINKS.commercial}>查看登记说明</ExternalLink>
+            <ExternalLink href={links.commercial}>{text.commercialLink}</ExternalLink>
           </dd>
-          <dt className="text-muted-foreground">第三方组件</dt>
+          <dt className="text-muted-foreground">{text.thirdParty}</dt>
           <dd className="m-0">
-            <ExternalLink href={LICENSE_LINKS.thirdParty}>查看许可清单</ExternalLink>
+            <ExternalLink href={links.thirdParty}>{text.thirdPartyLink}</ExternalLink>
           </dd>
         </dl>
       </SettingsRow>
 
       <SettingsRow
         anchor="config-file"
-        title="直接编辑 Codex 配置文件"
-        description="高级：绕过本页的检查直接改配置，改错可能导致会话无法启动。改完后到「诊断」确认一遍。"
+        title={text.configFileTitle}
+        description={text.configFileDescription}
       >
         <div>
           <Button
@@ -105,9 +110,9 @@ export function AboutSection() {
                 setOpening(true);
                 try {
                   const result = await api.openCodexConfigFile();
-                  showMessage(`已用系统编辑器打开：${result.path}`, "success");
+                  showMessage(text.configFileOpened(result.path), "success");
                 } catch (cause) {
-                  reportFailure(cause, { surface: "action", title: "没能打开配置文件" });
+                  reportFailure(cause, { surface: "action", title: text.configFileOpenFailed });
                 } finally {
                   setOpening(false);
                 }
@@ -115,17 +120,17 @@ export function AboutSection() {
             }}
           >
             <FileCogIcon />
-            用编辑器打开
+            {text.openInEditor}
           </Button>
         </div>
       </SettingsRow>
 
-      <SettingsRow anchor="doctor-page" title="本机诊断页" description="不依赖本界面的纯文本诊断页，界面打不开时也能用。">
+      <SettingsRow anchor="doctor-page" title={text.doctorPageTitle} description={text.doctorPageDescription}>
         <div>
           <Button asChild>
             <a href="/doctor" target="_blank" rel="noreferrer">
               <ExternalLinkIcon />
-              打开诊断页
+              {text.openDoctorPage}
             </a>
           </Button>
         </div>
@@ -136,11 +141,12 @@ export function AboutSection() {
 
 /** 新标签页打开的外链：屏幕阅读器会听到「在新标签页打开」，视觉上用图标提示。 */
 function ExternalLink({ href, children }: { href: string; children: string }) {
+  const text = useT().settings.about;
   return (
     <a className={LINK_CLASS} href={href} target="_blank" rel="noreferrer">
       {children}
       <ExternalLinkIcon aria-hidden className="ml-0.5 inline size-3 align-[-1px]" />
-      <span className="sr-only">（在新标签页打开）</span>
+      <span className="sr-only">{text.opensInNewTab}</span>
     </a>
   );
 }

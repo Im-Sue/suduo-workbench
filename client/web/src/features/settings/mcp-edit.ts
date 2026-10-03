@@ -1,4 +1,6 @@
 import type { McpServerDto } from "@suduo/client-contracts";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 
 /**
  * MCP 服务编辑的纯逻辑。
@@ -26,7 +28,7 @@ export type ParsedArgs = { ok: true; args: string[] } | { ok: false; message: st
 
 /**
  * 按空白拆分；双引号内可用 \" 与 \\ 转义，单引号内原样；引号外的反斜杠转义下一个字符。
- * 引号没闭合时报错，不猜。
+ * 引号没闭合时报错，不猜；报错文字按调用时的界面语言取。
  */
 export function parseArgs(text: string): ParsedArgs {
   const args: string[] = [];
@@ -69,7 +71,7 @@ export function parseArgs(text: string): ParsedArgs {
       current += char;
     }
   }
-  if (quote !== null) return { ok: false, message: "引号没有配对，检查一下参数" };
+  if (quote !== null) return { ok: false, message: messagesFor(currentLocale()).settingsAgent.mcp.form.argsUnclosedQuote };
   if (inToken) args.push(current);
   return { ok: true, args };
 }

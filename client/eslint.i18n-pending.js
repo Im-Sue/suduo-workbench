@@ -1,7 +1,7 @@
 // 中英双语迁移期的「待迁移文件」清单（技术设计 §三）：这些文件里还有写死的中文，暂时只查品牌写法。
 // 一个文件迁完就从这里删掉，并把 I18N_PENDING_MAX 调成新的条数。清单只减不增：
 // server/test/i18n-pending.test.ts 检查条数等于上限、每个文件都还有中文（迁完了却没删会报出来）。
-export const I18N_PENDING_MAX = 165;
+export const I18N_PENDING_MAX = 143;
 
 export const I18N_PENDING_FILES = [
   "contracts/src/config.ts",
@@ -145,28 +145,6 @@ export const I18N_PENDING_FILES = [
   "web/src/features/sessions/stream/TurnView.tsx",
   "web/src/features/sessions/stream/UserBubble.tsx",
   "web/src/features/sessions/stream/describe.ts",
-  "web/src/features/settings/SettingsPage.tsx",
-  "web/src/features/settings/components/TestConnection.tsx",
-  "web/src/features/settings/components/frame.tsx",
-  "web/src/features/settings/components/kit.tsx",
-  "web/src/features/settings/format.ts",
-  "web/src/features/settings/health.ts",
-  "web/src/features/settings/mcp-edit.ts",
-  "web/src/features/settings/queries.ts",
-  "web/src/features/settings/sections.ts",
-  "web/src/features/settings/sections/AboutSection.tsx",
-  "web/src/features/settings/sections/AccountSection.tsx",
-  "web/src/features/settings/sections/AppearanceSection.tsx",
-  "web/src/features/settings/sections/DiagnosticsSection.tsx",
-  "web/src/features/settings/sections/ExecutionSection.tsx",
-  "web/src/features/settings/sections/McpSection.tsx",
-  "web/src/features/settings/sections/ModelSection.tsx",
-  "web/src/features/settings/sections/NotificationsSection.tsx",
-  "web/src/features/settings/sections/ProxySection.tsx",
-  "web/src/features/settings/sections/ServiceSection.tsx",
-  "web/src/features/settings/sections/SkillsSection.tsx",
-  "web/src/features/settings/sections/WorkspaceSection.tsx",
-  "web/src/features/settings/version.ts",
   "web/src/session/queue.ts",
   "web/src/session/run-state.ts",
 ];

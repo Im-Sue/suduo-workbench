@@ -2,6 +2,9 @@ import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query
 import type { McpServerDto, SettingsDto, UpdateSettingsRequest } from "@suduo/client-contracts";
 import { api } from "../../api/client.js";
 import { reportFailure } from "../../feedback/report.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
+import { useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
 
 /**
@@ -109,6 +112,7 @@ const LOCAL_UPDATE_KEY = ["settings", "local", "update"] as const;
 
 export function useUpdateLocalSettings() {
   const queryClient = useQueryClient();
+  const t = useT();
   // 连着改两项时两次请求并行：先发的那次晚回来（成功或失败）都不能盖掉后一次的结果。
   // 只有「最后一个还在路上的」改动才写缓存 / 回滚；其余的只在失败时重读服务端。
   const isLast = () => queryClient.isMutating({ mutationKey: LOCAL_UPDATE_KEY }) <= 1;
@@ -129,7 +133,7 @@ export function useUpdateLocalSettings() {
       reportFailure(cause, {
         surface: "action",
         id: "settings-local-update",
-        title: "未能保存",
+        title: t.settings.saveFailed,
         retry: () => mutation.mutate(patch),
       });
     },
@@ -143,6 +147,7 @@ export function useUpdateLocalSettings() {
 /** MCP 服务的启用开关：同样先改界面，失败回滚。 */
 export function useToggleMcpServer() {
   const queryClient = useQueryClient();
+  const t = useT();
   type Snapshot = { items: McpServerDto[]; statusAvailable: boolean };
   const mutation = useMutation({
     mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.updateMcpServer(name, { enabled }),
@@ -162,11 +167,11 @@ export function useToggleMcpServer() {
       reportFailure(cause, {
         surface: "action",
         id: `mcp-toggle-${variables.name}`,
-        title: "未能保存",
+        title: t.settings.saveFailed,
         retry: () => mutation.mutate(variables),
       });
     },
-    onSuccess: (result) => reportMcpWrite(result),
+    onSuccess: (result) => reportMcpWrite(result, t),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: settingsKeys.mcp });
     },
@@ -178,7 +183,7 @@ export function useToggleMcpServer() {
  * MCP 配置写入的结果告知：官方接口能一次写完时不打扰；
  * 改了连接方式时 Codex 只能分两步替换，需如实告诉用户出问题时怎么恢复。
  */
-export function reportMcpWrite(result: { atomic: boolean }): void {
+export function reportMcpWrite(result: { atomic: boolean }, t: Messages = messagesFor(currentLocale())): void {
   if (result.atomic) return;
-  showMessage("已保存。这次修改分两步完成：如果这个服务之后不正常，请按原来的配置重新添加。", "warning");
+  showMessage(t.settings.mcpWriteNotAtomic, "warning");
 }

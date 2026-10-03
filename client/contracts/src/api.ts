@@ -521,6 +521,24 @@ export interface SettingsDto {
   locale: Locale | null;
 }
 
+/** 连不上模型服务时的原因：界面按它用自己的语言说明，不解析服务端写的文字。 */
+export type ProxyConnectivityFailure =
+  | { reason: "invalid-base-url" }
+  | { reason: "invalid-proxy" }
+  | { reason: "unreachable"; networkCode: string | null };
+
+/** 用当前或草稿代理试连模型服务（不保存设置、不发模型回合）。 */
+export interface ProxyConnectivityDto {
+  reachable: boolean;
+  targetOrigin: string;
+  statusCode?: number;
+  usingProxy: boolean;
+  /** 本机服务写的说明，供日志与旧界面；界面按 failure 渲染。 */
+  message: string;
+  /** reachable 为 false 时给出。 */
+  failure?: ProxyConnectivityFailure;
+}
+
 export interface UpdateSettingsRequest {
   globalSkills?: boolean;
   gitAutoCheckpointDefault?: boolean;

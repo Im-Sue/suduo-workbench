@@ -225,7 +225,13 @@ describe("设置页 · 保存与确认", () => {
 
   it("保存成功但地址连不上：照实提醒，不撤销保存", async () => {
     apiMocks.updateModelProvider.mockResolvedValue({ status: "ok", message: "ok", settings: modelProviderSettings({ contextWindow: 200000 }) });
-    apiMocks.testProxySettings.mockResolvedValue({ reachable: false, targetOrigin: "https://llm.example.com", usingProxy: false, message: "ETIMEDOUT" });
+    apiMocks.testProxySettings.mockResolvedValue({
+      reachable: false,
+      targetOrigin: "https://llm.example.com",
+      usingProxy: false,
+      message: "无法连接模型网关：ETIMEDOUT",
+      failure: { reason: "unreachable", networkCode: "ETIMEDOUT" },
+    });
     const { node } = await open("/settings/model");
     await act(async () => setInputValue(node.querySelector<HTMLInputElement>("#model-context"), "200000"));
     await click(document.querySelector('[data-testid="settings-save"]'));
@@ -245,7 +251,13 @@ describe("设置页 · 保存与确认", () => {
   });
 
   it("模型清单拿得到但服务地址连不上：测试连接判为失败，不误报「连接正常」", async () => {
-    apiMocks.testProxySettings.mockResolvedValue({ reachable: false, targetOrigin: "https://llm.example.com", usingProxy: false, message: "ECONNREFUSED" });
+    apiMocks.testProxySettings.mockResolvedValue({
+      reachable: false,
+      targetOrigin: "https://llm.example.com",
+      usingProxy: false,
+      message: "无法连接模型网关：ECONNREFUSED",
+      failure: { reason: "unreachable", networkCode: "ECONNREFUSED" },
+    });
     const { node } = await open("/settings/model");
     await click(buttonByText(node, "测试连接"));
     await settle();
@@ -334,7 +346,8 @@ describe("设置页 · 测试连接、代理、通知、搜索", () => {
       reachable: false,
       targetOrigin: "https://llm.example.com",
       usingProxy: true,
-      message: "无法连接模型网关：连接被拒绝",
+      message: "无法连接模型网关：ECONNREFUSED",
+      failure: { reason: "unreachable", networkCode: "ECONNREFUSED" },
     });
     const { node } = await open("/settings/proxy");
     await act(async () => setInputValue(node.querySelector<HTMLInputElement>("#settings-proxy-https"), "http://127.0.0.1:7890"));
@@ -344,7 +357,7 @@ describe("设置页 · 测试连接、代理、通知、搜索", () => {
     expect(apiMocks.updateSettings).not.toHaveBeenCalled();
     const result = node.querySelector('[data-testid="settings-test-result"]');
     expect(result?.getAttribute("data-result")).toBe("failure");
-    expect(result?.textContent).toContain("连不上模型服务（经代理）：连接被拒绝");
+    expect(result?.textContent).toContain("连不上模型服务（经代理）：对方拒绝连接，端口上可能没有服务（ECONNREFUSED）");
     expect(result?.textContent).toContain("检查代理地址和端口");
   });
 

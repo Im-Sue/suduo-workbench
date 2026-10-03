@@ -9,11 +9,13 @@ import {
   serviceHealth,
   workspaceHealth,
 } from "../src/features/settings/health.js";
-import { searchSettings, sectionFromLegacyHash, SETTINGS_SEARCH_INDEX, SETTINGS_SECTIONS } from "../src/features/settings/sections.js";
+import { searchSettings, sectionFromLegacyHash, SETTINGS_SEARCH_INDEX, settingsSections } from "../src/features/settings/sections.js";
 import { effortOptions, parseContextWindow, originLabel } from "../src/features/settings/sections/ModelSection.js";
 import { networkReason, validateProxyUrl } from "../src/features/settings/sections/ProxySection.js";
 import { validateServiceUrl } from "../src/features/settings/sections/ServiceSection.js";
 import { availabilityText } from "../src/features/settings/sections/WorkspaceSection.js";
+import type { ProxyConnectivityDto } from "@suduo/client-contracts";
+import { messagesFor } from "../src/i18n/messages/index.js";
 
 const signedIn = {
   configured: true,
@@ -34,7 +36,7 @@ describe("设置分组与搜索", () => {
   });
 
   it("需求 §4.7 的分组都在，另有通知一组", () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.title)).toEqual([
+    expect(settingsSections().map((section) => section.title)).toEqual([
       "外观",
       "通知",
       "账号",
@@ -100,9 +102,21 @@ describe("界面用语", () => {
 
   it("服务端的字段名、网关等词换成界面用语", () => {
     expect(humanizeProxyMessage("httpsProxy 不是合法代理 URL")).toBe("HTTPS 代理 不是合法代理 URL");
-    expect(networkReason("无法连接模型网关：连接被拒绝")).toBe("连接被拒绝");
-    expect(networkReason("无法连接模型网关：ECONNREFUSED")).toBe("对方拒绝连接，端口上可能没有服务（ECONNREFUSED）");
-    expect(networkReason("当前代理环境变量无效，无法进行连通性检查")).toBe("当前启动环境里的代理变量无效，无法进行连通性检查");
+    const failed = (failure: ProxyConnectivityDto["failure"]): ProxyConnectivityDto => ({
+      reachable: false,
+      targetOrigin: "https://api.example.com",
+      usingProxy: false,
+      message: "本机服务写的说明",
+      ...(failure === undefined ? {} : { failure }),
+    });
+    expect(networkReason(failed({ reason: "unreachable", networkCode: null }))).toBe("连接失败");
+    expect(networkReason(failed({ reason: "unreachable", networkCode: "ECONNREFUSED" }))).toBe("对方拒绝连接，端口上可能没有服务（ECONNREFUSED）");
+    expect(networkReason(failed({ reason: "unreachable", networkCode: "EPROTO" }))).toBe("EPROTO");
+    expect(networkReason(failed({ reason: "unreachable", networkCode: "toString" }))).toBe("toString");
+    expect(networkReason(failed({ reason: "invalid-proxy" }))).toBe("当前启动环境里的代理变量无效，无法进行连通性检查");
+    expect(networkReason(failed({ reason: "invalid-base-url" }))).toBe("当前模型服务地址无效，无法进行连通性检查");
+    expect(networkReason(failed(undefined))).toBe("本机服务写的说明");
+    expect(networkReason(failed({ reason: "unreachable", networkCode: "ETIMEDOUT" }), messagesFor("en"))).toBe("the connection timed out (ETIMEDOUT)");
   });
 
   it("目录可用性与路径缩写", () => {

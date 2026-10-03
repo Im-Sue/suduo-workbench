@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { useT } from "../../../i18n/provider.js";
 import { showMessage } from "../../../ui/message.js";
 import { rowDescId, rowLabelId, SaveStatus, SettingsRow, SettingsSection, useSaveIndicator } from "../components/kit.js";
 import { refreshNotifyState, useNotifyState, writeNotifyPreference } from "../notify-preference.js";
@@ -12,6 +13,7 @@ import { refreshNotifyState, useNotifyState, writeNotifyPreference } from "../no
  * 这里决定要不要再发一条系统通知。打开时向浏览器申请授权，被拒绝时说明怎么重新允许。
  */
 export function NotificationsSection() {
+  const text = useT().settingsAgent.notifications;
   const notify = useNotifyState();
   const [saved, track] = useSaveIndicator();
   const [requesting, setRequesting] = useState(false);
@@ -42,21 +44,21 @@ export function NotificationsSection() {
   };
 
   const statusText = requesting
-    ? "正在等你在浏览器里允许…"
+    ? text.status.requesting
     : !notify.enabled
-      ? "已关闭"
+      ? text.status.off
       : working
-        ? "已开启"
+        ? text.status.on
         : blocked
-          ? "已开启，但浏览器阻止了通知"
-          : "已开启，还没得到浏览器授权";
+          ? text.status.blocked
+          : text.status.notGranted;
 
   return (
-    <SettingsSection id="notifications" description="只影响这台电脑上的这个浏览器。">
+    <SettingsSection id="notifications" description={text.description}>
       <SettingsRow
         anchor="system-notify"
-        title="系统通知"
-        description="会话在后台完成、失败或等你确认时，用系统通知提醒你。标签页标题上的提醒始终开启。"
+        title={text.system.title}
+        description={text.system.description}
         status={<SaveStatus state={saved} />}
       >
         <div className="flex items-center gap-3">
@@ -82,30 +84,30 @@ export function NotificationsSection() {
               className="ml-auto"
               onClick={() => {
                 try {
-                  new window.Notification("SuDuo 通知已开启", { body: "会话需要你时，会像这样提醒你。", tag: "suduo-test" });
+                  new window.Notification(text.sample.title, { body: text.sample.body, tag: "suduo-test" });
                 } catch {
-                  showMessage("这个浏览器不允许页面直接发通知，标签页标题的提醒仍然有效。", "warning");
+                  showMessage(text.sample.failed, "warning");
                 }
               }}
             >
-              发一条试试
+              {text.sample.button}
             </Button>
           ) : null}
         </div>
         {unsupported ? (
           <p className="m-0 flex items-start gap-1.5 text-small text-muted-foreground">
             <InfoIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            这个浏览器不支持系统通知，标签页标题上的提醒仍然有效。
+            {text.unsupported}
           </p>
         ) : null}
         {blocked && (notify.enabled || justDenied) ? (
-          <Banner tone="warning" icon={<BellOffIcon />} title="浏览器阻止了 SuDuo 的通知" data-testid="settings-notify-blocked">
-            点地址栏左侧的站点图标，把「通知」改为「允许」，回到这里就会生效。不想要系统通知的话，关掉上面的开关即可。
+          <Banner tone="warning" icon={<BellOffIcon />} title={text.blocked.title} data-testid="settings-notify-blocked">
+            {text.blocked.body}
           </Banner>
         ) : null}
         {notify.enabled && notify.permission === "default" && !requesting ? (
           <Button size="sm" type="button" className="self-start" onClick={() => void enable()}>
-            向浏览器申请通知权限
+            {text.requestPermission}
           </Button>
         ) : null}
       </SettingsRow>
