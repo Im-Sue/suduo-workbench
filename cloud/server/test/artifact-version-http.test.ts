@@ -19,6 +19,7 @@ import type { AttachmentStorage } from "../src/infrastructure/attachment-storage
 import { ArtifactVersionRepository } from "../src/infrastructure/artifact-version-repository.js";
 import { CollaborationRepository } from "../src/infrastructure/collaboration-repository.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 const FILE_CONTENT = Buffer.from("published material");
 const FILE_SHA256 = createHash("sha256").update(FILE_CONTENT).digest("hex");
@@ -46,7 +47,7 @@ beforeAll(async () => {
   } finally {
     await admin.end();
   }
-  pool = new Pool({ ...PG_CONFIG, database: TEST_DATABASE });
+  pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: TEST_DATABASE }));
   await runMigrations(pool);
 
   storage = { open: vi.fn() };

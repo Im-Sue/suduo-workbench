@@ -27,6 +27,7 @@ import { Database } from "../src/infrastructure/database.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
 import { LocalDiskBlobStore } from "../src/infrastructure/storage/local-disk-blob-store.js";
 import { UserRepository } from "../src/infrastructure/user-repository.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 /** 房间测试共用：每个测试文件自建随机库 + 真实 PostgreSQL（127.0.0.1:15432）。 */
 
@@ -55,7 +56,7 @@ export async function setupRoomsTest(options: {
   } finally {
     await admin.end();
   }
-  const pool = new Pool({ ...PG_CONFIG, database: databaseName });
+  const pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: databaseName }));
   await runMigrations(pool);
   const database = new Database(pool);
   const roomFileRoot = await mkdtemp(join(tmpdir(), `suduo-${options.name}-room-files-`));

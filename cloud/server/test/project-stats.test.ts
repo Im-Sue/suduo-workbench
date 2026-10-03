@@ -18,6 +18,7 @@ import type { AttachmentStorage } from "../src/infrastructure/attachment-storage
 import { CollaborationRepository } from "../src/infrastructure/collaboration-repository.js";
 import { Database } from "../src/infrastructure/database.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 const TEST_DATABASE = process.env["SUDUO_PROJECT_STATS_TEST_DB"] ??
   `suduo_project_stats_${randomUUID().replaceAll("-", "")}`;
@@ -42,7 +43,7 @@ beforeAll(async () => {
   } finally {
     await admin.end();
   }
-  pool = new Pool({ ...PG_CONFIG, database: TEST_DATABASE });
+  pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: TEST_DATABASE }));
   await runMigrations(pool);
   const database = new Database(pool);
   const repository = new CollaborationRepository(database, () => clock);

@@ -30,6 +30,7 @@ import { AttachmentStorage } from "../src/infrastructure/attachment-storage.js";
 import { CollaborationRepository } from "../src/infrastructure/collaboration-repository.js";
 import { Database } from "../src/infrastructure/database.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 const TEST_DATABASE = `suduo_p2_requirements_${randomUUID().replaceAll("-", "")}`;
 const DATABASE_IDENTIFIER = quotedIdentifier(TEST_DATABASE);
@@ -53,7 +54,7 @@ beforeAll(async () => {
   } finally {
     await admin.end();
   }
-  pool = new Pool({ ...PG_CONFIG, database: TEST_DATABASE });
+  pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: TEST_DATABASE }));
   await runMigrations(pool);
   const database = new Database(pool);
   storageRoot = await mkdtemp(join(tmpdir(), "suduo-p2-requirements-"));

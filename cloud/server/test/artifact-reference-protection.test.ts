@@ -14,6 +14,7 @@ import { AttachmentRepository } from "../src/infrastructure/attachment-repositor
 import { AttachmentStorage } from "../src/infrastructure/attachment-storage.js";
 import { ArtifactVersionRepository } from "../src/infrastructure/artifact-version-repository.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
+import { ignoreTerminatedConnections } from "./pg-test-support.js";
 
 const FILE_CONTENT = Buffer.from("published artifact bytes\n");
 const TEST_DATABASE = process.env["SUDUO_ARTIFACT_REFERENCE_TEST_DB"] ??
@@ -43,7 +44,7 @@ beforeAll(async () => {
   } finally {
     await admin.end();
   }
-  pool = new Pool({ ...PG_CONFIG, database: TEST_DATABASE });
+  pool = ignoreTerminatedConnections(new Pool({ ...PG_CONFIG, database: TEST_DATABASE }));
   await runMigrations(pool);
   database = new Database(pool);
   artifactRepository = new ArtifactVersionRepository(database);
