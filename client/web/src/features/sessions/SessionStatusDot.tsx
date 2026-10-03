@@ -1,5 +1,5 @@
 import { CheckIcon, XIcon } from "lucide-react";
-import { SESSION_STATUS_LABEL, type SessionUiStatus } from "../../ui/session-status.js";
+import { sessionStatusLabel, type SessionUiStatus } from "../../ui/session-status.js";
 import { cn } from "@/lib/utils";
 
 /**
@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * 运行中 强调色实心点 + 呼吸；等你确认 警告色实心点；失败 危险色叉；已完成 成功色对勾；空闲 空心圆。
  */
 export function SessionStatusDot({ status, className }: { status: SessionUiStatus; className?: string }) {
-  const label = SESSION_STATUS_LABEL[status];
+  const label = sessionStatusLabel(status);
   const box = cn("relative inline-flex size-3.5 shrink-0 items-center justify-center", className);
   switch (status) {
     case "running":

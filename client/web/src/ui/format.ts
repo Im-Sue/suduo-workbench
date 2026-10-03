@@ -149,12 +149,6 @@ export function formatDuration(ms: number, locale: Locale = currentLocale()): st
   return rest === 0 ? text.minutes(minutes) : text.minutesSeconds(minutes, rest);
 }
 
-/** 新会话默认名：新会话 MM-DD HH:mm。 */
-export function defaultSessionTitle(now = new Date()): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `新会话 ${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-}
-
 export function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }

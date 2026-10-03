@@ -18,30 +18,9 @@ export const SUDUO_TOOL_NAMES = [
 
 export type SuDuoToolName = (typeof SUDUO_TOOL_NAMES)[number];
 
-/** 时间线上显示的动作名（「查看了需求」之类的动词短语）。 */
-export const SUDUO_TOOL_LABELS: Record<SuDuoToolName, string> = {
-  suduo_requirement_get: "查看需求",
-  suduo_requirement_comments: "查看评论",
-  suduo_requirement_attachments: "查看附件清单",
-  suduo_attachment_view: "查看附件",
-  suduo_artifact_versions: "查看确认版",
-  suduo_artifact_fetch: "拉取确认版",
-  suduo_notes_read: "读取结论笔记",
-  suduo_notes_save: "更新结论笔记",
-  suduo_comment_submit: "发评论",
-  suduo_artifact_publish: "发布确认版",
-};
-
 export function isSuDuoToolName(value: unknown): value is SuDuoToolName {
   return typeof value === "string" && (SUDUO_TOOL_NAMES as readonly string[]).includes(value);
 }
-
-/** 房间共享 Agent 的房间工具（只读）在时间线上的动作名。 */
-export const SUDUO_ROOM_TOOL_LABELS: Readonly<Record<string, string>> = {
-  suduo_room_history: "翻看房间消息",
-  suduo_room_search: "搜索房间消息",
-  suduo_room_file_view: "查看房间文件",
-};
 
 /**
  * 品牌更名（ADR-0010）前的旧前缀。更名前建的 Codex 线程把工具清单存在线程里，续接后模型仍按旧名调用；
@@ -52,12 +31,6 @@ const LEGACY_TOOL_PREFIX = "zjwork_"; // eslint-disable-line no-restricted-synta
 /** 旧前缀的工具名换成新名；其它原样返回。 */
 export function currentSuDuoToolName(tool: string): string {
   return tool.startsWith(LEGACY_TOOL_PREFIX) ? `suduo_${tool.slice(LEGACY_TOOL_PREFIX.length)}` : tool;
-}
-
-/** 任一 SuDuo 工具（需求工具或房间工具）的动作名；不认识的返回 null。 */
-export function suDuoToolLabel(tool: string): string | null {
-  if (isSuDuoToolName(tool)) return SUDUO_TOOL_LABELS[tool];
-  return SUDUO_ROOM_TOOL_LABELS[tool] ?? null;
 }
 
 /** 审批表里工具确认卡的原生方法名（`ApprovalDto.request.nativeMethod`）。 */

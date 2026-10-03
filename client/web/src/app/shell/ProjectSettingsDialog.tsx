@@ -8,6 +8,7 @@ import { ConfirmDialog, InlineError } from "../../feedback/components/index.js";
 import type { Failure } from "../../feedback/types.js";
 import { DirectoryPicker } from "../../features/requirements/components/DirectoryPicker.js";
 import { requirementKeys } from "../../features/requirements/keys.js";
+import { useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -30,6 +31,8 @@ export function ProjectSettingsDialog({
   onOpenChange(open: boolean): void;
 }) {
   const queryClient = useQueryClient();
+  const t = useT();
+  const text = t.shell.projectSettings;
   const settings = useQuery(settingsQuery);
   const meId = settings.data?.session?.user.id ?? null;
   const [name, setName] = useState("");
@@ -66,7 +69,7 @@ export function ProjectSettingsDialog({
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects });
       const overwrote =
         before !== null && base !== null && before.version !== base.version && before.name !== base.name && before.updatedBy.id !== meId
-          ? `（覆盖了 ${before.updatedBy.displayName} 刚改的「${before.name}」）`
+          ? text.overwrote(before.updatedBy.displayName, before.name)
           : "";
       showMessage(`${success}${overwrote}`, "success");
       return true;
@@ -83,22 +86,22 @@ export function ProjectSettingsDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent size="md" data-testid="project-settings-dialog">
           <DialogHeader>
-            <DialogTitle>项目设置</DialogTitle>
-            <DialogDescription>这些设置对团队所有成员生效；本机代码目录只影响你这台电脑。</DialogDescription>
+            <DialogTitle>{text.title}</DialogTitle>
+            <DialogDescription>{text.description}</DialogDescription>
           </DialogHeader>
           <form
             className="flex items-end gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               if (trimmed === "" || trimmed === project.name) return;
-              void patch({ name: trimmed }, "已保存项目名称");
+              void patch({ name: trimmed }, text.nameSaved);
             }}
           >
-            <Field label="项目名称" className="flex-1" error={trimmed === "" ? "项目名称不能为空" : undefined}>
+            <Field label={text.nameLabel} className="flex-1" error={trimmed === "" ? text.nameEmpty : undefined}>
               <Input value={name} maxLength={120} onChange={(event) => setName(event.target.value)} />
             </Field>
             <Button type="submit" variant="secondary" loading={saving} disabled={trimmed === "" || trimmed === project.name}>
-              保存
+              {text.save}
             </Button>
           </form>
           {failure === null ? null : <InlineError kind={failure.kind}>{failure.message}</InlineError>}
@@ -107,37 +110,35 @@ export function ProjectSettingsDialog({
           <Separator />
           <section className="flex items-start gap-3">
             <div className="flex flex-1 flex-col gap-0.5">
-              <h3 className="m-0 text-small font-semibold">{project.isArchived ? "已归档" : "归档项目"}</h3>
+              <h3 className="m-0 text-small font-semibold">{project.isArchived ? text.archive.headingArchived : text.archive.heading}</h3>
               <p className="m-0 text-caption text-muted-foreground">
-                {project.isArchived
-                  ? "归档的项目不能新建需求。恢复后一切照旧。"
-                  : "归档后不能再新建需求，已有需求和会话都保留，可以随时恢复。"}
+                {project.isArchived ? text.archive.hintArchived : text.archive.hint}
               </p>
             </div>
             {project.isArchived ? (
-              <Button variant="secondary" loading={saving} onClick={() => void patch({ isArchived: false }, "已恢复项目")}>
+              <Button variant="secondary" loading={saving} onClick={() => void patch({ isArchived: false }, text.archive.restored)}>
                 <ArchiveRestoreIcon />
-                恢复
+                {text.archive.restore}
               </Button>
             ) : (
               <Button variant="danger-ghost" onClick={() => setConfirmArchive(true)}>
                 <ArchiveIcon />
-                归档
+                {text.archive.archive}
               </Button>
             )}
           </section>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => onOpenChange(false)}>完成</Button>
+            <Button variant="secondary" onClick={() => onOpenChange(false)}>{text.done}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       <ConfirmDialog
         open={confirmArchive}
         onOpenChange={setConfirmArchive}
-        title={`归档「${project.name}」？`}
-        description="归档后团队成员都不能在这个项目里新建需求。可以随时在项目设置里恢复。"
-        confirmLabel="归档"
-        onConfirm={() => void patch({ isArchived: true }, "已归档项目")}
+        title={text.archive.confirmTitle(project.name)}
+        description={text.archive.confirmDescription}
+        confirmLabel={text.archive.confirm}
+        onConfirm={() => void patch({ isArchived: true }, text.archive.archived)}
       />
     </>
   );
@@ -145,6 +146,7 @@ export function ProjectSettingsDialog({
 
 function LocalDirectorySetting({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const text = useT().shell.projectSettings.localFolder;
   const mappings = useQuery({
     queryKey: requirementKeys.mappings,
     queryFn: () => api.listRequirementsMappings(),
@@ -172,7 +174,7 @@ function LocalDirectorySetting({ projectId }: { projectId: string }) {
       await api.saveRequirementsMapping(projectId, path.trim());
       await refresh();
       setChanging(false);
-      showMessage("已更新本机代码目录", "success");
+      showMessage(text.updated, "success");
     } catch (cause) {
       setFailure(classifyFailure(cause));
     } finally {
@@ -186,7 +188,7 @@ function LocalDirectorySetting({ projectId }: { projectId: string }) {
     try {
       await api.removeRequirementsMapping(projectId);
       await refresh();
-      showMessage("已解除本机代码目录的关联", "success");
+      showMessage(text.unlinked, "success");
     } catch (cause) {
       setFailure(classifyFailure(cause));
     } finally {
@@ -198,9 +200,9 @@ function LocalDirectorySetting({ projectId }: { projectId: string }) {
     <section className="flex flex-col gap-2">
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h3 className="m-0 text-small font-semibold">本机代码目录</h3>
+          <h3 className="m-0 text-small font-semibold">{text.heading}</h3>
           {mapping === undefined ? (
-            <p className="m-0 text-caption text-muted-foreground">还没关联。第一次在这个项目开始会话时会请你选择。</p>
+            <p className="m-0 text-caption text-muted-foreground">{text.notLinked}</p>
           ) : (
             <p className="m-0 flex items-center gap-1.5 font-mono text-caption text-foreground" title={mapping.rootPath}>
               <FolderGit2Icon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
@@ -218,11 +220,11 @@ function LocalDirectorySetting({ projectId }: { projectId: string }) {
                 setChanging(true);
               }}
             >
-              {mapping === undefined ? "选择目录" : "更改"}
+              {mapping === undefined ? text.choose : text.change}
             </Button>
             {mapping === undefined ? null : (
               <Button size="sm" variant="danger-ghost" loading={busy} onClick={() => setConfirmUnlink(true)}>
-                解除关联
+                {text.unlink}
               </Button>
             )}
           </div>
@@ -232,9 +234,9 @@ function LocalDirectorySetting({ projectId }: { projectId: string }) {
         <div className="flex flex-col gap-2">
           <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} />
           <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setChanging(false)}>取消</Button>
-            <Button size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="先选一个可以读写的目录" onClick={() => void save()}>
-              使用这个目录
+            <Button size="sm" variant="ghost" onClick={() => setChanging(false)}>{text.cancel}</Button>
+            <Button size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={text.pickFirst} onClick={() => void save()}>
+              {text.use}
             </Button>
           </div>
         </div>
@@ -243,9 +245,9 @@ function LocalDirectorySetting({ projectId }: { projectId: string }) {
       <ConfirmDialog
         open={confirmUnlink}
         onOpenChange={setConfirmUnlink}
-        title="解除本机代码目录的关联？"
-        description="已有会话不受影响。之后在这个项目开始新会话时，需要重新选择目录。"
-        confirmLabel="解除关联"
+        title={text.confirmTitle}
+        description={text.confirmDescription}
+        confirmLabel={text.confirm}
         onConfirm={() => void unlink()}
       />
     </section>

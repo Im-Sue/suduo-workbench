@@ -43,6 +43,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useT } from "../../i18n/provider.js";
 import { applyThemePreference, useThemePreference, type ThemePreference } from "../../ui/theme.js";
 import { useCurrentProject } from "../project-context.js";
 import { settingsQuery } from "../queries.js";
@@ -89,7 +90,9 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
   const theme = useThemePreference();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const logout = useLogout();
-  const noProjectReason = "还没有项目：先在左上角新建一个项目";
+  const t = useT();
+  const nav = t.shell.nav;
+  const noProjectReason = nav.noProject;
   // 需要你处理的会话数（等你确认或上一轮失败）：只算当前项目，与会话页共用同一条列表查询；
   // 跨项目的「等你确认 / 上一轮失败」由我的工作汇总。
   const sessions = useInfiniteQuery({
@@ -122,10 +125,10 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
     badge?: { count: number; label: string },
   ) =>
     project === null ? (
-      <NavTip collapsed={collapsed} label={`${label}（${noProjectReason}）`}>
+      <NavTip collapsed={collapsed} label={nav.withNote(label, noProjectReason)}>
         <span
           aria-disabled="true"
-          aria-label={`${label}（${noProjectReason}）`}
+          aria-label={nav.withNote(label, noProjectReason)}
           className={cn(itemClass(false, collapsed), "cursor-not-allowed opacity-45")}
           title={collapsed ? undefined : noProjectReason}
         >
@@ -134,12 +137,12 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
         </span>
       </NavTip>
     ) : (
-      <NavTip collapsed={collapsed} label={badge !== undefined && badge.count > 0 ? `${label}（${badge.label}）` : label}>
+      <NavTip collapsed={collapsed} label={badge !== undefined && badge.count > 0 ? nav.withNote(label, badge.label) : label}>
         <Link
           to={to}
           params={{ projectId: project.id }}
           aria-label={
-            badge !== undefined && badge.count > 0 ? `${label}，${badge.label}` : collapsed ? label : undefined
+            badge !== undefined && badge.count > 0 ? nav.withCount(label, badge.label) : collapsed ? label : undefined
           }
           aria-current={active ? "page" : undefined}
           className={cn(itemClass(active, collapsed), "relative")}
@@ -163,7 +166,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
 
   return (
     <nav
-      aria-label="主导航"
+      aria-label={nav.label}
       data-testid="app-nav"
       className={cn(
         "flex h-full shrink-0 flex-col gap-0.5 bg-background px-2 pt-2.5 pb-3 transition-[width] duration-(--dur-slow) ease-(--ease-enter)",
@@ -172,10 +175,10 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
     >
       <ProjectSwitcher collapsed={collapsed} />
 
-      <NavTip collapsed={collapsed} label="搜索或执行命令 ⌘K">
+      <NavTip collapsed={collapsed} label={`${t.shell.commandPalette.title} ⌘K`}>
         <button
           type="button"
-          aria-label={collapsed ? "搜索或执行命令" : undefined}
+          aria-label={collapsed ? t.shell.commandPalette.title : undefined}
           onClick={() => setCommandPaletteOpen(true)}
           className={cn(
             "mt-1.5 mb-2.5 flex h-8 w-full items-center gap-2.5 rounded-sm border border-border bg-card px-2.5 text-small text-subtle-foreground outline-none transition-colors",
@@ -186,22 +189,22 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
           <SearchIcon />
           {collapsed ? null : (
             <>
-              <span className="flex-1 text-left">搜索或执行命令</span>
+              <span className="flex-1 truncate text-left">{t.shell.commandPalette.sidebarLabel}</span>
               <Kbd>⌘K</Kbd>
             </>
           )}
         </button>
       </NavTip>
 
-      <NavTip collapsed={collapsed} label={todo > 0 ? `我的工作（${todo} 件待处理）` : "我的工作"}>
+      <NavTip collapsed={collapsed} label={todo > 0 ? nav.withNote(nav.myWork, nav.myWorkTodo(todo)) : nav.myWork}>
         <Link
           to="/my"
-          aria-label={collapsed || todo > 0 ? (todo > 0 ? `我的工作，${todo} 件待处理` : "我的工作") : undefined}
+          aria-label={collapsed || todo > 0 ? (todo > 0 ? nav.withCount(nav.myWork, nav.myWorkTodo(todo)) : nav.myWork) : undefined}
           aria-current={section === "my" ? "page" : undefined}
           className={cn(itemClass(section === "my", collapsed), "relative")}
         >
           <InboxIcon />
-          {collapsed ? null : <span className="flex-1">我的工作</span>}
+          {collapsed ? null : <span className="flex-1">{nav.myWork}</span>}
           {todo === 0 ? null : collapsed ? (
             <span className="absolute top-1 right-1 size-2 rounded-full bg-primary" aria-hidden="true" />
           ) : (
@@ -215,20 +218,20 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
           )}
         </Link>
       </NavTip>
-      {projectLink("/p/$projectId/requirements", "需求", <KanbanSquareIcon />, section === "requirements")}
-      {projectLink("/p/$projectId/rooms", "讨论", <MessageCircleIcon />, section === "rooms", {
+      {projectLink("/p/$projectId/requirements", nav.requirements, <KanbanSquareIcon />, section === "requirements")}
+      {projectLink("/p/$projectId/rooms", nav.rooms, <MessageCircleIcon />, section === "rooms", {
         count: unread,
-        label: `${unread} 条未读`,
+        label: nav.roomsUnread(unread),
       })}
-      <NavTip collapsed={collapsed} label={attention > 0 ? `会话（${attention} 个需要你处理）` : "会话"}>
+      <NavTip collapsed={collapsed} label={attention > 0 ? nav.withNote(nav.sessions, nav.sessionsAttention(attention)) : nav.sessions}>
         <Link
           to="/sessions"
-          aria-label={collapsed || attention > 0 ? (attention > 0 ? `会话，${attention} 个需要你处理` : "会话") : undefined}
+          aria-label={collapsed || attention > 0 ? (attention > 0 ? nav.withCount(nav.sessions, nav.sessionsAttention(attention)) : nav.sessions) : undefined}
           aria-current={section === "sessions" ? "page" : undefined}
           className={cn(itemClass(section === "sessions", collapsed), "relative")}
         >
           <MessagesSquareIcon />
-          {collapsed ? null : <span className="flex-1">会话</span>}
+          {collapsed ? null : <span className="flex-1">{nav.sessions}</span>}
           {attention === 0 ? null : collapsed ? (
             <span className="absolute top-1 right-1 size-2 rounded-full bg-warning" aria-hidden="true" />
           ) : (
@@ -242,19 +245,19 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
           )}
         </Link>
       </NavTip>
-      {projectLink("/p/$projectId/overview", "概览", <ChartColumnIcon />, section === "overview")}
+      {projectLink("/p/$projectId/overview", nav.overview, <ChartColumnIcon />, section === "overview")}
 
       <div className="flex-1" />
 
-      <NavTip collapsed={collapsed} label="设置">
+      <NavTip collapsed={collapsed} label={nav.settings}>
         <Link
           to="/settings"
-          aria-label={collapsed ? "设置" : undefined}
+          aria-label={collapsed ? nav.settings : undefined}
           aria-current={section === "settings" ? "page" : undefined}
           className={itemClass(section === "settings", collapsed)}
         >
           <SettingsIcon />
-          {collapsed ? null : "设置"}
+          {collapsed ? null : nav.settings}
         </Link>
       </NavTip>
 
@@ -264,7 +267,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              aria-label="账号菜单"
+              aria-label={t.shell.sidebar.accountMenu}
               className={cn(
                 "flex h-8 min-w-0 items-center gap-2 rounded-sm px-1.5 text-small font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
                 collapsed ? "justify-center" : "flex-1",
@@ -273,7 +276,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
               <Avatar size="lg">
                 <AvatarFallback name={user?.displayName ?? "?"} />
               </Avatar>
-              {collapsed ? null : <span className="truncate">{user?.displayName ?? "未登录"}</span>}
+              {collapsed ? null : <span className="truncate">{user?.displayName ?? t.shell.sidebar.signedOut}</span>}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="top" className="w-56">
@@ -284,7 +287,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
               </DropdownMenuLabel>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>主题</DropdownMenuLabel>
+            <DropdownMenuLabel>{t.shell.sidebar.theme.label}</DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={theme}
               onValueChange={(value) => {
@@ -292,21 +295,21 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
                 applyThemePreference(next);
               }}
             >
-              <DropdownMenuRadioItem value="system"><MonitorIcon />跟随系统</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="light"><SunIcon />浅色</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="dark"><MoonIcon />深色</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system"><MonitorIcon />{t.shell.sidebar.theme.system}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="light"><SunIcon />{t.shell.sidebar.theme.light}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="dark"><MoonIcon />{t.shell.sidebar.theme.dark}</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="danger" onSelect={() => setConfirmLogout(true)}>
               <LogOutIcon />
-              退出登录
+              {t.shell.sidebar.signOut}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <NavTip collapsed label={collapsed ? "展开侧栏 ⌘\\" : "收起侧栏 ⌘\\"}>
+        <NavTip collapsed label={`${collapsed ? t.shell.sidebar.expand : t.shell.sidebar.collapse} ⌘\\`}>
           <button
             type="button"
-            aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+            aria-label={collapsed ? t.shell.sidebar.expand : t.shell.sidebar.collapse}
             onClick={onToggleCollapse}
             className="flex size-8 shrink-0 items-center justify-center rounded-sm text-subtle-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4"
           >
@@ -317,10 +320,10 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
 
       <AlertDialog open={confirmLogout} onOpenChange={setConfirmLogout}>
         <AlertDialogContent>
-          <AlertDialogTitle>退出登录？</AlertDialogTitle>
-          <AlertDialogDescription>退出后需要重新登录才能查看需求。本机的会话和代码不受影响。</AlertDialogDescription>
+          <AlertDialogTitle>{t.shell.sidebar.signOutConfirm.title}</AlertDialogTitle>
+          <AlertDialogDescription>{t.shell.sidebar.signOutConfirm.description}</AlertDialogDescription>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t.shell.sidebar.signOutConfirm.cancel}</AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 // 先关掉确认框、让 Radix 释放焦点与指针锁，再退出并跳转登录页。
@@ -329,7 +332,7 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
                 window.setTimeout(() => void logout(), 0);
               }}
             >
-              退出登录
+              {t.shell.sidebar.signOutConfirm.confirm}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

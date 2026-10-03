@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../src/api/client.js";
 import { AppRoot } from "../src/app/AppRoot.js";
-import { keyLabel, SHORTCUT_GROUPS } from "../src/app/shortcuts.js";
+import { keyLabel, shortcutGroups } from "../src/app/shortcuts.js";
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -46,7 +46,7 @@ const HANDLER_PATTERNS: Record<string, RegExp> = {
 describe("快捷键一览", () => {
   it("一览里的每个键都能在它登记的源文件里找到对应的按键处理", () => {
     const missing: string[] = [];
-    for (const group of SHORTCUT_GROUPS) {
+    for (const group of shortcutGroups()) {
       for (const item of group.items) {
         expect(item.sources.length, item.description).toBeGreaterThan(0);
         const code = item.sources.map((file) => readFileSync(join(__dirname, "../src", file), "utf8")).join("\n");
@@ -113,6 +113,6 @@ describe("快捷键一览", () => {
     await act(async () => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true })));
     const dialog = document.querySelector('[data-testid="shortcuts-dialog"]');
     expect(dialog?.textContent).toContain("快捷键");
-    for (const group of SHORTCUT_GROUPS) expect(dialog?.textContent).toContain(group.title);
+    for (const group of shortcutGroups()) expect(dialog?.textContent).toContain(group.title);
   });
 });

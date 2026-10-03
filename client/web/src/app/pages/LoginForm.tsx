@@ -10,12 +10,15 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { queryKeys } from "../queries.js";
+import { useT } from "../../i18n/provider.js";
 
 /**
  * 登录 / 注册表单（登录页与首启向导共用）。
  * 用 <form> 承载：任一字段按回车都能提交（修复审计缺陷：旧版只有密码框能回车）。
  */
 export function LoginForm({ onAuthenticated }: { onAuthenticated(): Promise<void> | void }) {
+  const t = useT();
+  const text = t.setup.loginForm;
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [loginName, setLoginName] = useState("");
@@ -62,12 +65,12 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated(): Promise<void
       }}
     >
       <SegmentedControl
-        aria-label="登录或注册"
+        aria-label={text.modeLabel}
         className="self-start"
         value={mode}
         options={[
-          { value: "login", label: "登录" },
-          { value: "register", label: "注册新账号" },
+          { value: "login", label: text.modeLogin },
+          { value: "register", label: text.modeRegister },
         ]}
         onValueChange={(next) => {
           setMode(next);
@@ -76,28 +79,28 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated(): Promise<void
         }}
       />
       {error === null ? null : <InlineError kind={error.kind}>{error.message}</InlineError>}
-      <Field label="登录名" error={touched && missingLogin ? "请输入登录名" : undefined}>
+      <Field label={text.loginName} error={touched && missingLogin ? text.loginNameRequired : undefined}>
         <Input
           id="requirements-login-name"
           autoComplete="username"
           autoFocus
           value={loginName}
           onChange={(event) => setLoginName(event.target.value)}
-          placeholder="例如 chensiyuan"
+          placeholder={text.loginNamePlaceholder}
         />
       </Field>
       {mode === "register" ? (
-        <Field label="显示名" hint="团队成员在需求和评论里看到的名字" error={touched && missingName ? "请输入显示名" : undefined}>
+        <Field label={text.displayName} hint={text.displayNameHint} error={touched && missingName ? text.displayNameRequired : undefined}>
           <Input
             id="requirements-display-name"
             autoComplete="name"
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
-            placeholder="例如：陈思远"
+            placeholder={text.displayNamePlaceholder}
           />
         </Field>
       ) : null}
-      <Field label="密码" error={touched && missingPassword ? "请输入密码" : undefined}>
+      <Field label={text.password} error={touched && missingPassword ? text.passwordRequired : undefined}>
         <Input
           id="requirements-password"
           type="password"
@@ -107,7 +110,7 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated(): Promise<void
         />
       </Field>
       <Button type="submit" size="lg" variant="primary" loading={submitting}>
-        {mode === "login" ? "登录" : "注册并登录"}
+        {mode === "login" ? text.submitLogin : text.submitRegister}
       </Button>
     </form>
   );

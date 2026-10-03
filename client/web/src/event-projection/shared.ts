@@ -1,17 +1,25 @@
 import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
 import type { StreamNotice } from "./reducer.js";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor, type Messages } from "../i18n/messages/index.js";
 
-/** 事件投影（reducer.ts）与会话时间线（timeline.ts）共用的解析与本地化。 */
+/**
+ * 事件投影（reducer.ts）与会话时间线（timeline.ts）共用的解析与本地化。
+ * 文字按调用时的语言取（`t` 默认是当前语言的字典），投影不缓存，切换语言后重新投影即换成新语言。
+ */
 
 /**
  * 会话级提示：runtime.warning 与线程重建。不是提示类事件返回 undefined；是但文本为空返回 null。
  * 线程重建是系统状态提示，文案必须直接取事件值，不猜测、不改写。
  */
-export function noticeOf(event: EventEnvelope<string, JsonValue>): StreamNotice | null | undefined {
+export function noticeOf(
+  event: EventEnvelope<string, JsonValue>,
+  t: Messages = messagesFor(currentLocale()),
+): StreamNotice | null | undefined {
   const payload = objectValue(event.payload);
   if (event.type === "runtime.warning") {
     const rebuilt = payload["code"] === "thread-rebuilt";
-    const text = rebuilt ? String(payload["message"] ?? "") : localizeNotice(String(payload["message"] ?? ""));
+    const text = rebuilt ? String(payload["message"] ?? "") : localizeNotice(String(payload["message"] ?? ""), t);
     if (text === "") return null;
     return {
       id: event.eventId,
@@ -28,34 +36,34 @@ export function noticeOf(event: EventEnvelope<string, JsonValue>): StreamNotice 
 }
 
 /** runtime 自带提示是英文的；已知条目本地化，未知条目原样透出。 */
-export function localizeNotice(text: string): string {
+export function localizeNotice(text: string, t: Messages = messagesFor(currentLocale())): string {
+  const notice = t.timeline.notice;
   if (/skills context budget/i.test(text)) {
-    return "可用 skill 较多，描述已按 Codex 的上下文预算自动缩短——每个 skill 仍可正常选用；在设置里停用不常用的 skill 可让描述更完整。";
+    return notice.skillsBudget;
   }
   if (/model metadata for .* not found/i.test(text)) {
     // Codex 对不认识的模型用兜底参数：上下文按 27.2 万估算、不发推理强度、不开并行工具与改文件工具。
     // 只填「上下文上限」消不掉这条提示（也调不高上限）；要在 Codex 配置里用模型目录补上这个模型的信息。
-    return "当前模型不在 Codex 的内置模型清单里，Codex 按默认参数运行：上下文约 27 万（设置里调小过则按设置），所选推理强度不会发给模型服务，部分工具不可用。在 Codex 配置里给这个模型补上模型清单信息后，这条提示会消失。";
+    return notice.unknownModel;
   }
   if (/service tier .* is not advertised/i.test(text)) {
-    return "模型服务未声明支持所配置的 service tier，本次请求已自动忽略该参数，不影响使用。";
+    return notice.serviceTier;
   }
   if (/falling back from websockets to https/i.test(text)) {
-    return "用 WebSocket 连接模型服务没有成功，已改用 HTTPS 连接。";
+    return notice.websocketFallback;
   }
   const ignored = /Codex is ignoring (\d+) unrecognized configuration settings?/i.exec(text);
   if (ignored !== null) {
     // 后续每行一个键：user (<config.toml 路径>): `key` is ignored.；条数多时末尾是 ... and M more ignored settings.
-    const keys = [...text.matchAll(/`([^`]+)` is ignored/g)].map((match) => match[1]);
+    const keys = [...text.matchAll(/`([^`]+)` is ignored/g)].map((match) => match[1] ?? "");
     const more = /and (\d+) more ignored settings?/i.test(text);
-    const list = keys.length > 0 ? `：${keys.join("、")}${more ? " 等" : ""}` : "";
-    return `Codex 忽略了 ${ignored[1]} 个不认识的配置项（可能拼错了，或是新版已不再支持）${list}。不影响使用；在 Codex 配置里删掉或改正即可消除这条提示。`;
+    return notice.ignoredConfig(Number(ignored[1]), keys, more);
   }
   if (/could not find bubblewrap on PATH/i.test(text)) {
-    return "这台机器没装 bubblewrap，Codex 暂时用自带的沙箱组件。按 OpenAI 的说明安装 bubblewrap（Ubuntu / Debian：sudo apt install bubblewrap；Ubuntu 24.04 还要加载官方的 AppArmor 配置），处理办法见「设置 → 诊断」的「命令沙箱」一项。";
+    return notice.bubblewrapMissing;
   }
   if (/sandbox uses bubblewrap and needs access to create user namespaces/i.test(text)) {
-    return "Codex 的 Linux 沙箱建不了用户命名空间，需要审批或受限执行的命令会失败。处理办法见「设置 → 诊断」的「命令沙箱」一项。";
+    return notice.userNamespaces;
   }
   return text;
 }
@@ -64,13 +72,28 @@ export function localizeNotice(text: string): string {
  * Codex 的错误对象（{ message, codexErrorInfo, additionalDetails }）说成人话：
  * 先看 HTTP 状态与附加说明判断原因，再补上「正在重连（第 N/M 次）」这类进度。
  */
-export function describeCodexError(error: Record<string, JsonValue>): string {
+export function describeCodexError(
+  error: Record<string, JsonValue>,
+  t: Messages = messagesFor(currentLocale()),
+): string {
+  return codexErrorDescription(error, t).text;
+}
+
+/**
+ * 同 describeCodexError，另外告诉调用方说法里是否已经带了「第 N/M 次重连」的进度
+ * （时间线据此决定要不要再换成「正在自动重试」的说法，不去匹配文字）。
+ */
+export function codexErrorDescription(
+  error: Record<string, JsonValue>,
+  t: Messages = messagesFor(currentLocale()),
+): { text: string; reconnectAttempt: boolean } {
+  const text = t.timeline.error;
   const message = typeof error["message"] === "string" ? error["message"] : "";
   const details = typeof error["additionalDetails"] === "string" ? error["additionalDetails"] : "";
   const info = error["codexErrorInfo"];
   // 不带 HTTP 状态的错误种类（codexErrorInfo 是字符串）：直接说原因。
-  if (typeof info === "string" && CODEX_ERROR_TEXT[info] !== undefined) {
-    return CODEX_ERROR_TEXT[info];
+  if (typeof info === "string" && Object.hasOwn(text.codex, info)) {
+    return { text: text.codex[info as keyof typeof text.codex], reconnectAttempt: false };
   }
   let status: number | null = null;
   if (info !== null && typeof info === "object" && !Array.isArray(info)) {
@@ -81,36 +104,32 @@ export function describeCodexError(error: Record<string, JsonValue>): string {
     }
   }
   if (/reconnecting.*waiting for network/i.test(message)) {
-    return "和模型服务的连接断了，正在等网络恢复后重连…";
+    return { text: text.waitingForNetwork, reconnectAttempt: false };
   }
   const reconnect = /reconnecting\.*\s*(\d+)\s*\/\s*(\d+)/i.exec(message);
   const input = `${status === null ? "" : String(status)} ${details} ${reconnect === null ? message : ""}`.trim();
-  const reason = localizeTurnError(input);
-  if (reconnect === null) return reason;
-  // 认出了原因只取第一句（后面的「请…」建议在重连中不需要）；认不出就只说连接断了。
-  const recognized = input !== "" && reason !== input;
-  const head = recognized ? (reason.split("。")[0] ?? reason) : "和模型服务的连接中断了";
-  return `${head}，正在重连（第 ${reconnect[1]}/${reconnect[2]} 次）…`;
+  if (reconnect === null) return { text: localizeTurnError(input, t), reconnectAttempt: false };
+  // 认出了原因只说原因那一句（后面的「请…」建议在重连中不需要）；认不出就只说连接断了。
+  const kind = turnErrorKind(input);
+  const head = kind === null ? text.connectionLost : text.turn[kind].brief;
+  return { text: text.reconnecting(head, Number(reconnect[1]), Number(reconnect[2])), reconnectAttempt: true };
 }
 
 /** turn 失败原因人话化：已知错误翻译并给出下一步，未知错误原样透出。 */
-export function localizeTurnError(text: string): string {
-  if (/429|too many requests/i.test(text)) {
-    return "模型服务限流（429），已自动重试仍失败。请稍等几分钟再发送；若持续出现请联系管理员检查配额。";
-  }
-  if (/401|unauthorized|authentication/i.test(text)) {
-    return "模型服务认证失败（401）。请在设置的模型服务里检查凭证，或联系管理员重新配置。";
-  }
-  if (/403|forbidden/i.test(text)) {
-    return "模型服务拒绝了请求（403），当前凭证可能没有权限使用这个模型。";
-  }
-  if (/5\d\d|internal server error|bad gateway|service unavailable/i.test(text)) {
-    return "模型服务暂时出错，请稍后重试。";
-  }
-  if (/timeout|timed out/i.test(text)) {
-    return "模型服务响应超时，请稍后重试。";
-  }
-  return text === "" ? "本回合执行失败，原因未知。" : text;
+export function localizeTurnError(text: string, t: Messages = messagesFor(currentLocale())): string {
+  const kind = turnErrorKind(text);
+  if (kind !== null) return t.timeline.error.turn[kind].text;
+  return text === "" ? t.timeline.error.unknown : text;
+}
+
+/** 按 HTTP 状态与错误文字（Codex 给的英文）认出失败原因；认不出返回 null。 */
+function turnErrorKind(text: string): keyof Messages["timeline"]["error"]["turn"] | null {
+  if (/429|too many requests/i.test(text)) return "rateLimited";
+  if (/401|unauthorized|authentication/i.test(text)) return "unauthorized";
+  if (/403|forbidden/i.test(text)) return "forbidden";
+  if (/5\d\d|internal server error|bad gateway|service unavailable/i.test(text)) return "serverError";
+  if (/timeout|timed out/i.test(text)) return "timeout";
+  return null;
 }
 
 export function objectValue(value: unknown): Record<string, JsonValue> {
@@ -134,31 +153,14 @@ export function completedAgentMessageText(
   return typeof nativeItem["text"] === "string" ? nativeItem["text"] : "";
 }
 
-/** 字符串形式的 codexErrorInfo（Codex 协议 `CodexErrorInfo` 的无参分支）。 */
-const CODEX_ERROR_TEXT: Record<string, string> = {
-  contextWindowExceeded: "这段对话已经超出模型的上下文窗口。可以新开一个会话，或让 Codex 先总结再继续。",
-  usageLimitExceeded: "模型用量已经到上限，请稍后再试，或联系管理员调整额度。",
-  unauthorized: "模型服务认证失败（401）。请在设置的模型服务里检查凭证，或联系管理员重新配置。",
-  serverOverloaded: "模型服务现在很忙，请稍等一会儿再试。",
-  internalServerError: "模型服务暂时出错，请稍后重试。",
-  badRequest: "模型服务拒绝了这次请求，可能是参数或附件不被支持。",
-  sandboxError: "命令没能在沙箱里运行。可以检查审批档与项目目录的权限设置。",
-  rateLimitExceeded: "模型服务限流了，请稍等几分钟再发送。",
-  flexUnavailable: "模型服务当前的处理档位暂时不可用，请稍后重试。",
-  misalignmentPolicyViolation: "这次请求触发了模型服务的安全策略，本回合已停止。可以换个说法再试。",
-  tooManyDenials: "被拒绝的操作太多，本回合已停止。可以调整审批方式或换个做法再试。",
-  sessionBudgetExceeded: "这个会话的用量预算已经用完。可以新开一个会话继续。",
-  cyberPolicy: "请求涉及网络安全相关内容，被模型服务的安全策略拦下了。",
-  threadRollbackFailed: "回退对话没有成功，请重试。",
-};
-
-const ACCESS_LABEL: Record<string, string> = { read: "读取", write: "写入", deny: "禁止访问" };
-
 /**
  * 权限审批请求的范围说成人话（每项一行）：「写入 /work/out」「读取 …」「联网」。
  * 形状按 Codex 的 RequestPermissionProfile：fileSystem.entries（新）/ read、write（旧）与 network.enabled。
  */
-export function describePermissions(value: JsonValue | undefined): string {
+export function describePermissions(value: JsonValue | undefined, t: Messages = messagesFor(currentLocale())): string {
+  const labels = t.timeline.permission;
+  const accessLabel = (access: string): string =>
+    access === "read" ? labels.read : access === "write" ? labels.write : access === "deny" ? labels.deny : access;
   const profile = objectValue(value);
   const fileSystem = objectValue(profile["fileSystem"]);
   const lines: string[] = [];
@@ -175,12 +177,12 @@ export function describePermissions(value: JsonValue | undefined): string {
             ? path["value"]
             : JSON.stringify(path["value"] ?? "");
     const access = String(record["access"] ?? "");
-    lines.push(`${ACCESS_LABEL[access] ?? access} ${target}`);
+    lines.push(`${accessLabel(access)} ${target}`);
   }
-  for (const [key, label] of [["read", "读取"], ["write", "写入"]] as const) {
+  for (const key of ["read", "write"] as const) {
     const paths = fileSystem[key];
-    if (Array.isArray(paths)) for (const path of paths) if (typeof path === "string") lines.push(`${label} ${path}`);
+    if (Array.isArray(paths)) for (const path of paths) if (typeof path === "string") lines.push(`${accessLabel(key)} ${path}`);
   }
-  if (objectValue(profile["network"])["enabled"] === true) lines.push("联网");
+  if (objectValue(profile["network"])["enabled"] === true) lines.push(labels.network);
   return lines.join("\n");
 }

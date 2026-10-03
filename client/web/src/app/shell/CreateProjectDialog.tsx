@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import { useT } from "../../i18n/provider.js";
 import { rememberProjectId } from "../project-context.js";
 import { queryKeys } from "../queries.js";
 
@@ -17,6 +18,8 @@ import { queryKeys } from "../queries.js";
 export function CreateProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChange(open: boolean): void }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const t = useT();
+  const text = t.shell.createProject;
   const [name, setName] = useState("");
   const [error, setError] = useState<Failure | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -56,8 +59,8 @@ export function CreateProjectDialog({ open, onOpenChange }: { open: boolean; onO
     >
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>新建项目</DialogTitle>
-          <DialogDescription>项目是团队共享需求的容器，所有成员都能看到。</DialogDescription>
+          <DialogTitle>{text.title}</DialogTitle>
+          <DialogDescription>{text.description}</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -66,22 +69,22 @@ export function CreateProjectDialog({ open, onOpenChange }: { open: boolean; onO
             void submit();
           }}
         >
-          <Field label="项目名称" error={touched && trimmed === "" ? "给项目起个名字" : undefined}>
+          <Field label={text.nameLabel} error={touched && trimmed === "" ? text.nameRequired : undefined}>
             <Input
               autoFocus
               value={name}
               maxLength={100}
-              placeholder="例如：订单中心"
+              placeholder={text.namePlaceholder}
               onChange={(event) => setName(event.target.value)}
             />
           </Field>
           {error === null ? null : <InlineError kind={error.kind}>{error.message}</InlineError>}
           <DialogFooter>
             <Button type="button" onClick={() => onOpenChange(false)}>
-              取消
+              {text.cancel}
             </Button>
             <Button type="submit" variant="primary" loading={submitting}>
-              创建项目<Kbd>⏎</Kbd>
+              {text.submit}<Kbd>⏎</Kbd>
             </Button>
           </DialogFooter>
         </form>

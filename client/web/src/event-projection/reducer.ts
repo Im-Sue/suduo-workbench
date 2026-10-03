@@ -6,6 +6,8 @@ import {
   objectValue,
 } from "./shared.js";
 import { buildTimeline, type ContextUsage, type TimelineEntry } from "./timeline.js";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor, type Messages } from "../i18n/messages/index.js";
 
 /**
  * 事件投影层（UI 重设计版）。
@@ -145,8 +147,13 @@ interface TurnState {
 
 const UNATTACHED_KEY = "\u0000unattached";
 
+/**
+ * 文字（步骤标题、错误与提示）按调用时的语言取：`t` 默认是当前语言的字典。
+ * 投影不缓存（缓存的是原始事件），切换语言时界面整体重建、重新投影，文字随之换成新语言。
+ */
 export function projectEvents(
   events: readonly EventEnvelope<string, JsonValue>[],
+  t: Messages = messagesFor(currentLocale()),
 ): ConversationProjection {
   const messages: ConversationMessage[] = [];
   const turnStates = new Map<string, TurnState>();
@@ -215,7 +222,7 @@ export function projectEvents(
       const attachments = content
         .map((item) => objectValue(item))
         .filter((item) => item["type"] === "local-image")
-        .map((item) => String(item["attachmentId"] ?? "图片"));
+        .map((item) => String(item["attachmentId"] ?? t.timeline.imageAttachment));
       const skills = content
         .map((item) => objectValue(item))
         .filter((item) => item["type"] === "skill")
@@ -293,6 +300,7 @@ export function projectEvents(
         const error = objectValue(nativeTurn["error"] ?? payload["error"]);
         turn.errorMessage = localizeTurnError(
           String(error["message"] ?? payload["message"] ?? ""),
+          t,
         );
       }
       turn.endedTs = event.ts;
@@ -306,7 +314,7 @@ export function projectEvents(
       continue;
     }
 
-    const notice = noticeOf(event);
+    const notice = noticeOf(event, t);
     if (notice !== undefined) {
       // 同一条提示每回合都可能重发：按最终展示文本去重，只留最早一条。
       if (notice !== null && !notices.some((existing) => existing.text === notice.text)) notices.push(notice);
@@ -361,7 +369,7 @@ export function projectEvents(
       turn.steps.set(itemId, {
         id: itemId,
         turnId,
-        title: toolTitle(item, kind),
+        title: toolTitle(item, kind, t),
         kind,
         status: event.type === "item.completed" ? "completed" : "running",
         detail: toolDetail(item),
@@ -378,7 +386,7 @@ export function projectEvents(
       const existing = turn.steps.get(itemId) ?? {
         id: itemId,
         turnId,
-        title: "执行命令",
+        title: t.timeline.process.command,
         kind: "command" as const,
         status: "running" as const,
         detail: "",
@@ -472,7 +480,7 @@ export function projectEvents(
     runningTurnIds,
     lastSeq: sorted.at(-1)?.seq ?? 0,
     turnMeta,
-    ...buildTimeline(sorted, messages, turnMeta),
+    ...buildTimeline(sorted, messages, turnMeta, t),
   };
 }
 
@@ -516,17 +524,17 @@ function toolKind(value: string): ToolStep["kind"] {
   return "tool";
 }
 
-function toolTitle(item: Record<string, JsonValue>, kind: ToolStep["kind"]): string {
+function toolTitle(item: Record<string, JsonValue>, kind: ToolStep["kind"], t: Messages): string {
   if (kind === "command") {
-    return "执行命令";
+    return t.timeline.process.command;
   }
   if (kind === "file") {
-    return "更新文件";
+    return t.timeline.process.file;
   }
   if (kind === "thinking") {
-    return "思考";
+    return t.timeline.step.thinking;
   }
-  return String(item["name"] ?? item["type"] ?? "工具调用");
+  return String(item["name"] ?? item["type"] ?? t.timeline.step.toolCall);
 }
 
 function toolDetail(item: Record<string, JsonValue>): string {

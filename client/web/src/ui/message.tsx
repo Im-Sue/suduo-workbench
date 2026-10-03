@@ -3,6 +3,7 @@ import { AlertTriangleIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { PageFailure } from "../feedback/components/index.js";
+import { useT } from "../i18n/provider.js";
 import {
   getPageFeedbackSnapshot,
   subscribePageFeedback,
@@ -67,6 +68,7 @@ export function showMessage(
 
 /** 页面级失败的展示参数（去登录 / 重试）；外壳用它把失败页放进内容区，而不是叠在页面之外。 */
 export function usePageFailureProps() {
+  const t = useT();
   const { pageFeedback, authExpiredHandler } = useSyncExternalStore(
     subscribePageFeedback,
     getPageFeedbackSnapshot,
@@ -76,11 +78,11 @@ export function usePageFailureProps() {
     ? null
     : pageFeedback.failure.kind === "auth_expired"
       ? authExpiredHandler === null
-        ? { failure: pageFeedback.failure, route: pageFeedback.route, actionLabel: "去登录" }
+        ? { failure: pageFeedback.failure, route: pageFeedback.route, actionLabel: t.feedback.goToLogin }
         : {
             failure: pageFeedback.failure,
             route: pageFeedback.route,
-            actionLabel: "去登录",
+            actionLabel: t.feedback.goToLogin,
             onAction: authExpiredHandler,
           }
       : pageFeedback.retry === undefined

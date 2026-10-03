@@ -1,16 +1,18 @@
 import {
   SUDUO_TOOL_NATIVE_METHOD,
   currentSuDuoToolName,
-  suDuoToolLabel,
   type JsonValue,
   type SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
 import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import { formatClock } from "../ui/format.js";
 import { objectValue } from "./shared.js";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor, type Messages } from "../i18n/messages/index.js";
 
 /**
  * 会话里的 SuDuo 工具（ADR-0008）在界面上的说法：审批坞的确认卡、时间线上的工具步骤共用。
+ * 文字按调用时的语言取（`t` 默认是当前语言的字典）。
  */
 
 type ConfirmationFile = NonNullable<SuDuoToolConfirmationDto["publish"]>["files"][number];
@@ -50,39 +52,58 @@ export function suDuoToolConfirmationOf(payload: JsonValue): SuDuoToolConfirmati
 }
 
 /** 确认卡标题：「发评论到 REQ-1「标题」」「发布确认版到 REQ-1「标题」」；编号与标题都没有时说「这条需求」。 */
-export function suDuoToolConfirmationTitle(confirmation: SuDuoToolConfirmationDto): string {
-  const target = requirementLabel(confirmation.requirement);
-  return confirmation.tool === "comment_submit" ? `发评论到 ${target}` : `发布确认版到 ${target}`;
+export function suDuoToolConfirmationTitle(
+  confirmation: SuDuoToolConfirmationDto,
+  t: Messages = messagesFor(currentLocale()),
+): string {
+  const target = requirementLabel(confirmation.requirement, t);
+  const text = t.timeline.suDuoTool;
+  return confirmation.tool === "comment_submit" ? text.commentOn(target) : text.publishTo(target);
 }
 
-export function requirementLabel(requirement: { number: number | null; title: string | null }): string {
+export function requirementLabel(
+  requirement: { number: number | null; title: string | null },
+  t: Messages = messagesFor(currentLocale()),
+): string {
+  const text = t.timeline.suDuoTool.requirement;
   const code = typeof requirement.number === "number" && requirement.number > 0 ? formatRequirementNumber(requirement.number) : null;
   const title = requirement.title !== null && requirement.title.trim() !== "" ? requirement.title.trim() : null;
-  if (code !== null && title !== null) return `${code}「${title}」`;
+  if (code !== null && title !== null) return text.codeAndTitle(code, title);
   if (code !== null) return code;
-  if (title !== null) return `「${title}」`;
-  return "这条需求";
+  if (title !== null) return text.title(title);
+  return text.unnamed;
 }
 
 /** 重复提示（只告知，不拒绝；ADR-0004）：「本会话 14:32 已发过相同内容」。 */
-export function duplicateNotice(confirmation: SuDuoToolConfirmationDto): string | null {
+export function duplicateNotice(
+  confirmation: SuDuoToolConfirmationDto,
+  t: Messages = messagesFor(currentLocale()),
+): string | null {
   if (confirmation.duplicateOf === null) return null;
   const at = formatClock(confirmation.duplicateOf.at);
-  return confirmation.duplicateOf.pending === true
-    ? `本会话还有一张相同内容的确认卡（${at}）`
-    : `本会话 ${at} 已发过相同内容`;
+  const text = t.timeline.suDuoTool;
+  return confirmation.duplicateOf.pending === true ? text.duplicatePending(at) : text.duplicateSent(at);
 }
 
 /** 待发布文件的来源：项目里的文件（确认后先上传）或需求已有的附件。 */
-export function publishFileSource(file: ConfirmationFile): string {
-  return file.source === "path" ? `项目文件 ${file.ref}` : "已有附件";
+export function publishFileSource(file: ConfirmationFile, t: Messages = messagesFor(currentLocale())): string {
+  const text = t.timeline.suDuoTool;
+  return file.source === "path" ? text.projectFile(file.ref) : text.existingAttachment;
 }
 
-/** 时间线上工具步骤的标题：认识的 suduo 工具用中文动作名，其它显示「调用 原名」。 */
-export function dynamicToolTitle(tool: string): string {
-  const label = suDuoToolLabel(currentSuDuoToolName(tool));
+/** 时间线上工具步骤的标题：认识的 suduo 工具用动作名，其它显示「调用 原名」。 */
+export function dynamicToolTitle(tool: string, t: Messages = messagesFor(currentLocale())): string {
+  const label = suDuoToolTitle(currentSuDuoToolName(tool), t);
   if (label !== null) return label;
-  return tool === "" ? "调用工具" : `调用 ${tool}`;
+  return tool === "" ? t.timeline.step.callUnnamedTool : t.timeline.step.callTool(tool);
+}
+
+/** 任一 SuDuo 工具（需求工具或房间工具）的动作名；不认识的返回 null。 */
+function suDuoToolTitle(tool: string, t: Messages): string | null {
+  const { labels, roomLabels } = t.timeline.suDuoTool;
+  if (Object.hasOwn(labels, tool)) return labels[tool as keyof typeof labels];
+  if (Object.hasOwn(roomLabels, tool)) return roomLabels[tool as keyof typeof roomLabels];
+  return null;
 }
 
 const COMMENT_PREVIEW_CHARS = 60;
@@ -91,31 +112,36 @@ const COMMENT_PREVIEW_CHARS = 60;
  * 工具步骤的关键参数（等宽显示）：需求编号、附件 ID、确认版号、评论开头、要发布的文件。
  * 认不出的参数（非 suduo 工具）原样给紧凑 JSON。
  */
-export function dynamicToolDetail(tool: string, args: JsonValue | undefined): string {
+export function dynamicToolDetail(
+  tool: string,
+  args: JsonValue | undefined,
+  t: Messages = messagesFor(currentLocale()),
+): string {
+  const text = t.timeline.suDuoTool;
   const value = parseArguments(args);
   const record = objectValue(value);
   const parts: string[] = [];
   const number = requirementNumberArg(record["number"]);
   if (number !== null) parts.push(formatRequirementNumber(number));
-  if (typeof record["attachmentId"] === "string" && record["attachmentId"] !== "") parts.push(`附件 ${record["attachmentId"]}`);
-  if (typeof record["version"] === "number") parts.push(`第 ${record["version"]} 版`);
+  if (typeof record["attachmentId"] === "string" && record["attachmentId"] !== "") parts.push(text.attachments([record["attachmentId"]]));
+  if (typeof record["version"] === "number") parts.push(text.version(record["version"]));
   if (Array.isArray(record["attachmentIds"]) && record["attachmentIds"].length > 0) {
-    parts.push(`附件 ${record["attachmentIds"].map(String).join("、")}`);
+    parts.push(text.attachments(record["attachmentIds"].map(String)));
   }
-  if (Array.isArray(record["paths"]) && record["paths"].length > 0) parts.push(record["paths"].map(String).join("、"));
-  if (typeof record["body"] === "string" && record["body"].trim() !== "") parts.push(`「${clip(record["body"], COMMENT_PREVIEW_CHARS)}」`);
-  if (parts.length > 0 || suDuoToolLabel(currentSuDuoToolName(tool)) !== null) return parts.join(" · ");
+  if (Array.isArray(record["paths"]) && record["paths"].length > 0) parts.push(t.timeline.joinList(record["paths"].map(String)));
+  if (typeof record["body"] === "string" && record["body"].trim() !== "") parts.push(text.quote(clip(record["body"], COMMENT_PREVIEW_CHARS)));
+  if (parts.length > 0 || suDuoToolTitle(currentSuDuoToolName(tool), t) !== null) return parts.join(" · ");
   return compactJson(value);
 }
 
 /** 工具结果：文本按段换行拼接，图片显示「（图片）」（服务端落库前已把图片地址换掉）。 */
-export function dynamicToolOutput(contentItems: JsonValue | undefined): string {
+export function dynamicToolOutput(contentItems: JsonValue | undefined, t: Messages = messagesFor(currentLocale())): string {
   if (!Array.isArray(contentItems)) return "";
   return contentItems
     .map((raw) => {
       const item = objectValue(raw);
       if (item["type"] === "inputText") return typeof item["text"] === "string" ? item["text"] : "";
-      if (item["type"] === "inputImage") return "（图片）";
+      if (item["type"] === "inputImage") return t.timeline.suDuoTool.imageOutput;
       return "";
     })
     .filter((text) => text !== "")

@@ -1,0 +1,50 @@
+export const feedback = {
+  /** 服务端没给出可读说明时，按失败类型兜底的提示。 */
+  fallback: {
+    cancelled: "操作已取消",
+    auth_expired: "登录状态已失效，请重新登录",
+    not_configured: "请先完成必要配置",
+    version_conflict: "数据已发生变化，请刷新后重试",
+    stale_state: "当前状态已变化，请刷新后重试",
+    validation: "请检查填写内容后重试",
+    forbidden: "你没有执行此操作的权限",
+    not_found: "请求的内容不存在或已被移除",
+    upstream_unavailable: "依赖服务暂时不可用，请稍后重试",
+    runtime_failed: "工作台暂时无法完成该操作，请稍后重试",
+    transport_unknown: "暂时无法连接工作台，请稍后重试",
+    unknown: "发生了未识别的问题，请稍后重试",
+  },
+  /** 全局提示：「操作名：失败原因」。 */
+  titled: (title: string, message: string) => `${title}：${message}`,
+  retry: "重试",
+  goToLogin: "去登录",
+  page: {
+    authExpiredTitle: "登录已过期",
+    unavailableTitle: "这里暂时无法显示",
+    loginUnavailable: "登录入口暂不可用，请刷新页面后重试",
+    actionUnavailable: (label: string) => `${label}（不可用）`,
+  },
+  dialog: {
+    confirm: "确认",
+    cancel: "取消",
+    close: "关闭",
+    discardPrompt: "放弃已填写的内容？",
+    keepEditing: "继续编辑",
+    discard: "放弃",
+  },
+  markdown: {
+    pathAtLine: (path: string, line: number) => `${path} 第 ${String(line)} 行`,
+    pathHint: "点击在文件面板预览，⌘ / Ctrl 点击用编辑器打开",
+    code: "代码",
+    copyCode: "复制代码",
+    copy: "复制",
+    copied: "已复制",
+  },
+  sessionStatus: {
+    running: "运行中",
+    approval: "等你确认",
+    completed: "已完成",
+    idle: "空闲",
+    error: "异常",
+  },
+};

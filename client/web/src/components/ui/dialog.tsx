@@ -2,6 +2,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/provider";
 
 /** 对话框家族：尺寸 sm 440 / md 560（默认）/ lg 720；标题 16/600，正文 14，底部按钮右对齐。 */
 const Dialog = DialogPrimitive.Root;
@@ -34,6 +35,7 @@ function DialogContent({
   showCloseButton?: boolean;
   size?: keyof typeof DIALOG_SIZES;
 }) {
+  const t = useT();
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -52,7 +54,7 @@ function DialogContent({
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
-            aria-label="关闭"
+            aria-label={t.feedback.dialog.close}
             className="absolute top-4 right-4 inline-flex size-7 items-center justify-center rounded-sm text-subtle-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <XIcon className="size-4" />

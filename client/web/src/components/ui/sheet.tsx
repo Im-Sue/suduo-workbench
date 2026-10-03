@@ -2,6 +2,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/provider";
 
 /** 侧边抽屉：窄屏下的速览面板 / 检查面板降级形态，也用于移动端导航。 */
 const Sheet = DialogPrimitive.Root;
@@ -18,6 +19,7 @@ function SheetContent({
   side?: "left" | "right";
   showCloseButton?: boolean;
 }) {
+  const t = useT();
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-scrim data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
@@ -35,7 +37,7 @@ function SheetContent({
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
-            aria-label="关闭"
+            aria-label={t.feedback.dialog.close}
             className="absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-sm text-subtle-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <XIcon className="size-4" />

@@ -2,7 +2,7 @@ import type { SessionDto } from "@suduo/client-contracts";
 import { FileTextIcon, FolderGit2Icon, InfoIcon, PanelRightIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
-import { SESSION_STATUS_LABEL, type SessionUiStatus } from "../../ui/session-status.js";
+import { sessionStatusLabel, type SessionUiStatus } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -93,7 +93,7 @@ export function SessionHeader({
         </div>
       )}
       <span className="shrink-0 text-caption text-subtle-foreground" data-testid="session-status" data-status={status}>
-        {SESSION_STATUS_LABEL[status]}
+        {sessionStatusLabel(status)}
       </span>
       {requirement === null ? null : (
         <button

@@ -27,20 +27,17 @@ import { projectsQuery, queryKeys, settingsQuery } from "../queries.js";
 import { summarizeDoctor, type SummaryStatus } from "./doctor-summary.js";
 import { recordEnvironmentPending, recordMappingPending } from "./setup-pending.js";
 import { LoginForm } from "./LoginForm.js";
+import { useT } from "../../i18n/provider.js";
 
 /**
  * 首启向导（需求 §4.2）：连接服务 → 登录 → 环境检查 → 关联项目代码 → 完成。
  * 当前步骤写在 URL（?step=），刷新后回到同一步；已完成的前置步骤会自动跳过。
  */
-const STEPS = [
-  { title: "连接需求服务", hint: "团队共享的需求在这里" },
-  { title: "登录", hint: "使用团队账号" },
-  { title: "检查本机环境", hint: "Codex、模型服务、网络" },
-  { title: "关联项目代码", hint: "选择本机代码目录" },
-  { title: "完成", hint: "开始工作" },
-] as const;
+const STEPS = ["service", "login", "environment", "project", "done"] as const;
 
 export function SetupPage() {
+  const t = useT();
+  const text = t.setup.wizard;
   const search = useSearch({ strict: false }) as { step?: number };
   const navigate = useNavigate();
   const settings = useQuery(settingsQuery).data;
@@ -60,17 +57,18 @@ export function SetupPage() {
           <span className="text-page font-semibold">SuDuo</span>
         </div>
         <div className="flex flex-col gap-2">
-          <h1 className="m-0 text-display font-semibold">先花两分钟完成设置</h1>
-          <p className="m-0 text-body text-muted-foreground">需求放在团队共享的服务上，代码和对话留在你自己的电脑里。</p>
+          <h1 className="m-0 text-display font-semibold">{text.title}</h1>
+          <p className="m-0 text-body text-muted-foreground">{text.intro}</p>
         </div>
-        <ol aria-label="设置步骤" className="m-0 flex list-none flex-col gap-1 p-0">
-          {STEPS.map((item, index) => {
+        <ol aria-label={text.stepsLabel} className="m-0 flex list-none flex-col gap-1 p-0">
+          {STEPS.map((key, index) => {
+            const item = text.steps[key];
             const number = index + 1;
             const done = number < step;
             const current = number === step;
             return (
               <li
-                key={item.title}
+                key={key}
                 aria-current={current ? "step" : undefined}
                 className={cn("flex h-12 items-center gap-3 rounded-md px-3", current && "bg-muted")}
               >
@@ -94,13 +92,13 @@ export function SetupPage() {
             );
           })}
         </ol>
-        <p className="mt-auto mb-0 text-caption text-subtle-foreground">遇到问题？在「设置 › 诊断」里可以随时复查每一项。</p>
+        <p className="mt-auto mb-0 text-caption text-subtle-foreground">{text.help}</p>
       </aside>
 
       <main className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="flex w-[min(560px,100%)] flex-col gap-6">
           <div className="flex flex-col gap-1.5">
-            <span className="text-caption text-subtle-foreground">第 {step} 步，共 5 步</span>
+            <span className="text-caption text-subtle-foreground">{text.progress(step, STEPS.length)}</span>
           </div>
           {step === 1 ? <ServiceStep initial={settings?.baseUrl ?? ""} onDone={(loggedIn) => go(loggedIn ? 3 : 2)} /> : null}
           {step === 2 ? <LoginStep onBack={() => go(1)} onDone={() => go(3)} /> : null}
@@ -123,6 +121,8 @@ function StepHeading({ title, description }: { title: string; description: strin
 }
 
 function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: boolean): void }) {
+  const t = useT();
+  const text = t.setup.wizard.service;
   const queryClient = useQueryClient();
   const [url, setUrl] = useState(initial);
   const [test, setTest] = useState<{ state: "idle" | "testing" | "ok" | "fail"; message?: string }>({ state: "idle" });
@@ -157,7 +157,7 @@ function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: bo
 
   return (
     <>
-      <StepHeading title="连接团队的需求服务" description="所有成员共享同一个需求服务。地址通常是一个内网网址，向团队管理员要一下。" />
+      <StepHeading title={text.title} description={text.description} />
       <form
         className="flex flex-col gap-3"
         onSubmit={(event) => {
@@ -165,12 +165,12 @@ function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: bo
           void runTest();
         }}
       >
-        <Field label="服务地址">
+        <Field label={text.urlLabel}>
           <div className="flex gap-2">
             <Input
               autoFocus
               className="h-(--ctl-h-lg) font-mono"
-              placeholder="例如 http://192.168.1.10:4100"
+              placeholder={text.urlPlaceholder}
               value={url}
               onChange={(event) => {
                 setUrl(event.target.value);
@@ -178,7 +178,7 @@ function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: bo
               }}
             />
             <Button type="submit" size="lg" loading={test.state === "testing"} disabled={trimmed === ""}>
-              测试连接
+              {text.test}
             </Button>
           </div>
         </Field>
@@ -186,14 +186,14 @@ function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: bo
           {test.state === "ok" ? (
             <p className="m-0 flex items-center gap-1.5 text-small text-success">
               <CircleCheckIcon className="size-4" />
-              连接正常
+              {text.testOk}
             </p>
           ) : null}
           {test.state === "fail" ? (
             <p className="m-0 flex items-start gap-1.5 text-small text-danger">
               <XCircleIcon className="mt-0.5 size-4 shrink-0" />
-              连不上这个地址。检查地址和端口是否正确，或确认电脑已连上公司内网。
-              {test.message ? <span className="text-subtle-foreground">（{test.message}）</span> : null}
+              {text.testFailed}
+              {test.message ? <span className="text-subtle-foreground">{text.testFailedDetail(test.message)}</span> : null}
             </p>
           ) : null}
         </div>
@@ -205,10 +205,10 @@ function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: bo
           variant="primary"
           loading={saving}
           disabled={test.state !== "ok"}
-          disabledReason="先测试连接，确认地址可用"
+          disabledReason={text.nextDisabled}
           onClick={() => void save()}
         >
-          下一步
+          {t.setup.wizard.next}
         </Button>
       </div>
     </>
@@ -216,13 +216,14 @@ function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: bo
 }
 
 function LoginStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
+  const t = useT();
   return (
     <>
-      <StepHeading title="登录 SuDuo" description="还没有账号的话，直接注册一个。" />
+      <StepHeading title={t.setup.wizard.login.title} description={t.setup.wizard.login.description} />
       <LoginForm onAuthenticated={onDone} />
       <div>
         <Button variant="ghost" size="lg" onClick={onBack}>
-          上一步
+          {t.setup.wizard.back}
         </Button>
       </div>
     </>
@@ -236,13 +237,15 @@ const STATUS_ICON: Record<SummaryStatus, ReactNode> = {
 };
 
 function EnvironmentStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
+  const t = useT();
+  const text = t.setup.wizard.environment;
   const doctor = useQuery({ queryKey: ["doctor"], queryFn: () => api.runDoctor(), staleTime: 0 });
-  const summary = doctor.data === undefined ? [] : summarizeDoctor(doctor.data.checks);
+  const summary = doctor.data === undefined ? [] : summarizeDoctor(doctor.data.checks, t);
   const problems = summary.filter((item) => item.status !== "ok").length;
 
   return (
     <>
-      <StepHeading title="检查本机环境" description="SuDuo 在你的电脑上运行 Codex。下面几项齐了，就能开始会话。" />
+      <StepHeading title={text.title} description={text.description} />
       <div className="rounded-lg border border-border bg-card" role="status" aria-live="polite" aria-busy={doctor.isFetching}>
         {doctor.isPending
           ? ["codex", "model", "network", "runtime"].map((key) => (
@@ -256,7 +259,7 @@ function EnvironmentStep({ onBack, onDone }: { onBack(): void; onDone(): void })
             ))
           : null}
         {doctor.isError ? (
-          <div className="px-4 py-4 text-small text-danger">没能完成检查：{classifyFailure(doctor.error).message}</div>
+          <div className="px-4 py-4 text-small text-danger">{text.failed(classifyFailure(doctor.error).message)}</div>
         ) : null}
         {summary.map((item) => (
           <div key={item.key} className="flex items-center gap-3 border-b border-border px-4 py-3.5 last:border-b-0">
@@ -272,7 +275,7 @@ function EnvironmentStep({ onBack, onDone }: { onBack(): void; onDone(): void })
         <Collapsible>
           <CollapsibleTrigger className="group inline-flex items-center gap-1 text-small text-muted-foreground hover:text-foreground">
             <ChevronDownIcon className="size-3.5 transition-transform group-data-[state=open]:rotate-180" />
-            查看全部 {doctor.data.checks.length} 项检查
+            {text.showAll(doctor.data.checks.length)}
           </CollapsibleTrigger>
           <CollapsibleContent>
             <ul className="m-0 mt-2 flex max-h-64 list-none flex-col gap-1 overflow-y-auto rounded-md bg-code-bg p-3 font-mono text-caption text-muted-foreground">
@@ -286,16 +289,16 @@ function EnvironmentStep({ onBack, onDone }: { onBack(): void; onDone(): void })
         </Collapsible>
       )}
       {problems > 0 ? (
-        <Banner tone="warning">有 {problems} 项需要留意，可以先继续，稍后在「设置」里处理。</Banner>
+        <Banner tone="warning">{text.problems(problems)}</Banner>
       ) : null}
       <div className="flex items-center justify-between">
         <Button variant="ghost" size="lg" onClick={onBack}>
-          上一步
+          {t.setup.wizard.back}
         </Button>
         <div className="flex gap-2">
           <Button size="lg" loading={doctor.isFetching && !doctor.isPending} onClick={() => void doctor.refetch()}>
             <RotateCwIcon />
-            重新检查
+            {text.recheck}
           </Button>
           <Button
             size="lg"
@@ -307,7 +310,7 @@ function EnvironmentStep({ onBack, onDone }: { onBack(): void; onDone(): void })
               onDone();
             }}
           >
-            下一步
+            {t.setup.wizard.next}
           </Button>
         </div>
       </div>
@@ -316,6 +319,8 @@ function EnvironmentStep({ onBack, onDone }: { onBack(): void; onDone(): void })
 }
 
 function ProjectStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
+  const t = useT();
+  const text = t.setup.wizard.project;
   const queryClient = useQueryClient();
   const projects = useQuery(projectsQuery);
   const active = (projects.data ?? []).filter((project) => !project.isArchived);
@@ -364,10 +369,7 @@ function ProjectStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
 
   return (
     <>
-      <StepHeading
-        title="选择项目，关联你的代码"
-        description="选一个你参与的项目，告诉 SuDuo 它的代码在你电脑的哪个目录。其他项目以后用到时再关联。"
-      />
+      <StepHeading title={text.title} description={text.description} />
       {projects.isPending ? <Skeleton className="h-32" /> : null}
       {projects.data !== undefined && active.length === 0 ? (
         <form
@@ -377,29 +379,29 @@ function ProjectStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
             void createProject();
           }}
         >
-          <span className="text-small text-muted-foreground">团队里还没有项目。先建一个：</span>
+          <span className="text-small text-muted-foreground">{text.empty}</span>
           <div className="flex gap-2">
-            <Input aria-label="项目名称" placeholder="例如：订单中心" value={newName} onChange={(event) => setNewName(event.target.value)} />
+            <Input aria-label={text.nameLabel} placeholder={text.namePlaceholder} value={newName} onChange={(event) => setNewName(event.target.value)} />
             <Button type="submit" loading={creating} disabled={newName.trim() === ""}>
-              新建项目
+              {text.create}
             </Button>
           </div>
         </form>
       ) : null}
       {active.length > 0 ? (
-        <RadioGroup aria-label="项目" value={projectId} onValueChange={setProjectId} className="max-h-64 overflow-y-auto">
+        <RadioGroup aria-label={text.listLabel} value={projectId} onValueChange={setProjectId} className="max-h-64 overflow-y-auto">
           {active.map((project) => (
-            <RadioCard key={project.id} value={project.id} title={project.name} description={`由 ${project.createdBy.displayName} 创建`} />
+            <RadioCard key={project.id} value={project.id} title={project.name} description={text.createdBy(project.createdBy.displayName)} />
           ))}
         </RadioGroup>
       ) : null}
-      <Field label="代码目录" hint="填写绝对路径，例如 /Users/you/code/order-center。SuDuo 需要能读写这个目录。">
-        <Input className="font-mono" placeholder="/Users/you/code/项目目录" value={path} onChange={(event) => setPath(event.target.value)} />
+      <Field label={text.pathLabel} hint={text.pathHint}>
+        <Input className="font-mono" placeholder={text.pathPlaceholder} value={path} onChange={(event) => setPath(event.target.value)} />
       </Field>
       {error === null ? null : <InlineError kind={error.kind}>{error.message}</InlineError>}
       <div className="flex items-center justify-between">
         <Button variant="ghost" size="lg" onClick={onBack}>
-          上一步
+          {t.setup.wizard.back}
         </Button>
         <div className="flex gap-2">
           <Button
@@ -410,17 +412,17 @@ function ProjectStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
               onDone();
             }}
           >
-            稍后再关联
+            {text.later}
           </Button>
           <Button
             size="lg"
             variant="primary"
             loading={saving}
             disabled={projectId === "" || path.trim() === ""}
-            disabledReason="先选项目并填写代码目录"
+            disabledReason={text.saveDisabled}
             onClick={() => void save()}
           >
-            关联并继续
+            {text.save}
           </Button>
         </div>
       </div>
@@ -429,6 +431,7 @@ function ProjectStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
 }
 
 function DoneStep() {
+  const t = useT();
   const navigate = useNavigate();
   return (
     <div className="flex flex-col items-start gap-5">
@@ -436,11 +439,11 @@ function DoneStep() {
         <CheckIcon className="size-6" strokeWidth={2.4} />
       </span>
       <div className="flex flex-col gap-1.5">
-        <h2 className="m-0 text-display font-semibold">一切就绪</h2>
-        <p className="m-0 text-body text-muted-foreground">可以开始了。以后需要调整，随时到「设置」里改。</p>
+        <h2 className="m-0 text-display font-semibold">{t.setup.wizard.done.title}</h2>
+        <p className="m-0 text-body text-muted-foreground">{t.setup.wizard.done.description}</p>
       </div>
       <Button size="lg" variant="primary" onClick={() => void navigate({ to: "/my" })}>
-        进入我的工作
+        {t.setup.wizard.done.enter}
       </Button>
     </div>
   );

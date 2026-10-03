@@ -1,4 +1,6 @@
 import type { SessionDto, SessionRunStatusDto } from "@suduo/client-contracts";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor } from "../i18n/messages/index.js";
 
 /**
  * 会话状态灯的判定与文案。
@@ -70,13 +72,11 @@ export function sessionRowStatus(
   return sessionUiStatus(session, 0, 0, summary);
 }
 
-export const SESSION_STATUS_LABEL: Record<SessionUiStatus, string> = {
-  running: "运行中",
-  approval: "等你确认",
-  completed: "已完成",
-  idle: "空闲",
-  error: "异常",
-};
+/** 状态名按当前界面语言取。 */
+export function sessionStatusLabel(status: SessionUiStatus): string {
+  const labels: Record<SessionUiStatus, string> = messagesFor(currentLocale()).feedback.sessionStatus;
+  return labels[status];
+}
 
 /** 状态灯颜色：与需求看板的审计色调同一套语义，避免两处各造一份。 */
 export const SESSION_STATUS_DOT_CLASS: Record<SessionUiStatus, string> = {
