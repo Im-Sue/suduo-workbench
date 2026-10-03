@@ -2,7 +2,7 @@
 
 **Requirements with your team. Code on your machine.**
 
-[中文](README.zh-CN.md) · Source-available · [Commercial use](COMMERCIAL.md) · [Contributing](CONTRIBUTING.md)
+[中文](README.zh-CN.md) · Source-available · [Commercial use](COMMERCIAL.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 SuDuo (速舵) connects a team's shared requirements and discussions with the Codex CLI running on each developer's own computer. The team keeps requirements, attachments and discussion rooms on a server it hosts itself. Each person starts a local Codex session straight from a requirement, and their code, repositories and sessions never leave their computer.
 
