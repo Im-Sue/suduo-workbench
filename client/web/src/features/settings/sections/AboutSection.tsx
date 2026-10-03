@@ -48,6 +48,8 @@ export function AboutSection() {
           <dd className="m-0 font-mono text-foreground" data-testid="settings-cloud-version">
             {settings.isPending || (baseUrl !== "" && service.isPending) ? (
               <Skeleton className="h-4 w-24" />
+            ) : settings.isError ? (
+              <span className="font-sans text-subtle-foreground">没能读取</span>
             ) : baseUrl === "" ? (
               <span className="font-sans text-subtle-foreground">还没有配置需求服务</span>
             ) : service.isError ? (

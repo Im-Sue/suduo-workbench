@@ -1,5 +1,7 @@
+import { CODEX_VERSION } from "@suduo/client-contracts";
 import {
   mkdirSync,
+  existsSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -11,6 +13,7 @@ import {
   defaultCodexHome,
   defaultSuDuoConfigDir,
   defaultSuDuoDataDir,
+  prepareCodexHome,
 } from "../src/infrastructure/platform/host-platform.js";
 import { processTreeTerminationCommand } from "../src/infrastructure/platform/process-control.js";
 import { resolvePinnedCodexBin, withNodeOnPath } from "../src/infrastructure/platform/codex-bin.js";
@@ -40,12 +43,26 @@ describe("Windows platform adaptation", () => {
     ).toBe("C:\\Users\\pm\\AppData\\Roaming\\SuDuo");
     expect(
       defaultSuDuoDataDir({ platform: "win32", env, homeDir: "C:\\Users\\pm" }),
-    ).toBe("C:\\Users\\pm\\AppData\\Local\\SuDuo\\data");
+    ).toBe("C:\\Users\\pm\\AppData\\Local\\SuDuo");
   });
 
   it("defaults CODEX_HOME to ~/.codex, where Codex itself keeps its configuration", () => {
     expect(defaultCodexHome({ platform: "darwin", homeDir: "/Users/pm" })).toBe("/Users/pm/.codex");
     expect(defaultCodexHome({ platform: "win32", homeDir: "C:\\Users\\pm" })).toBe("C:\\Users\\pm\\.codex");
+  });
+
+  it("creates the default CODEX_HOME when missing, but never an explicitly configured one", () => {
+    const home = mkdtempSync(join(tmpdir(), "suduo-codex-home-"));
+    temporaryPaths.push(home);
+    const prepared = prepareCodexHome(undefined, { homeDir: home, platform: "linux" });
+    expect(prepared).toEqual({ path: join(home, ".codex"), isDefault: true, exists: true });
+    expect(existsSync(join(home, ".codex"))).toBe(true);
+
+    const typo = join(home, "codex-typo");
+    expect(prepareCodexHome(typo, { homeDir: home })).toEqual({ path: typo, isDefault: false, exists: false });
+    expect(existsSync(typo)).toBe(false);
+    // 空字符串按未设置处理。
+    expect(prepareCodexHome("", { homeDir: home, platform: "linux" }).isDefault).toBe(true);
   });
 
   it("uses Application Support on macOS and XDG directories on Linux", () => {
@@ -142,6 +159,33 @@ describe("Windows platform adaptation", () => {
     expect(() =>
       resolvePinnedCodexBin({ workspaceRoot: join(directory, "no-package"), configuredBin: "codex" }),
     ).toThrow("SUDUO_CODEX_BIN");
+  });
+});
+
+describe("Windows 上的 Codex 可执行文件", () => {
+  it("优先用 vendor 里的 codex.exe，避开经 cmd 启动 codex.cmd 时路径带空格的问题", () => {
+    const root = mkdtempSync(join(tmpdir(), "suduo codex win "));
+    temporaryPaths.push(root);
+    const exe = join(
+      root, "node_modules", ".pnpm", `@openai+codex@${CODEX_VERSION}-win32-x64`,
+      "node_modules", "@openai", "codex", "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe",
+    );
+    mkdirSync(join(exe, ".."), { recursive: true });
+    writeFileSync(exe, "");
+    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(root, "node_modules", ".bin", "codex.cmd"), "");
+    expect(resolvePinnedCodexBin({ workspaceRoot: root, platform: "win32" })).toBe(exe);
+    // 其他平台照旧用 node_modules/.bin 下的启动脚本。
+    writeFileSync(join(root, "node_modules", ".bin", "codex"), "");
+    expect(resolvePinnedCodexBin({ workspaceRoot: root, platform: "darwin" })).toBe(join(root, "node_modules", ".bin", "codex"));
+  });
+
+  it("找不到 vendor 里的 codex.exe 时退回 codex.cmd", () => {
+    const root = mkdtempSync(join(tmpdir(), "suduo-codex-win-"));
+    temporaryPaths.push(root);
+    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(root, "node_modules", ".bin", "codex.cmd"), "");
+    expect(resolvePinnedCodexBin({ workspaceRoot: root, platform: "win32" })).toBe(join(root, "node_modules", ".bin", "codex.cmd"));
   });
 });
 

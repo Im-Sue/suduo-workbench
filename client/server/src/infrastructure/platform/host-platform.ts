@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
@@ -14,13 +15,13 @@ export function defaultSuDuoDataDir(
   const env = options.env ?? process.env;
   const home = options.homeDir ?? homedir();
   if (platform === "win32") {
-    // 与 Windows 安装器版同一个位置（安装目录 %LOCALAPPDATA%\SuDuo 下的 data\），两种运行方式共用一份本机数据。
+    // 源码运行的位置。Windows 安装器版另用安装目录下的 data\（显式设置 SUDUO_DATA_DIR），两者不共用；
+    // 卸载安装器时只删它自己的子目录，不会碰到这里的数据。
     return win32.resolve(
       env["LOCALAPPDATA"] ??
         env["APPDATA"] ??
         win32.resolve(home, "AppData", "Local"),
       "SuDuo",
-      "data",
     );
   }
   if (platform === "darwin") {
@@ -61,4 +62,21 @@ export function defaultCodexHome(options: HostPlatformOptions = {}): string {
   const home = options.homeDir ?? homedir();
   const platform = options.platform ?? process.platform;
   return platform === "win32" ? win32.resolve(home, ".codex") : posix.resolve(home, ".codex");
+}
+
+/**
+ * 决定 SuDuo 交给 Codex 的 CODEX_HOME：显式指定（SUDUO_CODEX_HOME / CODEX_HOME）优先，否则用 ~/.codex。
+ * Codex 收到不存在的 CODEX_HOME 会直接退出，所以默认目录不存在时先建好（Codex 自己也会建）；
+ * 显式指定的目录不存在时不替用户建，免得掩盖拼写错误，由调用方提示。
+ */
+export function prepareCodexHome(
+  explicit: string | undefined,
+  options: HostPlatformOptions = {},
+): { path: string; isDefault: boolean; exists: boolean } {
+  if (explicit !== undefined && explicit !== "") {
+    return { path: explicit, isDefault: false, exists: existsSync(explicit) };
+  }
+  const path = defaultCodexHome(options);
+  mkdirSync(path, { recursive: true });
+  return { path, isDefault: true, exists: true };
 }

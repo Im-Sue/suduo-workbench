@@ -48,12 +48,11 @@ async function renderAbout(settings: object = NOT_CONFIGURED): Promise<HTMLDivEl
       </QueryClientProvider>,
     ),
   );
-  // 云端版本是两段异步查询（先读设置，再探测云端），等它们都落定。
-  for (let round = 0; round < 5; round += 1) {
-    await act(async () => {
-      await new Promise((resolveTick) => setTimeout(resolveTick, 0));
-    });
-  }
+  // 云端版本是两段异步查询（先读设置，再探测云端）：等「云端」一格不再是骨架屏。
+  await vi.waitFor(() => {
+    expect(node?.querySelector('[data-testid="settings-cloud-version"] [data-slot="skeleton"], [data-testid="settings-cloud-version"] .animate-pulse')).toBeNull();
+  });
+  await act(async () => {});
   return node;
 }
 
@@ -94,6 +93,8 @@ describe("设置 · 关于 · 许可", () => {
   });
 
   it("云端版本与本机不同：显示云端版本并提示使用相同版本", async () => {
+    // 本机版本由 vite 构建时的 define 注入；vitest 配置里没有 define，所以这里能用全局变量模拟。
+    // 若以后在 vitest 配置里加上 define，这几个用例需要改用别的方式注入。
     vi.stubGlobal("__SUDUO_VERSION__", "0.7.0");
     apiMocks.testRequirementsSettings.mockResolvedValue({ baseUrl: CONFIGURED.baseUrl, reachable: true, message: "ok", version: "0.6.5" });
     const container = await renderAbout(CONFIGURED);
@@ -122,6 +123,15 @@ describe("设置 · 关于 · 许可", () => {
     expect(compareWithCloud("0.7.0", "0.6.5")).toBe("different");
     expect(compareWithCloud(null, "0.6.5")).toBe("unknown");
     expect(compareWithCloud("0.7.0", null)).toBe("unknown");
+    expect(compareWithCloud("0.7.0", "dev")).toBe("unknown");
+  });
+
+  it("云端连不上时显示「连不上」，不提示版本差异", async () => {
+    vi.stubGlobal("__SUDUO_VERSION__", "0.7.0");
+    apiMocks.testRequirementsSettings.mockRejectedValue(new Error("connection refused"));
+    const container = await renderAbout(CONFIGURED);
+    expect(container.querySelector('[data-testid="settings-cloud-version"]')?.textContent).toBe("连不上");
+    expect(container.querySelector('[data-testid="settings-version-mismatch"]')).toBeNull();
   });
 
   it("设置搜索能找到许可", () => {

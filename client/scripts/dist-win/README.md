@@ -8,7 +8,7 @@
 
 - **安装**：默认装到 `%LOCALAPPDATA%\SuDuo`，只做三件事：解压文件、创建开始菜单 / 桌面快捷方式、登记控制面板卸载项。不改 ACL、不注册计划任务、不碰剪贴板。
 - **运行**：按需启动。点「SuDuo」快捷方式 → 启动器（`templates/launcher.mjs`）检查本机服务，没在跑就拉起，然后打开浏览器应用窗口。服务在无页面且 30 分钟无活动后自动退出。
-- **数据**：可变状态（SQLite、Codex 配置与登录态）都在 `data\`，覆盖安装不受影响；首次启动从 `defaults\` 补齐缺失的 Codex 配置。从源码运行时的默认数据目录也是 `%LOCALAPPDATA%\SuDuo\data`，两种方式共用一份本机数据。
+- **数据**：可变状态（SQLite、Codex 配置与登录态）都在 `data\`，覆盖安装不受影响；首次启动从 `defaults\` 补齐缺失的 Codex 配置。从源码运行时默认把数据放在 `%LOCALAPPDATA%\SuDuo` 根目录、Codex 配置用 `~/.codex`，与安装器版互不共用；卸载安装器时只删除它自己的子目录（选择不保留数据时会删 `data\`），不会碰到源码运行的数据。
 
 真机验证清单见 [docs/windows-verify.md](../../../docs/windows-verify.md)。
 

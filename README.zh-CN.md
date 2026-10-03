@@ -29,9 +29,10 @@
 
 ### 1. 部署云端（每个团队一次）
 
-按[部署指南](cloud/DEPLOYMENT.zh-CN.md)操作。在装有 Docker 的 Ubuntu 服务器上只需一条命令：
+按[部署指南](cloud/DEPLOYMENT.zh-CN.md)操作。在装有 Docker 的 Ubuntu 服务器上，进入代码的 `cloud/` 目录执行一条命令：
 
 ```bash
+cd suduo-workbench/cloud
 sudo ./scripts/suduo-cloud.sh install
 ```
 
@@ -40,7 +41,7 @@ sudo ./scripts/suduo-cloud.sh install
 系统要求：
 
 - **macOS 13.5 或更新**（Apple 芯片或 Intel），或 **Windows 10 / 11**（x64）
-- **Node.js 24**（24.10 或更新）：从 <https://nodejs.org/> 安装，或用 mise、nvm、fnm 等版本管理工具
+- **Node.js 24 LTS**（24.x 中的 24.10 或更新）：从 <https://nodejs.org/> 安装，或用 mise、nvm、fnm 等版本管理工具。更高的大版本没有测试过，而且从 Node 25 起不再自带 `corepack`
 - **pnpm 10.25**：`corepack enable pnpm`（Windows 上以管理员身份运行；macOS 上 Node 装在系统目录时加 `sudo`），或 `npm install -g pnpm@10.25.0`
 - **git**
 
@@ -68,14 +69,18 @@ pnpm start
 
 `pnpm start` 会检查环境，首次运行时构建（约 1–2 分钟），在 `http://127.0.0.1:8787` 启动本机服务并打开浏览器；SuDuo 已经在运行时，直接打开浏览器。按 `Ctrl+C` 停止。参数：`pnpm start --port 18787`、`--no-open`、`--rebuild`。
 
+仓库还没有发布标签时，留在 `main` 即可。
+
 请使用和团队云端相同的版本。版本不一致时，**设置 → 关于**里会有提示。
 
 ### 3. 配置 Codex
 
-SuDuo 使用 `client/` 里锁定版本的 Codex CLI，以及你自己在 `~/.codex` 里的 Codex 配置。SuDuo 不读取、也不保存你的密钥。两种方式任选：
+SuDuo 使用 `client/` 里锁定版本的 Codex CLI，以及你自己在 `~/.codex` 里的 Codex 配置（和你自己的 Codex CLI 是同一个目录）。两种方式任选：
 
-- 在 SuDuo 的 **设置 → 模型服务** 里配置模型服务；
+- 在 SuDuo 的 **设置 → 模型服务** 里配置：SuDuo 把服务地址和 API Key 交给 Codex，由 Codex 存进 `~/.codex`。这会同时改变你自己的 Codex CLI 使用的配置，也可能替换原来的 ChatGPT 登录；
 - 或在 `client/` 目录下登录：`pnpm exec codex login`
+
+SuDuo 自己不保存密钥副本，也不会把任何东西发给 SuDuo 的作者。
 
 ### 4. 连接并开始
 
@@ -84,6 +89,8 @@ SuDuo 使用 `client/` 里锁定版本的 Codex CLI，以及你自己在 `~/.cod
 3. 打开一条需求，开始会话。
 
 ## 更新
+
+先停掉 SuDuo（在运行 `pnpm start` 的窗口按 `Ctrl+C`；Windows 上 SuDuo 还占用着文件时 `pnpm install` 会失败），然后在 `client/` 目录下：
 
 ```bash
 git fetch --tags
@@ -98,7 +105,7 @@ pnpm start              # 会自动重新构建
 
 | | macOS | Windows |
 |---|---|---|
-| 本机数据（会话、设置） | `~/Library/Application Support/SuDuo` | `%LOCALAPPDATA%\SuDuo\data` |
+| 本机数据（会话、设置） | `~/Library/Application Support/SuDuo`（0.7 之前是 `~/.local/share/suduo`） | `%LOCALAPPDATA%\SuDuo` |
 | 日志 | `<数据目录>/logs/suduo.log` | `<数据目录>\logs\suduo.log` |
 | Codex 配置 | `~/.codex` | `%USERPROFILE%\.codex` |
 
