@@ -175,4 +175,17 @@ describe("外观 · 语言", () => {
     expect(node.querySelector('[data-setting-row="locale"]')).toBeNull();
     expect(node.querySelector('[data-testid="settings-locale"]')).toBeNull();
   });
+
+  it("迁移期手动固定了还没做完的语言时，仍显示语言选项，能从界面切回来", async () => {
+    uiLocales.splice(0, uiLocales.length, "zh-CN");
+    applyLocalePreference("en");
+    const { node } = await open("/settings/appearance");
+    const options = [...(node.querySelector('[data-testid="settings-locale"]')?.querySelectorAll("button") ?? [])];
+    expect(options.map((option) => option.textContent)).toEqual(["Follow system", "简体中文", "English"]);
+
+    await click(options.find((option) => option.textContent === "简体中文"));
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(node.querySelector('[data-testid="settings-locale"]')).toBeNull();
+  });
 });

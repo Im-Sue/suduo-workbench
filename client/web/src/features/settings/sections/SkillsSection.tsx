@@ -39,7 +39,7 @@ import { useQueryFailure } from "../use-query-failure.js";
 
 function scopeLabel(text: Messages["settingsAgent"]["skills"], scope: string): string {
   const labels: Readonly<Record<string, string>> = text.scope;
-  return labels[scope] ?? text.scopeOther;
+  return Object.hasOwn(labels, scope) ? (labels[scope] ?? text.scopeOther) : text.scopeOther;
 }
 
 /** Skills：个人 Skills 目录开关、安装 / 卸载、按项目启停。 */

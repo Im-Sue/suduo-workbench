@@ -350,7 +350,7 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
                   >
                     <Icon aria-hidden="true" />
                     <span className="flex min-w-0 flex-1 flex-col py-1 leading-4">
-                      <span className="truncate text-foreground">{item.title}</span>
+                      <span className="truncate text-foreground" title={item.title}>{item.title}</span>
                       <span className="truncate text-caption font-normal text-subtle-foreground">{meta.title}</span>
                     </span>
                   </Link>

@@ -1,3 +1,4 @@
+import type { LocalePreference } from "@suduo/client-contracts";
 import { useState } from "react";
 import { RadioGroup, RadioTile } from "@/components/ui/radio-group";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -13,6 +14,11 @@ export function AppearanceSection() {
   const text = t.settingsAgent.appearance;
   const theme = useThemePreference();
   const localePreference = useLocalePreference();
+  const localeChoices: LocalePreference[] = [
+    "system",
+    ...UI_LOCALES,
+    ...(localePreference !== "system" && !UI_LOCALES.includes(localePreference) ? [localePreference] : []),
+  ];
   const [density, setDensity] = useState<DensityPreference>(() => loadDensityPreference());
   const [themeSaved, trackTheme] = useSaveIndicator();
   const [densitySaved, trackDensity] = useSaveIndicator();
@@ -91,17 +97,18 @@ export function AppearanceSection() {
       </SettingsRow>
 
       {/*
-        语言：可选的固定语言只有一种时（迁移期 UI_LOCALES 只有中文）不显示这一行。
+        语言：可选的固定语言只有一种时（迁移期 UI_LOCALES 只有中文）不显示这一行；
+        但手动固定过一种还没做完的语言（如开发时把 suduo.locale 设成 en）时要显示，让人能从界面切回来。
         切换后 LocaleBoundary 按新语言重建整棵界面，所以说明里提醒未保存的内容可能丢失。
       */}
-      {UI_LOCALES.length > 1 ? (
+      {localeChoices.length > 2 ? (
         <SettingsRow anchor="locale" title={text.locale.title} description={text.locale.description}>
           <div>
             <SegmentedControl
               aria-labelledby={rowLabelId("locale")}
               data-testid="settings-locale"
               value={localePreference}
-              options={(["system", ...UI_LOCALES] as const).map((value) => ({ value, label: t.common.localeOption[value] }))}
+              options={localeChoices.map((value) => ({ value, label: t.common.localeOption[value] }))}
               onValueChange={(next) => applyLocalePreference(next)}
             />
           </div>

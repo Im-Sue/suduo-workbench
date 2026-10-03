@@ -13,7 +13,7 @@ export const settingsAgent = {
       starting: "Connecting",
       ready: "Connected",
       failed: "Couldn't connect",
-      cancelled: "Cancelled",
+      cancelled: "Canceled",
     },
     auth: {
       notLoggedIn: "Not signed in",
@@ -123,14 +123,14 @@ export const settingsAgent = {
       title: "Use personal Skills folder",
       description: "When off, only the Skills included in the project are used.",
       folder: (path: string) => `Folder: ${path}`,
-      locked: "Your administrator has locked this setting. Contact them to change it.",
+      locked: "Your admin has locked this setting. Contact them to change it.",
     },
     project: {
       title: "Project",
       description: "Available Skills and which ones are on can differ between projects.",
       emptyTitle: "No local folder linked yet. Only installed Skills are shown.",
-      emptyAction: "Link a folder",
-      placeholder: "Select a project",
+      emptyAction: "Link folder",
+      placeholder: "Choose a project",
     },
     install: {
       title: "Install Skill",
@@ -142,7 +142,7 @@ export const settingsAgent = {
     },
     list: {
       title: "Installed Skills",
-      projectRequired: "Select a project to see each Skill's source and on/off switch.",
+      projectRequired: "Choose a project to see each Skill's source and on/off switch.",
       catalogUnavailable: "Can't read which Skills are on for this project right now. Only installed Skills are listed below.",
       loading: "Loading Skills",
       loadFailed: (message: string) => `Couldn't load Skills: ${message}`,
@@ -187,10 +187,10 @@ export const settingsAgent = {
     approval: {
       title: "Default approval mode for new sessions",
       recommended: "Recommended",
-      blocked: "Limited by your administrator",
+      blocked: "Limited by your admin",
       blockedBadge: "Limited",
       lockReason: (label: string) =>
-        `Your administrator has limited the highest mode to “${label}”, so higher options aren't available. Contact your administrator if you need them.`,
+        `Your admin has limited the highest mode to “${label}”, so higher options aren't available. Contact your admin if you need them.`,
     },
     matrix: {
       label: "What each mode allows",
@@ -207,7 +207,7 @@ export const settingsAgent = {
       title: "Sessions can switch to full access",
       description: "Whether a session can switch its approval mode to “Full access”.",
       allowed: "Yes",
-      blocked: "No (limited by your administrator)",
+      blocked: "No (limited by your admin)",
     },
     checkpoint: {
       title: "Auto-save before each turn",
@@ -245,7 +245,7 @@ export const settingsAgent = {
       title: "Your browser is blocking SuDuo notifications",
       body: "Click the site icon to the left of the address bar and set Notifications to Allow. It takes effect when you come back here. If you don't want system notifications, turn off the switch above.",
     },
-    requestPermission: "Ask browser for permission",
+    requestPermission: "Ask your browser for permission",
   },
   appearance: {
     description: "Changes take effect immediately and only affect this computer.",

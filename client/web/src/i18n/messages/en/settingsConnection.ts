@@ -16,7 +16,7 @@ export const settingsConnection = {
       SELF_SIGNED_CERT_IN_CHAIN: "the server uses a self-signed certificate",
     },
     withCode: (text: string, code: string) => `${text} (${code})`,
-    invalidBaseUrl: "the model service address is invalid, so the connection can't be checked",
+    invalidBaseUrl: "the model service URL is invalid, so the connection can't be checked",
     invalidProxy: "the proxy variables in the startup environment are invalid, so the connection can't be checked",
     connectionFailed: "connection failed",
   },
@@ -131,7 +131,7 @@ export const settingsConnection = {
     description:
       "The proxy Codex uses to connect to the model service. If all fields are blank, the proxy environment variables from when the local service started are used (HTTP_PROXY and so on; with none, it connects directly). After you save, Codex reconnects once and running turns are interrupted.",
     loading: "Loading proxy settings",
-    loadFailed: (message: string) => `Couldn't read proxy settings: ${message}`,
+    loadFailed: (message: string) => `Couldn't load proxy settings: ${message}`,
     fields: {
       httpProxy: { label: "HTTP proxy", description: "Used for http:// addresses." },
       httpsProxy: { label: "HTTPS proxy", description: "Used for https:// addresses. The model service usually goes through this one." },
@@ -188,7 +188,7 @@ export const settingsConnection = {
     link: "Link local folder",
     linkedProjects: "Linked projects",
     loading: "Loading local folders",
-    loadFailed: (message: string) => `Couldn't read local folders: ${message}`,
+    loadFailed: (message: string) => `Couldn't load local folders: ${message}`,
     empty: {
       title: "No local folders linked yet",
       description: "Link one to start sessions on this computer. You'll also be asked to choose one the first time you start a session.",
