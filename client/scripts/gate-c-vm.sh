@@ -101,7 +101,7 @@ sync_workspace() {
     # 宿主机的 node_modules / 构建产物是 macOS 的，不带进来；虚拟机里的这些目录 rsync 也不会删。
     rsync -a --delete \
       --exclude=node_modules --exclude=dist --exclude='*.tsbuildinfo' --exclude=.DS_Store \
-      --exclude=/client/artifacts --exclude=/client/.cache --exclude=/.git --exclude=/.ccb --exclude=/.suduo \
+      --exclude=/client/artifacts --exclude=/client/.cache --exclude=/.git --exclude=/.suduo \
       --exclude=/.gstack --exclude=/scratchpad --exclude=/.claude/worktrees --exclude=mise.local.toml --exclude=.env \
       '${SRC}/' ~/suduo/
     cd ~/suduo/client
