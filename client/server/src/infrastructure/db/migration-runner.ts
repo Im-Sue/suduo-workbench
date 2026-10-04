@@ -53,7 +53,12 @@ const ROOM_TASKS_URL = new URL(
   import.meta.url,
 );
 
-const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16]);
+const SESSION_LOCALE_URL = new URL(
+  "./migrations/017_session_locale.sql",
+  import.meta.url,
+);
+
+const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17]);
 
 export function loadM1Migrations(): Migration[] {
   return [
@@ -101,6 +106,11 @@ export function loadM1Migrations(): Migration[] {
       version: 16,
       name: "room_tasks",
       sql: readFileSync(ROOM_TASKS_URL, "utf8"),
+    },
+    {
+      version: 17,
+      name: "session_locale",
+      sql: readFileSync(SESSION_LOCALE_URL, "utf8"),
     },
   ];
 }

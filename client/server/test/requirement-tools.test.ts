@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SuDuoToolConfirmationDto } from "@suduo/client-contracts";
 import type { ArtifactVersionDetailDto } from "@suduo/cloud-contracts";
 import { ApiError } from "../src/application/api-error.js";
-import { EVIDENCE_NOTE, formatBytes, formatTime, type ToolResult } from "../src/application/session-tools/format.js";
+import { formatBytes, formatTime, toolFormat, type ToolResult } from "../src/application/session-tools/format.js";
 import { RequirementTools, type ToolSessionContext } from "../src/application/session-tools/requirement-tools.js";
 import {
   DEV,
@@ -17,6 +17,9 @@ import {
 } from "./helpers/fake-requirements-remote.js";
 
 /** 会话工具的执行（技术设计 4.3）：返回格式、三态（确认有 / 确认无 / 查不到）、本机落盘位置。 */
+
+/** 中文会话的证据说明（旧的不带语言的常量迁完会删掉）。 */
+const EVIDENCE_NOTE = toolFormat("zh-CN").evidenceNote;
 
 const PNG_1X1 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -40,6 +43,7 @@ function temporaryDirectory(): string {
 function requirementCtx(projectRoot: string): ToolSessionContext {
   return {
     sessionId: "session-1",
+    locale: "zh-CN",
     projectRoot,
     remoteProjectId: "proj-1",
     requirement: { remoteRequirementId: "req-1", startVersion: 2, startedAt: STARTED_AT },
@@ -47,7 +51,7 @@ function requirementCtx(projectRoot: string): ToolSessionContext {
 }
 
 function projectCtx(projectRoot: string): ToolSessionContext {
-  return { sessionId: "session-p", projectRoot, remoteProjectId: "proj-1", requirement: null };
+  return { sessionId: "session-p", locale: "zh-CN", projectRoot, remoteProjectId: "proj-1", requirement: null };
 }
 
 function textOf(result: ToolResult): string {

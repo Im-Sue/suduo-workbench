@@ -1,42 +1,46 @@
+import type { Locale } from "@suduo/client-contracts";
 import type { RoomFileDto, RoomMessageDto } from "@suduo/cloud-contracts";
+import { messagesFor } from "../../i18n/messages/index.js";
 
 /**
  * 房间消息给模型看的一行文字（回合输入与房间工具共用）：
  * `10:02 李娜：正文 [图片 订单截图.png]（文件 ID f-1）`。
+ * 正文、人名、文件名原样；作者标签、文件标签、截断提示按任务会话的语言（`locale`）。
  */
 
-const FILE_KIND_LABELS: Record<RoomFileDto["kind"], string> = {
-  image: "图片",
-  video: "视频",
-  file: "文件",
-};
-
-export function authorNameOf(message: RoomMessageDto): string {
+/**
+ * 作者名。Agent 不用云端标签（S6 起是英文兜底），按会话语言用所有者名与设备名自己拼，
+ * 与前端 `rooms.agent.withDevice` 同一写法。
+ */
+export function authorNameOf(message: RoomMessageDto, locale: Locale): string {
+  const text = messagesFor(locale).roomPrompt.message;
   if (message.authorKind === "agent") {
-    return message.agent?.label ?? (message.author ? `${message.author.displayName} 的 Codex` : "Agent");
+    if (message.agent) {
+      return text.agentWithDevice(message.agent.owner.displayName, message.agent.deviceName);
+    }
+    return message.author ? text.agentName(message.author.displayName) : "Agent";
   }
   if (message.authorKind === "system") {
-    return "系统";
+    return text.systemAuthor;
   }
-  return message.author?.displayName ?? "未知用户";
+  return message.author?.displayName ?? text.unknownUser;
 }
 
 /** 正文截到 limit 字（按字符计），超出注明总字数。 */
-export function clipBody(body: string, limit: number): string {
+export function clipBody(body: string, limit: number, locale: Locale): string {
   const text = body.trim();
   const characters = Array.from(text);
   if (characters.length <= limit) {
     return text;
   }
-  return characters.slice(0, limit).join("") + `……（这条共 ${characters.length} 字，后面省略）`;
+  return characters.slice(0, limit).join("") + messagesFor(locale).roomPrompt.message.clipped(characters.length);
 }
 
-export function describeFiles(files: readonly RoomFileDto[], options: { withTool: boolean }): string {
+export function describeFiles(files: readonly RoomFileDto[], options: { withTool: boolean; locale: Locale }): string {
+  const text = messagesFor(options.locale).roomPrompt.message;
+  const kinds: Readonly<Record<string, string>> = text.fileKind;
   return files
-    .map(
-      (file) =>
-        `[${FILE_KIND_LABELS[file.kind] ?? "文件"} ${file.fileName}]（文件 ID ${file.id}${options.withTool ? "，用 suduo_room_file_view 查看" : ""}）`,
-    )
+    .map((file) => text.file(kinds[file.kind] ?? text.fileKind.file, file.fileName, file.id, options.withTool))
     .join(" ");
 }
 
@@ -72,11 +76,13 @@ export function fullTime(value: string): string {
 
 export function formatMessageLine(
   message: RoomMessageDto,
-  options: { bodyLimit: number; time: string; withTool: boolean; withSeq?: boolean },
+  options: { bodyLimit: number; time: string; withTool: boolean; withSeq?: boolean; locale: Locale },
 ): string {
-  const body = clipBody(message.body, options.bodyLimit);
-  const files = message.files.length === 0 ? "" : describeFiles(message.files, { withTool: options.withTool });
+  const text = messagesFor(options.locale).roomPrompt.message;
+  const body = clipBody(message.body, options.bodyLimit, options.locale);
+  const files =
+    message.files.length === 0 ? "" : describeFiles(message.files, { withTool: options.withTool, locale: options.locale });
   const content = [body, files].filter((part) => part !== "").join(" ");
   const prefix = options.withSeq ? `#${message.seq} ` : "";
-  return `${prefix}${options.time} ${authorNameOf(message)}：${content === "" ? "（空消息）" : content}`;
+  return prefix + text.line(options.time, authorNameOf(message, options.locale), content === "" ? text.empty : content);
 }

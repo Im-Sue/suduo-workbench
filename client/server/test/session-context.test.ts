@@ -88,7 +88,7 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
     remote.attachments.set("req-1", [
       attachmentFixture({ id: "att-1", fileName: "需求问题截图.png", contentType: "image/png", sizeBytes: 1_258_291 }),
     ]);
-    const setupResult = await service.requirementSetup({ projectRoot: root, requirement: requirementFixture() });
+    const setupResult = await service.requirementSetup({ locale: "zh-CN",  projectRoot: root, requirement: requirementFixture() });
     const card = lines(setupResult.developerInstructions);
     // 规则在前，需求证据在后并包进 <需求证据> 段（审查第 11 条：远程原文不与规则混在一起）。
     expect(card[0]).toBe("# SuDuo 需求会话");
@@ -125,7 +125,7 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
       { id: "ver-2", requirementId: "req-1", versionNumber: 2, publishedBy: DEV, publishedAt: "2026-09-22T02:00:00.000Z", fileCount: 1, files: [] },
     ]);
     const summary = "长".repeat(1_300);
-    const { developerInstructions } = await service.requirementSetup({
+    const { developerInstructions } = await service.requirementSetup({ locale: "zh-CN", 
       projectRoot: root,
       requirement: requirementFixture({ summary }),
     });
@@ -141,14 +141,14 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
     const { root, service } = setup();
     mkdirSync(join(root, REQ_DIR), { recursive: true });
     writeFileSync(join(root, REQ_DIR, "notes.md"), "# 结论\n- 入口 src/a.ts\n");
-    const short = await service.requirementSetup({
+    const short = await service.requirementSetup({ locale: "zh-CN", 
       projectRoot: root,
       requirement: requirementFixture({ title: "改过的标题" }),
     });
     expect(short.developerInstructions).toContain(`上次会话结论（${join(REQ_DIR, "notes.md")}）：\n# 结论\n- 入口 src/a.ts`);
 
     writeFileSync(join(root, REQ_DIR, "notes.md"), "记".repeat(1_000));
-    const long = await service.requirementSetup({ projectRoot: root, requirement: requirementFixture() });
+    const long = await service.requirementSetup({ locale: "zh-CN",  projectRoot: root, requirement: requirementFixture() });
     expect(long.developerInstructions).toContain(
       `上次会话结论（${join(REQ_DIR, "notes.md")}，节选，全文用 suduo_notes_read）：\n${"记".repeat(800)}……`,
     );
@@ -170,7 +170,7 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
       activityFixture("a2", "2026-09-27T03:00:00.000Z"),
       activityFixture("a1", "2026-09-25T03:00:00.000Z", { action: "requirement.created", changes: [] }),
     ]);
-    const { developerInstructions } = await service.requirementSetup({
+    const { developerInstructions } = await service.requirementSetup({ locale: "zh-CN", 
       projectRoot: root,
       requirement: requirementFixture(),
       sessionId: current.id,
@@ -190,7 +190,7 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
     const previousCreatedAt = Date.parse("2026-09-26T00:00:00.000Z");
     requirementSession({ now: previousCreatedAt, anchor: "known", anchorAt: "2026-09-26T00:00:00.000Z" });
     remote.activity.set("req-1", [activityFixture("old", "2026-09-25T00:00:00.000Z")]);
-    const quiet = await service.requirementSetup({ projectRoot: root, requirement: requirementFixture() });
+    const quiet = await service.requirementSetup({ locale: "zh-CN",  projectRoot: root, requirement: requirementFixture() });
     expect(quiet.developerInstructions).toContain(`自上次会话（${formatTime(previousCreatedAt)} 开工，当时 v2）以来：需求没有变化。`);
 
     remote.activity.set(
@@ -201,7 +201,7 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
         }),
       ),
     );
-    const busy = await service.requirementSetup({ projectRoot: root, requirement: requirementFixture() });
+    const busy = await service.requirementSetup({ locale: "zh-CN",  projectRoot: root, requirement: requirementFixture() });
     const busyLines = lines(busy.developerInstructions);
     const header = busyLines.findIndex((line) => line.includes("8 处变化（列出最近 6 处）："));
     expect(header).toBeGreaterThan(0);
@@ -212,7 +212,7 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
 
     const fresh = setup();
     fresh.requirementSession({ state: "deleted", anchor: "known" });
-    const none = await fresh.service.requirementSetup({ projectRoot: fresh.root, requirement: requirementFixture() });
+    const none = await fresh.service.requirementSetup({ locale: "zh-CN",  projectRoot: fresh.root, requirement: requirementFixture() });
     expect(none.developerInstructions).not.toContain("自上次会话");
   });
 
@@ -229,13 +229,13 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
       mkdirSync(join(root, path, ".."), { recursive: true });
       writeFileSync(join(root, path), "# agents");
     }
-    const listed = await service.requirementSetup({ projectRoot: root, requirement: requirementFixture() });
+    const listed = await service.requirementSetup({ locale: "zh-CN",  projectRoot: root, requirement: requirementFixture() });
     expect(listed.developerInstructions).toContain(
       `本项目的 AGENTS.md：${[join("order-service", "AGENTS.md"), join("order-web", "AGENTS.md"), join("packages", "core", "AGENTS.md")].join("、")}（映射目录本身没有，按需阅读）。`,
     );
 
     writeFileSync(join(root, "AGENTS.md"), "# root agents");
-    const rooted = await service.requirementSetup({ projectRoot: root, requirement: requirementFixture() });
+    const rooted = await service.requirementSetup({ locale: "zh-CN",  projectRoot: root, requirement: requirementFixture() });
     expect(rooted.developerInstructions).not.toContain("本项目的 AGENTS.md");
   });
 
@@ -247,7 +247,7 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
     remote.fail.listRequirementActivity = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "timeout");
     // notes.md 是个目录：读笔记出错（不是「不存在」）。
     mkdirSync(join(root, REQ_DIR, "notes.md"), { recursive: true });
-    const result = await service.requirementSetup({ projectRoot: root, requirement: requirementFixture() });
+    const result = await service.requirementSetup({ locale: "zh-CN",  projectRoot: root, requirement: requirementFixture() });
     const card = result.developerInstructions;
     expect(card).toContain("附件查不到（需求服务暂时连不上（down））");
     expect(card).toContain("确认版查不到（SuDuo 没有登录需求服务或登录已过期");
@@ -262,8 +262,8 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
 
 describe("工具清单", () => {
   it("需求会话 10 个；项目会话 8 个（不含两个写工具）；说明与参数形状", () => {
-    const requirementTools = sessionToolSpecs("requirement");
-    const projectTools = sessionToolSpecs("project");
+    const requirementTools = sessionToolSpecs("requirement", "zh-CN");
+    const projectTools = sessionToolSpecs("project", "zh-CN");
     expect(requirementTools.map((tool) => tool.name)).toEqual(ALL_TOOLS);
     expect(projectTools.map((tool) => tool.name)).toEqual(PROJECT_TOOLS);
     expect(projectTools).toHaveLength(8);
@@ -285,7 +285,7 @@ describe("工具清单", () => {
 
   it("projectSetup：项目卡 + 8 个工具；项目名查不到时照样给卡", async () => {
     const { root, remote, service } = setup();
-    const result = await service.projectSetup({ projectRoot: root, remoteProjectId: "proj-1" });
+    const result = await service.projectSetup({ locale: "zh-CN",  projectRoot: root, remoteProjectId: "proj-1" });
     expect(lines(result.developerInstructions).slice(0, 2)).toEqual([
       "# SuDuo 项目会话",
       "这个会话属于 SuDuo 项目「商家端」，没有关联具体需求。",
@@ -294,7 +294,7 @@ describe("工具清单", () => {
     expect(result.dynamicTools.map((tool) => tool.name)).toEqual(PROJECT_TOOLS);
 
     remote.fail.getProject = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "down");
-    const degraded = await service.projectSetup({ projectRoot: root, remoteProjectId: "proj-1" });
+    const degraded = await service.projectSetup({ locale: "zh-CN",  projectRoot: root, remoteProjectId: "proj-1" });
     expect(degraded.developerInstructions).toContain("项目名查不到：需求服务暂时连不上（down）");
     expect(degraded.dynamicTools).toHaveLength(8);
   });
@@ -349,6 +349,7 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
     const known = requirementSession({ anchor: "known", anchorAt: "2026-09-26T00:00:00.000Z", now: Date.parse("2026-09-26T00:10:00.000Z") });
     expect(service.toolContext(known.id)).toEqual({
       sessionId: known.id,
+      locale: "zh-CN",
       projectRoot: root,
       remoteProjectId: "proj-1",
       requirement: { remoteRequirementId: "req-1", startVersion: 2, startedAt: "2026-09-26T00:00:00.000Z", anchorKnown: true },
@@ -364,6 +365,7 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
     mappings.save({ remoteProjectId: "proj-remote", localProjectId: project.id });
     expect(service.toolContext(plain.id)).toEqual({
       sessionId: plain.id,
+      locale: "zh-CN",
       projectRoot: root,
       remoteProjectId: "proj-remote",
       requirement: null,

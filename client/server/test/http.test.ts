@@ -1024,9 +1024,41 @@ describe("Gate B HTTP", () => {
       const chinese = await create({});
       expect(chinese.statusCode).toBe(201);
       expect(chinese.json()).toMatchObject({ title: "新会话" });
+      // 会话语言随创建请求记下（迁移 017），交给 Codex 的开场按它写（S7）。
+      expect(context.sessions.getById(chinese.json<{ id: string }>().id)?.locale).toBe("zh-CN");
+      expect(context.runtime.threadStarts.at(-1)?.developerInstructions).toContain("# SuDuo 项目会话");
       const english = await create({ "x-suduo-locale": "en" });
       expect(english.statusCode).toBe(201);
       expect(english.json()).toMatchObject({ title: "New session" });
+      expect(context.sessions.getById(english.json<{ id: string }>().id)?.locale).toBe("en");
+      const englishOpening = context.runtime.threadStarts.at(-1)?.developerInstructions ?? "";
+      expect(englishOpening).toContain("# SuDuo project session");
+      expect(englishOpening).toContain("Reply in the language the user writes in.");
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
+  it("创建需求会话：带英文语言头时会话记下 en，需求卡、规则与工具定义是英文", async () => {
+    const context = createContext();
+    try {
+      configureRequirementsRemote(context);
+      const mappingRoot = join(context.projectRoot, "requirement-session-mapping-en");
+      mkdirSync(mappingRoot);
+      addWorkspaceMapping(context, SESSION_PROJECT_ID, mappingRoot);
+      const created = await context.server.inject({
+        method: "POST",
+        url: `/api/v2/requirements/${SESSION_REQUIREMENT_ID}/sessions`,
+        headers: { host: context.host, origin: `http://${context.host}`, "x-suduo-locale": "en" },
+        payload: {},
+      });
+      expect(created.statusCode).toBe(201);
+      expect(context.sessions.getById(created.json<{ id: string }>().id)?.locale).toBe("en");
+      const started = context.runtime.threadStarts.at(-1);
+      expect(started?.developerInstructions).toContain("# SuDuo requirement session");
+      expect(started?.developerInstructions).toContain("Reply in the language the user writes in.");
+      expect(started?.dynamicTools?.find((tool) => tool.name === "suduo_requirement_get")?.description).toMatch(/^[\x20-\x7e“”‘’…—]+$/u);
     } finally {
       await context.server.close();
       context.database.close();

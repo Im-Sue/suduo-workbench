@@ -291,6 +291,7 @@ function sessionRecord(id: string, projectId: string): SessionRecord {
     purpose: "general",
     approvalMode: "ask",
     kind: "normal",
+    locale: "zh-CN",
     model: null,
     reasoningEffort: null,
     createdAt: 1,

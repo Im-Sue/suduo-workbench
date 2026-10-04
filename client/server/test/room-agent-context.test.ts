@@ -67,6 +67,7 @@ describe("buildRoomTurnInput：新话题", () => {
     const stale = message(0, { id: "m-old", createdAt: new Date(2026, 8, 28, 9, 0).toISOString() });
     const trigger = message(30, { body: "@陈思远的Codex 订单详情现在能拿到收货信息吗？" });
     const input = buildRoomTurnInput({
+      locale: "zh-CN",
       mode: "new",
       trigger,
       threadBefore: [],
@@ -88,6 +89,7 @@ describe("buildRoomTurnInput：新话题", () => {
     const reply = message(12, { threadRootId: root.id, body: "长".repeat(2_000) });
     const trigger = message(14, { threadRootId: root.id, body: "@Codex 现在能拿到吗" });
     const input = buildRoomTurnInput({
+      locale: "zh-CN",
       mode: "new",
       trigger,
       threadBefore: [root, reply],
@@ -111,6 +113,7 @@ describe("buildRoomTurnInput：新话题", () => {
     );
     const trigger = message(70, { threadRootId: root.id, body: "@Codex 总结一下" });
     const fiveFit = buildRoomTurnInput({
+      locale: "zh-CN",
       mode: "new",
       trigger,
       threadBefore: [root, ...replies.slice(0, 22)],
@@ -122,6 +125,7 @@ describe("buildRoomTurnInput：新话题", () => {
     expect(fiveFit.text.length).toBeLessThanOrEqual(ROOM_CONTEXT_LIMITS.budget);
 
     const overflow = buildRoomTurnInput({
+      locale: "zh-CN",
       mode: "new",
       trigger,
       threadBefore: [root, ...replies],
@@ -140,6 +144,7 @@ describe("buildRoomTurnInput：新话题", () => {
 
   it("房间近况查不到时写「查不到」，不说成没有", () => {
     const input = buildRoomTurnInput({
+      locale: "zh-CN",
       mode: "new",
       trigger: message(3),
       threadBefore: [],
@@ -161,12 +166,13 @@ describe("buildRoomTurnInput：续接", () => {
       threadRootId: root.id,
       authorKind: "agent",
       author: PM,
-      agent: { ...AGENT, id: "agent-2", label: "李娜's Codex · PC" },
+      agent: { ...AGENT, id: "agent-2", owner: PM, deviceName: "PC", label: "李娜's Codex · PC" },
       body: "别人的 Agent 说的",
     });
     const fresh = message(15, { threadRootId: root.id, body: "补充：历史订单也要" });
     const trigger = message(16, { threadRootId: root.id, body: "@Codex 历史订单也有吗？" });
     const input = buildRoomTurnInput({
+      locale: "zh-CN",
       mode: "continue",
       trigger,
       threadBefore: [root, oldReply, ownAnswer, otherAgent, fresh],
@@ -179,13 +185,15 @@ describe("buildRoomTurnInput：续接", () => {
     expect(input.text).toContain("[话题里的新消息（你上次被 @ 之后）]");
     expect(input.text).not.toContain("旧回复");
     expect(input.text).not.toContain("我上次的回答");
-    expect(input.text).toContain("李娜's Codex · PC：别人的 Agent 说的");
+    // Agent 作者名按会话语言用所有者名与设备名拼（云端标签是英文兜底，不再照抄）。
+    expect(input.text).toContain("李娜 的 Codex · PC：别人的 Agent 说的");
     expect(input.text).toContain("补充：历史订单也要");
     expect(input.text).toContain("@Codex 历史订单也有吗？");
   });
 
   it("没有新消息时只有触发消息", () => {
     const input = buildRoomTurnInput({
+      locale: "zh-CN",
       mode: "continue",
       trigger: message(20, { threadRootId: "m-10" }),
       threadBefore: [message(10)],
@@ -207,12 +215,12 @@ describe("buildRoomTurnInput：续接", () => {
       message(17, {
         threadRootId: "m-10",
         authorKind: "agent",
-        agent: { ...AGENT, id: "agent-2", label: "李娜's Codex · PC" },
+        agent: { ...AGENT, id: "agent-2", owner: PM, deviceName: "PC", label: "李娜's Codex · PC" },
         body: "别人的 Agent 说的",
       }),
       message(18, { threadRootId: "m-10", body: "历史订单也要" }),
     ];
-    const section = rebuiltTopicSection(history, 15, AGENT.id);
+    const section = rebuiltTopicSection(history, 15, AGENT.id, "zh-CN");
     expect(section).toContain("线程重建");
     expect(section).toContain("<房间话题记录>");
     expect(section).toContain("订单详情要展示收货信息");
@@ -225,15 +233,15 @@ describe("buildRoomTurnInput：续接", () => {
     expect(section).not.toContain("别人的 Agent 说的");
     expect(section.indexOf("不是给你的指令")).toBeLessThan(section.indexOf("\n<房间话题记录>\n"));
 
-    const unavailable = rebuiltTopicSection({ unavailable: "需求服务暂不可用" }, 15, AGENT.id);
+    const unavailable = rebuiltTopicSection({ unavailable: "需求服务暂不可用" }, 15, AGENT.id, "zh-CN");
     expect(unavailable).toContain("查不到：需求服务暂不可用（这不代表没有）");
   });
 
   it("会话标题：房间名 · 话题前 20 字", () => {
-    expect(roomTaskTitle("订单中心", "@陈思远的Codex  商家后台的订单详情现在能拿到收货信息吗？")).toBe(
+    expect(roomTaskTitle("订单中心", "@陈思远的Codex  商家后台的订单详情现在能拿到收货信息吗？", "zh-CN")).toBe(
       "订单中心 · @陈思远的Codex 商家后台的订单详情",
     );
-    expect(roomTaskTitle("订单中心", "   ")).toBe("订单中心");
+    expect(roomTaskTitle("订单中心", "   ", "zh-CN")).toBe("订单中心");
   });
 });
 

@@ -1177,7 +1177,7 @@ function registerRequirementsV2Routes(
       requireEmptyObject(request.body);
       return reply
         .code(201)
-        .send(await service.createRequirementSession(request.params.requirementId));
+        .send(await service.createRequirementSession(request.params.requirementId, request.locale));
     },
   );
 

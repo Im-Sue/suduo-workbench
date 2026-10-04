@@ -1,5 +1,6 @@
 import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
+import { ApiError } from "../../application/api-error.js";
 
 /** SuDuo 在用户项目目录里的唯一落盘位置（需求会话上下文重做 R9）。 */
 export const SUDUO_DIR = ".suduo";
@@ -47,8 +48,8 @@ export async function assertWritableInsideProject(projectRoot: string, target: s
   }
   const actual = await realpath(existing);
   if (actual !== root && !actual.startsWith(root + sep)) {
-    throw new Error(
-      `本机落盘目录 ${relative(projectRoot, target)} 指向了项目目录之外（可能是符号链接），为安全起见没有写入，请检查项目里的 .suduo 目录`,
-    );
+    // 按字典生成：回给 Codex 时按会话语言（toolFormat().reasonOf），走 HTTP 时按请求语言。
+    const path = relative(projectRoot, target);
+    throw new ApiError(500, "RUNTIME_REQUEST_FAILED", (t) => t.workspace.files.storageDirOutsideProject(path));
   }
 }

@@ -408,6 +408,7 @@ describe("需求会话创建时快照需求编号与标题", () => {
         context.refs,
       );
       const created = await service.createFromRequirement(project.id, {
+        locale: "zh-CN",
         title: "支付回调重试",
         remoteProjectId: REMOTE_PROJECT_ID,
         remoteRequirementId: REMOTE_REQUIREMENT_ID,

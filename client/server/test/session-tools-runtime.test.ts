@@ -101,7 +101,8 @@ describe("CodexRuntime 客户端自定义工具", () => {
     connection.push({ kind: "server-request", id: 9, method: "item/tool/call", params: { callId: "c", tool: "x", arguments: {} } });
     const event = (await subscription.next()).value as RuntimeEventDraft;
     expect(event.type).toBe("runtime.error");
-    expect(connection.errors).toEqual([{ id: 9, code: -32602, message: expect.stringContaining("认不出") }]);
+    // 认不出会话也就拿不到会话的语言，回给 Codex 的报错写英文（中英双语 S7）。
+    expect(connection.errors).toEqual([{ id: 9, code: -32602, message: "SuDuo can't tell which session this tool call belongs to" }]);
   });
 
   it("serverRequest/resolved 命中挂起调用时产生 tool.call-cancelled，之后回包不再送达", async () => {
@@ -278,7 +279,8 @@ describe("codex-event-normalizer：dynamicToolCall 结果瘦身", () => {
     expect(contentItems[1]).toEqual({ type: "inputImage", imageUrl: OMITTED_IMAGE_URL });
     const truncated = asObject(contentItems[2])["text"] as string;
     expect(truncated.startsWith("需".repeat(4_000))).toBe(true);
-    expect(truncated.endsWith("…（以下省略）")).toBe(true);
+    // 账本这一层拿不到会话语言：截断标记只用与语言无关的省略号（中英双语 S7）。
+    expect(truncated).toBe("需".repeat(4_000) + "\n…");
     expect(truncated.length).toBeLessThan(longText.length);
     // extensions 里的原生副本同样已瘦身（账本里不留整张图）。
     const nativeItem = asObject(asObject(asObject(asObject(event.payload)["extensions"])["codex"])["params"])["item"];
@@ -358,7 +360,7 @@ describe("runtime-consumer：tool.call-* 事件分流", () => {
       {
         callRef: "ref-2",
         success: false,
-        contentItems: [{ type: "inputText", text: expect.stringContaining("工具服务不可用") }],
+        contentItems: [{ type: "inputText", text: "The SuDuo tool service is unavailable, so this call wasn't run." }],
       },
     ]);
   });

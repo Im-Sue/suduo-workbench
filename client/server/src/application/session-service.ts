@@ -108,6 +108,7 @@ export class SessionService {
         this.approvalModeEnvironment,
       ),
       ...(options.kind === undefined ? {} : { kind: options.kind }),
+      locale: options.locale,
     });
     let started;
     try {
@@ -161,6 +162,8 @@ export class SessionService {
   async createFromRequirement(
     projectId: string,
     input: {
+      /** 会话的语言（创建请求的语言）：需求卡与工具说明已按它生成，存下来供工具回包与重建线程用。 */
+      locale: Locale;
       title: string;
       remoteProjectId: string;
       remoteRequirementId: string;
@@ -183,6 +186,7 @@ export class SessionService {
     const session = this.sessions.create({
       projectId,
       title: normalizeTitle(input.title),
+      locale: input.locale,
       purpose: "general",
       approvalMode: effectiveApprovalMode(
         { approvalMode: this.defaultApprovalMode() },

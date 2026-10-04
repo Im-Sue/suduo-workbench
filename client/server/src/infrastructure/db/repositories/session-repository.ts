@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { isReasoningEffort, type JsonValue, type ReasoningEffort } from "@suduo/client-contracts";
+import { isReasoningEffort, type JsonValue, type Locale, type ReasoningEffort } from "@suduo/client-contracts";
 import type { DatabasePort } from "../database-port.js";
 import { parseJson, serializeJson } from "./repository-json.js";
 
@@ -30,6 +30,8 @@ export interface SessionRecord {
   approvalMode: SessionApprovalMode;
   /** 会话种类；房间任务会话不进普通列表，安全档固定为房间 Agent 档。 */
   kind: SessionKind;
+  /** 建会话时定下的语言：交给 Codex 的说明、工具定义与工具回包按它写（迁移 017，存量会话为 zh-CN）。 */
+  locale: Locale;
   /** 会话级模型；null = 跟随全局默认。 */
   model: string | null;
   /** 会话级推理强度；null = 跟随全局默认。 */
@@ -52,6 +54,7 @@ export interface CreateSessionInput {
   approvalMode?: SessionApprovalMode;
   purpose?: SessionPurpose;
   kind?: SessionKind;
+  locale?: Locale;
   now?: number;
 }
 
@@ -64,6 +67,8 @@ export interface SessionRow {
   approval_mode: SessionApprovalMode;
   /** 迁移 016 之前的库没有这一列。 */
   kind?: SessionKind;
+  /** 迁移 017 之前的库没有这一列。 */
+  locale?: string;
   model: string | null;
   reasoning_effort: string | null;
   created_at: number;
@@ -83,14 +88,15 @@ export class SessionRepository {
     const id = input.id ?? randomUUID();
     const now = input.now ?? Date.now();
     const state = input.state ?? "starting";
-    // 普通会话不写 kind 列（走默认值）：迁移 016 之前的库（升级测试）仍能建会话。
+    // 普通会话不写 kind 列、中文会话不写 locale 列（走默认值）：迁移 016 / 017 之前的库（升级测试）仍能建会话。
     const roomTask = input.kind === "room_task";
+    const english = input.locale === "en";
     this.database
       .prepare(
         [
           "INSERT INTO sessions",
-          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""})`,
-          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""})`,
+          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""})`,
+          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""})`,
         ].join(" "),
       )
       .run({
@@ -308,6 +314,7 @@ export function mapSession(row: SessionRow): SessionRecord {
     purpose: row.purpose,
     approvalMode: row.approval_mode,
     kind: row.kind === "room_task" ? "room_task" : "normal",
+    locale: row.locale === "en" ? "en" : "zh-CN",
     model: row.model,
     reasoningEffort: isReasoningEffort(row.reasoning_effort)
       ? row.reasoning_effort

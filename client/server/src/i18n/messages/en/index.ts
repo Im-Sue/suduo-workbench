@@ -9,5 +9,10 @@ import { config } from "./config.js";
 import { doctor } from "./doctor.js";
 import { http } from "./http.js";
 import { room } from "./room.js";
+import { toolText } from "./toolText.js";
+import { prompt } from "./prompt.js";
+import { toolSpec } from "./toolSpec.js";
+import { roomPrompt } from "./roomPrompt.js";
+import { toolReply } from "./toolReply.js";
 
-export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room } satisfies ServerMessages;
+export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply } satisfies ServerMessages;

@@ -8,6 +8,7 @@ import type {
   InterruptInput,
   JsonRpcId,
   JsonValue,
+  Locale,
   RespondToolCallInput,
   RpcConnection,
   RuntimeEventDraft,
@@ -41,23 +42,23 @@ import {
 } from "./codex-model-overrides.js";
 import { initializeCodexConnection } from "../../transport/stdio-codex-transport.js";
 import { StdioRpcConnection } from "../../transport/rpc-connection.js";
+import { messagesFor } from "../../../i18n/messages/index.js";
 
 /**
  * Windows 下 PowerShell 5.1 的 Get-Content/Out-File 默认按系统 ANSI 代码页读写，
  * 读 UTF-8 中文文件会得到乱码（模型连自己的 SKILL.md 都会读花）。
  * 这里通过 developerInstructions 让模型显式指定 UTF-8，避免要求用户改系统区域设置。
+ * 和需求卡一样按会话的语言写（中英双语 S7）；不是 Windows 时为 null。
  */
-const WINDOWS_ENCODING_INSTRUCTIONS =
-  process.platform === "win32"
-    ? [
-        "本机是 Windows，文件基本都是 UTF-8 编码且大量包含中文。",
-        "用 PowerShell 读写文件时必须显式指定 UTF-8，否则会按系统 ANSI 代码页处理导致中文乱码：",
-        "读取用 `Get-Content -LiteralPath <path> -Raw -Encoding UTF8`；",
-        "写入用 `Out-File -Encoding utf8` 或 `Set-Content -Encoding UTF8`。",
-        "调用 Python 时用 `open(path, encoding=\"utf-8\")`，并优先设置环境变量 PYTHONUTF8=1。",
-        "如果读到的文本出现 `å` `æ` `â€` 这类连续怪字符，说明编码读错了，请改用上述 UTF-8 方式重读，不要把乱码当作文件真实内容。",
-      ].join("")
-    : null;
+export function windowsEncodingInstructions(locale: Locale, platform: NodeJS.Platform = process.platform): string | null {
+  return platform === "win32" ? messagesFor(locale).roomPrompt.runtime.windowsEncoding : null;
+}
+
+/**
+ * 会话记下的语言查不到时用中文：迁移 017 之前的会话都是中文（与 sessions.locale 的默认值一致），
+ * 也是未注入 `sessionLocale` 时（测试）的旧行为。
+ */
+const DEFAULT_SESSION_LOCALE: Locale = "zh-CN";
 
 /** 全局默认模型 / 强度的缓存时长；配置写入与重连会提前清空。 */
 const MODEL_DEFAULTS_TTL_MS = 60_000;
@@ -70,6 +71,13 @@ export interface CodexRuntimeOptions {
   codexBin: string;
   env?: Record<string, string>;
   runtimeId?: string;
+  /**
+   * 会话的语言（`sessions.locale`）：回给 Codex 的说明（Windows 编码说明、「不支持」的报错）按它写。
+   * 不传或查不到时按中文。
+   */
+  sessionLocale?: (sessionId: string) => Locale | null;
+  /** 本机平台，默认 `process.platform`（测试用）。 */
+  platform?: NodeJS.Platform;
 }
 
 export class CodexRuntime implements AgentRuntime {
@@ -79,6 +87,8 @@ export class CodexRuntime implements AgentRuntime {
   private readonly codexBin: string;
   private readonly env: Record<string, string>;
   private readonly connectionAbort = new AbortController();
+  private readonly sessionLocale: ((sessionId: string) => Locale | null) | null;
+  private readonly platform: NodeJS.Platform;
   private readonly threadSessions = new Map<string, string>();
   private readonly pendingApprovals = new Map<string, PendingNativeApproval>();
   /** 还没回包的客户端自定义工具调用（ADR-0008），按 callRef 索引。 */
@@ -101,6 +111,8 @@ export class CodexRuntime implements AgentRuntime {
     this.transport = options.transport;
     this.codexBin = options.codexBin;
     this.env = options.env ?? currentEnvironment();
+    this.sessionLocale = options.sessionLocale ?? null;
+    this.platform = options.platform ?? process.platform;
   }
 
   async startThread(input: StartThreadInput): Promise<StartThreadResult> {
@@ -108,10 +120,10 @@ export class CodexRuntime implements AgentRuntime {
     const connection = await this.ensureConnection();
     this.pendingSessionId = input.sessionId;
     try {
-      // 上层业务指令（如需求包摘要）与本机环境指令（Windows 编码）合并下发。
+      // 上层业务指令（如需求包摘要）与本机环境指令（Windows 编码，按会话的语言）合并下发。
       const developerInstructions = [
         input.developerInstructions,
-        WINDOWS_ENCODING_INSTRUCTIONS,
+        windowsEncodingInstructions(this.localeOfSession(input.sessionId), this.platform),
       ]
         .filter((part): part is string => typeof part === "string" && part !== "")
         .join("\n\n");
@@ -318,7 +330,8 @@ export class CodexRuntime implements AgentRuntime {
           const threadRef = extractThreadRef(this.runtimeId, message.params);
           if (!threadRef) {
             // 同样要回包，免得 Codex 一直等：认不出属于哪个会话的审批按拒绝处理。
-            await answerWithError(connection, message.id, -32602, "SuDuo 认不出这个审批属于哪个会话");
+            // 认不出会话也就拿不到会话的语言，写英文。
+            await answerWithError(connection, message.id, -32602, "SuDuo can't tell which session this approval request belongs to");
             yield this.runtimeErrorEvent(
               connection.connectionId,
               "approval request missing thread reference",
@@ -358,7 +371,7 @@ export class CodexRuntime implements AgentRuntime {
           const params = asRecord(message.params);
           const threadRef = extractThreadRef(this.runtimeId, message.params);
           if (!threadRef) {
-            await answerWithError(connection, message.id, -32602, "SuDuo 认不出这个工具调用属于哪个会话");
+            await answerWithError(connection, message.id, -32602, "SuDuo can't tell which session this tool call belongs to");
             yield this.runtimeErrorEvent(
               connection.connectionId,
               "tool call request missing thread reference",
@@ -394,8 +407,13 @@ export class CodexRuntime implements AgentRuntime {
           continue;
         }
         if (message.kind === "server-request") {
-          const answered = await answerServerRequest(connection, message.id, message.method);
           const requestThreadRef = extractThreadRef(this.runtimeId, message.params);
+          const answered = await answerServerRequest(
+            connection,
+            message.id,
+            message.method,
+            this.localeOfThread(requestThreadRef?.threadId),
+          );
           if (!answered) {
             // 回了「不支持」：在时间线上说一声，免得用户不知道 Codex 的提问 / 确认被跳过了。
             // 前端按 code + 方法名用看的人的语言渲染；message 是给旧客户端的英文兜底。
@@ -995,6 +1013,17 @@ export class CodexRuntime implements AgentRuntime {
     };
   }
 
+  /** 会话记下的语言；查不到时按中文（见 DEFAULT_SESSION_LOCALE）。 */
+  private localeOfSession(sessionId: string): Locale {
+    return this.sessionLocale?.(sessionId) ?? DEFAULT_SESSION_LOCALE;
+  }
+
+  /** 线程所属会话的语言；认不出线程属于哪个会话时为 null（回给 Codex 的话写英文）。 */
+  private localeOfThread(threadId: string | undefined): Locale | null {
+    const sessionId = threadId === undefined ? undefined : this.threadSessions.get(threadId);
+    return sessionId === undefined ? null : this.localeOfSession(sessionId);
+  }
+
   /**
    * 没有 threadId 时默认退而挂到正在创建的会话或唯一的会话上；本来就不属于任何会话的全局通知不这样做，
    * 否则 Codex 启动时的配置提醒会混进那个会话的时间线，设置页也收不到。
@@ -1136,8 +1165,14 @@ const THREADLESS_NOTIFICATIONS = new Set([
 /**
  * 审批以外的服务端请求：能直接答的就答（currentTime/read，新版模型的「当前时间」工具会用），
  * 其余明确回「不支持」。不回包的话 Codex 会一直等，回合卡住。事件仍照常记为 runtime.unknown。
+ * 「不支持」按请求所属会话的语言写；认不出会话（`locale` 为 null）时写英文。
  */
-async function answerServerRequest(connection: RpcConnection, id: JsonRpcId, method: string): Promise<boolean> {
+async function answerServerRequest(
+  connection: RpcConnection,
+  id: JsonRpcId,
+  method: string,
+  locale: Locale | null,
+): Promise<boolean> {
   if (method === "currentTime/read") {
     try {
       await connection.respond(id, { currentTimeAt: Math.floor(Date.now() / 1000) });
@@ -1146,7 +1181,7 @@ async function answerServerRequest(connection: RpcConnection, id: JsonRpcId, met
     }
     return true;
   }
-  await answerWithError(connection, id, -32601, `SuDuo 不支持 ${method}`);
+  await answerWithError(connection, id, -32601, messagesFor(locale ?? "en").roomPrompt.runtime.unsupported(method));
   return false;
 }
 
