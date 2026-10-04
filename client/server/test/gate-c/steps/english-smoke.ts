@@ -207,6 +207,12 @@ export const englishSessionTurnStep: GateCStep = {
     await card.waitFor({ state: "hidden", timeout: 60_000 });
     await waitForTurnTerminal(page, MODEL_WRAP_UP_TIMEOUT_MS);
     await capture(context, "en-06-session-turn.png");
+    // 回合结束后步骤组默认收成一行，工具卡不渲染：先把收起的步骤组都展开，工具卡里的系统文字也要查到。
+    const collapsed = page.getByTestId("turn-card").locator('button[aria-expanded="false"]');
+    for (let index = await collapsed.count(); index > 0; index -= 1) {
+      await collapsed.first().click();
+    }
+    await page.getByTestId("tool-card").first().waitFor({ timeout: 10_000 });
     await auditUntranslatedText(context, "session", {
       allowed: [ACCEPT_PROMPT],
       mustCover: ["conversation-stream", "tool-card", "message-input"],
