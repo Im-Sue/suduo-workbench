@@ -55,7 +55,7 @@ export class ArtifactVersionService {
       );
       if (replay !== null) {
         if (replay.requestDigest !== requestDigest) {
-          throw new ApplicationError(409, "VALIDATION_ERROR", "operationKey 已用于其他发布请求");
+          throw new ApplicationError(409, "VALIDATION_ERROR", "operationKey was already used for a different publish request");
         }
         return replay.response;
       }
@@ -68,7 +68,7 @@ export class ArtifactVersionService {
         throw new ApplicationError(
           400,
           "ATTACHMENT_INVALID",
-          "发布文件必须属于该需求且未被删除",
+          "Published files must belong to this requirement and must not be deleted",
         );
       }
       const snapshotsById = new Map(attachmentSnapshots.map((file) => [file.id, file]));
@@ -77,7 +77,7 @@ export class ArtifactVersionService {
         throw new ApplicationError(
           400,
           "ATTACHMENT_INVALID",
-          "发布文件必须属于该需求且未被删除",
+          "Published files must belong to this requirement and must not be deleted",
         );
       }
 
@@ -138,7 +138,7 @@ function normalizePublishRequest(
 ): PublishArtifactVersionRequest {
   const operationKey = request.operationKey.trim();
   if (!operationKey || operationKey.length > 200) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "operationKey 必须为 1 至 200 个字符");
+    throw new ApplicationError(400, "VALIDATION_ERROR", "operationKey must be 1 to 200 characters");
   }
   if (
     request.attachmentIds.length === 0 ||
@@ -147,15 +147,15 @@ function normalizePublishRequest(
     throw new ApplicationError(
       400,
       "ATTACHMENT_INVALID",
-      `单个产物版本最多包含 ${REQUIREMENTS_ARTIFACT_VERSION_FETCH_FILE_LIMIT} 个文件`,
+      `A confirmed version must include 1 to ${REQUIREMENTS_ARTIFACT_VERSION_FETCH_FILE_LIMIT} files`,
     );
   }
   if (new Set(request.attachmentIds).size !== request.attachmentIds.length) {
-    throw new ApplicationError(400, "ATTACHMENT_INVALID", "发布文件不能重复");
+    throw new ApplicationError(400, "ATTACHMENT_INVALID", "Published files must not contain duplicates");
   }
   const note = request.note?.trim();
   if (note !== undefined && note.length > 4_000) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "发布说明不能超过 4000 个字符");
+    throw new ApplicationError(400, "VALIDATION_ERROR", "Publish note must be 4000 characters or fewer");
   }
   return {
     operationKey,

@@ -4,8 +4,12 @@ import { dirname, join, relative, sep } from "node:path";
 /** SuDuo 在用户项目目录里的唯一落盘位置（需求会话上下文重做 R9）。 */
 export const SUDUO_DIR = ".suduo";
 
-/** `.suduo/.gitignore` 的内容：整个目录（含这个文件本身）都不进 git。 */
-const GITIGNORE_CONTENT = "# SuDuo 本机文件，不进 git\n*\n";
+/**
+ * `.suduo/.gitignore` 的内容：整个目录（含这个文件本身）都不进 git。
+ * 它写进用户的仓库、可能被不同语言的人看到，所以是与界面语言无关的固定英文。
+ * 只在文件不存在时写入；已有的（含旧版写的中文注释头）原样保留，没有任何地方按内容识别它。
+ */
+const GITIGNORE_CONTENT = "# SuDuo local files, not tracked by git\n*\n";
 
 /**
  * 确保 `<项目目录>/.suduo/` 存在且带忽略全部内容的 `.gitignore`，返回目录绝对路径。

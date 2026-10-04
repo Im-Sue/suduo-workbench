@@ -41,17 +41,17 @@ export function loadConfig(
   const authSecret = required(environment, "REQUIREMENTS_AUTH_SECRET");
   const attachmentRoot = required(environment, "REQUIREMENTS_ATTACHMENT_ROOT");
   if (!isAbsolute(attachmentRoot)) {
-    throw new Error("REQUIREMENTS_ATTACHMENT_ROOT 必须是绝对路径");
+    throw new Error("REQUIREMENTS_ATTACHMENT_ROOT must be an absolute path");
   }
   const roomFileRoot = environment["REQUIREMENTS_ROOM_FILE_ROOT"]?.trim() || defaultRoomFileRoot(attachmentRoot);
   if (!isAbsolute(roomFileRoot)) {
-    throw new Error("REQUIREMENTS_ROOM_FILE_ROOT 必须是绝对路径");
+    throw new Error("REQUIREMENTS_ROOM_FILE_ROOT must be an absolute path");
   }
   if (overlaps(roomFileRoot, attachmentRoot)) {
-    throw new Error("REQUIREMENTS_ROOM_FILE_ROOT 不能与 REQUIREMENTS_ATTACHMENT_ROOT 相同或互相嵌套");
+    throw new Error("REQUIREMENTS_ROOM_FILE_ROOT and REQUIREMENTS_ATTACHMENT_ROOT must not be the same directory or contain each other");
   }
   if (authSecret.length < 32) {
-    throw new Error("REQUIREMENTS_AUTH_SECRET 至少需要 32 个字符");
+    throw new Error("REQUIREMENTS_AUTH_SECRET must be at least 32 characters");
   }
 
   return {
@@ -152,12 +152,12 @@ function extensionSet(
   for (const value of values) {
     const extension = value.startsWith(".") ? value : `.${value}`;
     if (!/^\.[a-z0-9]{1,12}$/u.test(extension)) {
-      throw new Error(`${name} 包含无效扩展名`);
+      throw new Error(`${name} contains an invalid extension`);
     }
     normalized.add(extension);
   }
   if (normalized.size === 0) {
-    throw new Error(`${name} 不能为空`);
+    throw new Error(`${name} must not be empty`);
   }
   return normalized;
 }
@@ -180,7 +180,7 @@ function overlaps(left: string, right: string): boolean {
 function required(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
   if (!value) {
-    throw new Error(`${name} 未配置`);
+    throw new Error(`${name} is not set`);
   }
   return value;
 }
@@ -196,7 +196,7 @@ function integer(
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = Number(raw);
   if (!Number.isInteger(value) || value < minimum || value > maximum) {
-    throw new Error(`${name} 必须是 ${minimum} 到 ${maximum} 之间的整数`);
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
   }
   return value;
 }
@@ -210,13 +210,13 @@ function boolean(
   if (raw === undefined || raw.trim() === "") return fallback;
   if (raw === "true") return true;
   if (raw === "false") return false;
-  throw new Error(`${name} 必须为 true 或 false`);
+  throw new Error(`${name} must be true or false`);
 }
 
 function durationSeconds(raw: string): number {
   const matched = /^(\d+)([smhd]?)$/.exec(raw.trim());
   if (!matched) {
-    throw new Error("REQUIREMENTS_AUTH_TTL 必须是秒数或 30m/8h/7d 形式");
+    throw new Error("REQUIREMENTS_AUTH_TTL must be a number of seconds or a duration such as 30m, 8h, or 7d");
   }
   const amount = Number(matched[1]);
   const unit = matched[2] ?? "";
@@ -224,7 +224,7 @@ function durationSeconds(raw: string): number {
     unit === "m" ? 60 : unit === "h" ? 3_600 : unit === "d" ? 86_400 : 1;
   const seconds = amount * multiplier;
   if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > 2_592_000) {
-    throw new Error("REQUIREMENTS_AUTH_TTL 必须在 60 秒到 30 天之间");
+    throw new Error("REQUIREMENTS_AUTH_TTL must be between 60 seconds and 30 days");
   }
   return seconds;
 }

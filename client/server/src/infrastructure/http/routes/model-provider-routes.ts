@@ -12,13 +12,14 @@ export function registerModelProviderRoutes(
   server: FastifyInstance,
   dependencies: ModelProviderRouteDependencies,
 ): void {
-  server.get("/api/v1/settings/model-provider", async () =>
-    dependencies.modelProvider.get(),
+  server.get("/api/v1/settings/model-provider", async (request) =>
+    dependencies.modelProvider.get(request.locale),
   );
 
   server.put("/api/v1/settings/model-provider", async (request) =>
     dependencies.modelProvider.update(
       requireObject<UpdateModelProviderRequest>(request.body),
+      request.locale,
     ),
   );
 
@@ -34,7 +35,7 @@ export function registerModelProviderRoutes(
 
 function requireObject<T>(value: unknown): T {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "请求体必须是 JSON object");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.http.bodyMustBeObject);
   }
   return value as T;
 }

@@ -61,6 +61,7 @@ interface RoomRow {
 /**
  * 房间查询（`$1` 恒为当前用户 ID，可为 null = 广播用的中性视角）。
  * 未读只算别人发的、序号大于已读位置的；需求房间只有成员才有未读。
+ * 默认房间里还没有已读行的人：只算注册之后的消息，后注册的人不背整段历史的未读（`um.created_at > viewer.created_at`）。
  */
 function roomSelect(tail: string): string {
   return `
@@ -109,7 +110,6 @@ function roomSelect(tail: string): string {
         AND um.room_id = r.id
         AND um.seq > COALESCE(me.last_read_seq, 0)
         AND NOT (um.author_kind = 'user' AND um.author_id = viewer.id)
-        -- 默认房间里还没有已读行的人：只算注册之后的消息，后注册的人不背整段历史的未读。
         AND (me.user_id IS NOT NULL OR um.created_at > viewer.created_at)
     ) unread ON true
     LEFT JOIN LATERAL (
@@ -199,7 +199,7 @@ export class RoomRepository {
   async getRoom(roomId: string, viewerId: string | null, executor: QueryExecutor = this.database): Promise<RoomDto> {
     const result = await executor.query<RoomRow>(roomSelect("WHERE r.id = $2"), [viewerId, roomId]);
     const row = result.rows[0];
-    if (row === undefined) throw notFound("房间");
+    if (row === undefined) throw notFound("Room");
     return mapRoom(row);
   }
 
@@ -213,7 +213,7 @@ export class RoomRepository {
 
   async requireRef(roomId: string, executor: QueryExecutor = this.database): Promise<RoomRef> {
     const room = await this.findRef(roomId, executor);
-    if (room === null) throw notFound("房间");
+    if (room === null) throw notFound("Room");
     return room;
   }
 
@@ -227,7 +227,7 @@ export class RoomRepository {
       `,
       [roomId],
     );
-    if (result.rows[0] === undefined) throw notFound("房间");
+    if (result.rows[0] === undefined) throw notFound("Room");
     return mapRef(result.rows[0]);
   }
 

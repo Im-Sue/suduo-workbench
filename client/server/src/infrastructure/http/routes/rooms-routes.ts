@@ -1,8 +1,9 @@
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { LocalAgentStateDto } from "@suduo/client-contracts";
-import { ApiError } from "../../../application/api-error.js";
+import { renderAgentState, type LocalAgentState } from "../../../application/agent-presence.js";
+import { ApiError, type ErrorText } from "../../../application/api-error.js";
+import { messagesFor } from "../../../i18n/messages/index.js";
 import type { RequirementsRemoteClient } from "../../requirements-v2/remote-client.js";
 
 /**
@@ -13,7 +14,8 @@ import type { RequirementsRemoteClient } from "../../requirements-v2/remote-clie
  */
 export interface RoomsRouteDependencies {
   remote: Pick<RequirementsRemoteClient, "forward" | "uploadRoomFile" | "downloadRoomFile">;
-  agentState(): LocalAgentStateDto;
+  /** 状态说明（message）还没定语言，返回时按请求语言渲染。 */
+  agentState(): LocalAgentState;
 }
 
 type Method = "GET" | "POST" | "PATCH";
@@ -79,7 +81,9 @@ export function registerRoomsRoutes(server: FastifyInstance, dependencies: Rooms
     query: true,
   });
   // Agent 与共享。登记、心跳只由本机服务自己发（AgentPresence），不给浏览器开代理。
-  server.get("/api/v2/agents/self", async () => dependencies.agentState());
+  server.get("/api/v2/agents/self", async (request) =>
+    renderAgentState(dependencies.agentState(), messagesFor(request.locale)),
+  );
   route("GET", "/api/v2/agents", () => "/v2/agents");
   route("GET", "/api/v2/rooms/:roomId/shares", (p) => `/v2/rooms/${id(p, "roomId")}/shares`);
   route("POST", "/api/v2/rooms/:roomId/shares", (p) => `/v2/rooms/${id(p, "roomId")}/shares`);
@@ -108,10 +112,10 @@ export function registerRoomsRoutes(server: FastifyInstance, dependencies: Rooms
       const contentType = headerValue(request.headers["content-type"]);
       if (!contentType?.toLowerCase().startsWith("multipart/form-data;")) {
         if (request.body instanceof Readable) request.body.resume();
-        throw validation("房间文件上传必须使用 multipart/form-data");
+        throw validation((t) => t.session.rooms.uploadNotMultipart);
       }
       if (!(request.body instanceof Readable)) {
-        throw validation("房间文件上传流无效");
+        throw validation((t) => t.session.rooms.uploadStreamInvalid);
       }
       const headers: Record<string, string> = {};
       for (const name of UPLOAD_FORWARD_HEADERS) {
@@ -174,7 +178,7 @@ function requestBody(value: unknown): unknown {
     return undefined;
   }
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw validation("请求体必须是 JSON object");
+    throw validation((t) => t.session.rooms.bodyNotObject);
   }
   return value;
 }
@@ -196,6 +200,6 @@ function queryObject(value: unknown): Record<string, string | undefined> {
   return result;
 }
 
-function validation(message: string): ApiError {
+function validation(message: ErrorText): ApiError {
   return new ApiError(400, "VALIDATION_ERROR", message);
 }

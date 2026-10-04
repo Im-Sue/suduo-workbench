@@ -10,7 +10,15 @@ import {
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, resolve } from "node:path";
-import { CODEX_VERSION, type JsonValue } from "@suduo/client-contracts";
+import {
+  CODEX_VERSION,
+  SUDUO_DOCTOR_CHECK_IDS,
+  type DoctorCheckDto,
+  type DoctorResultDto,
+  type JsonValue,
+  type Locale,
+} from "@suduo/client-contracts";
+import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
 import { openBetterSqlite3Database } from "../db/better-sqlite3-database.js";
 import { runMigrations } from "../db/migration-runner.js";
 import {
@@ -22,19 +30,8 @@ import {
   formatWindowsCommandOutput,
 } from "../platform/windows-command-output.js";
 
-export interface DoctorCheck {
-  name: string;
-  status: "pass" | "warn" | "fail";
-  message: string;
-  /** Codex doctor 的原始 check id；SuDuo 自身检查没有该字段。 */
-  id?: string;
-  category?: string;
-  /** 官方已脱敏详情，供后续诊断页按需展示。 */
-  details?: JsonValue;
-  remediation?: string | null;
-  /** 保留官方状态（ok / warning / fail），不把 warning 伪装为 pass。 */
-  officialStatus?: string;
-}
+/** 一项检查：SuDuo 自己的项 id 见 SUDUO_DOCTOR_CHECK_IDS，Codex 官方项是官方的 check id。 */
+export type DoctorCheck = DoctorCheckDto;
 
 export interface CodexDoctorCommandResult {
   status: number | null;
@@ -79,30 +76,25 @@ export interface LinuxSandboxHost {
   inContainer: () => boolean;
 }
 
-export interface DoctorResult {
-  status: "PASS" | "FAIL";
-  codexHome: string;
+export interface DoctorResult extends DoctorResultDto {
   platform: NodeJS.Platform;
-  mode: "installed" | "source";
-  configDir: string;
-  dataDir: string;
-  port: number;
-  checkedAt: string;
-  checks: DoctorCheck[];
 }
 
+/** 检查项的名称、结论与处理建议按 locale 生成（/api/v1/doctor 用请求语言）。 */
 export async function runDoctor(
   options: DoctorOptions,
+  locale: Locale,
 ): Promise<DoctorResult> {
+  const t = messagesFor(locale);
   const checks: DoctorCheck[] = [];
-  checkVersion(checks, "Node.js", process.version.slice(1), "24.10.0");
+  checkVersion(checks, t, SUDUO_DOCTOR_CHECK_IDS.node, "Node.js", process.version.slice(1), "24.10.0");
   if (options.checkPnpm ?? !options.installed) {
-    checkCommandVersion(checks, "pnpm", ["--version"], "10.25.0");
+    checkCommandVersion(checks, t, SUDUO_DOCTOR_CHECK_IDS.pnpm, "pnpm", ["--version"], "10.25.0");
   }
-  checkCodex(checks, options);
-  await checkLinuxSandbox(checks, options);
-  checkDatabaseAddon(checks);
-  await checkPort(checks, options.port, options.allowPortInUse);
+  checkCodex(checks, t, options);
+  await checkLinuxSandbox(checks, t, options);
+  checkDatabaseAddon(checks, t);
+  await checkPort(checks, t, options.port, options.allowPortInUse);
   const failed = checks.filter((check) => check.status === "fail");
   return {
     status: failed.length === 0 ? "PASS" : "FAIL",
@@ -139,24 +131,30 @@ export function formatDoctorText(result: DoctorResult): string {
   return lines.join("\n") + "\n";
 }
 
+/** actual 为 null：命令不可用。 */
 function checkVersion(
   checks: DoctorCheck[],
+  t: ServerMessages,
+  id: string,
   name: string,
-  actual: string,
+  actual: string | null,
   expected: string,
 ): void {
   checks.push({
+    id,
     name,
     status: actual === expected ? "pass" : "fail",
     message:
       actual === expected
-        ? `${actual}（已锁定）`
-        : `需要 ${expected}，当前为 ${actual}`,
+        ? t.doctor.version.pinned(actual)
+        : t.doctor.version.mismatch(expected, actual),
   });
 }
 
 function checkCommandVersion(
   checks: DoctorCheck[],
+  t: ServerMessages,
+  id: string,
   command: string,
   args: string[],
   expected: string,
@@ -164,23 +162,24 @@ function checkCommandVersion(
   const result = spawnSync(command, args, { encoding: null, windowsHide: true });
   if (process.platform === "win32") {
     checks.push({
+      id,
       name: command,
       status: result.status === 0 ? "pass" : "fail",
       message:
         result.status === 0
-          ? `命令可执行（项目锁定 ${expected}）；输出仅供诊断：${formatWindowsCommandOutput(result.stdout)}`
-          : `命令执行失败 status=${String(result.status)}；stderr：${formatWindowsCommandOutput(result.stderr)}`,
+          ? t.doctor.command.windowsOk(expected, formatWindowsCommandOutput(result.stdout))
+          : t.doctor.command.windowsFailed(String(result.status), formatWindowsCommandOutput(result.stderr)),
     });
     return;
   }
   const actual =
     result.status === 0
       ? decodeWindowsCommandOutput(result.stdout).utf8.trim()
-      : "不可用";
-  checkVersion(checks, command, actual, expected);
+      : null;
+  checkVersion(checks, t, id, command, actual, expected);
 }
 
-function checkCodex(checks: DoctorCheck[], options: DoctorOptions): void {
+function checkCodex(checks: DoctorCheck[], t: ServerMessages, options: DoctorOptions): void {
   const runner = options.codexDoctorRunner ?? defaultCodexDoctorRunner;
   const result = runner(options.codexBin, ["doctor", "--json"], {
     env: { ...process.env, CODEX_HOME: options.codexHome },
@@ -189,29 +188,27 @@ function checkCodex(checks: DoctorCheck[], options: DoctorOptions): void {
 
   let report: OfficialDoctorReport;
   try {
-    report = parseOfficialDoctorReport(result.stdout);
+    report = parseOfficialDoctorReport(result.stdout, t);
   } catch (error) {
     checks.push({
-      name: "Codex 官方诊断",
+      id: SUDUO_DOCTOR_CHECK_IDS.codexDoctor,
+      name: t.doctor.names.codexDoctor,
       status: "fail",
       message:
         result.status === 0
-          ? "codex doctor --json 返回无效 JSON：" + messageOf(error)
-          : "codex doctor --json 执行失败 status=" +
-            String(result.status) +
-            "；stderr：" +
-            formatWindowsCommandOutput(result.stderr),
+          ? t.doctor.codex.invalidJson(messageOf(error))
+          : t.doctor.codex.runFailed(String(result.status), formatWindowsCommandOutput(result.stderr)),
     });
     return;
   }
 
   const officialChecks = Object.values(report.checks).map((value) => {
-    const check = requireObject(value, "codex doctor check");
+    const check = requireObject(value, "codex doctor check", t);
     return {
       id: stringField(check, "id") ?? "unknown",
       category: stringField(check, "category") ?? "general",
       status: stringField(check, "status"),
-      summary: stringField(check, "summary") ?? "未提供摘要",
+      summary: stringField(check, "summary") ?? t.doctor.codex.noSummary,
       remediation: nullableStringField(check, "remediation"),
       details: check["details"] as JsonValue | undefined,
     };
@@ -222,7 +219,8 @@ function checkCodex(checks: DoctorCheck[], options: DoctorOptions): void {
   // doctor 的非零退出码表示诊断结论（overallStatus=fail），不是命令无法执行。
   // 汇总项以逐项门禁判读，不让 workspace 锁版下必然失败的 npm 全局更新检查阻断启动。
   checks.push({
-    name: "Codex 官方诊断",
+    id: SUDUO_DOCTOR_CHECK_IDS.codexDoctor,
+    name: t.doctor.names.codexDoctor,
     status: blockingOfficialFailure ? "fail" : nonBlockingOfficialFailure ? "warn" : "pass",
     message: "overallStatus=" + report.overallStatus,
     officialStatus: report.overallStatus,
@@ -230,12 +228,15 @@ function checkCodex(checks: DoctorCheck[], options: DoctorOptions): void {
 
   const codexVersion = stringField(report.value, "codexVersion");
   checks.push({
+    id: SUDUO_DOCTOR_CHECK_IDS.codexCli,
     name: "Codex CLI",
     status: codexVersion === CODEX_VERSION ? "pass" : "fail",
     message:
       codexVersion === CODEX_VERSION
-        ? `codex-cli ${codexVersion}（workspace 锁定版本）`
-        : `需要 codex-cli ${CODEX_VERSION}，当前为 ${codexVersion ?? "未知"}`,
+        ? t.doctor.codex.cliPinned(codexVersion)
+        : t.doctor.codex.cliMismatch(CODEX_VERSION, codexVersion),
+    // 前端直接读版本，不从说明文字里抠。
+    version: codexVersion,
   });
 
   // codex doctor --json 的 checks 是以 check id 为键的对象，不能当数组处理。
@@ -253,12 +254,10 @@ function checkCodex(checks: DoctorCheck[], options: DoctorOptions): void {
   }
   if (officialChecks.length === 0) {
     checks.push({
-      name: "Codex 官方诊断",
+      id: SUDUO_DOCTOR_CHECK_IDS.codexDoctorEmpty,
+      name: t.doctor.names.codexDoctor,
       status: "fail",
-      message:
-        "codex doctor --json 未返回任何检查项（overallStatus=" +
-        report.overallStatus +
-        "）",
+      message: t.doctor.codex.noChecks(report.overallStatus),
     });
   }
 }
@@ -286,9 +285,10 @@ function severityOf(check: { id: string; status: string | null }): DoctorCheck["
 const defaultCodexDoctorRunner: CodexDoctorRunner = (codexBin, args, options) =>
   spawnSync(codexBin, args, { encoding: null, ...options });
 
-function requireObject(value: unknown, label: string): Record<string, unknown> {
+/** 抛出的说明会拼进检查结论，所以按本次自检的语言写。 */
+function requireObject(value: unknown, label: string, t: ServerMessages): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(label + " 必须是 object");
+    throw new Error(t.doctor.codex.mustBeObject(label));
   }
   return value as Record<string, unknown>;
 }
@@ -310,22 +310,23 @@ interface OfficialDoctorReport {
   checks: Record<string, unknown>;
 }
 
-function parseOfficialDoctorReport(stdout: Buffer | null): OfficialDoctorReport {
+function parseOfficialDoctorReport(stdout: Buffer | null, t: ServerMessages): OfficialDoctorReport {
   const value = requireObject(
     JSON.parse(decodeWindowsCommandOutput(stdout).utf8),
     "codex doctor --json",
+    t,
   );
   if (typeof value["schemaVersion"] !== "number") {
-    throw new Error("codex doctor --json 缺少 schemaVersion");
+    throw new Error(t.doctor.codex.missingField("schemaVersion"));
   }
   const overallStatus = stringField(value, "overallStatus");
   if (overallStatus === null) {
-    throw new Error("codex doctor --json 缺少 overallStatus");
+    throw new Error(t.doctor.codex.missingField("overallStatus"));
   }
   return {
     value,
     overallStatus,
-    checks: requireObject(value["checks"], "codex doctor checks"),
+    checks: requireObject(value["checks"], "codex doctor checks", t),
   };
 }
 
@@ -348,10 +349,12 @@ const NAMESPACE_FAILURE = /bwrap|namespace|RTM_NEWADDR|RTM_NEWLINK|uid map|Opera
  * 只告知、不阻断（ADR-0004）：沙箱起不来时服务照样能装能跑，受影响的是需要沙箱的命令，
  * 人照着处理办法就能自己恢复；所以记为「需留意」，不让安装或启动失败。
  */
-async function checkLinuxSandbox(checks: DoctorCheck[], options: DoctorOptions): Promise<void> {
+async function checkLinuxSandbox(checks: DoctorCheck[], t: ServerMessages, options: DoctorOptions): Promise<void> {
   const host: LinuxSandboxHost = { ...defaultLinuxSandboxHost, ...options.linuxSandbox };
   if (host.platform !== "linux") return;
-  const name = "Codex 沙箱（Linux）";
+  const id = SUDUO_DOCTOR_CHECK_IDS.linuxSandbox;
+  const name = t.doctor.names.linuxSandbox;
+  const text = t.doctor.sandbox;
   const workdir = mkdtempSync(resolve(tmpdir(), "suduo-sandbox-probe-"));
   try {
     const result = await host.probe(
@@ -365,67 +368,61 @@ async function checkLinuxSandbox(checks: DoctorCheck[], options: DoctorOptions):
     if (result.status === 0 && stdout.includes(SANDBOX_PROBE_MARKER)) {
       checks.push(
         systemBwrap !== null
-          ? { name, status: "pass", message: `沙箱可用，使用系统的 bubblewrap（${systemBwrap}）` }
+          ? { id, name, status: "pass", message: text.readySystem(systemBwrap) }
           : {
+              id,
               name,
               status: "warn",
-              message: "沙箱可用，但用的是 Codex 自带的 bubblewrap；官方建议安装系统的 bubblewrap",
-              remediation: `sudo apt install bubblewrap（Fedora：sudo dnf install bubblewrap）。详见 ${SANDBOXING_DOCS}`,
+              message: text.readyBundled,
+              remediation: text.readyBundledRemediation(SANDBOXING_DOCS),
             },
       );
       return;
     }
     if (result.timedOut) {
       checks.push({
+        id,
         name,
         status: "warn",
-        message: `沙箱命令 ${String(SANDBOX_PROBE_TIMEOUT_MS / 1000)} 秒内没有结束，没能确认沙箱是否可用`,
-        remediation: "稍后在诊断页重新检查；一直这样时，在终端里运行 codex sandbox -P :workspace -- true 看看卡在哪里",
+        message: text.timedOut(SANDBOX_PROBE_TIMEOUT_MS / 1000),
+        remediation: text.timedOutRemediation,
       });
       return;
     }
-    const detail = lastLine(stderr) ?? `退出码 ${String(result.status)}`;
+    const detail = lastLine(stderr) ?? text.exitCode(String(result.status));
     if (result.status === null || !NAMESPACE_FAILURE.test(stderr)) {
       // 不是命名空间的问题（Codex 本身没跑起来、配置读不了等）：不把它说成 bubblewrap 的毛病。
       checks.push({
+        id,
         name,
         status: "warn",
-        message: `没能运行 Codex 的沙箱命令，无法确认沙箱是否可用（${detail}）`,
-        remediation: "先处理上面「Codex 官方诊断」「Codex CLI」里的问题，再回来重新检查",
+        message: text.notRun(detail),
+        remediation: text.notRunRemediation,
       });
       return;
     }
     const container = host.inContainer();
     const restricted = host.usernsRestricted();
     const causes = container
-      ? ["SuDuo 跑在容器里，容器默认不允许创建用户命名空间"]
+      ? [text.causes.container]
       : [
-          ...(systemBwrap === null ? ["没有安装系统的 bubblewrap"] : []),
-          ...(restricted === true ? ["系统用 AppArmor 限制了非特权用户命名空间（Ubuntu 24.04 默认如此）"] : []),
+          ...(systemBwrap === null ? [text.causes.noSystemBwrap] : []),
+          ...(restricted === true ? [text.causes.apparmorRestricted] : []),
         ];
     const steps = container
-      ? ["让容器允许创建用户命名空间（例如 Docker 加 --security-opt seccomp=unconfined --security-opt apparmor=unconfined），或把 SuDuo 装在宿主机上"]
+      ? [text.steps.container]
       : [
-          ...(systemBwrap === null ? ["sudo apt install bubblewrap（Fedora：sudo dnf install bubblewrap）"] : []),
-          ...(restricted === true ? [`加载官方的 AppArmor 放行配置：${UBUNTU_2404_APPARMOR_FIX}`] : []),
+          ...(systemBwrap === null ? [text.steps.installBwrap] : []),
+          ...(restricted === true ? [text.steps.loadApparmorProfile(UBUNTU_2404_APPARMOR_FIX)] : []),
           // 旧版安装脚本生成的服务配置带 PrivateTmp，会让服务进程落进受限的用户命名空间（见 scripts/install.mjs）。
-          ...(restricted === true && host.underSystemdService()
-            ? ["SuDuo 是作为系统服务在跑：重新运行安装（pnpm install:m1）更新服务配置后重启服务"]
-            : []),
+          ...(restricted === true && host.underSystemdService() ? [text.steps.reinstallService] : []),
         ];
     checks.push({
+      id,
       name,
       status: "warn",
-      message:
-        "Codex 的沙箱在这台机器上起不来，需要审批或受限执行的命令都会失败" +
-        (causes.length > 0 ? `：${causes.join("；")}` : "") +
-        `（${detail}）`,
-      remediation:
-        (steps.length > 0 ? steps.join("；然后 ") + "。" : "") +
-        `按 OpenAI 的沙箱前置条件处理：${SANDBOXING_DOCS}` +
-        (!container && restricted === true
-          ? "；若仍不行，可退一步放开限制：sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
-          : ""),
+      message: text.unavailable(causes, detail),
+      remediation: text.remediation(steps, SANDBOXING_DOCS, !container && restricted === true),
     });
   } finally {
     rmSync(workdir, { recursive: true, force: true });
@@ -481,7 +478,7 @@ function lastLine(text: string): string | null {
   return lines.at(-1) ?? null;
 }
 
-function checkDatabaseAddon(checks: DoctorCheck[]): void {
+function checkDatabaseAddon(checks: DoctorCheck[], t: ServerMessages): void {
   const directory = mkdtempSync(resolve(tmpdir(), "suduo-doctor-"));
   const path = resolve(directory, "doctor.sqlite");
   try {
@@ -499,12 +496,14 @@ function checkDatabaseAddon(checks: DoctorCheck[]): void {
       throw new Error("temporary WAL read-back mismatch");
     }
     checks.push({
+      id: SUDUO_DOCTOR_CHECK_IDS.sqlite,
       name: "better-sqlite3",
       status: "pass",
-      message: "原生 addon 可加载，临时库 migration/WAL 写读正常",
+      message: t.doctor.sqlite.ok,
     });
   } catch (error) {
     checks.push({
+      id: SUDUO_DOCTOR_CHECK_IDS.sqlite,
       name: "better-sqlite3",
       status: "fail",
       message: messageOf(error),
@@ -516,6 +515,7 @@ function checkDatabaseAddon(checks: DoctorCheck[]): void {
 
 async function checkPort(
   checks: DoctorCheck[],
+  t: ServerMessages,
   port: number,
   allowPortInUse: boolean,
 ): Promise<void> {
@@ -528,14 +528,16 @@ async function checkPort(
   });
   // 端口被占用时先看是不是 SuDuo 自己：SuDuo 正在运行时跑自检是常见用法，不算失败。
   const suDuoRunning = !available && !allowPortInUse && (await isSuDuoListening(port));
+  const address = `127.0.0.1:${String(port)}`;
   checks.push({
-    name: "监听端口",
+    id: SUDUO_DOCTOR_CHECK_IDS.port,
+    name: t.doctor.names.port,
     status: available || allowPortInUse || suDuoRunning ? "pass" : "fail",
     message: available
-      ? `127.0.0.1:${String(port)} 可用`
+      ? t.doctor.port.available(address)
       : allowPortInUse || suDuoRunning
-        ? `127.0.0.1:${String(port)} 已占用（服务正在运行）`
-        : `127.0.0.1:${String(port)} 已被其他程序占用`,
+        ? t.doctor.port.inUseBySuDuo(address)
+        : t.doctor.port.inUseByOther(address),
   });
 }
 

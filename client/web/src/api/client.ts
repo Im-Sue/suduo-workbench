@@ -50,6 +50,7 @@ import type {
   RequirementListItemDto,
   LocalAgentStateDto,
   ProxyConnectivityDto,
+  DoctorResultDto,
 } from "@suduo/client-contracts";
 import type {
   ArtifactVersionDetailDto,
@@ -753,10 +754,7 @@ export const api = {
     }),
 
   /** pr9：设置页内嵌自检卡片用的 JSON 读取（HTML /doctor 页仍保留）。 */
-  runDoctor: () =>
-    request<{ status: string; checks: { name: string; status: string; message: string; remediation?: string | null }[] }>(
-      "/api/v1/doctor",
-    ),
+  runDoctor: () => request<DoctorResultDto>("/api/v1/doctor"),
 
   updateSettings: (body: UpdateSettingsRequest) =>
     request<SettingsDto>("/api/v1/settings", { method: "PATCH", body }),

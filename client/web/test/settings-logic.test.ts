@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shortenPath, humanizeProxyMessage } from "../src/features/settings/format.js";
+import { shortenPath } from "../src/features/settings/format.js";
 import {
   doctorHealth,
   loginHealth,
@@ -100,8 +100,8 @@ describe("界面用语", () => {
     expect(originLabel(null)).toBeNull();
   });
 
-  it("服务端的字段名、网关等词换成界面用语", () => {
-    expect(humanizeProxyMessage("httpsProxy 不是合法代理 URL")).toBe("HTTPS 代理 不是合法代理 URL");
+  // 字段名换成界面叫法已由本机服务在报错里直接做（S5），这里只看试连失败的原因。
+  it("试连失败的原因换成界面用语", () => {
     const failed = (failure: ProxyConnectivityDto["failure"]): ProxyConnectivityDto => ({
       reachable: false,
       targetOrigin: "https://api.example.com",

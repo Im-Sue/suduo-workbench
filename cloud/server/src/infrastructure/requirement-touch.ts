@@ -18,6 +18,6 @@ export async function touchRequirement(
     [actorId, requirementId],
   );
   const version = result.rows[0]?.version;
-  if (version === undefined) throw notFound("需求");
+  if (version === undefined) throw notFound("Requirement");
   return version;
 }

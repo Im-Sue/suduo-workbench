@@ -4,7 +4,7 @@ import type { GitCheckpointDto, GitStatusDto, SystemOpenTarget } from "@suduo/cl
 import { api } from "../api/client.js";
 import { formatRelativeTime, messageOf } from "../ui/format.js";
 import { useT } from "../i18n/provider.js";
-import type { Messages } from "../i18n/messages/index.js";
+import { checkpointLabel } from "../ui/checkpoint-label.js";
 import {
   ChevronRightIcon,
   FileDiffIcon,
@@ -205,7 +205,7 @@ export function EnvPanel(props: {
                         aria-hidden="true"
                       />
                       <span className="min-w-0 flex-1 truncate text-small text-foreground" title={checkpoint.subject}>
-                        {subjectLabel(checkpoint, t)}
+                        {checkpointLabel(checkpoint, t)}
                       </span>
                       <time className="shrink-0 text-caption text-subtle-foreground">{formatRelativeTime(checkpoint.ts)}</time>
                       {/* ADR-0004 红线：还原会覆盖 Codex 正在写的文件（不可逆字节损失），运行中保留禁用，但把原因说清。 */}
@@ -251,7 +251,7 @@ export function EnvPanel(props: {
           confirming === null
             ? ""
             : text.restoreConfirm.description(
-                subjectLabel(confirming, t),
+                checkpointLabel(confirming, t),
                 formatRelativeTime(confirming.ts),
                 status?.hasRemote === true,
               )
@@ -266,11 +266,4 @@ export function EnvPanel(props: {
       />
     </section>
   );
-}
-
-/** 检查点显示名：按服务端识别出的类型渲染（识别靠提交里的标记行，不看会随语言变化的标题）。 */
-function subjectLabel(checkpoint: GitCheckpointDto, t: Messages): string {
-  if (checkpoint.kind === "turn-start") return t.sessions.checkpoints.turnStart;
-  if (checkpoint.kind === "manual") return t.sessions.checkpoints.manual(checkpoint.note ?? "");
-  return checkpoint.subject;
 }

@@ -40,7 +40,7 @@ import {
   requireFile,
   toPosix,
 } from "../infrastructure/workspace/path-guard.js";
-import { ApiError } from "./api-error.js";
+import { ApiError, errorTextOf } from "./api-error.js";
 
 const MAX_TEXT_BYTES = 1024 * 1024;
 const FULL_TEXT_BYTES = 10 * 1024 * 1024;
@@ -347,7 +347,7 @@ export class WorkspaceService {
       throw new ApiError(
         503,
         "RUNTIME_UNAVAILABLE",
-        "Codex 运行时不可用，暂时无法读取 skills 目录",
+        (t) => t.workspace.files.skillsUnavailable,
       );
     }
     return [...catalog].sort((left, right) =>
@@ -390,7 +390,8 @@ export class WorkspaceService {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        cause instanceof Error ? cause.message : "无法调用系统程序打开文件",
+        // 系统程序给的原因原样带上（打开失败的报错由 system-open 生成）；拿不到原因时用通用说明。
+        cause instanceof Error ? errorTextOf(cause) : (t) => t.workspace.files.openFailed,
       );
     }
   }
@@ -404,7 +405,7 @@ export class WorkspaceService {
       typeof input.mediaType !== "string" ||
       typeof input.dataBase64 !== "string"
     ) {
-      throw new ApiError(400, "VALIDATION_ERROR", "附件请求字段无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.attachment.fieldsInvalid);
     }
     return saveImageAttachment({
       projectId,
@@ -599,7 +600,7 @@ export class WorkspaceService {
     const before = ownEntry(baseline.files, path);
     const after = await readCurrentFile(project.rootPath, path);
     if (!before && !after) {
-      throw new ApiError(404, "NOT_FOUND", "diff 文件不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.workspace.files.diffNotFound);
     }
     // blob 丢失（被手工清理等）时按「无副本」处理：显示占位并标记截断。
     const beforeText = before?.text
@@ -624,7 +625,7 @@ export class WorkspaceService {
   private requireProject(projectId: string) {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
-      throw new ApiError(404, "NOT_FOUND", "活动项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.workspace.project.activeNotFound);
     }
     return project;
   }
@@ -632,7 +633,7 @@ export class WorkspaceService {
   private requireSessionProject(sessionId: string) {
     const session = this.sessions.getById(sessionId);
     if (!session) {
-      throw new ApiError(404, "NOT_FOUND", "会话不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.workspace.files.sessionNotFound);
     }
     const project = this.requireProject(session.projectId);
     return { session, project };
@@ -663,7 +664,7 @@ export class WorkspaceService {
     try {
       return await this.baselines.load(sessionId);
     } catch (error) {
-      throw new ApiError(500, "RUNTIME_REQUEST_FAILED", "会话 baseline 无效", undefined, {
+      throw new ApiError(500, "RUNTIME_REQUEST_FAILED", (t) => t.workspace.files.baselineInvalid, undefined, {
         cause: error,
       });
     }

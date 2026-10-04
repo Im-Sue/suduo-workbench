@@ -265,7 +265,7 @@ export class BaselineStore {
 
   private manifestPath(sessionId: string): string {
     if (!SESSION_ID_PATTERN.test(sessionId)) {
-      throw new Error("非法的会话 ID：" + JSON.stringify(sessionId));
+      throw new Error("Invalid session ID: " + JSON.stringify(sessionId));
     }
     return resolve(this.sessionDirectory, sessionId + ".json");
   }

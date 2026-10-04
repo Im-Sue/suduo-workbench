@@ -96,7 +96,7 @@ describe("T3 attachment storage", () => {
     await writeFile(join(root, "unrelated.txt"), "keep");
     const storage = new AttachmentStorage(root, 16, new Set([".txt"]));
 
-    await expect(storage.initialize()).rejects.toThrow("缺少 SuDuo 所有权标记");
+    await expect(storage.initialize()).rejects.toThrow("missing the SuDuo ownership marker");
     await expect(readdir(root)).resolves.toEqual(["unrelated.txt"]);
   });
 
@@ -122,7 +122,7 @@ describe("T3 attachment storage", () => {
     await writeFile(join(root, ".staging", "unrelated.txt"), "keep");
     const storage = new AttachmentStorage(root, 16, new Set([".txt"]));
 
-    await expect(storage.initialize()).rejects.toThrow("缺少 SuDuo 所有权标记");
+    await expect(storage.initialize()).rejects.toThrow("missing the SuDuo ownership marker");
     await expect(readFile(join(root, ".staging", "unrelated.txt"), "utf8")).resolves.toBe("keep");
   });
 
@@ -133,7 +133,7 @@ describe("T3 attachment storage", () => {
     await writeFile(join(root, ".staging", "unrelated.txt"), "keep");
     const storage = new AttachmentStorage(root, 16, new Set([".txt"]));
 
-    await expect(storage.initialize()).rejects.toThrow("缺少 SuDuo 所有权标记");
+    await expect(storage.initialize()).rejects.toThrow("missing the SuDuo ownership marker");
     await expect(readFile(join(root, ".staging", "unrelated.txt"), "utf8")).resolves.toBe("keep");
   });
 });

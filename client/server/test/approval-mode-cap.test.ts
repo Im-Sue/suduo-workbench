@@ -36,7 +36,7 @@ describe("审批档部署上限", () => {
   it("cap=auto 时创建会话持久化 auto，PATCH full 返回 409", async () => {
     const context = createSessionContext({ SUDUO_MAX_APPROVAL_MODE: "auto" });
     try {
-      const created = await context.service.create(context.project.id, { title: "受限会话" });
+      const created = await context.service.create(context.project.id, { title: "受限会话" }, {}, { locale: "zh-CN" });
       expect(created.approvalMode).toBe("auto");
       expect(context.sessions.getById(created.id)?.approvalMode).toBe("auto");
       await expect(

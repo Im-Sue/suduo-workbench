@@ -278,8 +278,11 @@ export function createSuDuoApplication(
         : [],
   };
   const skillAdmin = new SkillAdminService();
-  const gitService = new GitService(projects, () =>
-    settingsService.gitAutoCheckpointDefault(),
+  const gitService = new GitService(
+    projects,
+    () => settingsService.gitAutoCheckpointDefault(),
+    // 回合前自动存档没有拿到请求语言时，用前端最近一次用过的界面语言（发消息的请求已先把它记下）。
+    () => settingsService.locale() ?? "zh-CN",
   );
   /**
    * 把额外 skills 根目录登记进 codex 自身注册表——否则 codex 不认识这些 skill，
@@ -366,11 +369,11 @@ export function createSuDuoApplication(
       if (current === null) {
         return {
           state: "none",
-          error: new ApiError(409, "REMOTE_SERVICE_NOT_CONFIGURED", "请先在设置中配置远程需求服务地址"),
+          error: new ApiError(409, "REMOTE_SERVICE_NOT_CONFIGURED", (t) => t.remote.notConfigured),
         };
       }
       if (current.session === null) {
-        return { state: "none", error: new ApiError(401, "AUTH_INVALID", "请先登录远程需求服务") };
+        return { state: "none", error: new ApiError(401, "AUTH_INVALID", (t) => t.remote.signInRequired) };
       }
       return { state: "ready", identity: current.baseUrl };
     },
@@ -493,7 +496,7 @@ export function createSuDuoApplication(
     codexHome,
     skillAdmin,
     setSkillEnabled: (name, enabled) => runtime.setSkillEnabled(name, enabled),
-    doctor: () =>
+    doctor: (locale) =>
       runDoctor({
         installed: options.installed ?? false,
         allowPortInUse: true,
@@ -501,7 +504,7 @@ export function createSuDuoApplication(
         codexHome,
         codexBin: options.codexBin,
         checkPnpm: !(options.installed ?? false),
-      }),
+      }, locale),
     webRoot:
       options.webRoot ??
       fileURLToPath(new URL("../../web/dist/", import.meta.url)),

@@ -77,7 +77,7 @@ describe("AuthService", () => {
     await expect(service.login({ loginName: "Alice", password: "wrong password" })).rejects.toMatchObject({
       statusCode: 401,
       code: "LOGIN_CREDENTIALS_INVALID",
-      message: "登录名或密码错误",
+      message: "Incorrect username or password",
     });
   });
 });

@@ -63,6 +63,8 @@ export function createMinimalHttpContext(
   const sessionService = new SessionService(database, projects, sessions, threads, supervisor);
   const codexGlobalState = new CodexGlobalState();
   const settings = new SettingsService(join(projectRoot, "settings.json"));
+  // 测试里的请求默认按中文出错误文字（与前端测试固定 zh-CN 一致）；英文由专门的测试带请求头覆盖。
+  settings.rememberLocale("zh-CN");
   const interrupts = new InterruptService(projects, sessions, threads, events, registry, supervisor, ledger);
   const server = buildHttpServer({
     requestGuard: new LoopbackGuard(),

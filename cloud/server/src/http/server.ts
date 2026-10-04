@@ -131,12 +131,12 @@ export async function buildHttpServer(
     if (PUBLIC_ROUTES.has(routeKey)) return;
     const authorization = request.headers.authorization;
     if (!authorization) {
-      throw new ApplicationError(401, "AUTH_REQUIRED", "需要登录后访问");
+      throw new ApplicationError(401, "AUTH_REQUIRED", "Sign in required");
     }
     try {
       await request.jwtVerify();
     } catch (error) {
-      throw new ApplicationError(401, "AUTH_INVALID", "登录凭证无效或已过期", undefined, {
+      throw new ApplicationError(401, "AUTH_INVALID", "Your sign-in is invalid or has expired", undefined, {
         cause: error,
       });
     }
@@ -150,7 +150,7 @@ export async function buildHttpServer(
     if (isValidationError(error)) {
       void reply.code(400).send(
         errorResponse(
-          new ApplicationError(400, "VALIDATION_ERROR", "请求参数无效", {
+          new ApplicationError(400, "VALIDATION_ERROR", "Invalid request parameters", {
             issues: error.validation,
           }),
           request.id,
@@ -161,7 +161,7 @@ export async function buildHttpServer(
     request.log.error(error);
     void reply.code(500).send(
       errorResponse(
-        new ApplicationError(500, "INTERNAL_ERROR", "服务端处理请求失败"),
+        new ApplicationError(500, "INTERNAL_ERROR", "The server failed to process the request"),
         request.id,
       ),
     );
@@ -187,7 +187,7 @@ export async function buildHttpServer(
           new ApplicationError(
             503,
             "DEPENDENCY_UNAVAILABLE",
-            "数据库依赖不可用",
+            "Database is unavailable",
           ),
           request.id,
         ),
@@ -542,7 +542,7 @@ export async function buildHttpServer(
     async (request, reply) => {
       const contentType = headerValue(request.headers["content-type"]);
       if (!contentType || !(request.body instanceof Readable)) {
-        throw new ApplicationError(400, "ATTACHMENT_INVALID", "必须上传一个 multipart 附件文件");
+        throw new ApplicationError(400, "ATTACHMENT_INVALID", "A multipart attachment file is required");
       }
       let uploadMetadata: {
         attachmentId: string;
@@ -727,7 +727,7 @@ function optionalAttachmentSize(
   const raw = Array.isArray(value) ? value[0] : value;
   const size = Number(raw);
   if (!Number.isSafeInteger(size) || size < 0) {
-    throw new ApplicationError(400, "ATTACHMENT_INVALID", "X-Attachment-Size 无效");
+    throw new ApplicationError(400, "ATTACHMENT_INVALID", "Invalid X-Attachment-Size");
   }
   return { declaredSize: size };
 }
@@ -739,7 +739,7 @@ function attachmentOperationKey(value: string | string[] | undefined): string {
     rendered === undefined ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(rendered)
   ) {
-    throw new ApplicationError(400, "ATTACHMENT_INVALID", "Idempotency-Key 必须是 UUID");
+    throw new ApplicationError(400, "ATTACHMENT_INVALID", "Idempotency-Key must be a UUID");
   }
   return rendered.toLowerCase();
 }

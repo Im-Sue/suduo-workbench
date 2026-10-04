@@ -23,7 +23,9 @@ import type {
   UpdateProjectRequest,
   UpdateRequirementRequest,
 } from "@suduo/cloud-contracts";
+import type { Locale } from "@suduo/client-contracts";
 import { ApiError } from "./api-error.js";
+import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
 import type { SessionService } from "./session-service.js";
 import type { DatabasePort } from "../infrastructure/db/database-port.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
@@ -88,13 +90,13 @@ export class RequirementsV2Service {
 
   updateSettings(input: { baseUrl?: unknown }): RequirementsSettingsView {
     if (!input || typeof input.baseUrl !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "baseUrl 必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.baseUrlNotString);
     }
     let normalized: string;
     try {
       normalized = normalizeRequirementsServiceUrl(input.baseUrl);
     } catch {
-      throw new ApiError(400, "VALIDATION_ERROR", "远程服务地址无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.baseUrlInvalid);
     }
     const previous = this.settings.getBaseUrl();
     if (previous !== normalized) {
@@ -105,17 +107,18 @@ export class RequirementsV2Service {
     return this.settingsView();
   }
 
-  async testSettings(input: { baseUrl?: unknown }) {
+  /** `locale` 是发起试连的请求的语言（成功时的说明按它生成）。 */
+  async testSettings(input: { baseUrl?: unknown }, locale: Locale) {
     if (!input || typeof input.baseUrl !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "baseUrl 必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.baseUrlNotString);
     }
     let baseUrl: string;
     try {
       baseUrl = normalizeRequirementsServiceUrl(input.baseUrl);
     } catch {
-      throw new ApiError(400, "VALIDATION_ERROR", "远程服务地址无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.baseUrlInvalid);
     }
-    return this.remote.testConnection(baseUrl);
+    return this.remote.testConnection(baseUrl, locale);
   }
 
   async register(input: RegisterRequest) {
@@ -148,7 +151,7 @@ export class RequirementsV2Service {
   }
 
   createProject(input: CreateProjectRequest) {
-    validateNonBlank(input.name, "项目名称", 120);
+    validateNonBlank(input.name, (t) => t.remote.validation.fields.projectName, 120);
     return this.remote.createProject(input);
   }
 
@@ -157,9 +160,9 @@ export class RequirementsV2Service {
   }
 
   updateProject(projectId: string, input: UpdateProjectRequest) {
-    if (input.name !== undefined) validateNonBlank(input.name, "项目名称", 120);
+    if (input.name !== undefined) validateNonBlank(input.name, (t) => t.remote.validation.fields.projectName, 120);
     if (input.name === undefined && input.isArchived === undefined) {
-      throw new ApiError(400, "VALIDATION_ERROR", "PATCH 至少提供一个字段");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.patchEmpty);
     }
     return this.remote.updateProject(projectId, input);
   }
@@ -176,7 +179,7 @@ export class RequirementsV2Service {
     projectId: string,
     input: CreateRequirementRequest,
   ): Promise<RequirementListItemDto> {
-    validateNonBlank(input.title, "需求标题", 200);
+    validateNonBlank(input.title, (t) => t.remote.validation.fields.requirementTitle, 200);
     if (input.summary !== undefined) validateSummary(input.summary);
     if (input.assigneeId !== undefined) validateAssigneeId(input.assigneeId);
     return this.withLocalSessionCount(await this.remote.createRequirement(projectId, input));
@@ -199,7 +202,7 @@ export class RequirementsV2Service {
     requirementId: string,
     input: UpdateRequirementRequest,
   ): Promise<RequirementListItemDto> {
-    if (input.title !== undefined) validateNonBlank(input.title, "需求标题", 200);
+    if (input.title !== undefined) validateNonBlank(input.title, (t) => t.remote.validation.fields.requirementTitle, 200);
     if (input.summary !== undefined) validateSummary(input.summary);
     if (input.assigneeId !== undefined) validateAssigneeId(input.assigneeId);
     if (
@@ -208,7 +211,7 @@ export class RequirementsV2Service {
       input.status === undefined &&
       input.assigneeId === undefined
     ) {
-      throw new ApiError(400, "VALIDATION_ERROR", "PATCH 至少提供一个字段");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.patchEmpty);
     }
     return this.withLocalSessionCount(
       await this.remote.updateRequirement(requirementId, input),
@@ -235,7 +238,7 @@ export class RequirementsV2Service {
   }
 
   createComment(requirementId: string, input: CreateCommentRequest) {
-    validateNonBlank(input.body, "评论内容", 4_000);
+    validateNonBlank(input.body, (t) => t.remote.validation.fields.commentBody, 4_000);
     return this.remote.createComment(requirementId, input);
   }
 
@@ -264,7 +267,7 @@ export class RequirementsV2Service {
       !Array.isArray(input.attachmentIds) ||
       input.attachmentIds.length < 1
     ) {
-      throw new ApiError(400, "VALIDATION_ERROR", "产物发布请求无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.publishInvalid);
     }
     return this.remote.publishArtifactVersion(requirementId, input);
   }
@@ -308,7 +311,9 @@ export class RequirementsV2Service {
     return this.remote.openEvents(signal);
   }
 
-  async listMappings(options: { verify?: boolean } = {}) {
+  /** `locale` 是请求的语言，复验结论（verification.message）按它生成；不传时用中文。 */
+  /** `locale`：复验结论（`verify`）用的语言。 */
+  async listMappings(options: { verify?: boolean; locale: Locale }) {
     // 可用性灯只检查已保存的本机目录；不触网也不清理过期凭证，确保 verify=1
     // 严格是零副作用的本机只读操作。
     if (!options.verify) {
@@ -331,17 +336,18 @@ export class RequirementsV2Service {
     if (!options.verify) {
       return items;
     }
+    const t = messagesFor(options.locale);
     return await Promise.all(
       items.map(async (item) => ({
         ...item,
-        verification: await verifyWorkspaceMappingPath(item.rootPath),
+        verification: await verifyWorkspaceMappingPath(item.rootPath, t),
       })),
     );
   }
 
   async saveMapping(remoteProjectId: string, input: { rootPath?: unknown }) {
     if (!input || typeof input.rootPath !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "rootPath 必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.mapping.rootPathNotString);
     }
     const remoteProject = await this.remote.getProject(remoteProjectId);
     const rootPath = await validateWorkspacePath(input.rootPath);
@@ -354,7 +360,7 @@ export class RequirementsV2Service {
             throw new ApiError(
               409,
               "WORKSPACE_MAPPING_CONFLICT",
-              "本机工作目录对应的项目已被移除",
+              (t) => t.workspace.mapping.projectRemoved,
             );
           }
           const localProject =
@@ -369,7 +375,7 @@ export class RequirementsV2Service {
             throw new ApiError(
               409,
               "WORKSPACE_MAPPING_CONFLICT",
-              "该本机工作目录已映射给另一个远程项目",
+              (t) => t.workspace.mapping.linkedElsewhere,
             );
           }
           return {
@@ -386,7 +392,7 @@ export class RequirementsV2Service {
           throw new ApiError(
             409,
             "WORKSPACE_MAPPING_CONFLICT",
-            "该本机工作目录已映射给另一个远程项目",
+            (t) => t.workspace.mapping.linkedElsewhere,
             undefined,
             { cause: error },
           );
@@ -407,7 +413,7 @@ export class RequirementsV2Service {
   async createRequirementSession(requirementId: string) {
     const sessionContext = this.sessionContext;
     if (!sessionContext) {
-      throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", "需求会话服务不可用");
+      throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.remote.requirementSessionUnavailable);
     }
     const located = await this.remote.getRequirement(requirementId);
     return this.withMappingOperation(located.projectId, async () => {
@@ -433,7 +439,8 @@ export class RequirementsV2Service {
     });
   }
 
-  async createProjectSession(remoteProjectId: string) {
+  /** `locale`：没给标题时默认名用的语言（创建请求的语言）。 */
+  async createProjectSession(remoteProjectId: string, locale: Locale) {
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
       const localProject = await this.requireValidatedLocalProject(remoteProjectId);
@@ -442,7 +449,7 @@ export class RequirementsV2Service {
           projectRoot: localProject.rootPath,
           remoteProjectId,
         })) ?? {};
-      const session = await this.sessions.create(localProject.id, { purpose: "general" }, setup);
+      const session = await this.sessions.create(localProject.id, { purpose: "general" }, setup, { locale });
       this.onSessionCreated?.(session.id);
       return session;
     });
@@ -500,7 +507,7 @@ export class RequirementsV2Service {
   private requireConfiguredBaseUrl(): string {
     const baseUrl = this.settings.getBaseUrl();
     if (!baseUrl) {
-      throw new ApiError(409, "REMOTE_SERVICE_NOT_CONFIGURED", "请先配置远程需求服务地址");
+      throw new ApiError(409, "REMOTE_SERVICE_NOT_CONFIGURED", (t) => t.remote.notConfiguredShort);
     }
     return baseUrl;
   }
@@ -511,7 +518,7 @@ export class RequirementsV2Service {
       throw new ApiError(
         409,
         "AUTH_INVALID",
-        "远程服务地址已变更，请按新地址重新登录",
+        (t) => t.remote.baseUrlChangedSignInAgain,
       );
     }
     this.credentials.save({
@@ -530,7 +537,7 @@ export class RequirementsV2Service {
       throw new ApiError(
         409,
         "WORKSPACE_MAPPING_REQUIRED",
-        "该远程项目尚未配置本机工作目录",
+        (t) => t.workspace.mapping.missing,
         { remoteProjectId },
       );
     }
@@ -539,7 +546,7 @@ export class RequirementsV2Service {
       throw new ApiError(
         409,
         "WORKSPACE_MAPPING_REQUIRED",
-        "本机工作目录映射已失效，请重新配置",
+        (t) => t.workspace.mapping.invalid,
         { remoteProjectId },
       );
     }
@@ -548,7 +555,7 @@ export class RequirementsV2Service {
       throw new ApiError(
         409,
         "WORKSPACE_MAPPING_REQUIRED",
-        "本机工作目录映射已变化，请重新配置",
+        (t) => t.workspace.mapping.changed,
         { remoteProjectId },
       );
     }
@@ -581,7 +588,7 @@ export class RequirementsV2Service {
 
 async function validateWorkspacePath(input: string): Promise<string> {
   if (!input.trim() || input.includes("\0") || (!isAbsolute(input) && !win32.isAbsolute(input))) {
-    throw new ApiError(400, "VALIDATION_ERROR", "rootPath 必须是无 NUL 的绝对路径");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.mapping.rootPathNotAbsolute);
   }
   let resolved: string;
   try {
@@ -593,7 +600,7 @@ async function validateWorkspacePath(input: string): Promise<string> {
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "rootPath 必须是存在且具备读取、写入与执行权限的本机目录",
+      (t) => t.workspace.mapping.rootPathNotAccessible,
       undefined,
       { cause: error },
     );
@@ -603,36 +610,41 @@ async function validateWorkspacePath(input: string): Promise<string> {
 
 function validateRegister(input: RegisterRequest): void {
   validateLogin(input);
-  validateNonBlank(input.displayName, "显示名", 80);
+  validateNonBlank(input.displayName, (t) => t.remote.validation.fields.displayName, 80);
 }
 
 function validateLogin(input: LoginRequest): void {
-  validateNonBlank(input.loginName, "登录名", 64);
+  validateNonBlank(input.loginName, (t) => t.remote.validation.fields.loginName, 64);
   if (input.loginName.length < 3 || !/^[A-Za-z0-9._-]+$/u.test(input.loginName)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "登录名格式无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.loginNameInvalid);
   }
   if (typeof input.password !== "string" || input.password.length < 1 || input.password.length > 128) {
-    throw new ApiError(400, "VALIDATION_ERROR", "密码长度无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.passwordLengthInvalid);
   }
 }
 
-function validateNonBlank(value: unknown, label: string, maximum: number): asserts value is string {
+/** label 是字段名（按请求语言取）。 */
+function validateNonBlank(
+  value: unknown,
+  label: (t: ServerMessages) => string,
+  maximum: number,
+): asserts value is string {
   if (typeof value !== "string" || value.trim() === "" || value.length > maximum) {
-    throw new ApiError(400, "VALIDATION_ERROR", `${label}长度必须为 1 到 ${String(maximum)}`);
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.lengthOutOfRange(label(t), maximum));
   }
 }
 
 /** 描述允许为空字符串（Markdown，可空）。 */
 function validateSummary(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.length > 4_000) {
-    throw new ApiError(400, "VALIDATION_ERROR", "需求描述必须是不超过 4000 字符的字符串");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.summaryTooLong);
   }
 }
 
 /** 负责人：用户 id 或 null（清空）；用户是否存在由远程服务判定。 */
 function validateAssigneeId(value: unknown): asserts value is string | null {
   if (value !== null && (typeof value !== "string" || value.trim() === "" || value.length > 64)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "assigneeId 必须是用户 ID 或 null");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.assigneeInvalid);
   }
 }
 

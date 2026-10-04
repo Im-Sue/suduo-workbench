@@ -33,7 +33,7 @@ export async function listenApplication(
     } catch (closeError) {
       throw new AggregateError(
         [error, closeError],
-        "requirements-service 监听和关闭均失败",
+        "requirements-service failed to listen and failed to close",
         { cause: closeError },
       );
     }

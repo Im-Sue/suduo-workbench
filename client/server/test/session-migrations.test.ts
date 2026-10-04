@@ -169,7 +169,7 @@ describe("014 会话列表元数据迁移", () => {
         threads: new SessionThreadRepository(database),
         events,
         approvals: new ApprovalRepository(database),
-      }).list({});
+      }).list({}, "zh-CN");
       const byId = new Map(list.items.map((item) => [item.id, item]));
       expect(byId.get("legacy-session")?.preview?.role).toBe("assistant");
       expect(byId.get("legacy-session")?.preview?.text.startsWith("答案 长长")).toBe(true);

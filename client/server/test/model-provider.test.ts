@@ -53,7 +53,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
     });
 
   it("以 includeLayers 读取嵌套 provider，并保留逐字段来源", async () => {
-    const dto = await service().get();
+    const dto = await service().get("zh-CN");
     expect(dto).toMatchObject({
       providerId: "myapi",
       providerName: "My API",
@@ -77,7 +77,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
       model: "gpt-5.6-sol",
       reasoningEffort: "medium",
       contextWindow: 1_000_000,
-    });
+    }, "zh-CN");
     expect(result.status).toBe("ok");
     expect(result.message).toContain("Codex 已读取新配置");
     expect(controlPlane.writeCalls).toHaveLength(1);
@@ -111,7 +111,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
         relay: { name: "Relay", base_url: "https://relay.example.com/v1", wire_api: "responses", auth: { command: "/usr/bin/security", args: ["find-generic-password", "-w"] } },
       },
     };
-    expect(await service().get()).toMatchObject({ apiKeyMasked: "由本机命令提供（security）", apiKeySource: "command" });
+    expect(await service().get("zh-CN")).toMatchObject({ apiKeyMasked: "由本机命令提供（security）", apiKeySource: "command" });
     controlPlane.config = {
       model_provider: "relay",
       model_providers: { relay: { name: "Relay", base_url: "https://relay.example.com/v1", wire_api: "responses", env_key: TEST_ENV_KEY } },
@@ -120,9 +120,9 @@ describe("ModelProviderService · Codex 官方控制面", () => {
     const saved = process.env[TEST_ENV_KEY];
     delete process.env[TEST_ENV_KEY];
     try {
-      expect(await service().get()).toMatchObject({ apiKeyMasked: `来自环境变量 ${TEST_ENV_KEY}（本机服务启动时没有这个变量）`, apiKeySource: "env" });
+      expect(await service().get("zh-CN")).toMatchObject({ apiKeyMasked: `来自环境变量 ${TEST_ENV_KEY}（本机服务启动时没有这个变量）`, apiKeySource: "env" });
       process.env[TEST_ENV_KEY] = "set-for-test";
-      expect(await service().get()).toMatchObject({ apiKeyMasked: `来自环境变量 ${TEST_ENV_KEY}`, apiKeySource: "env" });
+      expect(await service().get("zh-CN")).toMatchObject({ apiKeyMasked: `来自环境变量 ${TEST_ENV_KEY}`, apiKeySource: "env" });
     } finally {
       if (saved === undefined) delete process.env[TEST_ENV_KEY];
       else process.env[TEST_ENV_KEY] = saved;
@@ -131,20 +131,20 @@ describe("ModelProviderService · Codex 官方控制面", () => {
       model_provider: "relay",
       model_providers: { relay: { name: "Relay", base_url: "https://relay.example.com/v1", wire_api: "responses", auth: { command: "printf sk-should-not-leak" } } },
     };
-    expect((await service().get()).apiKeyMasked).toBe("由本机命令提供（printf）");
+    expect((await service().get("zh-CN")).apiKeyMasked).toBe("由本机命令提供（printf）");
     // 都是配置自带的来源，不需要去问 codex login status。
     expect(commands.filter((command) => command.args[1] === "status")).toHaveLength(0);
   });
 
   it("还没有模型服务时报告「未配置」，不再当作错误", async () => {
     controlPlane.config = {};
-    const dto = await service().get();
+    const dto = await service().get("zh-CN");
     expect(dto).toMatchObject({ configured: false, providerId: "", providerName: "", baseUrl: "" });
   });
 
   it("第一次保存建立 SuDuo 的模型服务并设为当前使用，再用 model/list 验证", async () => {
     controlPlane.config = {};
-    const result = await service().update({ baseUrl: "https://gateway.example.com/v1", apiKey: "sk-test-1234567890" });
+    const result = await service().update({ baseUrl: "https://gateway.example.com/v1", apiKey: "sk-test-1234567890" }, "zh-CN");
     expect(commands.find((command) => command.args[1] === "--with-api-key")).toBeDefined();
     expect(controlPlane.writeCalls[0]?.edits).toEqual([
       {
@@ -160,9 +160,9 @@ describe("ModelProviderService · Codex 官方控制面", () => {
 
   it("第一次保存没填地址时说明原因；验证失败时把建立的模型服务撤掉", async () => {
     controlPlane.config = {};
-    await expect(service().update({ model: "gpt-5.5" })).rejects.toMatchObject({ statusCode: 400, message: "第一次配置模型服务需要填写服务地址" });
+    await expect(service().update({ model: "gpt-5.5" }, "zh-CN")).rejects.toMatchObject({ statusCode: 400, message: "第一次配置模型服务需要填写服务地址" });
     controlPlane.modelListError = new Error("401 Unauthorized");
-    await expect(service().update({ baseUrl: "https://gateway.example.com/v1" })).rejects.toThrow("401");
+    await expect(service().update({ baseUrl: "https://gateway.example.com/v1" }, "zh-CN")).rejects.toThrow("401");
     expect(controlPlane.config["model_provider"] ?? null).toBeNull();
     expect((controlPlane.config["model_providers"] as Record<string, JsonValue> | undefined)?.["suduo"] ?? null).toBeNull();
   });
@@ -174,7 +174,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
       },
     };
     controlPlane.modelListError = new Error("config reload failed");
-    await expect(service().update({ baseUrl: "https://gateway.example.com/v1" })).rejects.toThrow("config reload failed");
+    await expect(service().update({ baseUrl: "https://gateway.example.com/v1" }, "zh-CN")).rejects.toThrow("config reload failed");
     expect(controlPlane.writeCalls[0]?.edits).toEqual([
       { keyPath: "model_providers.suduo.base_url", mergeStrategy: "upsert", value: "https://gateway.example.com/v1" },
       { keyPath: "model_provider", mergeStrategy: "upsert", value: "suduo" },
@@ -201,7 +201,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
         overridingLayer: { type: "enterpriseManaged", id: "policy", name: "Corp" },
       },
     };
-    const result = await service().update({ model: "gpt-5.6-sol" });
+    const result = await service().update({ model: "gpt-5.6-sol" }, "zh-CN");
     expect(result).toMatchObject({
       status: "okOverridden",
       message: expect.stringContaining("已写入你的配置，但被上层配置覆盖，当前生效值仍是 gpt-managed"),
@@ -211,7 +211,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
 
   it("官方模型验证失败后按写入后的 version 一键还原保存前字段", async () => {
     controlPlane.modelListError = new Error("provider unavailable");
-    await expect(service().update({ baseUrl: "https://new.example.com/v1" })).rejects.toThrow(
+    await expect(service().update({ baseUrl: "https://new.example.com/v1" }, "zh-CN")).rejects.toThrow(
       "provider unavailable",
     );
     expect(controlPlane.writeCalls).toHaveLength(2);
@@ -228,7 +228,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
   });
 
   it("API key 仅通过 codex login --with-api-key 的 stdin 提交", async () => {
-    await service().update({ apiKey: "sk-isolated-12345678" });
+    await service().update({ apiKey: "sk-isolated-12345678" }, "zh-CN");
     expect(commands[0]).toMatchObject({
       bin: "/fixture/codex",
       args: ["login", "--with-api-key"],
@@ -250,7 +250,7 @@ describe("ModelProviderService · Codex 官方控制面", () => {
         stderr: Buffer.from("login rejected"),
       }),
     });
-    await expect(failed.update({ apiKey: "sk-isolated-12345678" })).rejects.toMatchObject({
+    await expect(failed.update({ apiKey: "sk-isolated-12345678" }, "zh-CN")).rejects.toMatchObject({
       statusCode: 409,
       message: expect.stringContaining("login rejected"),
     });
@@ -272,16 +272,16 @@ describe("ModelProviderService · Codex 官方控制面", () => {
   });
 
   it("拒绝空更新、非法 URL、带换行 key 与非法模型字段", async () => {
-    await expect(service().update({})).rejects.toMatchObject({ statusCode: 400 });
-    await expect(service().update({ baseUrl: "not-a-url" })).rejects.toMatchObject({ statusCode: 400 });
-    await expect(service().update({ apiKey: "bad\nkey-123456" })).rejects.toMatchObject({ statusCode: 400 });
-    await expect(service().update({ model: 'bad"model' })).rejects.toMatchObject({ statusCode: 400 });
-    await expect(service().update({ contextWindow: 100 })).rejects.toMatchObject({ statusCode: 400 });
-    await expect(service().update({ reasoningEffort: "Bad Effort" })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service().update({}, "zh-CN")).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service().update({ baseUrl: "not-a-url" }, "zh-CN")).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service().update({ apiKey: "bad\nkey-123456" }, "zh-CN")).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service().update({ model: 'bad"model' }, "zh-CN")).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service().update({ contextWindow: 100 }, "zh-CN")).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service().update({ reasoningEffort: "Bad Effort" }, "zh-CN")).rejects.toMatchObject({ statusCode: 400 });
   });
 
   it("推理强度按格式校验：新版模型的 max / ultra 也能设为默认", async () => {
-    await service().update({ reasoningEffort: "ultra" });
+    await service().update({ reasoningEffort: "ultra" }, "zh-CN");
     const edit = controlPlane.writeCalls.at(-1)?.edits.find((item) => item.keyPath === "model_reasoning_effort");
     expect(edit?.value).toBe("ultra");
   });

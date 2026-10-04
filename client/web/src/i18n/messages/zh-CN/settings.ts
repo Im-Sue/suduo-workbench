@@ -112,22 +112,6 @@ export const settings = {
     /** 秒数已按一位小数格式化。 */
     seconds: (seconds: string) => `${seconds} 秒`,
   },
-  /** 服务端校验信息里的字段名换成界面上的叫法（不对用户露出接口字段名）。 */
-  fields: {
-    proxy: {
-      httpProxy: "HTTP 代理",
-      httpsProxy: "HTTPS 代理",
-      allProxy: "其他连接的代理",
-      noProxy: "不走代理的地址",
-    },
-    model: {
-      baseUrl: "服务地址",
-      apiKey: "API Key",
-      model: "默认模型",
-      reasoningEffort: "默认推理强度",
-      contextWindow: "上下文上限",
-    },
-  },
   /** 日期无效时的兜底。 */
   unknownDate: "未知",
   /** 开发与测试环境没有注入版本号时显示的版本。 */

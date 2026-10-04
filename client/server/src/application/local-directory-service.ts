@@ -9,7 +9,7 @@ import {
   type LocalPathErrorCode,
   type LocalPathInspectionDto,
 } from "@suduo/client-contracts";
-import { ApiError } from "./api-error.js";
+import { ApiError, type ErrorText } from "./api-error.js";
 
 export interface LocalDirectoryServiceOptions {
   /** 已映射到需求项目的本机目录，最近使用在前。 */
@@ -172,14 +172,14 @@ async function resolveExistingDirectory(input: string): Promise<string> {
     throw localPathError(error, resolved);
   }
   if (!isDirectory) {
-    throw pathError(400, "LOCAL_PATH_NOT_DIRECTORY", "这个位置不是文件夹", resolved);
+    throw pathError(400, "LOCAL_PATH_NOT_DIRECTORY", (t) => t.workspace.localDirectory.notFolder, resolved);
   }
   return resolved;
 }
 
 function requireAbsolutePath(value: string): string {
   if (value.trim() === "" || value.includes("\0") || !isAbsolute(value)) {
-    throw pathError(400, "LOCAL_PATH_INVALID", "请输入以根目录开头的完整路径", value);
+    throw pathError(400, "LOCAL_PATH_INVALID", (t) => t.workspace.localDirectory.absoluteRequired, value);
   }
   return value;
 }
@@ -274,15 +274,15 @@ function isMissing(error: unknown): boolean {
 function localPathError(error: unknown, path: string): ApiError {
   const code = errorCode(error);
   if (code === "ENOENT" || code === "ENOTDIR") {
-    return pathError(404, "LOCAL_PATH_NOT_FOUND", "这个位置不存在", path, error);
+    return pathError(404, "LOCAL_PATH_NOT_FOUND", (t) => t.workspace.localDirectory.notFound, path, error);
   }
   if (code === "EACCES" || code === "EPERM") {
-    return pathError(403, "LOCAL_PATH_PERMISSION_DENIED", "没有权限访问这个位置", path, error);
+    return pathError(403, "LOCAL_PATH_PERMISSION_DENIED", (t) => t.workspace.localDirectory.permissionDenied, path, error);
   }
   if (code === "ELOOP" || code === "ENAMETOOLONG" || code === "EINVAL") {
-    return pathError(400, "LOCAL_PATH_INVALID", "这个路径无法解析", path, error);
+    return pathError(400, "LOCAL_PATH_INVALID", (t) => t.workspace.localDirectory.unresolvable, path, error);
   }
-  return new ApiError(500, "RUNTIME_REQUEST_FAILED", "读取本机目录失败", { path }, {
+  return new ApiError(500, "RUNTIME_REQUEST_FAILED", (t) => t.workspace.localDirectory.readFailed, { path }, {
     cause: error,
   });
 }
@@ -290,7 +290,7 @@ function localPathError(error: unknown, path: string): ApiError {
 function pathError(
   statusCode: number,
   code: LocalPathErrorCode,
-  message: string,
+  message: ErrorText,
   path: string,
   cause?: unknown,
 ): ApiError {

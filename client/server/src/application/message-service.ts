@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
+  type Locale,
   type MessageContent,
   type RuntimeInput,
   type RuntimeRegistry as RuntimeRegistryContract,
@@ -18,10 +19,7 @@ import type {
   SessionThreadRecord,
   SessionThreadRepository,
 } from "../infrastructure/db/repositories/session-thread-repository.js";
-import {
-  ApiError,
-  IndeterminateOperationError,
-} from "./api-error.js";
+import { ApiError, IndeterminateOperationError } from "./api-error.js";
 import type { RuntimeSupervisor } from "./runtime-supervisor.js";
 import { WorkspaceContextResolver } from "./workspace-context.js";
 import { sessionSecurityPolicy } from "./approval-mode-cap.js";
@@ -49,29 +47,31 @@ export class MessageService {
     sessionId: string,
     input: SendMessageRequest,
     idempotencyKey: string,
+    /** locale：回合前自动存档的提交标题用的语言（发消息的请求的语言）；房间任务不传，用记下的界面语言。 */
+    options: { locale?: Locale } = {},
   ): Promise<SendMessageAccepted> {
     if (!Array.isArray(input.content)) {
-      throw new ApiError(400, "VALIDATION_ERROR", "content 必须是数组");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.contentNotArray);
     }
     const session = this.sessions.getById(sessionId);
     if (!session) {
-      throw new ApiError(404, "NOT_FOUND", "会话不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
     }
     if (session.state !== "active") {
       throw new ApiError(
         409,
         "VERSION_CONFLICT",
-        "只有 active 会话可以发消息",
+        (t) => t.session.notActive,
         { state: session.state },
       );
     }
     const project = this.projects.getById(session.projectId);
     if (!project || project.state !== "active") {
-      throw new ApiError(409, "VERSION_CONFLICT", "会话所属项目不可用");
+      throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.projectUnavailable);
     }
     // 回合前自动存档（按项目开关；失败不阻塞发消息）。房间任务是只读沙箱，不会改文件，不存档。
     if (session.kind !== "room_task") {
-      await this.git?.autoCheckpoint(project.id, project.rootPath);
+      await this.git?.autoCheckpoint(project.id, project.rootPath, options.locale);
     }
     let binding = this.route(sessionId, input);
     // resume 失败时自动重建 thread（F3 承诺：会话必须能继续新回合）。
@@ -131,7 +131,7 @@ export class MessageService {
         reasoningEffort: session.reasoningEffort,
       });
     } catch (error) {
-      throw new IndeterminateOperationError("启动 turn 的结果不确定", {
+      throw new IndeterminateOperationError((t) => t.session.turnStartIndeterminate, {
         cause: error,
       });
     }
@@ -174,7 +174,7 @@ export class MessageService {
       }
     }
     if (!primaryRecord) {
-      throw new IndeterminateOperationError("重建 thread 后缺少 primary 绑定");
+      throw new IndeterminateOperationError((t) => t.session.rebuiltWithoutPrimary);
     }
     const now = Date.now();
     this.ledger.append({
@@ -220,7 +220,7 @@ export class MessageService {
         input.targetThreadRef,
       );
       if (!binding || binding.state !== "attached") {
-        throw new ApiError(404, "NOT_FOUND", "目标 thread 未绑定到该会话");
+        throw new ApiError(404, "NOT_FOUND", (t) => t.session.targetThreadNotBound);
       }
       return binding;
     }
@@ -231,14 +231,14 @@ export class MessageService {
       throw new ApiError(
         409,
         "SESSION_HAS_NO_PRIMARY_THREAD",
-        "会话没有可用 primary thread",
+        (t) => t.session.noPrimaryThread,
       );
     }
     if (primaries.length !== 1) {
       throw new ApiError(
         409,
         "SESSION_PRIMARY_THREAD_AMBIGUOUS",
-        "会话存在多个 primary thread，拒绝猜测路由",
+        (t) => t.session.primaryThreadAmbiguousRouting,
       );
     }
     return primaries[0] as SessionThreadRecord;
@@ -251,49 +251,49 @@ async function mapContent(
   skillRoots: readonly string[],
 ): Promise<RuntimeInput[]> {
   if (content.length === 0 || content.length > 64) {
-    throw new ApiError(400, "VALIDATION_ERROR", "content 必须包含 1 到 64 项");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.contentCount);
   }
   let totalText = 0;
   const result: RuntimeInput[] = [];
   for (const item of content) {
     if (item === null || typeof item !== "object") {
-      throw new ApiError(400, "VALIDATION_ERROR", "content item 无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.contentItemInvalid);
     }
     if (item.type === "text") {
       if (typeof item.text !== "string") {
-        throw new ApiError(400, "VALIDATION_ERROR", "消息文本必须是字符串");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.textNotString);
       }
       totalText += item.text.length;
       if (item.text.length === 0) {
-        throw new ApiError(400, "VALIDATION_ERROR", "消息文本不能为空");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.textEmpty);
       }
       result.push(item);
       continue;
     }
     if (item.type === "image-url") {
       if (typeof item.url !== "string") {
-        throw new ApiError(400, "VALIDATION_ERROR", "图片 URL 必须是字符串");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.imageUrlNotString);
       }
       let protocol: string;
       try {
         protocol = new URL(item.url).protocol;
       } catch (error) {
-        throw new ApiError(400, "VALIDATION_ERROR", "图片 URL 无效", undefined, {
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.imageUrlInvalid, undefined, {
           cause: error,
         });
       }
       if (protocol !== "http:" && protocol !== "https:") {
-        throw new ApiError(400, "VALIDATION_ERROR", "图片 URL 仅支持 http/https");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.imageUrlProtocol);
       }
       result.push(item);
       continue;
     }
     if (item.type === "local-image") {
       if (typeof item.attachmentId !== "string") {
-        throw new ApiError(400, "VALIDATION_ERROR", "attachmentId 必须是字符串");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.attachmentIdNotString);
       }
       if (!/^[A-Za-z0-9._-]{1,200}$/.test(item.attachmentId)) {
-        throw new ApiError(400, "VALIDATION_ERROR", "attachmentId 无效");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.attachmentIdInvalid);
       }
       const path = await requireContainedFile(
         resolve(projectRoot, ".suduo", "attachments", item.attachmentId),
@@ -311,13 +311,13 @@ async function mapContent(
       typeof item.name !== "string" ||
       typeof item.path !== "string"
     ) {
-      throw new ApiError(400, "VALIDATION_ERROR", "不支持的消息 content 类型");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.contentTypeUnsupported);
     }
     const path = await requireSkillFile(item.path, projectRoot, skillRoots);
     result.push({ type: "skill", name: item.name, path });
   }
   if (totalText > 200_000) {
-    throw new ApiError(400, "VALIDATION_ERROR", "消息文本总长度超过 200000");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.textTooLong);
   }
   return result;
 }
@@ -328,7 +328,7 @@ async function requireSkillFile(
   configuredRoots: readonly string[],
 ): Promise<string> {
   if (!isAbsolute(path) || path.includes("\0")) {
-    throw new ApiError(400, "VALIDATION_ERROR", "skill 路径必须是绝对路径");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.skillPathNotAbsolute);
   }
   try {
     const resolvedPath = await realpath(path);
@@ -356,7 +356,7 @@ async function requireSkillFile(
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "skill 不存在或不属于允许的 skill 目录",
+      (t) => t.session.skillNotAllowed,
       undefined,
       { cause: error },
     );
@@ -365,7 +365,7 @@ async function requireSkillFile(
 
 async function requireContainedFile(path: string, root: string): Promise<string> {
   if (!isAbsolute(path)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "本机路径必须是绝对路径");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.localPathNotAbsolute);
   }
   try {
     const [resolvedPath, resolvedRoot] = await Promise.all([
@@ -381,7 +381,7 @@ async function requireContainedFile(path: string, root: string): Promise<string>
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "本机输入文件不存在或超出项目目录",
+      (t) => t.session.localFileNotFound,
       undefined,
       { cause: error },
     );

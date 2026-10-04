@@ -42,7 +42,7 @@ export class RuntimeSupervisor {
       });
     } catch (error) {
       throw new IndeterminateOperationError(
-        "创建 runtime thread 的结果不确定",
+        (t) => t.session.threadCreateIndeterminate,
         { cause: error },
       );
     }
@@ -136,7 +136,7 @@ export class RuntimeSupervisor {
       throw new ApiError(
         503,
         "RUNTIME_UNAVAILABLE",
-        "runtime 不可用: " + runtimeId,
+        (t) => t.session.runtimeUnavailable(runtimeId),
         undefined,
         { cause: error },
       );
@@ -163,7 +163,7 @@ export class RuntimeSupervisor {
       });
       this.readyThreads.add(key);
     } catch (error) {
-      throw new IndeterminateOperationError("恢复 runtime thread 失败", {
+      throw new IndeterminateOperationError((t) => t.session.threadResumeFailed, {
         cause: error,
       });
     }

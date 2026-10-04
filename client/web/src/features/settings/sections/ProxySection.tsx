@@ -12,7 +12,6 @@ import { showMessage } from "../../../ui/message.js";
 import { SaveBar, useUnsavedChanges } from "../components/frame.js";
 import { rowDescId, SectionSkeleton, SettingsRow, SettingsSection } from "../components/kit.js";
 import { formatMs, TestConnection, timed, type TestOutcome } from "../components/TestConnection.js";
-import { humanizeProxyMessage } from "../format.js";
 import { localSettingsQuery, settingsKeys } from "../queries.js";
 import { useQueryFailure } from "../use-query-failure.js";
 import type { ProxyConnectivityDto } from "@suduo/client-contracts";
@@ -162,7 +161,8 @@ function ProxyForm({ settings }: { settings: SettingsDto }) {
       showMessage(text.saved, "success");
     } catch (cause) {
       const reported = reportFailure(cause, { surface: "region" });
-      if (reported.route.outlet === "region") setSaveError(humanizeProxyMessage(reported.failure.message));
+      // 本机服务的报错已用界面上的字段叫法，按请求语言生成。
+      if (reported.route.outlet === "region") setSaveError(reported.failure.message);
     } finally {
       setSaving(false);
     }
@@ -197,7 +197,7 @@ function ProxyForm({ settings }: { settings: SettingsDto }) {
         suggestion: value.usingProxy ? text.test.suggestionProxy : text.test.suggestionDirect,
       };
     } catch (cause) {
-      return { ok: false, reason: humanizeProxyMessage(classifyFailure(cause).message) };
+      return { ok: false, reason: classifyFailure(cause).message };
     }
   };
 

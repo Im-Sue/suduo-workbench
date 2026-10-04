@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
+import { ApiError } from "../../application/api-error.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -167,7 +168,10 @@ export async function openWithSystemApp(
       ...(cwd === undefined ? {} : { cwd }),
     });
     child.once("error", (cause) => {
-      rejectPromise(new Error(`无法调用系统程序 ${command}：${cause.message}`));
+      // 会经调用方回到界面（打开文件、打开 Codex 配置文件），所以按请求语言出说明；原因是系统的原文。
+      rejectPromise(
+        new ApiError(400, "VALIDATION_ERROR", (t) => t.http.systemOpenFailed(command, cause.message), undefined, { cause }),
+      );
     });
     child.once("spawn", () => {
       child.unref();

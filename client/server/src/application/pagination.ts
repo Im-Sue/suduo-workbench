@@ -26,7 +26,7 @@ function normalizeLimit(limit: number | undefined): number {
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "limit 必须是 1 到 200 的整数",
+      (t) => t.session.limitRange(200),
     );
   }
   return limit;
@@ -39,7 +39,7 @@ function decodeCursor(cursor: string | undefined): number {
   const decoded = Buffer.from(cursor, "base64url").toString("utf8");
   const offset = Number(decoded);
   if (!Number.isSafeInteger(offset) || offset < 0 || String(offset) !== decoded) {
-    throw new ApiError(400, "VALIDATION_ERROR", "cursor 无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.cursorInvalid);
   }
   return offset;
 }

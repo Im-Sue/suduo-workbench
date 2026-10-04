@@ -66,13 +66,13 @@ export class SettingsService {
   async update(input: UpdateSettingsRequest): Promise<SettingsDto> {
     if (input.globalSkills !== undefined) {
       if (typeof input.globalSkills !== "boolean") {
-        throw new ApiError(400, "VALIDATION_ERROR", "globalSkills 必须是布尔值");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.settings.mustBeBoolean("globalSkills"));
       }
       if (this.globalSkillsEnvOverride() !== null) {
         throw new ApiError(
           409,
           "VERSION_CONFLICT",
-          "globalSkills 已被环境变量 SUDUO_GLOBAL_SKILLS 锁定",
+          (t) => t.config.settings.globalSkillsLocked,
         );
       }
       this.state.globalSkills = input.globalSkills;
@@ -82,7 +82,7 @@ export class SettingsService {
         throw new ApiError(
           400,
           "VALIDATION_ERROR",
-          "gitAutoCheckpointDefault 必须是布尔值",
+          (t) => t.config.settings.mustBeBoolean("gitAutoCheckpointDefault"),
         );
       }
       this.state.gitAutoCheckpointDefault = input.gitAutoCheckpointDefault;
@@ -96,7 +96,7 @@ export class SettingsService {
         throw new ApiError(
           400,
           "VALIDATION_ERROR",
-          "defaultApprovalMode 仅允许 ask / auto / full",
+          (t) => t.config.settings.approvalModeInvalid,
         );
       }
       this.state.defaultApprovalMode = input.defaultApprovalMode;

@@ -10,6 +10,10 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
+import {
+  isLocale,
+  type Locale,
+} from "@suduo/client-contracts";
 import type {
   CreateProjectRequest,
   CreateSessionRequest,
@@ -44,6 +48,7 @@ import {
   ApiError,
   IndeterminateOperationError,
   errorResponse,
+  type ErrorText,
 } from "../../application/api-error.js";
 import type { ApprovalService } from "../../application/approval-service.js";
 import {
@@ -98,7 +103,7 @@ import {
 import { registerSessionListRoutes } from "./routes/session-list-routes.js";
 import { registerRoomsRoutes, type RoomsRouteDependencies } from "./routes/rooms-routes.js";
 import type { SessionListService } from "../../application/session-list-service.js";
-import { registerRequestLocale } from "../../i18n/locale.js";
+import { registerRequestLocale, requestLocaleOf } from "../../i18n/locale.js";
 
 export interface HttpServerDependencies
   extends CodexStatusRouteDependencies,
@@ -143,7 +148,8 @@ export interface HttpServerDependencies
   openCodexConfigFile?(absolutePath: string): Promise<void>;
   skillAdmin: SkillAdminService;
   setSkillEnabled(name: string, enabled: boolean): Promise<void>;
-  doctor(): Promise<DoctorResult>;
+  /** 自检；检查项的名称、结论与处理建议按 locale 生成。 */
+  doctor(locale: Locale): Promise<DoctorResult>;
   webRoot: string;
   sseHeartbeatMs?: number;
   logger?: boolean;
@@ -178,10 +184,11 @@ export function buildHttpServer(
   registerRequestLocale(server, dependencies.settings);
 
   server.setErrorHandler((error, request, reply) => {
+    const locale = requestLocaleOf(request, dependencies.settings);
     if (error instanceof ApiError) {
       void reply
         .code(error.statusCode)
-        .send(errorResponse(error, request.id));
+        .send(errorResponse(error, request.id, locale));
       return;
     }
     request.log.error(error);
@@ -190,9 +197,10 @@ export function buildHttpServer(
         new ApiError(
           500,
           "RUNTIME_REQUEST_FAILED",
-          "服务端处理请求失败",
+          (t) => t.common.internalError,
         ),
         request.id,
+        locale,
       ),
     );
   });
@@ -211,7 +219,7 @@ export function buildHttpServer(
       throw new ApiError(
         409,
         "SHUTDOWN_UNAVAILABLE",
-        "当前运行方式不支持通过接口停止服务",
+        (t) => t.http.shutdownUnavailable,
       );
     }
     setImmediate(() => dependencies.requestShutdown?.("admin shutdown request"));
@@ -333,6 +341,8 @@ export function buildHttpServer(
           const session = await dependencies.sessions.create(
             request.params.projectId,
             requireObject<CreateSessionRequest>(request.body ?? {}),
+            {},
+            { locale: request.locale },
           );
           // 普通会话建好就可能马上开回合：等基线拍完再返回，免得基线拍进模型改过的文件。
           await dependencies.workspace.captureBaselineInBackground(session.id);
@@ -381,7 +391,7 @@ export function buildHttpServer(
     async (request) => {
       const path = queryObject(request.query)["path"];
       if (!path) {
-        throw validation("文件预览必须提供 path");
+        throw validation((t) => t.http.previewPathRequired);
       }
       return dependencies.workspace.readContent(request.params.projectId, path);
     },
@@ -397,7 +407,7 @@ export function buildHttpServer(
     async (request, reply) => {
       const path = queryObject(request.query)["path"];
       if (!path) {
-        throw validation("raw 读取必须提供 path");
+        throw validation((t) => t.http.rawPathRequired);
       }
       const file = await dependencies.workspace.resolveRawFile(
         request.params.projectId,
@@ -441,10 +451,10 @@ export function buildHttpServer(
   server.post("/api/v1/skills/enabled", async (request, reply) => {
     const body = requireObject<SetSkillEnabledRequest>(request.body);
     if (typeof body.name !== "string" || body.name === "") {
-      throw validation("必须提供 skill name");
+      throw validation((t) => t.http.skillNameRequired);
     }
     if (typeof body.enabled !== "boolean") {
-      throw validation("enabled 必须是布尔值");
+      throw validation((t) => t.http.mustBeBoolean("enabled"));
     }
     await dependencies.setSkillEnabled(body.name, body.enabled);
     return reply.code(204).send();
@@ -453,7 +463,7 @@ export function buildHttpServer(
   server.post("/api/v1/skills/install", async (request) => {
     const body = requireObject<InstallSkillRequest>(request.body);
     if (body.source !== "zip" && body.source !== "folder") {
-      throw validation('source 必须为 "zip" 或 "folder"');
+      throw validation((t) => t.http.skillSourceInvalid);
     }
     return { skill: await dependencies.skillAdmin.install(body) };
   });
@@ -461,7 +471,7 @@ export function buildHttpServer(
   server.post("/api/v1/skills/remove", async (request, reply) => {
     const body = requireObject<RemoveSkillRequest>(request.body);
     if (typeof body.path !== "string" || body.path === "") {
-      throw validation("卸载必须提供 path");
+      throw validation((t) => t.http.uninstallPathRequired);
     }
     await dependencies.skillAdmin.remove(body.path);
     return reply.code(204).send();
@@ -472,7 +482,7 @@ export function buildHttpServer(
     async (request, reply) => {
       const body = requireObject<OpenFileRequest>(request.body);
       if (typeof body.path !== "string" || body.path === "") {
-        throw validation("打开文件必须提供 path");
+        throw validation((t) => t.http.openPathRequired);
       }
       if (
         body.mode !== "open" &&
@@ -480,10 +490,10 @@ export function buildHttpServer(
         body.mode !== "vscode" &&
         body.mode !== "terminal"
       ) {
-        throw validation('mode 必须为 open/reveal/vscode/terminal 之一');
+        throw validation((t) => t.http.openModeInvalid);
       }
       if (body.line !== undefined && (!Number.isSafeInteger(body.line) || body.line < 1)) {
-        throw validation("line 必须是正整数");
+        throw validation((t) => t.http.lineInvalid);
       }
       await dependencies.workspace.openWithSystem(
         request.params.projectId,
@@ -504,7 +514,7 @@ export function buildHttpServer(
         body.paths.length > EXISTING_FILES_LIMIT ||
         body.paths.some((path) => typeof path !== "string" || path === "" || path.length > 1024)
       ) {
-        throw validation(`paths 必须是 1–1024 字的路径数组，最多 ${EXISTING_FILES_LIMIT} 条`);
+        throw validation((t) => t.http.existingPathsInvalid(EXISTING_FILES_LIMIT));
       }
       return dependencies.workspace.existingFiles(request.params.projectId, body.paths);
     },
@@ -512,12 +522,12 @@ export function buildHttpServer(
 
   server.get<{ Params: { projectId: string } }>(
     "/api/v1/projects/:projectId/git/status",
-    async (request) => dependencies.git.status(request.params.projectId),
+    async (request) => dependencies.git.status(request.params.projectId, request.locale),
   );
 
   server.post<{ Params: { projectId: string } }>(
     "/api/v1/projects/:projectId/git/init",
-    async (request) => dependencies.git.init(request.params.projectId),
+    async (request) => dependencies.git.init(request.params.projectId, request.locale),
   );
 
   server.post<{ Params: { projectId: string } }>(
@@ -527,6 +537,7 @@ export function buildHttpServer(
       const checkpoint = await dependencies.git.checkpoint(
         request.params.projectId,
         typeof body.message === "string" ? body.message : undefined,
+        request.locale,
       );
       return { checkpoint };
     },
@@ -544,9 +555,9 @@ export function buildHttpServer(
     async (request) => {
       const body = requireObject<GitRestoreRequest>(request.body);
       if (typeof body.hash !== "string" || body.hash === "") {
-        throw validation("还原必须提供 hash");
+        throw validation((t) => t.http.restoreHashRequired);
       }
-      return dependencies.git.restore(request.params.projectId, body.hash);
+      return dependencies.git.restore(request.params.projectId, body.hash, request.locale);
     },
   );
 
@@ -555,11 +566,11 @@ export function buildHttpServer(
     async (request) => {
       const body = requireObject<GitSettingsRequest>(request.body);
       if (typeof body.autoCheckpoint !== "boolean") {
-        throw validation("autoCheckpoint 必须是布尔值");
+        throw validation((t) => t.http.mustBeBoolean("autoCheckpoint"));
       }
       return dependencies.git.updateSettings(request.params.projectId, {
         autoCheckpoint: body.autoCheckpoint,
-      });
+      }, request.locale);
     },
   );
 
@@ -599,7 +610,7 @@ export function buildHttpServer(
     async (request) => {
       const path = queryObject(request.query)["path"];
       if (!path) {
-        throw validation("diff 必须提供 path");
+        throw validation((t) => t.http.diffPathRequired);
       }
       return dependencies.workspace.diff(request.params.sessionId, path);
     },
@@ -676,6 +687,7 @@ export function buildHttpServer(
             request.params.sessionId,
             requireObject<SendMessageRequest>(request.body),
             key,
+            { locale: request.locale },
           ),
         }),
         key,
@@ -687,7 +699,7 @@ export function buildHttpServer(
     "/api/v1/sessions/:sessionId/context",
     async (request) => {
       if (!dependencies.sessionContext) {
-        throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", "会话上下文服务不可用");
+        throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.http.sessionContextUnavailable);
       }
       return dependencies.sessionContext.describe(request.params.sessionId);
     },
@@ -711,10 +723,13 @@ export function buildHttpServer(
   // pr9：设置页要把自检结果**内嵌成卡片**而不是跳这个 HTML 页
   //（用户来设置页九成是因为某样东西不工作，把诊断藏在跳转后面方向是反的）。
   // 只加一条 JSON 读取路由，HTML 页原样保留给不开设置页的场景。
-  server.get("/api/v1/doctor", async () => dependencies.doctor());
+  server.get("/api/v1/doctor", async (request) => dependencies.doctor(request.locale));
 
-  server.get("/doctor", async (_request, reply) => {
-    const result = await dependencies.doctor();
+  server.get("/doctor", async (request, reply) => {
+    // 浏览器直接打开的页面不带前端的语言头：?lang= → 已记下的界面语言 → Accept-Language（技术设计 §七）。
+    const lang = queryObject(request.query)["lang"];
+    const locale = isLocale(lang) ? lang : request.locale;
+    const result = await dependencies.doctor(locale);
     return reply
       .header("Cache-Control", "no-store")
       .header(
@@ -722,7 +737,7 @@ export function buildHttpServer(
         "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",
       )
       .type("text/html; charset=utf-8")
-      .send(renderDoctorPage(result));
+      .send(renderDoctorPage(result, locale));
   });
 
   server.get("/doctor/client.js", async (_request, reply) =>
@@ -735,7 +750,7 @@ export function buildHttpServer(
   server.get<{ Params: { "*": string } }>("/*", async (request, reply) => {
     const path = request.params["*"];
     if (path.startsWith("api/")) {
-      throw new ApiError(404, "NOT_FOUND", "API 路由不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.http.apiRouteNotFound);
     }
     return sendWebFile(
       reply,
@@ -768,7 +783,7 @@ export function buildHttpServer(
             body.decision !== "decline" &&
             body.decision !== "cancel"
           ) {
-            throw validation("decision 必须是 accept/acceptForSession/decline/cancel 之一");
+            throw validation((t) => t.http.decisionInvalid);
           }
           return {
             statusCode: 200,
@@ -882,7 +897,7 @@ function registerRequirementsV2Routes(
   );
 
   if (workbench) {
-    server.get("/api/v2/my/workbench", async () => workbench.getWorkbench());
+    server.get("/api/v2/my/workbench", async (request) => workbench.getWorkbench(request.locale));
 
     server.get<{ Params: { projectId: string } }>(
       "/api/v2/projects/:projectId/stats",
@@ -953,7 +968,7 @@ function registerRequirementsV2Routes(
       const body = request.body;
       const upTo =
         body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>)["upTo"] : undefined;
-      if (upTo !== undefined && typeof upTo !== "string") throw validation("upTo 必须是 ISO 时间字符串");
+      if (upTo !== undefined && typeof upTo !== "string") throw validation((t) => t.http.upToInvalid);
       await service.markRequirementRead(request.params.requirementId, upTo === undefined ? {} : { upTo });
       return reply.status(204).send();
     },
@@ -1034,7 +1049,7 @@ function registerRequirementsV2Routes(
         abort.signal,
       );
       return sendRemoteFile(reply, response, {
-        missingBodyMessage: "远程产物文件响应缺少内容流",
+        missingBodyMessage: (t) => t.http.remoteArtifactFileBodyMissing,
         inline: request.query.disposition === "inline",
       });
     },
@@ -1045,10 +1060,10 @@ function registerRequirementsV2Routes(
     async (request, reply) => {
       const contentType = headerValue(request.headers["content-type"]);
       if (!contentType?.toLowerCase().startsWith("multipart/form-data;")) {
-        throw validation("附件上传必须使用 multipart/form-data");
+        throw validation((t) => t.http.uploadMustBeMultipart);
       }
       if (!(request.body instanceof Readable)) {
-        throw validation("附件上传流无效");
+        throw validation((t) => t.http.uploadStreamInvalid);
       }
       let idempotencyKey: string;
       try {
@@ -1089,7 +1104,7 @@ function registerRequirementsV2Routes(
         abort.signal,
       );
       return sendRemoteFile(reply, response, {
-        missingBodyMessage: "远程附件响应缺少内容流",
+        missingBodyMessage: (t) => t.http.remoteAttachmentBodyMissing,
         inline: request.query.disposition === "inline",
       });
     },
@@ -1120,7 +1135,7 @@ function registerRequirementsV2Routes(
     try {
       const response = await service.openEvents(abort.signal);
       if (!response.body) {
-        throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", "远程事件响应缺少内容流");
+        throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.http.remoteEventsBodyMissing);
       }
       const stream = Readable.fromWeb(
         response.body as NodeWebReadableStream<Uint8Array>,
@@ -1179,7 +1194,7 @@ function registerRequirementsV2Routes(
       requireEmptyObject(request.body);
       return reply
         .code(201)
-        .send(await service.createProjectSession(request.params.projectId));
+        .send(await service.createProjectSession(request.params.projectId, request.locale));
     },
   );
 }
@@ -1205,7 +1220,7 @@ function requiredUuidHeader(
     rendered === undefined ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(rendered)
   ) {
-    throw validation(`${name} 必须是 UUID`);
+    throw validation((t) => t.http.mustBeUuid(name));
   }
   return rendered.toLowerCase();
 }
@@ -1217,7 +1232,7 @@ function requiredUuidHeader(
 async function sendRemoteFile(
   reply: FastifyReply,
   response: Response,
-  options: { missingBodyMessage: string; inline: boolean },
+  options: { missingBodyMessage: ErrorText; inline: boolean },
 ): Promise<FastifyReply> {
   if (!response.body) {
     throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", options.missingBodyMessage);
@@ -1258,14 +1273,14 @@ function requirementsCursorQuery(
   const allowed = new Set(["cursor", "limit", ...allowedExtra]);
   for (const key of Object.keys(query)) {
     if (!allowed.has(key)) {
-      throw validation(`不支持的 V2 查询参数: ${key}`);
+      throw validation((t) => t.http.unsupportedQueryParam(key));
     }
   }
   const limit = query["limit"];
   if (limit !== undefined) {
     const number = Number(limit);
     if (!Number.isSafeInteger(number) || number < 1 || number > 100) {
-      throw validation("limit 必须是 1 到 100 的整数");
+      throw validation((t) => t.http.limitRange(100));
     }
   }
   return query;
@@ -1274,7 +1289,7 @@ function requirementsCursorQuery(
 function requirementNumberParam(value: string): number {
   const number = Number(value);
   if (!/^[1-9][0-9]{0,8}$/u.test(value) || !Number.isSafeInteger(number)) {
-    throw validation("需求编号必须是正整数");
+    throw validation((t) => t.http.requirementNumberInvalid);
   }
   return number;
 }
@@ -1283,7 +1298,7 @@ function requirementsAuditQuery(value: unknown): ListAuditQuery {
   const query = requirementsCursorQuery(value, ["resourceType", "resourceId", "projectId"]);
   const resourceType = query["resourceType"];
   if (resourceType !== undefined && !isAuditResourceType(resourceType)) {
-    throw validation("resourceType 无效");
+    throw validation((t) => t.http.resourceTypeInvalid);
   }
   return {
     ...(query["cursor"] === undefined ? {} : { cursor: query["cursor"] }),
@@ -1299,16 +1314,16 @@ function requirementsProjectStatsQuery(value: unknown): ProjectStatsQuery {
   for (const key of Object.keys(query)) {
     // staleDays 是旧版页面带的（停滞已改为按各状态节奏）：升级后仍开着的旧页面不至于整块统计失败，忽略即可。
     if (key !== "window" && key !== "tz" && key !== "staleDays") {
-      throw validation(`不支持的 V2 查询参数: ${key}`);
+      throw validation((t) => t.http.unsupportedQueryParam(key));
     }
   }
   const window = query["window"];
   if (window !== "7d" && window !== "30d") {
-    throw validation("window 必须是 7d 或 30d");
+    throw validation((t) => t.http.statsWindowInvalid);
   }
   const tz = query["tz"];
   if (!tz || tz.trim() === "") {
-    throw validation("tz 必须是非空 IANA 时区名");
+    throw validation((t) => t.http.timeZoneRequired);
   }
   return { window, tz };
 }
@@ -1368,14 +1383,14 @@ async function sendWebFile(
   relativePath: string,
 ) {
   if (relativePath.includes("..") || relativePath.includes("\0")) {
-    throw new ApiError(404, "NOT_FOUND", "静态文件不存在");
+    throw new ApiError(404, "NOT_FOUND", (t) => t.http.staticFileNotFound);
   }
   const absolutePath = resolve(webRoot, relativePath);
   let content: Buffer;
   try {
     content = await readFile(absolutePath);
   } catch (error) {
-    throw new ApiError(404, "NOT_FOUND", "Web 构建产物不存在", undefined, {
+    throw new ApiError(404, "NOT_FOUND", (t) => t.http.webBuildMissing, undefined, {
       cause: error,
     });
   }
@@ -1439,7 +1454,7 @@ async function idempotent(
       throw new ApiError(
         409,
         "IDEMPOTENCY_INDETERMINATE",
-        error.message,
+        error.text,
         { scope },
         { cause: error },
       );
@@ -1449,7 +1464,8 @@ async function idempotent(
         scope,
         key,
         error.statusCode,
-        jsonValue(errorResponse(error, request.id)),
+        // 重放时原样返回这一份：同一个幂等键是同一个界面的重试，语言不会变。
+        jsonValue(errorResponse(error, request.id, request.locale)),
       );
     }
     throw error;
@@ -1522,14 +1538,14 @@ async function writeWithTimeout(
 function requireIdempotencyKey(request: FastifyRequest): string {
   const value = request.headers["idempotency-key"];
   if (typeof value !== "string" || value.length === 0) {
-    throw validation("写请求必须携带 Idempotency-Key");
+    throw validation((t) => t.http.idempotencyKeyRequired);
   }
   return value;
 }
 
 function requireObject<T>(value: unknown): T {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw validation("请求体必须是 JSON object");
+    throw validation((t) => t.http.bodyMustBeObject);
   }
   return value as T;
 }
@@ -1539,19 +1555,19 @@ function requireEmptyObject(value: unknown): Record<string, never> {
     value === undefined ? {} : value,
   );
   if (Object.keys(body).length > 0) {
-    throw validation("此接口不接受请求体字段");
+    throw validation((t) => t.http.bodyMustBeEmpty);
   }
   return body;
 }
 
 function parseIfMatch(value: string | string[] | undefined): number {
   if (typeof value !== "string") {
-    throw validation("PATCH 必须携带 If-Match");
+    throw validation((t) => t.http.ifMatchRequired);
   }
   const match = /^"([1-9][0-9]*)"$/.exec(value);
   const version = match ? Number(match[1]) : Number.NaN;
   if (!Number.isSafeInteger(version)) {
-    throw validation('If-Match 格式必须为 "<version>"');
+    throw validation((t) => t.http.ifMatchFormat);
   }
   return version;
 }
@@ -1565,7 +1581,7 @@ function projectQuery(value: unknown): ListProjectsQuery {
     state !== "removed" &&
     state !== "all"
   ) {
-    throw validation("项目 state 查询参数无效");
+    throw validation((t) => t.http.projectStateInvalid);
   }
   return {
     ...(state === undefined ? {} : { state }),
@@ -1583,7 +1599,7 @@ function sessionQuery(value: unknown): ListSessionsQuery {
     state !== "deleted" &&
     state !== "all"
   ) {
-    throw validation("会话 state 查询参数无效");
+    throw validation((t) => t.http.sessionStateInvalid);
   }
   return {
     ...(state === undefined ? {} : { state }),
@@ -1600,7 +1616,7 @@ function approvalQuery(value: unknown): ListApprovalsQuery {
     status !== "history" &&
     status !== "all"
   ) {
-    throw validation("审批 status 查询参数无效");
+    throw validation((t) => t.http.approvalStatusInvalid);
   }
   return {
     ...(status === undefined ? {} : { status }),
@@ -1638,7 +1654,7 @@ function parseAfter(
   const value = query["after"] ?? "0";
   const after = parseCursor(value);
   if (after === null) {
-    throw validation("after/Last-Event-ID 必须是大于等于 0 的整数");
+    throw validation((t) => t.http.nonNegativeInteger("after/Last-Event-ID"));
   }
   return after;
 }
@@ -1666,15 +1682,15 @@ function parseBackfillQuery(queryValue: unknown): {
   const query = queryObject(queryValue);
   const after = parseNonNegativeInteger(query["after"] ?? "0", "after");
   if (query["until"] === undefined) {
-    throw validation("历史回放必须提供 until");
+    throw validation((t) => t.http.untilRequired);
   }
   const until = parseNonNegativeInteger(query["until"], "until");
   const limit = parseNonNegativeInteger(query["limit"] ?? String(MAX_BACKFILL_LIMIT), "limit");
   if (until < after) {
-    throw validation("until 必须大于等于 after");
+    throw validation((t) => t.http.untilBeforeAfter);
   }
   if (limit < 1 || limit > MAX_BACKFILL_LIMIT) {
-    throw validation(`limit 必须是 1 到 ${String(MAX_BACKFILL_LIMIT)} 的整数`);
+    throw validation((t) => t.http.limitRange(MAX_BACKFILL_LIMIT));
   }
   return { after, until, limit };
 }
@@ -1682,7 +1698,7 @@ function parseBackfillQuery(queryValue: unknown): {
 function parseNonNegativeInteger(value: string, name: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || String(parsed) !== value) {
-    throw validation(`${name} 必须是大于等于 0 的整数`);
+    throw validation((t) => t.http.nonNegativeInteger(name));
   }
   return parsed;
 }
@@ -1707,6 +1723,6 @@ function jsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
-function validation(message: string): ApiError {
+function validation(message: ErrorText): ApiError {
   return new ApiError(400, "VALIDATION_ERROR", message);
 }

@@ -73,7 +73,7 @@ export function normalizeRoomFile(
   const fileName = safeFileName(rawFileName);
   const extension = extname(fileName).toLowerCase();
   if (!allowedExtensions.has(extension)) {
-    throw new ApplicationError(400, "ATTACHMENT_INVALID", "文件类型不在允许范围内", { extension });
+    throw new ApplicationError(400, "ATTACHMENT_INVALID", "This file type is not allowed", { extension });
   }
   const contentType = EXTENSION_CONTENT_TYPES[extension] ?? safeContentType(rawContentType);
   return { fileName, extension, contentType };
@@ -104,7 +104,7 @@ function safeFileName(input: string): string {
   const leaf = basename(input.replaceAll("\\", "/")).normalize("NFC");
   const value = Array.from(stripControls(leaf).trim()).slice(0, 200).join("");
   if (!value || value === "." || value === "..") {
-    throw new ApplicationError(400, "ATTACHMENT_INVALID", "文件名无效");
+    throw new ApplicationError(400, "ATTACHMENT_INVALID", "Invalid file name");
   }
   return value;
 }

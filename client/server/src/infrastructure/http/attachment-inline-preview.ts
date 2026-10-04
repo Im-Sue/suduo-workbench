@@ -127,7 +127,7 @@ async function peekStream(
     }
   } catch (error) {
     await reader.cancel().catch(() => undefined);
-    throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", "读取远程文件内容失败", undefined, {
+    throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.workspace.attachment.remoteReadFailed, undefined, {
       cause: error,
     });
   }

@@ -58,6 +58,7 @@ describe("G 出网代理设置", () => {
     expect(restarts).toBe(2);
   });
 
+  // 报错里的字段用界面上的叫法（与以前前端把字段名换成界面叫法后的文字逐字相同）。
   it("拒绝非法、带鉴权或非字符串的代理值，并给出可读诊断", async () => {
     const root = mkdtempSync(join(tmpdir(), "suduo-proxy-settings-"));
     temporaryPaths.push(root);
@@ -65,15 +66,15 @@ describe("G 出网代理设置", () => {
 
     await expect(settings.update({ httpProxy: "not-a-url" })).rejects.toMatchObject({
       statusCode: 400,
-      message: "httpProxy 不是合法代理 URL",
+      message: "HTTP 代理 不是合法代理 URL",
     });
     await expect(settings.update({ httpsProxy: "http://user:pass@proxy.test" })).rejects.toMatchObject({
       statusCode: 400,
-      message: "httpsProxy 暂不支持带用户名或密码的代理",
+      message: "HTTPS 代理 暂不支持带用户名或密码的代理",
     });
     await expect(settings.update({ allProxy: 42 as unknown as string })).rejects.toMatchObject({
       statusCode: 400,
-      message: "allProxy 必须是字符串",
+      message: "其他连接的代理 必须是字符串",
     });
   });
 });

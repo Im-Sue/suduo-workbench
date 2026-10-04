@@ -3,12 +3,14 @@ import {
   isReasoningEffort,
   type CodexModelOptionDto,
   type JsonValue,
+  type Locale,
   type ModelProviderConfigOrigin,
   type ModelProviderSettingsDto,
   type UpdateModelProviderRequest,
   type UpdateModelProviderResult,
 } from "@suduo/client-contracts";
-import { ApiError } from "./api-error.js";
+import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
+import { ApiError, errorTextOf } from "./api-error.js";
 import { parseCodexModelCatalog } from "../infrastructure/runtime/codex/codex-model-overrides.js";
 import { decodeWindowsCommandOutput } from "../infrastructure/platform/windows-command-output.js";
 
@@ -71,8 +73,12 @@ export interface ModelProviderServiceOptions {
   cliRunner?: CodexCliRunner;
 }
 
-/** 第一次在界面里配置模型服务时建立的提供方（形状同 scripts/templates/codex-config.template.toml）。 */
+/**
+ * 第一次在界面里配置模型服务时建立的提供方（形状同 scripts/templates/codex-config.template.toml）。
+ * 名称写进用户的 Codex 配置文件（config.toml）、留存给 Codex 用，不随界面语言变；界面不显示它。
+ */
 const INITIAL_PROVIDER_ID = "suduo";
+// eslint-disable-next-line no-restricted-syntax -- 写进 Codex 配置文件的留存名称，与界面语言无关（见上）
 const INITIAL_PROVIDER_NAME = "SuDuo 模型服务";
 
 interface ConfigState {
@@ -115,9 +121,10 @@ export class ModelProviderService {
     };
   }
 
-  async get(): Promise<ModelProviderSettingsDto> {
+  /** locale：密钥来源说明（apiKeyMasked）用的语言。 */
+  async get(locale: Locale): Promise<ModelProviderSettingsDto> {
     const state = await this.readState();
-    const credential = await this.credentialSource(state);
+    const credential = await this.credentialSource(state, messagesFor(locale));
     return {
       ...state.settings,
       apiKeyMasked: credential?.label ?? null,
@@ -134,27 +141,32 @@ export class ModelProviderService {
    */
   private async credentialSource(
     state: ConfigState,
+    t: ServerMessages,
   ): Promise<{ source: "command" | "env" | "codex-login"; label: string } | null> {
     const provider = state.providerId === null ? null : providerConfig(state.config, state.providerId);
     const command = stringValue(asObject(provider?.["auth"])?.["command"]);
     if (command) {
       // 只取程序名：整串写法（如 `printf sk-…`）里的参数不能带进标签。
       const program = command.trim().split(/\s+/)[0] ?? "";
-      return { source: "command", label: "由本机命令提供（" + (program.split(/[\\/]/).pop() || "命令") + "）" };
+      return {
+        source: "command",
+        label: t.config.model.keyFromCommand(program.split(/[\\/]/).pop() || t.config.model.commandFallback),
+      };
     }
     const envKey = stringValue(provider?.["env_key"]);
     if (envKey) {
       // Codex 继承本机服务的环境：这里读不到，它也读不到。
       const present = (process.env[envKey] ?? "") !== "";
-      return { source: "env", label: "来自环境变量 " + envKey + (present ? "" : "（本机服务启动时没有这个变量）") };
+      return { source: "env", label: t.config.model.keyFromEnv(envKey, present) };
     }
     // Codex 官方 login status 不会回传密钥，UI 只显示受 Codex 管理的登录态。
-    return (await this.isLoggedIn()) ? { source: "codex-login", label: "由 Codex 管理" } : null;
+    return (await this.isLoggedIn()) ? { source: "codex-login", label: t.config.model.keyManagedByCodex } : null;
   }
 
-  /** 保存配置后以官方 model/list 验证；验证失败时回写本次改动前的字段值。 */
+  /** 保存配置后以官方 model/list 验证；验证失败时回写本次改动前的字段值。locale：结果说明用的语言。 */
   async update(
     input: UpdateModelProviderRequest,
+    locale: Locale,
   ): Promise<UpdateModelProviderResult> {
     const baseUrl = input.baseUrl === undefined ? undefined : requireBaseUrl(input.baseUrl);
     const apiKey = input.apiKey === undefined ? undefined : requireApiKey(input.apiKey);
@@ -174,7 +186,7 @@ export class ModelProviderService {
       reasoningEffort === undefined &&
       contextWindow === undefined
     ) {
-      throw new ApiError(400, "VALIDATION_ERROR", "没有提供任何要修改的字段");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.model.nothingToUpdate);
     }
 
     const before = await this.readState();
@@ -187,7 +199,7 @@ export class ModelProviderService {
       // - 已有这张表：只改地址，不动用户写的其余字段，还原时把地址写回原值。
       // 改前值一律取用户文件原文。密钥不写进配置，仍由下面的 codex login 交给 Codex 保管。
       if (baseUrl === undefined) {
-        throw new ApiError(400, "VALIDATION_ERROR", "第一次配置模型服务需要填写服务地址");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.model.baseUrlRequiredFirstTime);
       }
       const existing = providerConfig(user, INITIAL_PROVIDER_ID);
       if (existing === null) {
@@ -262,17 +274,17 @@ export class ModelProviderService {
       throw error;
     }
 
-    const settings = await this.get();
+    const settings = await this.get(locale);
+    const t = messagesFor(locale);
     if (write?.status === "okOverridden") {
       const metadata = write.overriddenMetadata;
-      const effective = metadata ? formatEffectiveValue(metadata.effectiveValue) : "上层配置";
       return {
         settings,
         status: "okOverridden",
-        message:
-          "已写入你的配置，但被上层配置覆盖，当前生效值仍是 " +
-          effective +
-          (metadata?.message ? "。" + metadata.message : "。"),
+        message: t.config.model.savedOverridden(
+          metadata ? formatEffectiveValue(metadata.effectiveValue) : null,
+          metadata?.message || null,
+        ),
       };
     }
     return {
@@ -280,7 +292,7 @@ export class ModelProviderService {
       status: "ok",
       // model/list 只说明 Codex 读得了新配置（它的清单可能来自内置目录、不经过网络），
       // 不代表服务地址连得上、Key 有效——那要靠「测试连接」实际连一次。
-      message: "已保存，Codex 已读取新配置；新配置将在下一个回合生效。",
+      message: t.config.model.saved,
     };
   }
 
@@ -396,10 +408,7 @@ export class ModelProviderService {
       throw new ApiError(
         409,
         "VERSION_CONFLICT",
-        "Codex 模型验证失败，且自动还原遇到版本冲突：" +
-          messageOf(originalError) +
-          "；还原错误：" +
-          messageOf(rollbackError),
+        (t) => t.config.model.rollbackConflict(errorTextOf(originalError)(t), errorTextOf(rollbackError)(t)),
       );
     }
   }
@@ -415,7 +424,7 @@ export class ModelProviderService {
       throw new ApiError(
         409,
         "RUNTIME_REQUEST_FAILED",
-        "Codex API Key 登录失败：" + commandFailure(result),
+        (t) => t.config.model.loginFailed(commandFailure(result)),
       );
     }
   }
@@ -441,7 +450,7 @@ function userLayerVersion(
     throw new ApiError(
       409,
       "VERSION_CONFLICT",
-      "Codex 未返回可写 user 配置层版本，拒绝无版本保护的写入",
+      (t) => t.config.userLayerVersionMissing,
     );
   }
   return user.version;
@@ -496,44 +505,51 @@ function formatEffectiveValue(value: JsonValue): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+/** 字段在报错里用界面上的叫法（config.fields.model），不露接口字段名。 */
+const fieldLabel = (field: keyof ServerMessages["config"]["fields"]["model"]) =>
+  (t: ServerMessages) => t.config.fields.model[field];
+
 function requireBaseUrl(value: string): string {
+  const label = fieldLabel("baseUrl");
   if (typeof value !== "string") {
-    throw new ApiError(400, "VALIDATION_ERROR", "baseUrl 必须是字符串");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mustBeString(label(t)));
   }
   const trimmed = value.trim();
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new ApiError(400, "VALIDATION_ERROR", "baseUrl 不是合法 URL");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.model.invalidUrl(label(t)));
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new ApiError(400, "VALIDATION_ERROR", "baseUrl 仅支持 http/https");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.model.httpOnly(label(t)));
   }
   return trimmed;
 }
 
 function requireApiKey(value: string): string {
+  const label = fieldLabel("apiKey");
   if (typeof value !== "string") {
-    throw new ApiError(400, "VALIDATION_ERROR", "apiKey 必须是字符串");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mustBeString(label(t)));
   }
   const trimmed = value.trim();
   if (trimmed.length < 8 || trimmed.length > 512 || /[\r\n]/.test(trimmed)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "apiKey 格式无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.model.invalidFormat(label(t)));
   }
   return trimmed;
 }
 
 function requireModel(value: string): string {
+  const label = fieldLabel("model");
   if (typeof value !== "string") {
-    throw new ApiError(400, "VALIDATION_ERROR", "model 必须是字符串");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mustBeString(label(t)));
   }
   const trimmed = value.trim();
   if (trimmed === "") {
     return "";
   }
   if (trimmed.length > 128 || !/^[A-Za-z0-9._:/-]+$/.test(trimmed)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "model 名称格式无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.model.invalidModelName(label(t)));
   }
   return trimmed;
 }
@@ -544,7 +560,7 @@ function requireModel(value: string): string {
  */
 function requireReasoningEffort(value: string): string {
   if (!isReasoningEffort(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "reasoningEffort 格式无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.model.invalidFormat(fieldLabel("reasoningEffort")(t)));
   }
   return value;
 }
@@ -562,14 +578,10 @@ function requireContextWindow(value: number | null): number | null {
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "contextWindow 必须是 4000 ~ 100000000 之间的整数（tokens）",
+      (t) => t.config.model.contextWindowRange(fieldLabel("contextWindow")(t)),
     );
   }
   return value;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function commandFailure(result: CodexCliResult): string {

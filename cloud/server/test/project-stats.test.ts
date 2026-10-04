@@ -82,14 +82,14 @@ describe("项目 stats 与批量需求读取", () => {
     const { actorId, projectId } = await createActorAndProject();
     const missingWindow = await getStats(actorId, projectId, "tz=America%2FChicago");
     expect(missingWindow.statusCode).toBe(400);
-    expect(missingWindow.json<RequirementsV2ErrorResponse>().error.message).toContain("请求参数无效");
+    expect(missingWindow.json<RequirementsV2ErrorResponse>().error.message).toContain("Invalid request parameters");
 
     const invalidWindow = await getStats(actorId, projectId, "window=14d&tz=America%2FChicago");
     expect(invalidWindow.statusCode).toBe(400);
 
     const missingTimeZone = await getStats(actorId, projectId, "window=7d");
     expect(missingTimeZone.statusCode).toBe(400);
-    expect(missingTimeZone.json<RequirementsV2ErrorResponse>().error.message).toContain("请求参数无效");
+    expect(missingTimeZone.json<RequirementsV2ErrorResponse>().error.message).toContain("Invalid request parameters");
 
     const invalidTimeZone = await getStats(actorId, projectId, "window=7d&tz=Not%2FAZone");
     expect(invalidTimeZone.statusCode).toBe(400);

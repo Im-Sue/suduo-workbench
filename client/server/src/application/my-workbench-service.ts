@@ -1,4 +1,5 @@
 import {
+  type Locale,
   type MyWorkbenchResponse,
   type WorkbenchActionDto,
   type WorkbenchRequirementDto,
@@ -16,7 +17,8 @@ import {
   verifyWorkspaceMappingPath,
   type WorkspaceMappingPathVerification,
 } from "./workspace-mapping-verifier.js";
-import { ApiError } from "./api-error.js";
+import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
+import { ApiError, errorTextOf } from "./api-error.js";
 import type { ApprovalRepository } from "../infrastructure/db/repositories/approval-repository.js";
 import type { EventRepository } from "../infrastructure/db/repositories/event-repository.js";
 import type { ProjectRecord, ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
@@ -80,7 +82,8 @@ export interface MyWorkbenchServiceDependencies {
     RequirementsRemoteClient,
     "getProjectStats" | "listAudit" | "listRequirementsByIds"
   >;
-  verifyMapping?(rootPath: string): Promise<WorkspaceMappingPathVerification>;
+  /** t：结论说明用的字典（请求的语言）。 */
+  verifyMapping?(rootPath: string, t: ServerMessages): Promise<WorkspaceMappingPathVerification>;
 }
 
 /**
@@ -90,12 +93,14 @@ export interface MyWorkbenchServiceDependencies {
 export class MyWorkbenchService {
   constructor(private readonly dependencies: MyWorkbenchServiceDependencies) {}
 
-  async getWorkbench(): Promise<MyWorkbenchResponse> {
+  /** locale：说明文字（各块不可用的原因、映射失效说明）用的语言，即请求的语言。 */
+  async getWorkbench(locale: Locale): Promise<MyWorkbenchResponse> {
+    const t = messagesFor(locale);
     let local: LocalWorkbenchModel;
     try {
       local = this.readLocalModel();
     } catch (error) {
-      const unavailable = unavailableSection(error, "本机工作台数据不可用");
+      const unavailable = unavailableSection(error, t.session.workbench.localUnavailable, t);
       return {
         actions: unavailable,
         requirements: unavailable,
@@ -104,9 +109,9 @@ export class MyWorkbenchService {
     }
 
     const [actions, requirements, sessions] = await Promise.all([
-      section(() => this.buildActions(local), "待处理数据暂不可用"),
-      section(() => this.buildRequirements(local), "需求服务暂不可用"),
-      section(() => this.buildSessions(local), "会话数据暂不可用"),
+      section(() => this.buildActions(local, t), t.session.workbench.actionsUnavailable, t),
+      section(() => this.buildRequirements(local, t), t.session.workbench.requirementsUnavailable, t),
+      section(() => this.buildSessions(local), t.session.workbench.sessionsUnavailable, t),
     ]);
     return { actions, requirements, sessions };
   }
@@ -212,7 +217,7 @@ export class MyWorkbenchService {
     };
   }
 
-  private async buildActions(local: LocalWorkbenchModel): Promise<WorkbenchActionDto[]> {
+  private async buildActions(local: LocalWorkbenchModel, t: ServerMessages): Promise<WorkbenchActionDto[]> {
     const actions: WorkbenchActionDto[] = [];
     for (const [sessionId, pendingApprovals] of local.pendingBySessionId) {
       const session = local.sessionsById.get(sessionId);
@@ -253,11 +258,11 @@ export class MyWorkbenchService {
           remoteProjectId: mapping.remoteProjectId,
           localProjectId: mapping.localProjectId,
           projectName: null,
-          message: "本机项目记录不存在",
+          message: t.session.workbench.localProjectMissing,
         });
         continue;
       }
-      const verification = await verifyMapping(project.rootPath);
+      const verification = await verifyMapping(project.rootPath, t);
       if (verification.available) continue;
       mappingActions.push({
         kind: "invalid_mapping" as const,
@@ -278,6 +283,7 @@ export class MyWorkbenchService {
 
   private async buildRequirements(
     local: LocalWorkbenchModel,
+    t: ServerMessages,
   ): Promise<WorkbenchRequirementDto[]> {
     const currentRequirements = await this.dependencies.remote.listRequirementsByIds(
       local.requirementGroups.map((group) => group.requirementId),
@@ -314,7 +320,7 @@ export class MyWorkbenchService {
           title: null,
           status: null,
           availability: "unavailable" as const,
-          unavailableMessage: "需求不可用",
+          unavailableMessage: t.session.workbench.requirementUnavailable,
           drift: false,
         };
       }
@@ -363,24 +369,30 @@ export class MyWorkbenchService {
 function section<T>(
   operation: () => Promise<T>,
   fallbackMessage: string,
+  t: ServerMessages,
 ): Promise<WorkbenchSection<T>> {
   return operation()
     .then((data) => ({ status: "ready", data }) as WorkbenchSection<T>)
-    .catch((error: unknown) => unavailableSection(error, fallbackMessage));
+    .catch((error: unknown) => unavailableSection(error, fallbackMessage, t));
 }
 
-function unavailableSection(error: unknown, fallbackMessage: string): WorkbenchSection<never> {
+function unavailableSection(
+  error: unknown,
+  fallbackMessage: string,
+  t: ServerMessages,
+): WorkbenchSection<never> {
   return {
     status: "unavailable",
     error: {
       code: error instanceof ApiError ? error.code : "DEPENDENCY_UNAVAILABLE",
-      message: errorMessage(error, fallbackMessage),
+      message: errorMessage(error, fallbackMessage, t),
     },
   };
 }
 
-function errorMessage(error: unknown, fallbackMessage: string): string {
-  return error instanceof Error && error.message ? error.message : fallbackMessage;
+/** ApiError 按请求语言生成；其它错误（多为系统或第三方的报错）用原文。 */
+function errorMessage(error: unknown, fallbackMessage: string, t: ServerMessages): string {
+  return error instanceof Error && error.message ? errorTextOf(error)(t) : fallbackMessage;
 }
 
 function requirementKey(remoteProjectId: string, requirementId: string): string {
@@ -406,7 +418,7 @@ function activeSessionState(
   if (session.state === "starting" || session.state === "active" || session.state === "error") {
     return session.state;
   }
-  throw new Error("工作台展示列表包含非活跃会话");
+  throw new Error("Workbench session list contains an inactive session");
 }
 
 function actionPriority(action: WorkbenchActionDto): number {

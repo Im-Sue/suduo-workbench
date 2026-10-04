@@ -276,7 +276,7 @@ export class CollaborationRepository {
       `${PROJECT_SELECT} WHERE p.id = $1`,
       [id],
     );
-    if (result.rows[0] === undefined) throw notFound("项目");
+    if (result.rows[0] === undefined) throw notFound("Project");
     return mapProject(result.rows[0]);
   }
 
@@ -356,9 +356,9 @@ export class CollaborationRepository {
         [input.projectId],
       );
       const project = allocation.rows[0];
-      if (project === undefined) throw notFound("项目");
+      if (project === undefined) throw notFound("Project");
       if (project.is_archived) {
-        throw new ApplicationError(409, "PROJECT_ARCHIVED", "归档项目不能创建需求");
+        throw new ApplicationError(409, "PROJECT_ARCHIVED", "Can't create a requirement in an archived project");
       }
       if (input.assigneeId !== null) await requireUser(client, input.assigneeId);
       const id = randomUUID();
@@ -434,6 +434,8 @@ export class CollaborationRepository {
       conditions.push(`r.created_by = ${parameter(input.creatorId)}::uuid`);
     }
     // 新评论数只在「指派给我」的列表里算（我的工作用它）；看板各列、其他筛选不算，省两次子查询。
+    // - artifact_version_id IS NULL：确认版的发布说明在时间线里并进「确认版」条目、不在评论里，不算新评论（数字与「评论」筛选看到的一致）。
+    // - date_trunc 按毫秒比：接口给出的评论时间与已读水位都是毫秒精度，数据库里是微秒。
     const withUnread = input.assignee?.kind === "user" && input.assignee.userId === input.readerId;
     const reader = withUnread ? parameter(input.readerId) : "";
     const baselineDays = withUnread ? parameter(REQUIREMENT_UNREAD_BASELINE_DAYS) : "";
@@ -443,9 +445,7 @@ export class CollaborationRepository {
             FROM requirement_comments unread
             WHERE unread.requirement_id = r.id
               AND unread.author_id <> ${reader}::uuid
-              -- 确认版的发布说明在时间线里并进「确认版」条目、不在评论里，不算新评论（数字与「评论」筛选看到的一致）。
               AND unread.artifact_version_id IS NULL
-              -- 按毫秒比：接口给出的评论时间与已读水位都是毫秒精度，数据库里是微秒。
               AND date_trunc('milliseconds', unread.created_at) > coalesce(
                 (SELECT reads.last_read_at FROM requirement_reads reads
                   WHERE reads.user_id = ${reader}::uuid AND reads.requirement_id = r.id),
@@ -478,6 +478,7 @@ export class CollaborationRepository {
   /**
    * 记下「读到这儿了」：取 min(upTo, 数据库当前时间)，且只往后挪（两个标签页先后打开也不会把位置改早）。
    * 用数据库时钟而不是应用时钟：评论的 created_at 也是数据库时间，同源才不会漏算或多算。
+   * 写入的位置不晚于此刻；也不早于「从没看过」的基线，免得看到一条很早的评论后，基线内的评论反而变成未读。
    */
   async markRequirementRead(input: { userId: string; requirementId: string; upTo?: string }): Promise<void> {
     await this.getRequirement(input.requirementId);
@@ -487,7 +488,6 @@ export class CollaborationRepository {
         VALUES (
           $1,
           $2,
-          -- 不晚于此刻；也不早于「从没看过」的基线，免得看到一条很早的评论后，基线内的评论反而变成未读。
           GREATEST(
             LEAST(coalesce($3::timestamptz, clock_timestamp()), clock_timestamp()),
             clock_timestamp() - make_interval(days => $4::integer)
@@ -583,6 +583,7 @@ export class CollaborationRepository {
             staleRhythmRows.map((row) => row.warning),
           ],
         ),
+        // 每日流转：状态和标题一起改时审计记为 updated，前后状态不同的也算一次流转。
         this.database.query<DailyTransitionRow>(
           `
             WITH bounds AS (
@@ -602,7 +603,6 @@ export class CollaborationRepository {
               FROM audit_logs audit
               CROSS JOIN bounds
               WHERE audit.project_id = $1
-                -- 状态和标题一起改时审计记为 updated，前后状态不同的也算一次流转。
                 AND (
                   audit.action = 'requirement.status_changed'
                   OR (
@@ -656,7 +656,7 @@ export class CollaborationRepository {
       `${REQUIREMENT_SELECT} WHERE r.id = $1`,
       [id],
     );
-    if (result.rows[0] === undefined) throw notFound("需求");
+    if (result.rows[0] === undefined) throw notFound("Requirement");
     return mapRequirement(result.rows[0]);
   }
 
@@ -794,7 +794,7 @@ export class CollaborationRepository {
       [input.requirementId],
     );
     const row = current.rows[0];
-    if (row === undefined) throw notFound("需求");
+    if (row === undefined) throw notFound("Requirement");
     if (row.assignee_id === (to?.id ?? null)) return null;
     await executor.query(
       `
@@ -822,7 +822,7 @@ export class CollaborationRepository {
         "SELECT id, project_id FROM requirements WHERE id = $1",
         [input.requirementId],
       );
-      if (requirement.rows[0] === undefined) throw notFound("需求");
+      if (requirement.rows[0] === undefined) throw notFound("Requirement");
       const id = randomUUID();
       await client.query(
         `
@@ -957,6 +957,7 @@ export class CollaborationRepository {
       ? ""
       : "AND (a.created_at, a.id) < ($4::timestamptz, $5::uuid)";
     if (cursor !== null) values.push(cursor.timestamp, cursor.id);
+    // 产物发布的自动评论并入 artifact_version.published，不单独成条（activity_comment.artifact_version_id IS NULL）。
     const result = await this.database.query<ActivityRow & CursorRow>(
       `
         SELECT
@@ -992,7 +993,6 @@ export class CollaborationRepository {
           ON publish_comment.artifact_version_id = artifact_version.id
         WHERE a.requirement_id = $1
           AND a.action = ANY($2::varchar[])
-          -- 产物发布的自动评论并入 artifact_version.published，不单独成条。
           AND activity_comment.artifact_version_id IS NULL
           ${cursorClause}
         ORDER BY a.created_at DESC, a.id DESC
@@ -1021,7 +1021,7 @@ export class CollaborationRepository {
       `,
       [id],
     );
-    if (result.rows[0] === undefined) throw notFound("评论");
+    if (result.rows[0] === undefined) throw notFound("Comment");
     return mapComment(result.rows[0]);
   }
 
@@ -1067,7 +1067,7 @@ function mapRequirementDetail(row: RequirementRow | undefined): RequirementDetai
     row.project_is_archived === undefined ||
     row.project_version === undefined
   ) {
-    throw notFound("需求");
+    throw notFound("Requirement");
   }
   return {
     ...mapRequirement(row),
@@ -1206,7 +1206,7 @@ async function requireUser(
 ): Promise<UserSummaryDto> {
   const user = await findUser(executor, userId);
   if (user === null) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "负责人不存在", {
+    throw new ApplicationError(400, "VALIDATION_ERROR", "Assignee not found", {
       field: "assigneeId",
     });
   }

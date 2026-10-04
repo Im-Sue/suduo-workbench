@@ -25,7 +25,8 @@ describe("doctor-service · Codex 官方诊断", () => {
       stdout: JSON.stringify(failingOfficialReport()),
     });
 
-    const official = result.checks.filter((check) => check.id !== undefined);
+    // SuDuo 自己的检查项也带 id（suduo.*），官方项是没有这个前缀的官方 id。
+    const official = result.checks.filter((check) => !check.id.startsWith("suduo."));
     expect(official).toHaveLength(18);
     expect(result.status).toBe("PASS");
     expect(result.checks).toEqual(
@@ -120,7 +121,7 @@ describe("doctor-service · Codex 官方诊断", () => {
         }),
       ]),
     );
-    expect(result.checks.some((check) => check.id !== undefined)).toBe(false);
+    expect(result.checks.some((check) => !check.id.startsWith("suduo."))).toBe(false);
   });
 
   it("exit=0 但 stdout 非法时仍报告返回无效 JSON", async () => {
@@ -268,7 +269,7 @@ describe("doctor-service · Codex 官方诊断", () => {
           stderr: Buffer.from(input.stderr ?? ""),
         };
       },
-    });
+    }, "zh-CN");
   }
 });
 

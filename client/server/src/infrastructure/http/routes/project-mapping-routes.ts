@@ -20,15 +20,15 @@ export function registerProjectMappingRoutes(
     async (request) => {
       const query = request.query;
       if (Object.keys(query).some((key) => key !== "verify")) {
-        throw new ApiError(400, "VALIDATION_ERROR", "不支持的 V2 查询参数");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.mapping.unsupportedQuery);
       }
       if (query.verify === undefined) {
-        return { items: await service.listMappings() };
+        return { items: await service.listMappings({ locale: request.locale }) };
       }
       if (query.verify !== "1") {
-        throw new ApiError(400, "VALIDATION_ERROR", "verify 仅支持值 1");
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.mapping.verifyInvalid);
       }
-      return { items: await service.listMappings({ verify: true }) };
+      return { items: await service.listMappings({ verify: true, locale: request.locale }) };
     },
   );
 }

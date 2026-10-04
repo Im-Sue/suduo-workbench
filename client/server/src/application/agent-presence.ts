@@ -12,7 +12,8 @@ import {
   readPrivateJson,
   writePrivateJson,
 } from "../infrastructure/requirements-v2/local-json-store.js";
-import { ApiError } from "./api-error.js";
+import type { ServerMessages } from "../i18n/messages/index.js";
+import { ApiError, errorTextOf, renderText, type ErrorText } from "./api-error.js";
 
 /**
  * 本机 Agent 的登记与在线（技术设计二、3「离线判定在远程」）：
@@ -43,10 +44,20 @@ export interface AgentPresenceDependencies {
 
 const DEVICE_FILE = "agent-device.json";
 
+/**
+ * 本机 Agent 状态，说明（message）还没定语言：状态在后台登记 / 心跳时生成，
+ * 返回给界面时按请求语言渲染（`renderAgentState`）。
+ */
+export type LocalAgentState = Omit<LocalAgentStateDto, "message"> & { message: ErrorText | null };
+
+export function renderAgentState(state: LocalAgentState, t: ServerMessages): LocalAgentStateDto {
+  return { ...state, message: state.message === null ? null : renderText(state.message, t) };
+}
+
 export class AgentPresence {
   private agent: AgentDto | null = null;
   private status: LocalAgentStateDto["status"] = "unregistered";
-  private message: string | null = "还没有登录需求服务";
+  private message: ErrorText | null = (t) => t.activity.agent.notSignedIn;
   private generation = 0;
   private timer: NodeJS.Timeout | null = null;
   private releaseStream: (() => void) | null = null;
@@ -69,11 +80,11 @@ export class AgentPresence {
     const userId = this.deps.currentUserId();
     if (userId === null) {
       this.status = "unregistered";
-      this.message = "还没有登录需求服务";
+      this.message = (t) => t.activity.agent.notSignedIn;
       return;
     }
     this.status = "unregistered";
-    this.message = "正在登记本机 Agent";
+    this.message = (t) => t.activity.agent.registering;
     const generation = this.generation;
     this.timer = setInterval(() => {
       void this.tick(generation);
@@ -103,7 +114,7 @@ export class AgentPresence {
     return this.agent?.id ?? null;
   }
 
-  state(): LocalAgentStateDto {
+  state(): LocalAgentState {
     const runs = this.deps.runs?.() ?? { activeRun: null, queuedRuns: 0 };
     return {
       status: this.status,
@@ -146,7 +157,7 @@ export class AgentPresence {
   private async register(generation: number): Promise<void> {
     const userId = this.deps.currentUserId();
     if (userId === null) {
-      this.toUnregistered("还没有登录需求服务");
+      this.toUnregistered((t) => t.activity.agent.notSignedIn);
       return;
     }
     try {
@@ -170,11 +181,12 @@ export class AgentPresence {
     } catch (error) {
       if (generation !== this.generation) return;
       if (isUnauthorized(error)) {
-        this.toUnregistered("需求服务登录已过期，请重新登录");
+        this.toUnregistered((t) => t.activity.agent.signInExpired);
         return;
       }
       this.status = "unavailable";
-      this.message = `登记本机 Agent 失败：${messageOf(error)}`;
+      const reason = errorTextOf(error);
+      this.message = (t) => t.activity.agent.registerFailed(reason(t));
       this.log({ event: "suduo.agent.register_failed", message: messageOf(error) });
     }
   }
@@ -203,7 +215,7 @@ export class AgentPresence {
     } catch (error) {
       if (generation !== this.generation) return;
       if (isUnauthorized(error)) {
-        this.toUnregistered("需求服务登录已过期，请重新登录");
+        this.toUnregistered((t) => t.activity.agent.signInExpired);
         return;
       }
       if (error instanceof ApiError && error.statusCode === 404) {
@@ -211,16 +223,17 @@ export class AgentPresence {
         this.agent = null;
         this.setRetained(false);
         this.status = "unregistered";
-        this.message = "本机 Agent 需要重新登记";
+        this.message = (t) => t.activity.agent.needsReregister;
         return;
       }
       this.status = "unavailable";
-      this.message = `本机 Agent 心跳失败：${messageOf(error)}`;
+      const reason = errorTextOf(error);
+      this.message = (t) => t.activity.agent.heartbeatFailed(reason(t));
       this.log({ event: "suduo.agent.heartbeat_failed", message: messageOf(error) });
     }
   }
 
-  private toUnregistered(message: string): void {
+  private toUnregistered(message: ErrorText): void {
     this.clearTimer();
     this.agent = null;
     this.registeredUserId = null;
@@ -253,10 +266,13 @@ export class AgentPresence {
   }
 }
 
-/** 设备名：主机名去掉 macOS 的 `.local` 后缀。 */
+/**
+ * 设备名：主机名去掉 macOS 的 `.local` 后缀。设备名上报到需求服务、出现在别人看到的 Agent 名字里，
+ * 是留存且跨用户的数据，取不到主机名时的兜底与语言无关。
+ */
 export function deviceNameOf(host: string): string {
   const name = host.trim().replace(/\.local$/iu, "");
-  return name === "" ? "本机" : name.slice(0, 120);
+  return name === "" ? "localhost" : name.slice(0, 120);
 }
 
 /** 心跳按契约返回 AgentDto；也容忍 `{agent}` 包一层。认不出返回 null（保留上次的）。 */

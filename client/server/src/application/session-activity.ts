@@ -1,44 +1,55 @@
 import type { JsonValue } from "@suduo/client-contracts";
+import type { ServerMessages } from "../i18n/messages/index.js";
 
 /**
- * 把一个步骤（Codex 的 item）说成一句话，给会话卡片显示「正在做什么」。
+ * 把一个步骤（Codex 的 item）说成一句话，给会话卡片显示「正在做什么」；按 `t`（请求的语言）生成。
  * 只做摘要：命令截到 60 字，文件只给文件名；认不出的类型返回 null（卡片就不显示这一行）。
  */
-export function describeActivity(step: { item: JsonValue; completed: boolean } | JsonValue | null): string | null {
+export function describeActivity(
+  step: { item: JsonValue; completed: boolean } | JsonValue | null,
+  t: ServerMessages,
+): string | null {
   const { item, completed } =
     step !== null && typeof step === "object" && !Array.isArray(step) && "completed" in step && "item" in step
       ? (step as { item: JsonValue; completed: boolean })
       : { item: step as JsonValue | null, completed: false };
-  const text = describeItem(item);
+  const text = describeItem(item, t);
   if (text === null || !completed) return text;
   // 已经做完、下一步还没开始：思考 / 回复做完就没什么可说的；其余说「刚完成：…」，不假装还在跑。
-  if (text === "正在思考" || text === "正在回复") return null;
-  return `刚完成：${text}`;
+  if (isThinkingOrReplying(item)) return null;
+  return t.activity.step.justFinished(text);
 }
 
-function describeItem(item: JsonValue | null): string | null {
+function describeItem(item: JsonValue | null, t: ServerMessages): string | null {
   if (item === null || typeof item !== "object" || Array.isArray(item)) return null;
+  const text = t.activity.step;
   const type = item["type"];
   if (type === "commandExecution") {
     const command = commandText(item["command"]);
-    return command === null ? "运行命令" : `运行命令：${shorten(redactSecrets(command), 60)}`;
+    return command === null ? text.runCommand : text.runCommandWith(shorten(redactSecrets(command), 60));
   }
   if (type === "fileChange") {
     const changes = Array.isArray(item["changes"]) ? item["changes"] : [];
     const names = changes
       .map((change) => (change !== null && typeof change === "object" && !Array.isArray(change) && typeof change["path"] === "string" ? baseName(change["path"]) : null))
       .filter((name): name is string => name !== null);
-    if (names.length === 0) return "修改文件";
-    return names.length === 1 ? `修改 ${names[0]!}` : `修改 ${names[0]!} 等 ${String(names.length)} 个文件`;
+    if (names.length === 0) return text.editFiles;
+    return names.length === 1 ? text.editFile(names[0]!) : text.editFilesMany(names[0]!, names.length);
   }
   if (type === "mcpToolCall") {
     const tool = typeof item["tool"] === "string" ? item["tool"] : null;
-    return tool === null ? "调用工具" : `调用工具：${tool}`;
+    return tool === null ? text.callTool : text.callToolWith(tool);
   }
-  if (type === "webSearch") return "搜索网页";
-  if (type === "reasoning") return "正在思考";
-  if (type === "agentMessage") return "正在回复";
+  if (type === "webSearch") return text.webSearch;
+  if (type === "reasoning") return text.thinking;
+  if (type === "agentMessage") return text.replying;
   return null;
+}
+
+/** 思考 / 回复：做完就没什么可说的（按步骤类型判断，不看文字）。 */
+function isThinkingOrReplying(item: JsonValue | null): boolean {
+  if (item === null || typeof item !== "object" || Array.isArray(item)) return false;
+  return item["type"] === "reasoning" || item["type"] === "agentMessage";
 }
 
 function commandText(value: JsonValue | undefined): string | null {

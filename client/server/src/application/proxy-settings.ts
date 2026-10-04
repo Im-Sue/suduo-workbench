@@ -1,3 +1,4 @@
+import type { ServerMessages } from "../i18n/messages/index.js";
 import { ApiError } from "./api-error.js";
 
 export interface ProxySettings {
@@ -65,9 +66,11 @@ export function applyProxySettings(
   }
 }
 
-function validateProxyUrl(field: string, value: unknown): string {
+/** 报错里的字段用界面上的叫法（config.fields.proxy），不露接口字段名。 */
+function validateProxyUrl(field: (typeof PROXY_FIELDS)[number], value: unknown): string {
+  const label = (t: ServerMessages) => t.config.fields.proxy[field];
   if (typeof value !== "string") {
-    throw new ApiError(400, "VALIDATION_ERROR", field + " 必须是字符串");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mustBeString(label(t)));
   }
   const trimmed = value.trim();
   if (trimmed === "") {
@@ -77,7 +80,7 @@ function validateProxyUrl(field: string, value: unknown): string {
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new ApiError(400, "VALIDATION_ERROR", field + " 不是合法代理 URL");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.proxy.invalidUrl(label(t)));
   }
   if (
     parsed.protocol !== "http:" &&
@@ -85,35 +88,31 @@ function validateProxyUrl(field: string, value: unknown): string {
     parsed.protocol !== "socks5:" &&
     parsed.protocol !== "socks5h:"
   ) {
-    throw new ApiError(
-      400,
-      "VALIDATION_ERROR",
-      field + " 仅支持 http / https / socks5 / socks5h",
-    );
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.proxy.unsupportedProtocol(label(t)));
   }
   if (parsed.hostname === "") {
-    throw new ApiError(400, "VALIDATION_ERROR", field + " 必须包含代理主机");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.proxy.hostRequired(label(t)));
   }
   if (parsed.username !== "" || parsed.password !== "") {
-    throw new ApiError(400, "VALIDATION_ERROR", field + " 暂不支持带用户名或密码的代理");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.proxy.credentialsUnsupported(label(t)));
   }
   if (
     (parsed.pathname !== "" && parsed.pathname !== "/") ||
     parsed.search !== "" ||
     parsed.hash !== ""
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", field + " 不能包含路径、查询参数或片段");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.proxy.extraPartsUnsupported(label(t)));
   }
   return trimmed;
 }
 
 function validateNoProxy(value: unknown): string {
   if (typeof value !== "string") {
-    throw new ApiError(400, "VALIDATION_ERROR", "noProxy 必须是字符串");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mustBeString(t.config.fields.proxy.noProxy));
   }
   const trimmed = value.trim();
   if (/\r|\n/u.test(trimmed)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "noProxy 不能包含换行");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.proxy.noLineBreaks(t.config.fields.proxy.noProxy));
   }
   return trimmed;
 }

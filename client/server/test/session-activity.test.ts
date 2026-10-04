@@ -1,33 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { describeActivity, redactSecrets } from "../src/application/session-activity.js";
+import { messagesFor } from "../src/i18n/messages/index.js";
+
+/** 中文下的描述（与迁移前逐字一致）；英文见 session-i18n-en.test.ts。 */
+const describeZh = (step: Parameters<typeof describeActivity>[0]) => describeActivity(step, messagesFor("zh-CN"));
 
 describe("会话卡上的「正在做什么」", () => {
   it("命令去掉 shell 包装并截短", () => {
-    expect(describeActivity({ type: "commandExecution", command: "/bin/zsh -lc \"npm test\"" })).toBe("运行命令：npm test");
-    expect(describeActivity({ type: "commandExecution", command: ["git", "status"] })).toBe("运行命令：git status");
-    const long = describeActivity({ type: "commandExecution", command: "x".repeat(200) });
+    expect(describeZh({ type: "commandExecution", command: "/bin/zsh -lc \"npm test\"" })).toBe("运行命令：npm test");
+    expect(describeZh({ type: "commandExecution", command: ["git", "status"] })).toBe("运行命令：git status");
+    const long = describeZh({ type: "commandExecution", command: "x".repeat(200) });
     expect(long?.length).toBeLessThanOrEqual(65);
     expect(long?.endsWith("…")).toBe(true);
   });
 
   it("改文件只给文件名，多个文件说数量", () => {
-    expect(describeActivity({ type: "fileChange", changes: [{ path: "/workspace/demo/src/cart.js" }] })).toBe("修改 cart.js");
-    expect(describeActivity({ type: "fileChange", changes: [{ path: "/a/b.ts" }, { path: "/a/c.ts" }] })).toBe("修改 b.ts 等 2 个文件");
+    expect(describeZh({ type: "fileChange", changes: [{ path: "/workspace/demo/src/cart.js" }] })).toBe("修改 cart.js");
+    expect(describeZh({ type: "fileChange", changes: [{ path: "/a/b.ts" }, { path: "/a/c.ts" }] })).toBe("修改 b.ts 等 2 个文件");
   });
 
   it("思考、回复、工具、网页；认不出的不显示", () => {
-    expect(describeActivity({ type: "reasoning" })).toBe("正在思考");
-    expect(describeActivity({ type: "agentMessage", text: "" })).toBe("正在回复");
-    expect(describeActivity({ type: "mcpToolCall", tool: "search_docs" })).toBe("调用工具：search_docs");
-    expect(describeActivity({ type: "webSearch" })).toBe("搜索网页");
-    expect(describeActivity({ type: "userMessage" })).toBeNull();
-    expect(describeActivity(null)).toBeNull();
+    expect(describeZh({ type: "reasoning" })).toBe("正在思考");
+    expect(describeZh({ type: "agentMessage", text: "" })).toBe("正在回复");
+    expect(describeZh({ type: "mcpToolCall", tool: "search_docs" })).toBe("调用工具：search_docs");
+    expect(describeZh({ type: "webSearch" })).toBe("搜索网页");
+    expect(describeZh({ type: "userMessage" })).toBeNull();
+    expect(describeZh(null)).toBeNull();
   });
 
   it("已经做完的步骤说「刚完成」，思考 / 回复做完不再显示", () => {
-    expect(describeActivity({ item: { type: "commandExecution", command: "npm test" }, completed: true })).toBe("刚完成：运行命令：npm test");
-    expect(describeActivity({ item: { type: "commandExecution", command: "npm test" }, completed: false })).toBe("运行命令：npm test");
-    expect(describeActivity({ item: { type: "agentMessage", text: "好" }, completed: true })).toBeNull();
+    expect(describeZh({ item: { type: "commandExecution", command: "npm test" }, completed: true })).toBe("刚完成：运行命令：npm test");
+    expect(describeZh({ item: { type: "commandExecution", command: "npm test" }, completed: false })).toBe("运行命令：npm test");
+    expect(describeZh({ item: { type: "agentMessage", text: "好" }, completed: true })).toBeNull();
   });
 
   it("命令里像密钥的片段打码", () => {

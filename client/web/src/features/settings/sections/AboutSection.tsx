@@ -1,3 +1,4 @@
+import { SUDUO_DOCTOR_CHECK_IDS } from "@suduo/client-contracts";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLinkIcon, FileCogIcon } from "lucide-react";
 import { useState } from "react";
@@ -20,9 +21,10 @@ const LINK_CLASS =
 export function AboutSection() {
   const t = useT();
   const text = t.settings.about;
-  const links = licenseLinks(useLocale());
+  const locale = useLocale();
+  const links = licenseLinks(locale);
   const doctor = useQuery(doctorQuery);
-  const cli = doctor.data?.checks.find((check) => check.name === "Codex CLI");
+  const cli = doctor.data?.checks.find((check) => check.id === SUDUO_DOCTOR_CHECK_IDS.codexCli);
   const [opening, setOpening] = useState(false);
   const settings = useQuery(settingsQuery);
   const baseUrl = settings.data?.configured === true ? (settings.data.baseUrl ?? "") : "";
@@ -44,9 +46,11 @@ export function AboutSection() {
               <Skeleton className="h-4 w-24" />
             ) : cli === undefined ? (
               <span className="font-sans text-subtle-foreground">{text.unreadable}</span>
+            ) : cli.status === "pass" && cli.version ? (
+              cli.version
             ) : (
-              // 依赖本机服务的中文文字（去掉全角括号里的说明），S5 改为读结构化字段；正则字面量不触发 i18n 规则。
-              cli.message.replace(/^codex-cli\s*/i, "").replace(/（.*?）/g, "")
+              // 版本不对或读不到时显示本机服务的说明（按界面语言生成）。
+              cli.message
             )}
           </dd>
           <dt className="text-muted-foreground">{text.cloud}</dt>
@@ -128,7 +132,8 @@ export function AboutSection() {
       <SettingsRow anchor="doctor-page" title={text.doctorPageTitle} description={text.doctorPageDescription}>
         <div>
           <Button asChild>
-            <a href="/doctor" target="_blank" rel="noreferrer">
+            {/* 诊断页跟着界面语言（/doctor 认 ?lang=）。 */}
+            <a href={`/doctor?lang=${locale}`} target="_blank" rel="noreferrer">
               <ExternalLinkIcon />
               {text.openDoctorPage}
             </a>

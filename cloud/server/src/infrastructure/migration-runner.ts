@@ -16,7 +16,7 @@ export async function runMigrations(
 ): Promise<string> {
   const migrations = await loadMigrations(migrationsDirectory);
   if (migrations.length === 0) {
-    throw new Error(`未在 ${migrationsDirectory} 找到 migration`);
+    throw new Error(`No migrations found in ${migrationsDirectory}`);
   }
 
   const client = await pool.connect();
@@ -42,7 +42,7 @@ export async function runMigrations(
       const existingChecksum = appliedByVersion.get(migration.version);
       if (existingChecksum !== undefined) {
         if (existingChecksum !== migration.checksum) {
-          throw new Error(`migration ${migration.version} 的 checksum 已漂移`);
+          throw new Error(`Checksum of migration ${migration.version} has drifted`);
         }
         continue;
       }

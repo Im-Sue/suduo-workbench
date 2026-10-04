@@ -77,7 +77,7 @@ describe("写进 .suduo/ 的入口都带 .gitignore", () => {
           : null,
     } as unknown as ProjectRepository;
     // 非 git 目录（甚至本机没有 git）时 status 也只是降级返回，不影响写设置。
-    await new GitService(projects).updateSettings("p1", { autoCheckpoint: true });
+    await new GitService(projects).updateSettings("p1", { autoCheckpoint: true }, "zh-CN");
     expect(existsSync(resolve(root, ".suduo", "git.json"))).toBe(true);
     expect(existsSync(resolve(root, ".suduo", ".gitignore"))).toBe(true);
   });

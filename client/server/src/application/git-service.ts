@@ -15,7 +15,7 @@ import {
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import { ensureSuDuoDir } from "../infrastructure/workspace/suduo-dir.js";
 import { allMessages, messagesFor } from "../i18n/messages/index.js";
-import { ApiError } from "./api-error.js";
+import { ApiError, errorTextOf, renderText, type ErrorText } from "./api-error.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -50,15 +50,22 @@ interface GitProjectSettings {
  */
 export class GitService {
   private gitAvailable: boolean | null = null;
-  private readonly lastErrors = new Map<string, string>();
+  /** 最近一次自动存档失败的原因：存字典函数，返回状态时按请求语言渲染。 */
+  private readonly lastErrors = new Map<string, ErrorText>();
 
   constructor(
     private readonly projects: ProjectRepository,
     /** 一键初始化时「回合前自动存档」的默认值（接运行时设置）。 */
     private readonly autoCheckpointDefault: () => boolean = () => true,
+    /**
+     * 回合前自动存档的提交标题用的语言：调用方没给请求语言时，用前端最近一次用过的界面语言
+     * （发消息的请求在进到这里之前已把它的语言头记下）。
+     */
+    private readonly uiLocale: () => Locale = () => "zh-CN",
   ) {}
 
-  async status(projectId: string): Promise<GitStatusDto> {
+  /** `locale` 是请求的语言，lastError 按它渲染。 */
+  async status(projectId: string, locale: Locale): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const root = project.rootPath;
     const settings = await this.readSettings(root);
@@ -70,7 +77,7 @@ export class GitService {
       managed: settings.managed,
       autoCheckpoint: settings.autoCheckpoint,
       hasRemote: false,
-      lastError: this.lastErrors.get(projectId) ?? null,
+      lastError: this.lastErrorText(projectId, locale),
     };
     if (!base.available) {
       return base;
@@ -105,15 +112,18 @@ export class GitService {
     return base;
   }
 
-  /** 一键初始化版本管理：git init + 种子 .gitignore + 首次提交；自动存档默认开。 */
-  async init(projectId: string): Promise<GitStatusDto> {
+  /**
+   * 一键初始化版本管理：git init + 种子 .gitignore + 首次提交；自动存档默认开。
+   * 首次提交的标题按发起初始化的请求的语言写。
+   */
+  async init(projectId: string, locale: Locale): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const root = project.rootPath;
     if (!(await this.available())) {
-      throw new ApiError(400, "VALIDATION_ERROR", "本机未检测到 git，无法初始化版本管理");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.git.unavailable);
     }
     if (await this.isRepoRoot(root)) {
-      throw new ApiError(409, "VERSION_CONFLICT", "该项目已是 git 仓库");
+      throw new ApiError(409, "VERSION_CONFLICT", (t) => t.workspace.git.alreadyRepo);
     }
     await this.run(root, ["init"]);
     const ignorePath = resolve(root, ".gitignore");
@@ -121,26 +131,29 @@ export class GitService {
       await writeFile(ignorePath, GITIGNORE_SEED, "utf8");
     }
     await this.run(root, ["add", "-A"]);
-    await this.commit(root, "SuDuo 初始化版本管理");
+    await this.commit(root, messagesFor(locale).checkpoint.initSubject);
     await this.writeSettings(root, {
       managed: true,
       autoCheckpoint: this.autoCheckpointDefault(),
     });
-    return this.status(projectId);
+    return this.status(projectId, locale);
   }
 
-  /** 手动检查点；工作区无改动时返回 null。 */
+  /** 手动检查点；工作区无改动时返回 null。标题按发起的请求的语言写。 */
   async checkpoint(
     projectId: string,
     message: string | undefined,
-    locale: Locale = "zh-CN",
+    locale: Locale,
   ): Promise<GitCheckpointDto | null> {
     const project = this.requireProject(projectId);
     return this.snapshot(project.rootPath, false, message, locale);
   }
 
-  /** 回合前自动存档：任何失败都不阻塞发消息，只记录 lastError。 */
-  async autoCheckpoint(projectId: string, projectRoot: string): Promise<void> {
+  /**
+   * 回合前自动存档：任何失败都不阻塞发消息，只记录 lastError。
+   * 标题按 `locale` 写；调用方拿不到请求语言时用记下的界面语言。
+   */
+  async autoCheckpoint(projectId: string, projectRoot: string, locale?: Locale): Promise<void> {
     try {
       const settings = await this.readSettings(projectRoot);
       if (!settings.autoCheckpoint) {
@@ -149,13 +162,10 @@ export class GitService {
       if (!(await this.available()) || !(await this.isRepoRoot(projectRoot))) {
         return;
       }
-      await this.snapshot(projectRoot, true, undefined);
+      await this.snapshot(projectRoot, true, undefined, locale ?? this.uiLocale());
       this.lastErrors.delete(projectId);
     } catch (cause) {
-      this.lastErrors.set(
-        projectId,
-        cause instanceof Error ? cause.message : String(cause),
-      );
+      this.lastErrors.set(projectId, errorTextOf(cause));
     }
   }
 
@@ -196,14 +206,14 @@ export class GitService {
    * 还原到指定提交（git reset --hard）。
    * 未纳入版本管理的新文件不会被删除；后续提交仍可从 reflog 找回。
    */
-  async restore(projectId: string, hash: string, locale: Locale = "zh-CN"): Promise<GitStatusDto> {
+  async restore(projectId: string, hash: string, locale: Locale): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const root = project.rootPath;
     if (!/^[0-9a-f]{7,40}$/i.test(hash)) {
-      throw new ApiError(400, "VALIDATION_ERROR", "提交号格式无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.git.hashInvalid);
     }
     if (!(await this.available()) || !(await this.isRepoRoot(root))) {
-      throw new ApiError(400, "VALIDATION_ERROR", "该项目不是 git 仓库");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.git.notRepo);
     }
     // 还原做成"前进式"：先把当前状态存成检查点，再把工作区内容改写成目标检查点
     // 并提交为新的一步。历史只往前走，所以还原本身也能再被还原（可反悔）。
@@ -216,12 +226,13 @@ export class GitService {
     if (pending.trim() !== "") {
       await this.commit(root, text.manualPrefix + text.restoredTo(hash.slice(0, 7)), "manual");
     }
-    return this.status(projectId);
+    return this.status(projectId, locale);
   }
 
   async updateSettings(
     projectId: string,
     input: { autoCheckpoint: boolean },
+    locale: Locale,
   ): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const settings = await this.readSettings(project.rootPath);
@@ -229,21 +240,21 @@ export class GitService {
       ...settings,
       autoCheckpoint: input.autoCheckpoint,
     });
-    return this.status(projectId);
+    return this.status(projectId, locale);
   }
 
   /**
-   * 提交标题按语言写（迁移期调用方都还没传语言，默认中文，与之前一致）；
+   * 提交标题按语言写（触发它的请求的语言）；
    * 是不是检查点、是哪一种，看正文末尾的标记行，不看标题。
    */
   private async snapshot(
     root: string,
     auto: boolean,
     message: string | undefined,
-    locale: Locale = "zh-CN",
+    locale: Locale,
   ): Promise<GitCheckpointDto | null> {
     if (!(await this.available()) || !(await this.isRepoRoot(root))) {
-      throw new ApiError(400, "VALIDATION_ERROR", "该项目不是 git 仓库");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.git.notRepo);
     }
     await this.run(root, ["add", "-A"]);
     const pending = await this.run(root, ["status", "--porcelain"]);
@@ -311,10 +322,13 @@ export class GitService {
         cause && typeof cause === "object" && "stderr" in cause
           ? String((cause as { stderr: unknown }).stderr).trim()
           : "";
+      const detail = stderr.slice(0, 300);
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        stderr !== "" ? `git 操作失败：${stderr.slice(0, 300)}` : "git 操作失败",
+        detail !== ""
+          ? (t) => t.workspace.git.commandFailed(detail)
+          : (t) => t.workspace.git.commandFailedPlain,
       );
     }
   }
@@ -348,10 +362,15 @@ export class GitService {
     });
   }
 
+  private lastErrorText(projectId: string, locale: Locale): string | null {
+    const text = this.lastErrors.get(projectId);
+    return text === undefined ? null : renderText(text, messagesFor(locale));
+  }
+
   private requireProject(projectId: string) {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
-      throw new ApiError(404, "NOT_FOUND", "活动项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.workspace.project.activeNotFound);
     }
     return project;
   }

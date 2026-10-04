@@ -79,7 +79,7 @@ export async function createApplication(
     } catch (closeError) {
       throw new AggregateError(
         [error, closeError],
-        "requirements-service HTTP 初始化和附件所有权释放均失败",
+        "requirements-service failed to initialize HTTP and failed to release attachment storage ownership",
         { cause: closeError },
       );
     }

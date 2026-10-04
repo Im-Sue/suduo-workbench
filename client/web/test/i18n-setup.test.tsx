@@ -157,8 +157,8 @@ describe("英文界面：首启向导", () => {
     apiMocks.runDoctor.mockResolvedValue({
       status: "WARN",
       checks: [
-        { name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2（workspace 锁定版本）" },
-        { name: "Codex · auth · auth.credentials", status: "fail", message: "no Codex credentials were found" },
+        { id: "suduo.codex-cli", name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2（workspace 锁定版本）", version: "0.159.2" },
+        { id: "auth.credentials", name: "Codex · auth · auth.credentials", status: "fail", message: "no Codex credentials were found" },
       ],
     });
     const node = await renderPage("/setup?step=3");
@@ -204,7 +204,7 @@ describe("英文界面：启动与兜底", () => {
 
 describe("英文界面：非组件文字", () => {
   it("环境检查汇总按调用时的语言取文字，也可由调用方传入字典", () => {
-    const failing = [{ name: "Node.js", status: "fail", message: "needs 24.10.0" }];
+    const failing = [{ id: "suduo.node", name: "Node.js", status: "fail", message: "needs 24.10.0" }];
     expect(summarizeDoctor(failing).find((item) => item.key === "runtime")).toMatchObject({
       title: "Local runtime",
       detail: "Node.js: needs 24.10.0",

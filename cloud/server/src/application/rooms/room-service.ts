@@ -29,7 +29,7 @@ export class RoomService {
 
   /** 项目的房间：先惰性建默认房间（合并，不重复），再列出默认房间 + 需求房间。 */
   async listProjectRooms(viewerId: string, projectId: string): Promise<ListRoomsResponse> {
-    if (!(await this.rooms.ensureDefaultRoom(projectId))) throw notFound("项目");
+    if (!(await this.rooms.ensureDefaultRoom(projectId))) throw notFound("Project");
     return { items: await this.rooms.listProjectRooms(projectId, viewerId) };
   }
 
@@ -100,7 +100,7 @@ export class RoomService {
       let current = roomAudit(before);
       if (request.name !== undefined) {
         if (before.kind === "project_default") {
-          throw new ApplicationError(400, "VALIDATION_ERROR", "项目默认房间的名称跟随项目，不能改名", {
+          throw new ApplicationError(400, "VALIDATION_ERROR", "The project room is named after its project and can't be renamed", {
             field: "name",
           });
         }
@@ -186,7 +186,7 @@ export class RoomService {
       [requirementId],
     );
     const row = result.rows[0];
-    if (row === undefined) throw notFound("需求");
+    if (row === undefined) throw notFound("Requirement");
     return {
       projectId: row.project_id,
       number: row.number,
@@ -200,7 +200,7 @@ export class RoomService {
     const existing = await this.rooms.existingUserIds(executor, userIds);
     const missing = [...new Set(userIds)].filter((id) => !existing.has(id));
     if (missing.length > 0) {
-      throw new ApplicationError(400, "VALIDATION_ERROR", "用户不存在", { field, userIds: missing });
+      throw new ApplicationError(400, "VALIDATION_ERROR", "User not found", { field, userIds: missing });
     }
   }
 }
@@ -209,7 +209,7 @@ export class RoomService {
 function roomName(raw: string): string {
   const name = stripNul(raw).trim();
   if (name === "" || Array.from(name).length > 120) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "房间名称需为 1 到 120 个字", { field: "name" });
+    throw new ApplicationError(400, "VALIDATION_ERROR", "Room name must be 1 to 120 characters", { field: "name" });
   }
   return name;
 }

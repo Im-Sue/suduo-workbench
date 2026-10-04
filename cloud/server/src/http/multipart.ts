@@ -44,7 +44,7 @@ export async function singleMultipartFile(
     });
   } catch (error) {
     body.resume();
-    throw new ApplicationError(400, "ATTACHMENT_INVALID", "multipart 附件格式无效", undefined, {
+    throw new ApplicationError(400, "ATTACHMENT_INVALID", "Invalid multipart attachment upload", undefined, {
       cause: error,
     });
   }
@@ -55,7 +55,7 @@ export async function singleMultipartFile(
   };
   const file = new Promise<MultipartFile>((resolve, reject) => {
     const interrupted = () =>
-      new ApplicationError(400, "ATTACHMENT_INVALID", "附件上传已中断");
+      new ApplicationError(400, "ATTACHMENT_INVALID", "Attachment upload was interrupted");
     const terminate = (error: ApplicationError) => {
       if (parserFinished || parser.destroyed) return;
       body.unpipe(parser);
@@ -86,7 +86,7 @@ export async function singleMultipartFile(
     parser.on("file", (fieldName, stream, filename, _encoding, mimeType) => {
       if (fileSeen || fieldName !== "file") {
         stream.resume();
-        invalid("multipart 只能包含一个名为 file 的附件");
+        invalid("multipart must contain exactly one attachment, in a field named file");
         return;
       }
       fileSeen = true;
@@ -95,7 +95,7 @@ export async function singleMultipartFile(
         const error = new ApplicationError(
           413,
           "ATTACHMENT_TOO_LARGE",
-          "附件超过 300 MiB 上限",
+          "Attachment exceeds the 300 MiB limit",
         );
         rejectCompletion(error);
         terminate(error);
@@ -108,10 +108,10 @@ export async function singleMultipartFile(
         cancel: () => cancelUpload(),
       });
     });
-    parser.on("field", () => invalid("multipart 不允许额外字段"));
-    parser.on("filesLimit", () => invalid("multipart 只能包含一个附件"));
-    parser.on("fieldsLimit", () => invalid("multipart 不允许额外字段"));
-    parser.on("partsLimit", () => invalid("multipart 只能包含一个附件"));
+    parser.on("field", () => invalid("multipart must not contain extra fields"));
+    parser.on("filesLimit", () => invalid("multipart can contain only one attachment"));
+    parser.on("fieldsLimit", () => invalid("multipart must not contain extra fields"));
+    parser.on("partsLimit", () => invalid("multipart can contain only one attachment"));
     parser.on("error", (error) => {
       removeBodyListeners();
       reject(error);
@@ -121,7 +121,7 @@ export async function singleMultipartFile(
       parserFinished = true;
       removeBodyListeners();
       if (!fileSeen) {
-        invalid("必须上传一个附件文件");
+        invalid("An attachment file is required");
         return;
       }
       resolveCompletion();

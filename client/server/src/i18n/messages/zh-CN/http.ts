@@ -1,0 +1,60 @@
+/** 本机 HTTP 入口：请求校验、来源限制（loopback）、打开系统程序等的报错。 */
+export const http = {
+  /** 请求体不是 JSON 对象（各路由共用）。 */
+  bodyMustBeObject: "请求体必须是 JSON object",
+  bodyMustBeEmpty: "此接口不接受请求体字段",
+  idempotencyKeyRequired: "写请求必须携带 Idempotency-Key",
+  ifMatchRequired: "PATCH 必须携带 If-Match",
+  ifMatchFormat: 'If-Match 格式必须为 "<version>"',
+  /** name 是请求头名。 */
+  mustBeUuid: (name: string) => `${name} 必须是 UUID`,
+  shutdownUnavailable: "当前运行方式不支持通过接口停止服务",
+  apiRouteNotFound: "API 路由不存在",
+  staticFileNotFound: "静态文件不存在",
+  webBuildMissing: "Web 构建产物不存在",
+  sessionContextUnavailable: "会话上下文服务不可用",
+  /** 必填参数缺失。 */
+  previewPathRequired: "文件预览必须提供 path",
+  rawPathRequired: "raw 读取必须提供 path",
+  diffPathRequired: "diff 必须提供 path",
+  openPathRequired: "打开文件必须提供 path",
+  uninstallPathRequired: "卸载必须提供 path",
+  restoreHashRequired: "还原必须提供 hash",
+  skillNameRequired: "必须提供 skill name",
+  /** field 是接口字段名。 */
+  mustBeBoolean: (field: string) => `${field} 必须是布尔值`,
+  skillSourceInvalid: 'source 必须为 "zip" 或 "folder"',
+  openModeInvalid: "mode 必须为 open/reveal/vscode/terminal 之一",
+  lineInvalid: "line 必须是正整数",
+  existingPathsInvalid: (limit: number) => `paths 必须是 1–1024 字的路径数组，最多 ${String(limit)} 条`,
+  decisionInvalid: "decision 必须是 accept/acceptForSession/decline/cancel 之一",
+  upToInvalid: "upTo 必须是 ISO 时间字符串",
+  /** 需求服务的文件、附件、事件响应没有内容流。 */
+  remoteArtifactFileBodyMissing: "远程产物文件响应缺少内容流",
+  remoteAttachmentBodyMissing: "远程附件响应缺少内容流",
+  remoteEventsBodyMissing: "远程事件响应缺少内容流",
+  uploadMustBeMultipart: "附件上传必须使用 multipart/form-data",
+  uploadStreamInvalid: "附件上传流无效",
+  unsupportedQueryParam: (key: string) => `不支持的 V2 查询参数: ${key}`,
+  limitRange: (max: number) => `limit 必须是 1 到 ${String(max)} 的整数`,
+  requirementNumberInvalid: "需求编号必须是正整数",
+  resourceTypeInvalid: "resourceType 无效",
+  statsWindowInvalid: "window 必须是 7d 或 30d",
+  timeZoneRequired: "tz 必须是非空 IANA 时区名",
+  projectStateInvalid: "项目 state 查询参数无效",
+  sessionStateInvalid: "会话 state 查询参数无效",
+  approvalStatusInvalid: "审批 status 查询参数无效",
+  untilRequired: "历史回放必须提供 until",
+  untilBeforeAfter: "until 必须大于等于 after",
+  /** name 是查询参数名（after、until、limit，或「after/Last-Event-ID」）。 */
+  nonNegativeInteger: (name: string) => `${name} 必须是大于等于 0 的整数`,
+  /** 来源限制：只接受本机地址、拒绝跨源写请求。 */
+  hostMissing: "缺少 Host 请求头",
+  hostInvalid: "Host 请求头无效",
+  hostNotLoopback: "Host 必须是 loopback 地址",
+  originRequired: "写请求必须携带同源 Origin",
+  originInvalid: "Origin 无效",
+  originMismatch: "Origin 与当前 loopback Host 不匹配",
+  /** 调起系统程序（打开文件、终端、VS Code）失败；reason 是系统的原文报错。 */
+  systemOpenFailed: (command: string, reason: string) => `无法调用系统程序 ${command}：${reason}`,
+};

@@ -1,3 +1,4 @@
+import type { Locale } from "@suduo/client-contracts";
 import type { FastifyInstance } from "fastify";
 import { ApiError } from "../../../application/api-error.js";
 import type {
@@ -9,9 +10,10 @@ import type {
 
 export interface McpRouteService {
   list(): Promise<McpListResult>;
-  create(input: CreateMcpServerInput): Promise<McpUpdateResult>;
+  /** locale：返回说明（message）用的语言。 */
+  create(input: CreateMcpServerInput, locale: Locale): Promise<McpUpdateResult>;
   get(name: string): Promise<unknown>;
-  update(name: string, input: UpdateMcpServerInput): Promise<McpUpdateResult>;
+  update(name: string, input: UpdateMcpServerInput, locale: Locale): Promise<McpUpdateResult>;
   remove(name: string): Promise<{ removed: true }>;
   login(
     name: string,
@@ -33,7 +35,7 @@ export function registerMcpRoutes(
   server.get("/api/v1/mcp/servers", async () => dependencies.mcp.list());
 
   server.post("/api/v1/mcp/servers", async (request) =>
-    dependencies.mcp.create(requireObject<CreateMcpServerInput>(request.body)),
+    dependencies.mcp.create(requireObject<CreateMcpServerInput>(request.body), request.locale),
   );
 
   server.get<{ Params: { name: string } }>(
@@ -47,6 +49,7 @@ export function registerMcpRoutes(
       dependencies.mcp.update(
         request.params.name,
         requireObject<UpdateMcpServerInput>(request.body),
+        request.locale,
       ),
   );
 
@@ -76,7 +79,7 @@ export function registerMcpRoutes(
 
 function requireObject<T>(value: unknown): T {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "请求体必须是 JSON object");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.http.bodyMustBeObject);
   }
   return value as T;
 }

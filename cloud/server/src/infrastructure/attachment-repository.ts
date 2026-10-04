@@ -68,7 +68,7 @@ export class AttachmentRepository {
         [STORAGE_LOCK_NAMESPACE, STORAGE_LOCK_ID],
       );
       if (result.rows[0]?.acquired !== true) {
-        throw new Error("附件根目录已由另一个 requirements-service 实例持有");
+        throw new Error("The attachment root is held by another requirements-service instance");
       }
       this.ownershipLost = false;
       const onOwnershipError = () => {
@@ -93,7 +93,7 @@ export class AttachmentRepository {
         throw new ApplicationError(
           503,
           "DEPENDENCY_UNAVAILABLE",
-          "附件存储写入所有权已丢失",
+          "Attachment storage write ownership was lost",
           undefined,
           { cause: error },
         );
@@ -113,7 +113,7 @@ export class AttachmentRepository {
           [STORAGE_LOCK_NAMESPACE, STORAGE_LOCK_ID],
         );
         if (result.rows[0]?.unlocked !== true || this.ownershipLost) {
-          throw new Error("附件存储写入所有权释放失败");
+          throw new Error("Failed to release attachment storage write ownership");
         }
       } catch (error) {
         releaseError = error instanceof Error ? error : new Error(String(error));
@@ -142,9 +142,9 @@ export class AttachmentRepository {
       [requirementId],
     );
     const row = result.rows[0];
-    if (row === undefined) throw notFound("需求");
+    if (row === undefined) throw notFound("Requirement");
     if (Number(row.active_count) >= this.maxPerRequirement) {
-      throw new ApplicationError(409, "ATTACHMENT_INVALID", "该需求的附件数量已达上限", {
+      throw new ApplicationError(409, "ATTACHMENT_INVALID", "This requirement has reached its attachment limit", {
         maxAttachments: this.maxPerRequirement,
       });
     }
@@ -174,13 +174,13 @@ export class AttachmentRepository {
         [requirementId],
       );
       const requirementRow = requirement.rows[0];
-      if (requirementRow === undefined) throw notFound("需求");
+      if (requirementRow === undefined) throw notFound("Requirement");
       const count = await client.query<{ active_count: string }>(
         "SELECT COUNT(*)::text AS active_count FROM attachments WHERE requirement_id = $1 AND deleted_at IS NULL",
         [requirementId],
       );
       if (Number(count.rows[0]?.active_count ?? "0") >= this.maxPerRequirement) {
-        throw new ApplicationError(409, "ATTACHMENT_INVALID", "该需求的附件数量已达上限", {
+        throw new ApplicationError(409, "ATTACHMENT_INVALID", "This requirement has reached its attachment limit", {
           maxAttachments: this.maxPerRequirement,
         });
       }
@@ -232,7 +232,7 @@ export class AttachmentRepository {
         "SELECT version FROM requirements WHERE id = $1 FOR SHARE",
         [requirementId],
       );
-      if (requirement.rows[0] === undefined) throw notFound("需求");
+      if (requirement.rows[0] === undefined) throw notFound("Requirement");
       const result = await client.query<AttachmentRow>(
         `${ATTACHMENT_SELECT}
          WHERE a.requirement_id = $1 AND a.deleted_at IS NULL
@@ -284,7 +284,7 @@ export class AttachmentRepository {
         [attachmentId],
       );
       const row = result.rows[0];
-      if (row === undefined) throw notFound("附件");
+      if (row === undefined) throw notFound("Attachment");
       await client.query(
         "UPDATE attachments SET deleted_at = now(), deleted_by = $1 WHERE id = $2 AND deleted_at IS NULL",
         [actorId, attachmentId],
@@ -365,14 +365,14 @@ export class AttachmentRepository {
       [attachmentId],
     );
     const row = result.rows[0];
-    if (row === undefined) throw notFound("附件");
+    if (row === undefined) throw notFound("Attachment");
     return row;
   }
 
   private requireOwnershipClient(): PoolClient {
     const client = this.ownershipClient;
     if (client === null || this.ownershipLost) {
-      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "附件存储写入所有权已丢失");
+      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "Attachment storage write ownership was lost");
     }
     return client;
   }
@@ -423,7 +423,7 @@ function attachmentAudit(row: AttachmentRow, version: number): Record<string, un
 function mapAttachment(row: AttachmentRow): AttachmentDto {
   const sizeBytes = Number(row.size_bytes);
   if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
-    throw new ApplicationError(500, "INTERNAL_ERROR", "附件大小元数据无效");
+    throw new ApplicationError(500, "INTERNAL_ERROR", "Invalid attachment size metadata");
   }
   return {
     id: row.id,
