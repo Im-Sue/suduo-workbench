@@ -233,8 +233,8 @@ describe("英文界面：首启留下的设置提醒", () => {
     applyLocalePreference("zh-CN");
     recordEnvironmentPending(
       summarizeDoctor([
-        { name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2" },
-        { name: "Codex · auth · auth.credentials", status: "fail", message: "no Codex credentials were found" },
+        { id: "suduo.codex-cli", name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2", version: "0.159.2" },
+        { id: "auth.credentials", name: "Codex · auth · auth.credentials", status: "fail", message: "no Codex credentials were found" },
       ]),
     );
     recordMappingPending(true);

@@ -25,7 +25,7 @@ export class IdempotencyService {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        "Idempotency-Key 必须为 1 到 200 个字符",
+        (t) => t.session.idempotencyKeyLength,
       );
     }
     const now = Date.now();
@@ -43,7 +43,7 @@ export class IdempotencyService {
       throw new ApiError(
         409,
         "IDEMPOTENCY_CONFLICT",
-        "相同 Idempotency-Key 已用于不同请求",
+        (t) => t.session.idempotencyConflict,
         { scope },
       );
     }
@@ -54,7 +54,7 @@ export class IdempotencyService {
       throw new ApiError(
         409,
         "IDEMPOTENCY_INDETERMINATE",
-        "请求结果不确定，服务端不会自动重放可能产生副作用的操作",
+        (t) => t.session.idempotencyIndeterminate,
         { scope },
       );
     }
@@ -65,7 +65,7 @@ export class IdempotencyService {
       throw new ApiError(
         409,
         "IDEMPOTENCY_INDETERMINATE",
-        "幂等记录缺少可重放响应",
+        (t) => t.session.idempotencyMissingResponse,
         { scope },
       );
     }
@@ -96,19 +96,19 @@ export class IdempotencyService {
         resourceId,
       )
     ) {
-      throw new Error("幂等记录完成 CAS 失败: " + scope + "/" + key);
+      throw new Error("Idempotency record complete CAS failed: " + scope + "/" + key);
     }
   }
 
   fail(scope: string, key: string, statusCode: number, body: JsonValue): void {
     if (!this.records.fail(scope, key, statusCode, body)) {
-      throw new Error("幂等记录失败 CAS 失败: " + scope + "/" + key);
+      throw new Error("Idempotency record fail CAS failed: " + scope + "/" + key);
     }
   }
 
   indeterminate(scope: string, key: string): void {
     if (!this.records.markIndeterminate(scope, key)) {
-      throw new Error("幂等记录不确定 CAS 失败: " + scope + "/" + key);
+      throw new Error("Idempotency record indeterminate CAS failed: " + scope + "/" + key);
     }
   }
 }

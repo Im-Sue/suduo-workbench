@@ -124,15 +124,15 @@ describe("房间任务会话", () => {
         createdAt: 1,
       });
 
-      const defaults = context.list.list({});
+      const defaults = context.list.list({}, "zh-CN");
       expect(defaults.items.map((item) => item.id)).toEqual([normal.id]);
       expect(defaults.items[0]).toMatchObject({ kind: "normal", roomTask: null });
 
-      const tasks = context.list.list({ kind: "room_task" });
+      const tasks = context.list.list({ kind: "room_task" }, "zh-CN");
       expect(tasks.items.map((item) => item.id)).toEqual([task.id]);
       // 按项目过滤时房间任务归房间所属项目（这里的本机目录没有关联任何项目）。
-      expect(context.list.list({ kind: "room_task", remoteProjectId: "proj-1" }).items.map((item) => item.id)).toEqual([task.id]);
-      expect(context.list.list({ kind: "room_task", remoteProjectId: "proj-2" }).items).toEqual([]);
+      expect(context.list.list({ kind: "room_task", remoteProjectId: "proj-1" }, "zh-CN").items.map((item) => item.id)).toEqual([task.id]);
+      expect(context.list.list({ kind: "room_task", remoteProjectId: "proj-2" }, "zh-CN").items).toEqual([]);
       expect(tasks.items[0]).toMatchObject({
         kind: "room_task",
         title: "订单中心 · 收货信息",

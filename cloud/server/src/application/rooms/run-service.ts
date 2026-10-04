@@ -46,7 +46,7 @@ export class AgentRunService {
 
   async detail(runId: string): Promise<AgentRunDetailDto> {
     const run = await this.runs.detail(runId);
-    if (run === null) throw notFound("任务");
+    if (run === null) throw notFound("Agent run");
     return run;
   }
 
@@ -145,7 +145,7 @@ export class AgentRunService {
   async stop(actorId: string, runId: string): Promise<WithEvents<AgentRunSummaryDto>> {
     const changed = await this.database.transaction(async (client) => {
       const run = await this.runs.lock(client, runId);
-      if (run === null || (run.triggered_by !== actorId && run.owner_id !== actorId)) throw notFound("任务");
+      if (run === null || (run.triggered_by !== actorId && run.owner_id !== actorId)) throw notFound("Agent run");
       const reason = run.owner_id === actorId ? "所有者停止了任务" : "发起人停止了任务";
       return this.runs.requestStop(client, run, reason);
     });
@@ -156,7 +156,7 @@ export class AgentRunService {
   async retry(actorId: string, runId: string): Promise<WithEvents<AgentRunSummaryDto>> {
     const changed = await this.database.transaction(async (client) => {
       const run = await this.runs.lock(client, runId);
-      if (run === null || run.triggered_by !== actorId) throw notFound("任务");
+      if (run === null || run.triggered_by !== actorId) throw notFound("Agent run");
       if (!RETRYABLE.has(run.status)) return false;
       const availability = await this.agents.availability(client, run.agent_id, run.room_id);
       if (availability.shared && availability.online) {
@@ -185,7 +185,7 @@ export class AgentRunService {
 
   private async lockOwned(client: QueryExecutor, actorId: string, runId: string): Promise<RunLockRow> {
     const run = await this.runs.lock(client, runId);
-    if (run === null || run.owner_id !== actorId) throw notFound("任务");
+    if (run === null || run.owner_id !== actorId) throw notFound("Agent run");
     return run;
   }
 

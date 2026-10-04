@@ -2,10 +2,11 @@ import { createServer } from "node:net";
 import { describe, expect, it } from "vitest";
 import { probeModelGateway } from "../src/application/proxy-connectivity-service.js";
 import { EMPTY_PROXY_SETTINGS } from "../src/application/proxy-settings.js";
+import { messagesFor } from "../src/i18n/messages/index.js";
 
 describe("试连模型服务的失败原因（界面据此说明，不解析文字）", () => {
   it("服务地址无效", async () => {
-    const result = await probeModelGateway("ftp://models.example", EMPTY_PROXY_SETTINGS);
+    const result = await probeModelGateway("ftp://models.example", EMPTY_PROXY_SETTINGS, messagesFor("zh-CN"));
     expect(result).toMatchObject({ reachable: false, failure: { reason: "invalid-base-url" } });
   });
 
@@ -13,7 +14,7 @@ describe("试连模型服务的失败原因（界面据此说明，不解析文�
     const result = await probeModelGateway("https://models.example/v1", {
       ...EMPTY_PROXY_SETTINGS,
       httpsProxy: "not a url",
-    });
+    }, messagesFor("zh-CN"));
     expect(result).toMatchObject({ reachable: false, failure: { reason: "invalid-proxy" } });
   });
 
@@ -28,7 +29,7 @@ describe("试连模型服务的失败原因（界面据此说明，不解析文�
         server.close(() => resolve(free));
       });
     });
-    const result = await probeModelGateway(`http://127.0.0.1:${String(port)}/v1`, EMPTY_PROXY_SETTINGS);
+    const result = await probeModelGateway(`http://127.0.0.1:${String(port)}/v1`, EMPTY_PROXY_SETTINGS, messagesFor("zh-CN"));
     expect(result).toMatchObject({
       reachable: false,
       usingProxy: false,

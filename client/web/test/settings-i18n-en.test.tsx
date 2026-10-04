@@ -22,7 +22,7 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock("../src/api/client.js", () => ({ api: apiMocks }));
 
 import { formatMs } from "../src/features/settings/components/TestConnection.js";
-import { formatDay, humanizeModelMessage, humanizeProxyMessage } from "../src/features/settings/format.js";
+import { formatDay } from "../src/features/settings/format.js";
 import { mcpHealth, networkHealth, workspaceHealth } from "../src/features/settings/health.js";
 import { searchSettings, settingsSections } from "../src/features/settings/sections.js";
 import { validateServiceUrl } from "../src/features/settings/sections/ServiceSection.js";
@@ -63,8 +63,8 @@ beforeEach(() => {
   apiMocks.runDoctor.mockResolvedValue({
     status: "PASS",
     checks: [
-      { name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2" },
-      { name: "workspace.writable", status: "pass", message: "ok" },
+      { id: "suduo.codex-cli", name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2", version: "0.159.2" },
+      { id: "workspace.writable", name: "workspace.writable", status: "pass", message: "ok" },
     ],
   });
   apiMocks.testProxySettings.mockResolvedValue({ reachable: true, targetOrigin: "https://llm.example.com", usingProxy: true, message: "ok" });
@@ -210,8 +210,6 @@ describe("设置页：英文界面", () => {
 
   it("React 外的文字按调用时的语言取", () => {
     expect(settingsSections().map((section) => section.title)).toContain("Network proxy");
-    expect(humanizeProxyMessage("httpsProxy must be a valid proxy URL")).toBe("HTTPS proxy must be a valid proxy URL");
-    expect(humanizeModelMessage("baseUrl is required")).toBe("Service URL is required");
     expect(formatMs(42)).toBe("42 ms");
     expect(formatMs(1_234)).toBe("1.2 s");
     expect(formatDay("not a date")).toBe("Unknown");

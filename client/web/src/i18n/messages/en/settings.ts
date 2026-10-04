@@ -105,21 +105,6 @@ export const settings = {
     milliseconds: (ms: number) => `${String(ms)} ms`,
     seconds: (seconds: string) => `${seconds} s`,
   },
-  fields: {
-    proxy: {
-      httpProxy: "HTTP proxy",
-      httpsProxy: "HTTPS proxy",
-      allProxy: "Proxy for other connections",
-      noProxy: "No-proxy addresses",
-    },
-    model: {
-      baseUrl: "Service URL",
-      apiKey: "API key",
-      model: "Default model",
-      reasoningEffort: "Default reasoning effort",
-      contextWindow: "Context limit",
-    },
-  },
   unknownDate: "Unknown",
   devBuild: "Development build",
   health: {

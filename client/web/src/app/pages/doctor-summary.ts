@@ -1,16 +1,13 @@
+import { SUDUO_DOCTOR_CHECK_IDS, type DoctorCheckDto } from "@suduo/client-contracts";
 import { currentLocale } from "../../i18n/locale.js";
 import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 
 /**
  * 把 /api/v1/doctor 的逐项检查（多为英文技术信息）汇总成用户能读懂的几条结论。
  * 原始检查仍可在「查看全部检查」里展开，供排障时复制。
+ * 按检查项的 id 认项（SuDuo 自己的项见 SUDUO_DOCTOR_CHECK_IDS，Codex 官方项是官方 id），不看按语言生成的名称。
  */
-export interface DoctorCheck {
-  name: string;
-  status: string;
-  message: string;
-  remediation?: string | null;
-}
+export type DoctorCheck = DoctorCheckDto;
 
 export type SummaryStatus = "ok" | "warn" | "fail";
 
@@ -23,16 +20,20 @@ export interface DoctorSummaryItem {
   settingsSection?: string;
 }
 
-const find = (checks: readonly DoctorCheck[], predicate: (name: string) => boolean) =>
-  checks.find((check) => predicate(check.name));
+const find = (checks: readonly DoctorCheck[], id: string) => checks.find((check) => check.id === id);
 
-/** 「codex-cli 0.159.2（workspace 锁定版本）」→「已安装，版本 0.159.2」；认不出格式时原样显示。 */
-function codexVersionDetail(message: string, text: Messages["setup"]["doctor"]): string {
-  // 依赖服务端中文文字（去掉全角括号里的说明），S5 改为读结构化字段；正则字面量不触发 i18n 规则，不必加 eslint-disable。
-  const stripped = message.replace(/（.*?）/g, "");
-  const prefix = /^codex-cli\s*/i.exec(stripped);
-  return prefix === null ? stripped : text.codexInstalled(stripped.slice(prefix[0].length));
+/** 通过时直接读版本：「已安装，版本 0.159.2」；没报版本时显示服务端的说明。 */
+function codexVersionDetail(check: DoctorCheck, text: Messages["setup"]["doctor"]): string {
+  return check.version ? text.codexInstalled(check.version) : check.message;
 }
+
+/** 算进「本机运行环境」的检查项。 */
+const RUNTIME_CHECK_IDS: ReadonlySet<string> = new Set([
+  SUDUO_DOCTOR_CHECK_IDS.node,
+  SUDUO_DOCTOR_CHECK_IDS.pnpm,
+  SUDUO_DOCTOR_CHECK_IDS.sqlite,
+  SUDUO_DOCTOR_CHECK_IDS.port,
+]);
 
 /** 文字按调用时的界面语言取；组件里可以传入 useT() 拿到的字典。 */
 export function summarizeDoctor(checks: readonly DoctorCheck[], t: Messages = messagesFor(currentLocale())): DoctorSummaryItem[] {
@@ -40,16 +41,16 @@ export function summarizeDoctor(checks: readonly DoctorCheck[], t: Messages = me
   const titles = text.titles;
   const items: DoctorSummaryItem[] = [];
 
-  const cli = find(checks, (name) => name === "Codex CLI");
+  const cli = find(checks, SUDUO_DOCTOR_CHECK_IDS.codexCli);
   items.push(
     cli === undefined
       ? { key: "codex", title: titles.codex, status: "warn", detail: text.noResult }
       : cli.status === "pass"
-        ? { key: "codex", title: titles.codex, status: "ok", detail: codexVersionDetail(cli.message, text) }
+        ? { key: "codex", title: titles.codex, status: "ok", detail: codexVersionDetail(cli, text) }
         : { key: "codex", title: titles.codex, status: "fail", detail: text.codexMissing },
   );
 
-  const auth = find(checks, (name) => name.endsWith("auth.credentials"));
+  const auth = find(checks, "auth.credentials");
   items.push(
     auth === undefined || auth.status === "pass"
       ? { key: "model", title: titles.model, status: "ok", detail: text.modelReady }
@@ -62,8 +63,8 @@ export function summarizeDoctor(checks: readonly DoctorCheck[], t: Messages = me
         },
   );
 
-  const reach = find(checks, (name) => name.endsWith("network.provider_reachability"));
-  const socket = find(checks, (name) => name.endsWith("network.websocket_reachability"));
+  const reach = find(checks, "network.provider_reachability");
+  const socket = find(checks, "network.websocket_reachability");
   // 只有 fail 才是连不上模型服务：新版 Codex 在这一项里还会以 warning 报「桌面端更新 CDN 不可达」，与模型服务无关。
   if (reach !== undefined && reach.status === "fail") {
     items.push({
@@ -80,8 +81,7 @@ export function summarizeDoctor(checks: readonly DoctorCheck[], t: Messages = me
   }
 
   // 只有 Linux 上有这一项：沙箱起不来时需要审批或受限执行的命令都会失败，不能只藏在自检明细里。
-  // eslint-disable-next-line no-restricted-syntax -- 依赖服务端中文文字，S5 改为读结构化字段
-  const sandbox = find(checks, (name) => name === "Codex 沙箱（Linux）");
+  const sandbox = find(checks, SUDUO_DOCTOR_CHECK_IDS.linuxSandbox);
   if (sandbox !== undefined) {
     items.push(
       sandbox.status === "pass"
@@ -90,9 +90,7 @@ export function summarizeDoctor(checks: readonly DoctorCheck[], t: Messages = me
     );
   }
 
-  // eslint-disable-next-line no-restricted-syntax -- 依赖服务端中文文字，S5 改为读结构化字段
-  const runtimeNames = new Set(["Node.js", "pnpm", "better-sqlite3", "监听端口"]);
-  const runtimeFailures = checks.filter((check) => runtimeNames.has(check.name) && check.status === "fail");
+  const runtimeFailures = checks.filter((check) => RUNTIME_CHECK_IDS.has(check.id) && check.status === "fail");
   items.push(
     runtimeFailures.length === 0
       ? { key: "runtime", title: titles.runtime, status: "ok", detail: text.runtimeReady }

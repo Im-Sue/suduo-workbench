@@ -13,7 +13,7 @@ export function registerSessionListRoutes(
   dependencies: SessionListRouteDependencies,
 ): void {
   server.get("/api/v1/sessions", async (request) =>
-    dependencies.sessionList.list(parseQuery(request.query)),
+    dependencies.sessionList.list(parseQuery(request.query), request.locale),
   );
 }
 
@@ -21,22 +21,22 @@ function parseQuery(value: unknown): ListAllSessionsQuery {
   const query = queryObject(value);
   const state = query["state"];
   if (state !== undefined && state !== "active" && state !== "archived" && state !== "all") {
-    throw new ApiError(400, "VALIDATION_ERROR", "state 仅允许 active / archived / all");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.listStateInvalid);
   }
   const kind = query["kind"];
   if (kind !== undefined && kind !== "normal" && kind !== "room_task") {
-    throw new ApiError(400, "VALIDATION_ERROR", "kind 仅允许 normal / room_task");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.listKindInvalid);
   }
   const remoteProjectId = query["remoteProjectId"];
   if (remoteProjectId === "") {
-    throw new ApiError(400, "VALIDATION_ERROR", "remoteProjectId 不能为空");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.remoteProjectIdEmpty);
   }
   const limitText = query["limit"];
   let limit: number | undefined;
   if (limitText !== undefined) {
     limit = Number(limitText);
     if (!Number.isSafeInteger(limit) || String(limit) !== limitText) {
-      throw new ApiError(400, "VALIDATION_ERROR", "limit 必须是整数");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.limitNotInteger);
     }
   }
   return {

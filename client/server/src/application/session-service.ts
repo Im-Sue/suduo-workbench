@@ -3,6 +3,7 @@ import {
   isReasoningEffort,
   type CreateSessionRequest,
   type ListSessionsQuery,
+  type Locale,
   type ReasoningEffort,
   type RuntimeToolSpec,
   type SessionDto,
@@ -26,7 +27,9 @@ import {
   ApiError,
   IndeterminateOperationError,
   asJsonError,
+  type ErrorText,
 } from "./api-error.js";
+import { messagesFor } from "../i18n/messages/index.js";
 import { sessionDto } from "./dto.js";
 import { paginate } from "./pagination.js";
 import { effectiveApprovalMode } from "./approval-mode-cap.js";
@@ -71,18 +74,22 @@ export class SessionService {
     projectId: string,
     input: CreateSessionRequest,
     setup: SessionThreadSetup = {},
-    /** room_task = 房间共享 Agent 的隐藏任务会话（只读 + 联网 + 不审批，不进普通列表）。 */
-    options: { kind?: SessionKind } = {},
+    /**
+     * kind：room_task = 房间共享 Agent 的隐藏任务会话（只读 + 联网 + 不审批，不进普通列表）。
+     * locale：没给标题时默认名用的语言（创建请求的语言）。不带请求的调用方（房间任务）都自带标题；
+     * 兜底沿用迁移前的中文。
+     */
+    options: { kind?: SessionKind; locale?: Locale } = {},
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
-      throw new ApiError(404, "NOT_FOUND", "活动项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.activeProjectNotFound);
     }
     if (input.title !== undefined && typeof input.title !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "会话标题必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.titleNotString);
     }
     if (input.runtimeId !== undefined && typeof input.runtimeId !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "runtimeId 必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.runtimeIdNotString);
     }
     const purpose = validatePurpose(input.purpose ?? "general");
     const runtimeId = input.runtimeId ?? "codex-local";
@@ -90,12 +97,12 @@ export class SessionService {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        "M1 仅支持 runtimeId=codex-local",
+        (t) => t.session.runtimeUnsupported,
       );
     }
     const session = this.sessions.create({
       projectId,
-      title: normalizeTitle(input.title ?? "新会话"),
+      title: normalizeTitle(input.title ?? messagesFor(options.locale ?? "zh-CN").session.defaultTitle),
       purpose,
       approvalMode: effectiveApprovalMode(
         { approvalMode: this.defaultApprovalMode() },
@@ -134,7 +141,7 @@ export class SessionService {
           });
         }
         if (!this.sessions.updateState(session.id, session.version, "active")) {
-          throw new Error("会话激活 CAS 失败");
+          throw new Error("Session activation CAS failed");
         }
       })();
     } catch (error) {
@@ -142,7 +149,7 @@ export class SessionService {
         error: asJsonError(error),
       });
       throw new IndeterminateOperationError(
-        "runtime thread 已创建，但本地映射写入失败",
+        (t) => t.session.threadMappingWriteFailed,
         { cause: error },
       );
     }
@@ -168,11 +175,11 @@ export class SessionService {
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
-      throw new ApiError(404, "NOT_FOUND", "活动本机项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.activeLocalProjectNotFound);
     }
     const requirementSessionRefs = this.requirementSessionRefs;
     if (!requirementSessionRefs) {
-      throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", "V2 会话引用存储不可用");
+      throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.session.requirementRefStoreUnavailable);
     }
     const session = this.sessions.create({
       projectId,
@@ -220,7 +227,7 @@ export class SessionService {
           });
         }
         if (!this.sessions.updateState(session.id, session.version, "active")) {
-          throw new Error("V2 会话激活 CAS 失败");
+          throw new Error("Requirement session activation CAS failed");
         }
         requirementSessionRefs.create({
           ...reference,
@@ -234,7 +241,7 @@ export class SessionService {
         error: asJsonError(error),
       });
       throw new IndeterminateOperationError(
-        "runtime thread 已创建，但 V2 会话引用写入失败",
+        (t) => t.session.requirementRefWriteFailed,
         { cause: error },
       );
     }
@@ -247,7 +254,7 @@ export class SessionService {
 
   list(projectId: string, query: ListSessionsQuery) {
     if (!this.projects.getById(projectId)) {
-      throw new ApiError(404, "NOT_FOUND", "项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.projectNotFound);
     }
     const view = query.state ?? "active";
     const sessions = this.sessions
@@ -273,7 +280,7 @@ export class SessionService {
   ): Promise<SessionDto> {
     const session = this.requireSession(id);
     if (input.title !== undefined && typeof input.title !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "会话标题必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.titleNotString);
     }
     const model =
       input.model === undefined ? undefined : normalizeSessionModel(input.model);
@@ -289,7 +296,7 @@ export class SessionService {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        "会话 state 仅允许 active 或 archived",
+        (t) => t.session.stateInvalid,
       );
     }
     if (
@@ -301,7 +308,7 @@ export class SessionService {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        "approvalMode 仅允许 ask / auto / full",
+        (t) => t.session.approvalModeInvalid,
       );
     }
     if (input.purpose !== undefined) {
@@ -317,7 +324,7 @@ export class SessionService {
       throw new ApiError(
         409,
         "VERSION_CONFLICT",
-        "审批模式已被部署上限 SUDUO_MAX_APPROVAL_MODE 锁定",
+        (t) => t.session.approvalModeLocked,
       );
     }
     if (
@@ -328,13 +335,13 @@ export class SessionService {
       model === undefined &&
       reasoningEffort === undefined
     ) {
-      throw new ApiError(400, "VALIDATION_ERROR", "PATCH 至少提供一个字段");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.patchEmpty);
     }
     if (session.state === "deleted") {
-      throw new ApiError(409, "VERSION_CONFLICT", "已删除会话不能更新");
+      throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.deletedNotUpdatable);
     }
     if (input.state === "active" && session.state !== "active") {
-      const project = requireRecord(this.projects.getById(session.projectId), "项目不存在");
+      const project = requireRecord(this.projects.getById(session.projectId), (t) => t.session.projectNotFound);
       const binding = this.requirePrimary(id);
       await this.supervisor.ensureReady({
         session,
@@ -359,11 +366,11 @@ export class SessionService {
       if (expectedVersion === null) {
         // 后写生效路径不比对版本：写不进只可能是会话在这期间被删除（沿用「已删除不能更新」的既有语义）或已不存在。
         if (this.sessions.getById(id)?.state === "deleted") {
-          throw new ApiError(409, "VERSION_CONFLICT", "已删除会话不能更新");
+          throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.deletedNotUpdatable);
         }
-        throw new ApiError(404, "NOT_FOUND", "会话不存在");
+        throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
       }
-      throw new ApiError(409, "VERSION_CONFLICT", "会话版本冲突", {
+      throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.versionConflict, {
         actualVersion: session.version,
       });
     }
@@ -379,7 +386,7 @@ export class SessionService {
       return;
     }
     if (!this.sessions.updateState(id, session.version, "deleted")) {
-      throw new ApiError(409, "VERSION_CONFLICT", "会话版本冲突");
+      throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.versionConflict);
     }
     this.notifyStateChanged(session.state, id);
   }
@@ -387,7 +394,7 @@ export class SessionService {
   requireSession(id: string) {
     const session = this.sessions.getById(id);
     if (!session) {
-      throw new ApiError(404, "NOT_FOUND", "会话不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
     }
     return session;
   }
@@ -400,14 +407,14 @@ export class SessionService {
       throw new ApiError(
         409,
         "SESSION_HAS_NO_PRIMARY_THREAD",
-        "会话没有可用 primary thread",
+        (t) => t.session.noPrimaryThread,
       );
     }
     if (primaries.length !== 1) {
       throw new ApiError(
         409,
         "SESSION_PRIMARY_THREAD_AMBIGUOUS",
-        "会话存在多个 primary thread",
+        (t) => t.session.primaryThreadAmbiguous,
       );
     }
     return primaries[0] as (typeof primaries)[number];
@@ -450,7 +457,7 @@ function validatePurpose(value: unknown): SessionPurpose {
     value !== "fe_connect" &&
     value !== "test"
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", "会话 purpose 无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.purposeInvalid);
   }
   return value;
 }
@@ -463,14 +470,14 @@ function normalizeSessionModel(value: unknown): string | null {
     return null;
   }
   if (typeof value !== "string") {
-    throw new ApiError(400, "VALIDATION_ERROR", "model 必须是字符串或 null");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.modelNotString);
   }
   const model = value.trim();
   if (model.length === 0 || model.length > 128 || !SESSION_MODEL_PATTERN.test(model)) {
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "model 必须是 1 到 128 位的模型名（字母、数字与 . _ : / -）；恢复跟随默认请传 null",
+      (t) => t.session.modelInvalid,
     );
   }
   return model;
@@ -485,7 +492,7 @@ function normalizeSessionReasoningEffort(value: unknown): ReasoningEffort | null
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "reasoningEffort 须为小写档位名（如 " + REASONING_EFFORTS.slice(2, 5).join(" / ") + "），恢复跟随默认请传 null",
+      (t) => t.session.reasoningEffortInvalid(REASONING_EFFORTS.slice(2, 5).join(" / ")),
     );
   }
   return value;
@@ -494,7 +501,7 @@ function normalizeSessionReasoningEffort(value: unknown): ReasoningEffort | null
 function normalizeTitle(value: string): string {
   const title = value.trim();
   if (title.length === 0 || title.length > 300) {
-    throw new ApiError(400, "VALIDATION_ERROR", "会话标题长度必须为 1 到 300");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.titleLength);
   }
   return title;
 }
@@ -512,7 +519,7 @@ function matchesView(
   return state === view;
 }
 
-function requireRecord<T>(record: T | null, message: string): T {
+function requireRecord<T>(record: T | null, message: ErrorText): T {
   if (!record) {
     throw new ApiError(404, "NOT_FOUND", message);
   }

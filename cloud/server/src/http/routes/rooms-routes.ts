@@ -122,7 +122,7 @@ export function registerRoomRoutes(server: FastifyInstance, module: RoomsModule)
     async (request, reply) => {
       const contentType = headerValue(request.headers["content-type"]);
       if (!contentType || !(request.body instanceof Readable)) {
-        throw new ApplicationError(400, "ATTACHMENT_INVALID", "必须上传一个 multipart 文件");
+        throw new ApplicationError(400, "ATTACHMENT_INVALID", "A multipart file upload is required");
       }
       try {
         await module.files.assertRoomExists(request.params.roomId);
@@ -169,7 +169,7 @@ export function registerRoomRoutes(server: FastifyInstance, module: RoomsModule)
         return reply
           .code(416)
           .header("Content-Range", `bytes */${size}`)
-          .send(errorResponse(new ApplicationError(416, "VALIDATION_ERROR", "请求的范围超出文件大小"), request.id));
+          .send(errorResponse(new ApplicationError(416, "VALIDATION_ERROR", "Requested range is outside the file size"), request.id));
       }
       reply.headers({
         "Content-Type": presentation.contentType,

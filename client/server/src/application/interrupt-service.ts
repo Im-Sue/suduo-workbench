@@ -10,7 +10,7 @@ import type {
   SessionThreadRecord,
   SessionThreadRepository,
 } from "../infrastructure/db/repositories/session-thread-repository.js";
-import { ApiError, IndeterminateOperationError } from "./api-error.js";
+import { ApiError, IndeterminateOperationError, errorTextOf } from "./api-error.js";
 import type { EventLedger } from "./event-ledger.js";
 import type { RuntimeSupervisor } from "./runtime-supervisor.js";
 import { WorkspaceContextResolver } from "./workspace-context.js";
@@ -33,11 +33,11 @@ export class InterruptService {
   ): Promise<InterruptAccepted> {
     const session = this.sessions.getById(sessionId);
     if (!session) {
-      throw new ApiError(404, "NOT_FOUND", "会话不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
     }
     const project = this.projects.getById(session.projectId);
     if (!project) {
-      throw new ApiError(404, "NOT_FOUND", "项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.projectNotFound);
     }
     const binding = this.route(sessionId, input);
     const turnId = input.turnId ?? this.uniqueRunningTurn(sessionId, binding);
@@ -57,8 +57,9 @@ export class InterruptService {
       // 回合已结束/连接已重建时 codex 找不到该 turn。目标状态已达成：
       // 按幂等处理，补终态事件收口本地状态，不打扰用户。
       if (!isTurnGoneError(error)) {
+        const cause = errorTextOf(error);
         throw new IndeterminateOperationError(
-          "中断请求结果不确定：" + causeText(error),
+          (t) => t.session.interruptIndeterminate(cause(t).slice(0, 200)),
           { cause: error },
         );
       }
@@ -94,7 +95,7 @@ export class InterruptService {
       });
     } catch (error) {
       throw new IndeterminateOperationError(
-        "中断已投递，但本地确认事件写入失败",
+        (t) => t.session.interruptRecordWriteFailed,
         { cause: error },
       );
     }
@@ -113,7 +114,7 @@ export class InterruptService {
         input.threadRef,
       );
       if (!binding || binding.state !== "attached") {
-        throw new ApiError(404, "NOT_FOUND", "目标 thread 未绑定到会话");
+        throw new ApiError(404, "NOT_FOUND", (t) => t.session.interruptTargetThreadNotBound);
       }
       return binding;
     }
@@ -124,14 +125,14 @@ export class InterruptService {
       throw new ApiError(
         409,
         "SESSION_HAS_NO_PRIMARY_THREAD",
-        "会话没有可用 primary thread",
+        (t) => t.session.noPrimaryThread,
       );
     }
     if (primary.length !== 1) {
       throw new ApiError(
         409,
         "SESSION_PRIMARY_THREAD_AMBIGUOUS",
-        "会话存在多个 primary thread",
+        (t) => t.session.primaryThreadAmbiguous,
       );
     }
     return primary[0] as SessionThreadRecord;
@@ -148,7 +149,7 @@ export class InterruptService {
       throw new ApiError(
         409,
         "VERSION_CONFLICT",
-        "无法唯一确定正在运行的 turn",
+        (t) => t.session.runningTurnAmbiguous,
         { runningTurnCount: running.length },
       );
     }

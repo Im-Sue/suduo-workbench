@@ -24,7 +24,7 @@ export async function saveImageAttachment(input: {
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "附件仅支持 PNG/JPEG/GIF/WebP 图片",
+      (t) => t.workspace.attachment.typeUnsupported,
     );
   }
   let bytes: Buffer;
@@ -32,12 +32,12 @@ export async function saveImageAttachment(input: {
     input.dataBase64.length === 0 ||
     !/^[A-Za-z0-9+/]*={0,2}$/.test(input.dataBase64)
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", "图片 base64 无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.attachment.base64Invalid);
   }
   try {
     bytes = Buffer.from(input.dataBase64, "base64");
   } catch (error) {
-    throw new ApiError(400, "VALIDATION_ERROR", "图片 base64 无效", undefined, {
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.attachment.base64Invalid, undefined, {
       cause: error,
     });
   }
@@ -45,7 +45,7 @@ export async function saveImageAttachment(input: {
     throw new ApiError(
       400,
       "VALIDATION_ERROR",
-      "图片大小必须在 1 byte 到 10 MiB 之间",
+      (t) => t.workspace.attachment.sizeInvalid,
     );
   }
   assertImageMagic(input.mediaType, bytes);
@@ -82,6 +82,6 @@ function assertImageMagic(mediaType: string, bytes: Buffer): void {
       bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
       bytes.subarray(8, 12).toString("ascii") === "WEBP");
   if (!valid) {
-    throw new ApiError(400, "VALIDATION_ERROR", "图片内容与 mediaType 不匹配");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.attachment.contentMismatch);
   }
 }

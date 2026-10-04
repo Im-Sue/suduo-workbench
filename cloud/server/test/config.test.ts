@@ -34,11 +34,11 @@ it("房间文件根目录缺省为附件根目录同级的 -rooms，可覆盖；
     allowedRoomFileExtensions: new Set([".png", ".mp4"]),
   });
   expect(() => loadConfig({ ...REQUIRED_ENVIRONMENT, REQUIREMENTS_ROOM_FILE_ROOT: "relative/rooms" }))
-    .toThrow("REQUIREMENTS_ROOM_FILE_ROOT 必须是绝对路径");
+    .toThrow("REQUIREMENTS_ROOM_FILE_ROOT must be an absolute path");
   expect(() => loadConfig({ ...REQUIRED_ENVIRONMENT, REQUIREMENTS_ROOM_FILE_ROOT: "/tmp/suduo-config-test/rooms" }))
-    .toThrow("不能与 REQUIREMENTS_ATTACHMENT_ROOT 相同或互相嵌套");
+    .toThrow("must not be the same directory or contain each other");
   expect(() => loadConfig({ ...REQUIRED_ENVIRONMENT, REQUIREMENTS_ROOM_FILE_ROOT: "/tmp" }))
-    .toThrow("不能与 REQUIREMENTS_ATTACHMENT_ROOT 相同或互相嵌套");
+    .toThrow("must not be the same directory or contain each other");
   expect(() => loadConfig({ ...REQUIRED_ENVIRONMENT, REQUIREMENTS_ALLOWED_ROOM_FILE_EXTENSIONS: "bad ext" }))
-    .toThrow("REQUIREMENTS_ALLOWED_ROOM_FILE_EXTENSIONS 包含无效扩展名");
+    .toThrow("REQUIREMENTS_ALLOWED_ROOM_FILE_EXTENSIONS contains an invalid extension");
 });

@@ -27,7 +27,6 @@ import { configWarningOf, useCodexStatus } from "../codex-status.js";
 import { SaveBar, useUnsavedChanges } from "../components/frame.js";
 import { rowDescId, rowLabelId, SectionSkeleton, SettingsRow, SettingsSection, StatusPill } from "../components/kit.js";
 import { formatMs, TestConnection, timed, type TestOutcome } from "../components/TestConnection.js";
-import { humanizeModelMessage } from "../format.js";
 import { networkReason } from "./ProxySection.js";
 import { codexModelsQuery, modelProviderQuery, settingsKeys } from "../queries.js";
 import { useQueryFailure } from "../use-query-failure.js";
@@ -434,7 +433,8 @@ function ModelForm({
       )}
       {saveFailure === null ? null : (
         <Banner tone="danger" title={text.banner.saveFailedTitle} className="mb-2" data-testid="model-save-failure">
-          {humanizeModelMessage(saveFailure.message)}
+          {/* 本机服务的报错已用界面上的字段叫法（D1：不露接口字段名），按请求语言生成。 */}
+          {saveFailure.message}
         </Banner>
       )}
 

@@ -43,11 +43,11 @@ describe("路径分区", () => {
 describe("summarizeDoctor", () => {
   it("把技术检查汇总成四条用户能读懂的结论", () => {
     const summary = summarizeDoctor([
-      { name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2（workspace 锁定版本）" },
-      { name: "Codex · auth · auth.credentials", status: "fail", message: "no Codex credentials were found" },
-      { name: "Codex · reachability · network.provider_reachability", status: "pass", message: "ok" },
-      { name: "Codex · websocket · network.websocket_reachability", status: "fail", message: "failed" },
-      { name: "Node.js", status: "fail", message: "需要 24.10.0，当前为 24.21.0" },
+      { id: "suduo.codex-cli", name: "Codex CLI", status: "pass", message: "codex-cli 0.159.2（workspace 锁定版本）", version: "0.159.2" },
+      { id: "auth.credentials", name: "Codex · auth · auth.credentials", status: "fail", message: "no Codex credentials were found" },
+      { id: "network.provider_reachability", name: "Codex · reachability · network.provider_reachability", status: "pass", message: "ok" },
+      { id: "network.websocket_reachability", name: "Codex · websocket · network.websocket_reachability", status: "fail", message: "failed" },
+      { id: "suduo.node", name: "Node.js", status: "fail", message: "需要 24.10.0，当前为 24.21.0" },
     ]);
     expect(summary.map((item) => [item.key, item.status])).toEqual([
       ["codex", "ok"],
@@ -61,14 +61,14 @@ describe("summarizeDoctor", () => {
 
   it("新版官方诊断在可达性一项里报的 warning（桌面端更新 CDN 不可达）不算连不上模型服务", () => {
     const summary = summarizeDoctor([
-      { name: "Codex · reachability · network.provider_reachability", status: "warn", message: "desktop update and runtime CDN is unreachable" },
+      { id: "network.provider_reachability", name: "Codex · reachability · network.provider_reachability", status: "warn", message: "desktop update and runtime CDN is unreachable" },
     ]);
     expect(summary.find((item) => item.key === "network")).toMatchObject({ status: "ok" });
   });
 
   it("Linux 上沙箱起不来时单列一条「命令沙箱」；没有这项检查（非 Linux）时不出现", () => {
     const failing = summarizeDoctor([
-      { name: "Codex 沙箱（Linux）", status: "warn", message: "Codex 的沙箱在这台机器上起不来" },
+      { id: "suduo.linux-sandbox", name: "Codex 沙箱（Linux）", status: "warn", message: "Codex 的沙箱在这台机器上起不来" },
     ]);
     expect(failing.find((item) => item.key === "sandbox")).toMatchObject({ status: "warn", detail: "Codex 的沙箱在这台机器上起不来" });
     expect(summarizeDoctor([]).some((item) => item.key === "sandbox")).toBe(false);
@@ -76,7 +76,7 @@ describe("summarizeDoctor", () => {
 
   it("模型服务不可达时网络判为失败并指向代理设置", () => {
     const summary = summarizeDoctor([
-      { name: "Codex · reachability · network.provider_reachability", status: "fail", message: "timeout" },
+      { id: "network.provider_reachability", name: "Codex · reachability · network.provider_reachability", status: "fail", message: "timeout" },
     ]);
     expect(summary.find((item) => item.key === "network")).toMatchObject({ status: "fail", settingsSection: "proxy" });
   });

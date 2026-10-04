@@ -27,7 +27,7 @@ export function decodeCursor(cursor: string | undefined): CursorPosition | null 
     }
     return { timestamp: parsed.timestamp, id: parsed.id };
   } catch (error) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "分页游标无效", undefined, {
+    throw new ApplicationError(400, "VALIDATION_ERROR", "Invalid pagination cursor", undefined, {
       cause: error,
     });
   }

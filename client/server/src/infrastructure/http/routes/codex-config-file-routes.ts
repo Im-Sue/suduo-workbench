@@ -26,7 +26,7 @@ export function registerCodexConfigFileRoutes(
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        "只能打开当前 CODEX_HOME 的 config.toml",
+        (t) => t.config.configFile.onlyCurrentHome,
       );
     }
     try {
@@ -37,7 +37,7 @@ export function registerCodexConfigFileRoutes(
       throw new ApiError(
         404,
         "NOT_FOUND",
-        "Codex 配置文件不存在，无法打开",
+        (t) => t.config.configFile.missing,
         undefined,
         { cause },
       );
@@ -48,7 +48,7 @@ export function registerCodexConfigFileRoutes(
       throw new ApiError(
         503,
         "DEPENDENCY_UNAVAILABLE",
-        "无法用系统编辑器打开 Codex 配置文件",
+        (t) => t.config.configFile.openFailed,
         undefined,
         { cause },
       );
@@ -59,7 +59,7 @@ export function registerCodexConfigFileRoutes(
 
 function requireObject(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "请求体必须是 JSON object");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.http.bodyMustBeObject);
   }
   return value as Record<string, unknown>;
 }

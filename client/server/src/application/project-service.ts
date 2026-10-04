@@ -20,7 +20,7 @@ export class ProjectService {
 
   async create(input: CreateProjectRequest): Promise<ProjectDto> {
     if (typeof input.rootPath !== "string" || input.rootPath.includes("\0")) {
-      throw new ApiError(400, "VALIDATION_ERROR", "rootPath 无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.project.rootPathInvalid);
     }
     let resolved: string;
     try {
@@ -32,7 +32,7 @@ export class ProjectService {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        "rootPath 必须是存在且可读的本机目录",
+        (t) => t.workspace.project.rootPathNotReadable,
         undefined,
         { cause: error },
       );
@@ -46,12 +46,12 @@ export class ProjectService {
       throw new ApiError(
         409,
         "VERSION_CONFLICT",
-        "项目已被软移除，请通过 PATCH 显式恢复",
+        (t) => t.workspace.project.removed,
         { projectId: existing.id },
       );
     }
     if (input.name !== undefined && typeof input.name !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "项目名称必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.project.nameNotString);
     }
     const name = normalizeName(input.name ?? basename(resolved));
     return projectDto(
@@ -85,13 +85,13 @@ export class ProjectService {
   ): ProjectDto {
     const current = this.requireProject(id);
     if (input.name !== undefined && typeof input.name !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", "项目名称必须是字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.project.nameNotString);
     }
     if (input.state !== undefined && input.state !== "active") {
-      throw new ApiError(400, "VALIDATION_ERROR", "项目 state 仅允许 active");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.project.stateActiveOnly);
     }
     if (input.name === undefined && input.state === undefined) {
-      throw new ApiError(400, "VALIDATION_ERROR", "PATCH 至少提供一个字段");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.project.patchEmpty);
     }
     if (
       !this.projects.update(id, expectedVersion, {
@@ -113,7 +113,7 @@ export class ProjectService {
       throw new ApiError(
         409,
         "PROJECT_HAS_ACTIVE_SESSIONS",
-        "项目仍有活动会话，需先归档或删除会话",
+        (t) => t.workspace.project.hasActiveSessions,
       );
     }
     if (!this.projects.markRemoved(id, project.version)) {
@@ -124,7 +124,7 @@ export class ProjectService {
   requireProject(id: string) {
     const project = this.projects.getById(id);
     if (!project) {
-      throw new ApiError(404, "NOT_FOUND", "项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.workspace.project.notFound);
     }
     return project;
   }
@@ -133,7 +133,7 @@ export class ProjectService {
 function normalizeName(value: string): string {
   const name = value.trim();
   if (name.length === 0 || name.length > 200) {
-    throw new ApiError(400, "VALIDATION_ERROR", "项目名称长度必须为 1 到 200");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.project.nameLength);
   }
   return name;
 }
@@ -144,7 +144,7 @@ function pathKey(path: string): string {
 }
 
 function versionConflict(actualVersion: number): ApiError {
-  return new ApiError(409, "VERSION_CONFLICT", "项目版本冲突", {
+  return new ApiError(409, "VERSION_CONFLICT", (t) => t.workspace.project.versionConflict, {
     actualVersion,
   });
 }

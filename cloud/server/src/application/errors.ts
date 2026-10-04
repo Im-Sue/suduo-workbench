@@ -28,5 +28,5 @@ export function errorResponse(
 }
 
 export function notFound(resource: string): ApplicationError {
-  return new ApplicationError(404, "NOT_FOUND", `${resource}不存在`);
+  return new ApplicationError(404, "NOT_FOUND", `${resource} not found`);
 }

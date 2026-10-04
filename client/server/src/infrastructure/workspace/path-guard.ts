@@ -29,7 +29,7 @@ export async function guardExistingPath(
     throw new ApiError(
       404,
       "NOT_FOUND",
-      "文件或目录不存在",
+      (t) => t.workspace.path.notFound,
       { path: requestedPath },
       { cause: error },
     );
@@ -66,19 +66,19 @@ export async function guardWritableDirectory(
 
 export async function requireFile(path: GuardedPath): Promise<void> {
   if (!(await stat(path.absolutePath)).isFile()) {
-    throw new ApiError(400, "VALIDATION_ERROR", "目标不是文件");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.path.notFile);
   }
 }
 
 export async function requireDirectory(path: GuardedPath): Promise<void> {
   if (!(await stat(path.absolutePath)).isDirectory()) {
-    throw new ApiError(400, "VALIDATION_ERROR", "目标不是目录");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.path.notDirectory);
   }
 }
 
 export function assertContained(root: string, candidate: string): void {
   if (!isContainedPath(root, candidate, { relative, isAbsolute, sep })) {
-    throw new ApiError(403, "VALIDATION_ERROR", "路径越过项目根目录");
+    throw new ApiError(403, "VALIDATION_ERROR", (t) => t.workspace.path.outsideProject);
   }
 }
 
@@ -109,11 +109,11 @@ export function validateRelativePath(path: string): void {
     isAbsolute(path) ||
     win32.isAbsolute(path)
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", "路径必须是项目内相对路径");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.path.relativeRequired);
   }
   const segments = path.replaceAll("\\", "/").split("/");
   if (segments.includes("..")) {
-    throw new ApiError(403, "VALIDATION_ERROR", "路径不允许包含 ..");
+    throw new ApiError(403, "VALIDATION_ERROR", (t) => t.workspace.path.dotDot);
   }
 }
 

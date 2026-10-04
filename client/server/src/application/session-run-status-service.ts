@@ -19,7 +19,7 @@ export class SessionRunStatusService {
 
   list(projectId: string): SessionRunStatusResponse {
     if (!this.projects.getById(projectId)) {
-      throw new ApiError(404, "NOT_FOUND", "项目不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.projectNotFound);
     }
     const items = this.sessions
       .listByProject(projectId)

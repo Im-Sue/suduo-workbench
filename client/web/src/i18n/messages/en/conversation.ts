@@ -262,8 +262,8 @@ export const conversation = {
     restore: {
       title: "Restore to before this turn?",
       ownAuto: (clock: string) => `Project files will go back to the auto-save made right before this turn (${clock}).`,
-      nearest: (subject: string, clock: string) =>
-        `This turn has no auto-save of its own. The closest one is “${subject}” (${clock}), and restoring it may also undo changes from earlier turns.`,
+      nearest: (checkpoint: string, clock: string) =>
+        `This turn has no auto-save of its own. The closest one is “${checkpoint}” (${clock}), and restoring it may also undo changes from earlier turns.`,
       description: (lead: string) =>
         `${lead} The current state (including new files) is auto-saved first, so you can restore it from Environment in the inspector panel if needed.`,
       confirm: "Restore",

@@ -1,17 +1,21 @@
+import type { Locale } from "@suduo/client-contracts";
+import { messagesFor } from "../../i18n/messages/index.js";
 import {
   formatDoctorText,
   type DoctorResult,
 } from "../doctor/doctor-service.js";
 
+/** 「已复制」的提示由页面在 data-copied-text 上给出（按页面语言），脚本本身不带文字。 */
 export const DOCTOR_PAGE_SCRIPT = String.raw`
 const button = document.querySelector("[data-copy-diagnostics]");
 const source = document.querySelector("[data-diagnostics]");
 const status = document.querySelector("[data-copy-status]");
 button?.addEventListener("click", async () => {
   const text = source?.textContent ?? "";
+  const copied = status?.dataset.copiedText ?? "";
   try {
     await navigator.clipboard.writeText(text);
-    status.textContent = "诊断信息已复制";
+    status.textContent = copied;
   } catch {
     const area = document.createElement("textarea");
     area.value = text;
@@ -19,30 +23,32 @@ button?.addEventListener("click", async () => {
     area.select();
     document.execCommand("copy");
     area.remove();
-    status.textContent = "诊断信息已复制";
+    status.textContent = copied;
   }
 });
 `;
 
-export function renderDoctorPage(result: DoctorResult): string {
+/** 页面文字按 locale（?lang= → 已记下的界面语言 → Accept-Language）；检查项本身已按同一语言生成。 */
+export function renderDoctorPage(result: DoctorResult, locale: Locale): string {
+  const text = messagesFor(locale).doctor.page;
   const diagnostics = formatDoctorText(result);
   const cards = result.checks
     .map(
       (check) => `
         <article class="check ${check.status}">
           <span class="mark">${check.status === "pass" ? "✓" : check.status === "warn" ? "!" : "×"}</span>
-          <div><h2>${escapeHtml(check.name)}</h2><p>${escapeHtml(check.message)}</p>${check.remediation ? `<p>官方修复建议：${escapeHtml(check.remediation)}</p>` : ""}</div>
+          <div><h2>${escapeHtml(check.name)}</h2><p>${escapeHtml(check.message)}</p>${check.remediation ? `<p>${escapeHtml(text.remediation(check.remediation))}</p>` : ""}</div>
         </article>`,
     )
     .join("");
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0b1020">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <title>SuDuo 自检</title>
+  <title>${escapeHtml(text.title)}</title>
   <style>
     :root{color-scheme:dark;font-family:Inter,"Microsoft YaHei",sans-serif;background:#0b1020;color:#e8edf7}
     body{margin:0;padding:32px;background:radial-gradient(circle at top,#17213d,#0b1020 58%);min-height:100vh;box-sizing:border-box}
@@ -54,10 +60,10 @@ export function renderDoctorPage(result: DoctorResult): string {
 </head>
 <body><main>
   <span class="eyebrow">LOCAL SUDUO DOCTOR</span>
-  <h1>本机环境自检</h1>
-  <p class="summary"><span class="badge ${result.status.toLowerCase()}">${result.status}</span> · 检查时间 ${escapeHtml(result.checkedAt)}</p>
+  <h1>${escapeHtml(text.heading)}</h1>
+  <p class="summary"><span class="badge ${result.status.toLowerCase()}">${result.status}</span> · ${escapeHtml(text.checkedAt(result.checkedAt))}</p>
   <section class="checks">${cards}</section>
-  <button type="button" data-copy-diagnostics>复制诊断信息</button><span class="copy-status" data-copy-status aria-live="polite"></span>
+  <button type="button" data-copy-diagnostics>${escapeHtml(text.copy)}</button><span class="copy-status" data-copy-status data-copied-text="${escapeHtml(text.copied)}" aria-live="polite"></span>
   <pre data-diagnostics>${escapeHtml(diagnostics)}</pre>
 </main><script src="/doctor/client.js"></script></body>
 </html>`;

@@ -282,9 +282,9 @@ export const conversation = {
     restore: {
       title: "回到这一轮开始前？",
       ownAuto: (clock: string) => `项目文件会恢复到这一轮开始前自动存档时（${clock}）的状态。`,
-      /** subject 是检查点提交的标题（写入时的原文）。 */
-      nearest: (subject: string, clock: string) =>
-        `这一轮开始前没有它自己的自动存档；最近的是「${subject}」（${clock}），还原到它可能连带撤掉更早几轮的改动。`,
+      /** checkpoint 是检查点的显示名（按类型生成，与环境面板一致；不是检查点的普通提交为提交标题原文）。 */
+      nearest: (checkpoint: string, clock: string) =>
+        `这一轮开始前没有它自己的自动存档；最近的是「${checkpoint}」（${clock}），还原到它可能连带撤掉更早几轮的改动。`,
       /** lead 是上面两句之一。 */
       description: (lead: string) => `${lead}还原前会先自动存一份当前状态（包括新建的文件），需要时可以在检查面板的「环境」里还原回来。`,
       confirm: "回到开始前",

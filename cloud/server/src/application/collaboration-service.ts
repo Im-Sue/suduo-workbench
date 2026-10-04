@@ -31,7 +31,7 @@ export class CollaborationService {
   constructor(private readonly repository: CollaborationRepository) {}
 
   createProject(actorId: string, request: CreateProjectRequest) {
-    return this.repository.createProject(actorId, nonBlank(request.name, "项目名称"));
+    return this.repository.createProject(actorId, nonBlank(request.name, "Project name"));
   }
 
   listProjects(query: ListProjectsQuery) {
@@ -52,7 +52,7 @@ export class CollaborationService {
       projectId,
       ...(request.name === undefined
         ? {}
-        : { name: nonBlank(request.name, "项目名称") }),
+        : { name: nonBlank(request.name, "Project name") }),
       ...(request.isArchived === undefined
         ? {}
         : { isArchived: request.isArchived }),
@@ -67,7 +67,7 @@ export class CollaborationService {
     return this.repository.createRequirement({
       actorId,
       projectId,
-      title: nonBlank(request.title, "需求标题"),
+      title: nonBlank(request.title, "Requirement title"),
       summary: request.summary?.trim() ?? "",
       status: request.status ?? "draft",
       assigneeId: request.assigneeId ?? null,
@@ -80,7 +80,7 @@ export class CollaborationService {
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.search === undefined
         ? {}
-        : { search: nonBlank(query.search, "搜索词") }),
+        : { search: nonBlank(query.search, "Search term") }),
       ...(query.assignee === undefined
         ? {}
         : { assignee: assigneeCondition(actorId, query.assignee) }),
@@ -96,7 +96,7 @@ export class CollaborationService {
   markRequirementRead(actorId: string, requirementId: string, request: MarkRequirementReadRequest | null | undefined) {
     const upTo = request?.upTo;
     if (upTo !== undefined && (typeof upTo !== "string" || !ISO_INSTANT.test(upTo) || Number.isNaN(Date.parse(upTo)))) {
-      throw new ApplicationError(400, "VALIDATION_ERROR", "upTo 必须是 ISO 时间");
+      throw new ApplicationError(400, "VALIDATION_ERROR", "upTo must be an ISO timestamp");
     }
     return this.repository.markRequirementRead({
       userId: actorId,
@@ -147,7 +147,7 @@ export class CollaborationService {
       requirementId,
       ...(request.title === undefined
         ? {}
-        : { title: nonBlank(request.title, "需求标题") }),
+        : { title: nonBlank(request.title, "Requirement title") }),
       ...(request.summary === undefined
         ? {}
         : { summary: request.summary.trim() }),
@@ -164,7 +164,7 @@ export class CollaborationService {
     return this.repository.createComment({
       actorId,
       requirementId,
-      body: nonBlank(request.body, "评论内容"),
+      body: nonBlank(request.body, "Comment"),
     });
   }
 
@@ -189,7 +189,7 @@ export class CollaborationService {
 function nonBlank(value: string, label: string): string {
   const normalized = value.trim();
   if (!normalized) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", `${label}不能为空`);
+    throw new ApplicationError(400, "VALIDATION_ERROR", `${label} must not be empty`);
   }
   return normalized;
 }
@@ -201,7 +201,7 @@ function assigneeCondition(
   if (assignee === REQUIREMENT_ASSIGNEE_FILTER_NONE) return { kind: "none" };
   if (assignee === REQUIREMENT_ASSIGNEE_FILTER_ME) return { kind: "user", userId: actorId };
   if (!UUID.test(assignee)) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "assignee 必须是用户 ID、me 或 none");
+    throw new ApplicationError(400, "VALIDATION_ERROR", "assignee must be a user ID, me or none");
   }
   return { kind: "user", userId: assignee };
 }
@@ -219,10 +219,10 @@ function optionalResource(
 function requirementIds(value: string): string[] {
   const ids = value.split(",");
   if (ids.length > 100) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "ids 最多只能传 100 个需求 ID");
+    throw new ApplicationError(400, "VALIDATION_ERROR", "ids can include at most 100 requirement IDs");
   }
   if (ids.some((id) => !UUID.test(id))) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "ids 必须是以逗号分隔的 UUID");
+    throw new ApplicationError(400, "VALIDATION_ERROR", "ids must be comma-separated UUIDs");
   }
   return [...new Set(ids)];
 }
@@ -232,7 +232,7 @@ function ianaTimeZone(value: string): string {
     return new Intl.DateTimeFormat("en-US", { timeZone: value })
       .resolvedOptions().timeZone;
   } catch {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "tz 必须是有效的 IANA 时区名");
+    throw new ApplicationError(400, "VALIDATION_ERROR", "tz must be a valid IANA time zone name");
   }
 }
 

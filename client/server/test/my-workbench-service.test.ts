@@ -46,7 +46,7 @@ describe("MyWorkbenchService", () => {
       verifyMapping: async () => unavailableMapping("目录不存在"),
     });
 
-    const result = await service.getWorkbench();
+    const result = await service.getWorkbench("zh-CN");
 
     expect(result.actions).toMatchObject({ status: "ready" });
     expect(result.actions.status === "ready" && result.actions.data.map((item) => item.kind))
@@ -85,7 +85,7 @@ describe("MyWorkbenchService", () => {
       },
     });
 
-    const result = await service.getWorkbench();
+    const result = await service.getWorkbench("zh-CN");
 
     expect(result.requirements).toMatchObject({
       status: "unavailable",
@@ -121,7 +121,7 @@ describe("MyWorkbenchService", () => {
       listRunStatusEventsForSessions,
     });
 
-    const result = await service.getWorkbench();
+    const result = await service.getWorkbench("zh-CN");
 
     expect(listRunStatusEventsForSessions).toHaveBeenCalledWith(
       expect.arrayContaining([outside.id]),

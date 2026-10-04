@@ -7,4 +7,6 @@ export const checkpoint = {
   /** 还原前先存一个检查点时用的说明。 */
   beforeRestore: "还原前自动存档",
   restoredTo: (hash: string) => `还原到 ${hash}`,
+  /** 一键初始化版本管理时首次提交的标题（不是检查点）。 */
+  initSubject: "SuDuo 初始化版本管理",
 };

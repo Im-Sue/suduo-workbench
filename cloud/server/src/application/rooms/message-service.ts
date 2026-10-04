@@ -44,7 +44,7 @@ export class RoomMessageService {
   async list(roomId: string, query: ListRoomMessagesQuery): Promise<ListRoomMessagesResponse> {
     const room = await this.rooms.requireRef(roomId);
     if (query.threadRootId !== undefined && !(await this.messages.existsInRoom(roomId, query.threadRootId))) {
-      throw notFound("话题");
+      throw notFound("Thread");
     }
     const page = await this.messages.page(roomId, {
       limit: query.limit ?? ROOM_MESSAGE_PAGE_DEFAULT_LIMIT,
@@ -58,7 +58,7 @@ export class RoomMessageService {
   async search(roomId: string, query: SearchRoomMessagesQuery): Promise<SearchRoomMessagesResponse> {
     const room = await this.rooms.requireRef(roomId);
     const q = stripNul(query.q).trim();
-    if (q === "") throw new ApplicationError(400, "VALIDATION_ERROR", "关键词不能为空", { field: "q" });
+    if (q === "") throw new ApplicationError(400, "VALIDATION_ERROR", "Search keyword must not be empty", { field: "q" });
     const page = await this.messages.search(roomId, {
       q,
       limit: query.limit ?? ROOM_MESSAGE_SEARCH_DEFAULT_LIMIT,
@@ -79,7 +79,7 @@ export class RoomMessageService {
   async send(actorId: string, roomId: string, raw: SendRoomMessageRequest): Promise<WithEvents<SendRoomMessageResult>> {
     const request = { ...raw, clientId: stripNul(raw.clientId), body: stripNul(raw.body) };
     if (request.clientId === "") {
-      throw new ApplicationError(400, "VALIDATION_ERROR", "客户端 ID 不能为空", { field: "clientId" });
+      throw new ApplicationError(400, "VALIDATION_ERROR", "Client ID must not be empty", { field: "clientId" });
     }
     const outcome = await this.database.transaction(async (client) => {
       const room = await this.rooms.lock(client, roomId);
@@ -89,18 +89,18 @@ export class RoomMessageService {
       }
       const fileIds = [...new Set(request.fileIds ?? [])];
       if (request.body.trim() === "" && fileIds.length === 0) {
-        throw new ApplicationError(400, "VALIDATION_ERROR", "消息不能为空", { field: "body" });
+        throw new ApplicationError(400, "VALIDATION_ERROR", "Message must not be empty", { field: "body" });
       }
       const threadRootId = request.threadRootId == null
         ? null
         : await this.messages.resolveThreadRoot(client, roomId, request.threadRootId);
       if (request.threadRootId != null && threadRootId === null) {
-        throw new ApplicationError(400, "VALIDATION_ERROR", "话题不在这个房间里", { field: "threadRootId" });
+        throw new ApplicationError(400, "VALIDATION_ERROR", "This thread is not in this room", { field: "threadRootId" });
       }
       const inRoom = await this.files.idsInRoom(client, roomId, fileIds);
       const foreign = fileIds.filter((id) => !inRoom.has(id));
       if (foreign.length > 0) {
-        throw new ApplicationError(400, "VALIDATION_ERROR", "文件不属于这个房间", { field: "fileIds", fileIds: foreign });
+        throw new ApplicationError(400, "VALIDATION_ERROR", "Some files do not belong to this room", { field: "fileIds", fileIds: foreign });
       }
       const mentions = await this.resolveMentions(client, request.mentions ?? []);
       const seq = await this.rooms.allocateSeq(client, roomId);
@@ -157,7 +157,7 @@ export class RoomMessageService {
       ...agentIds.filter((id) => !agents.has(id.toLowerCase())),
     ];
     if (missing.length > 0) {
-      throw new ApplicationError(400, "VALIDATION_ERROR", "@ 的人或 Agent 不存在", { field: "mentions", ids: missing });
+      throw new ApplicationError(400, "VALIDATION_ERROR", "Mentioned person or agent not found", { field: "mentions", ids: missing });
     }
     const seen = new Set<string>();
     const result: RoomMentionDto[] = [];
@@ -195,7 +195,7 @@ function requiredMentionId(mention: RoomMentionInput): string {
   if (mention.kind === "all") return "";
   const id = (mention as { id?: unknown }).id;
   if (typeof id !== "string" || id === "") {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "@ 人或 Agent 时必须给出 ID", { field: "mentions" });
+    throw new ApplicationError(400, "VALIDATION_ERROR", "Mentions of a person or agent must include an ID", { field: "mentions" });
   }
   return id;
 }

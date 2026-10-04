@@ -5,4 +5,5 @@ export const checkpoint = {
   manualPrefix: "SuDuo checkpoint: ",
   beforeRestore: "Saved before restore",
   restoredTo: (hash: string) => `Restored to ${hash}`,
+  initSubject: "SuDuo: initialize version control",
 } satisfies ServerMessages["checkpoint"];

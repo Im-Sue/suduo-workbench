@@ -54,7 +54,7 @@ export class RequirementsCredentialStore {
   save(session: RequirementsAuthSession): void {
     const baseUrl = normalizeRequirementsServiceUrl(session.baseUrl);
     if (!session.accessToken.trim() || !Number.isFinite(Date.parse(session.expiresAt))) {
-      throw new Error("远程登录态格式无效");
+      throw new Error("Invalid requirements service sign-in session format");
     }
     writePrivateJson(this.filePath, {
       schemaVersion: 1,

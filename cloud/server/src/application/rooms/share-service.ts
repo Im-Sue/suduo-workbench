@@ -53,9 +53,9 @@ export class AgentShareService {
   async close(actorId: string, shareId: string): Promise<WithEvents<AgentShareDto>> {
     const closed = await this.database.transaction(async (client) => {
       const share = await this.shares.lock(client, shareId);
-      if (share === null) throw notFound("共享");
+      if (share === null) throw notFound("Share");
       const agent = await this.agents.find(share.agent_id, client);
-      if (agent === null || agent.ownerId !== actorId) throw notFound("共享");
+      if (agent === null || agent.ownerId !== actorId) throw notFound("Share");
       if (share.closed_at !== null) return { changed: false, runIds: [] as string[] };
       const room = await this.rooms.requireRef(share.room_id, client);
       await this.shares.close(client, shareId, "closed");
@@ -133,7 +133,7 @@ export class AgentShareService {
     const resolved = await this.database.transaction(async (client) => {
       const locked = await this.shares.lockRequest(client, requestId);
       const record = locked === null ? null : await this.shares.findRequest(requestId, client);
-      if (record === null || record.ownerId !== actorId) throw notFound("申请");
+      if (record === null || record.ownerId !== actorId) throw notFound("Share request");
       if (record.request.status !== "pending") return { opened: null, ignored: false, projectId: record.projectId };
       if (request.action === "ignore") {
         await this.shares.ignoreRequest(client, requestId);

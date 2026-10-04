@@ -59,7 +59,7 @@ export class ApprovalService {
   get(id: string): ApprovalDto {
     const approval = this.approvals.getById(id);
     if (!approval) {
-      throw new ApiError(404, "NOT_FOUND", "审批不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.approvalNotFound);
     }
     return this.toDto(approval);
   }
@@ -70,13 +70,13 @@ export class ApprovalService {
   ): Promise<ApprovalDto> {
     const approval = this.approvals.getById(id);
     if (!approval) {
-      throw new ApiError(404, "NOT_FOUND", "审批不存在");
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.approvalNotFound);
     }
     if (approval.status === "resolved") {
       throw new ApiError(
         409,
         "APPROVAL_ALREADY_DECIDED",
-        "审批已经完成决策",
+        (t) => t.session.approvalAlreadyDecided,
         { decision: approval.decision },
       );
     }
@@ -84,7 +84,7 @@ export class ApprovalService {
       throw new ApiError(
         409,
         "APPROVAL_NOT_PENDING",
-        "审批已过期或不再可决策",
+        (t) => t.session.approvalNotPending,
         { status: approval.status },
       );
     }
@@ -92,13 +92,13 @@ export class ApprovalService {
       throw new ApiError(
         409,
         "APPROVAL_NOT_PENDING",
-        "审批状态已被并发更新",
+        (t) => t.session.approvalConcurrentUpdate,
       );
     }
     const deciding = requireApproval(this.approvals.getById(id));
     const binding = this.threads.getById(deciding.sessionThreadId);
     if (!binding) {
-      throw new ApiError(409, "APPROVAL_NOT_PENDING", "审批 thread 映射已丢失");
+      throw new ApiError(409, "APPROVAL_NOT_PENDING", (t) => t.session.approvalThreadLost);
     }
     const toolConfirmations = this.toolConfirmations;
     if (toolConfirmations?.isToolConfirmation(deciding)) {
@@ -138,7 +138,7 @@ export class ApprovalService {
           binding.threadRef.threadId,
         ),
       });
-      throw new IndeterminateOperationError("审批响应投递结果不确定", {
+      throw new IndeterminateOperationError((t) => t.session.approvalDeliveryIndeterminate, {
         cause: error,
       });
     }
@@ -167,7 +167,7 @@ export class ApprovalService {
       });
     } catch (error) {
       throw new IndeterminateOperationError(
-        "审批已投递，但本地完成状态写入失败",
+        (t) => t.session.approvalResolveWriteFailed,
         { cause: error },
       );
     }
@@ -233,7 +233,7 @@ export class ApprovalService {
   private toDto(approval: ApprovalRecord): ApprovalDto {
     const binding = this.threads.getById(approval.sessionThreadId);
     if (!binding) {
-      throw new ApiError(409, "APPROVAL_NOT_PENDING", "审批 thread 映射已丢失");
+      throw new ApiError(409, "APPROVAL_NOT_PENDING", (t) => t.session.approvalThreadLost);
     }
     return approvalDto(approval, binding);
   }
@@ -254,7 +254,7 @@ function matchesView(
 
 function requireApproval<T>(approval: T | null): T {
   if (!approval) {
-    throw new Error("审批记录丢失");
+    throw new Error("Approval record missing");
   }
   return approval;
 }

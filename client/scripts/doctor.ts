@@ -11,7 +11,8 @@ import {
 
 const workspaceRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const options = parseOptions(process.argv.slice(2));
-const result = await runDoctor(options);
+// 命令行输出暂时固定中文（与原来一致）；S8 改为跟随系统语言。
+const result = await runDoctor(options, "zh-CN");
 
 if (process.argv.includes("--json")) {
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");

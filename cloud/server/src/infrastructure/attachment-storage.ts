@@ -83,7 +83,7 @@ export class AttachmentStorage {
     const fileName = safeFileName(input.fileName);
     const extension = extname(fileName).toLowerCase();
     if (!this.allowedExtensions.has(extension)) {
-      throw new ApplicationError(400, "ATTACHMENT_INVALID", "附件类型不在允许范围内", {
+      throw new ApplicationError(400, "ATTACHMENT_INVALID", "This attachment type is not allowed", {
         extension,
       });
     }
@@ -93,7 +93,7 @@ export class AttachmentStorage {
         input.declaredSize < 0 ||
         input.declaredSize > this.maxBytes)
     ) {
-      throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "附件超过 300 MiB 上限");
+      throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "Attachment exceeds the 300 MiB limit");
     }
     await this.assertDiskSpace(input.declaredSize ?? this.maxBytes);
 
@@ -112,16 +112,16 @@ export class AttachmentStorage {
         const chunk = typeof value === "string" ? Buffer.from(value) : Buffer.from(value);
         sizeBytes += chunk.length;
         if (input.declaredSize !== undefined && sizeBytes > input.declaredSize) {
-          throw new ApplicationError(400, "ATTACHMENT_INVALID", "附件声明大小与实际大小不一致");
+          throw new ApplicationError(400, "ATTACHMENT_INVALID", "Attachment size does not match the declared size");
         }
         if (sizeBytes > this.maxBytes) {
-          throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "附件超过 300 MiB 上限");
+          throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "Attachment exceeds the 300 MiB limit");
         }
         hash.update(chunk);
         await writeAll(file, chunk);
       }
       if (input.declaredSize !== undefined && sizeBytes !== input.declaredSize) {
-        throw new ApplicationError(400, "ATTACHMENT_INVALID", "附件声明大小与实际大小不一致");
+        throw new ApplicationError(400, "ATTACHMENT_INVALID", "Attachment size does not match the declared size");
       }
       await file.sync();
       await file.close();
@@ -147,12 +147,12 @@ export class AttachmentStorage {
     try {
       information = await lstat(path);
     } catch (error) {
-      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "附件文件暂时不可用", undefined, {
+      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "Attachment file is temporarily unavailable", undefined, {
         cause: error,
       });
     }
     if (!information.isFile() || information.isSymbolicLink()) {
-      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "附件文件暂时不可用");
+      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "Attachment file is temporarily unavailable");
     }
     return createReadStream(path);
   }
@@ -169,11 +169,11 @@ export class AttachmentStorage {
 
   private pathFor(storageKey: string): string {
     if (!STORAGE_KEY.test(storageKey)) {
-      throw new ApplicationError(500, "INTERNAL_ERROR", "附件存储键无效");
+      throw new ApplicationError(500, "INTERNAL_ERROR", "Invalid attachment storage key");
     }
     const path = resolve(this.root, ...storageKey.split("/"));
     if (!path.startsWith(this.root + sep)) {
-      throw new ApplicationError(500, "INTERNAL_ERROR", "附件存储键越界");
+      throw new ApplicationError(500, "INTERNAL_ERROR", "Attachment storage key is outside the storage root");
     }
     return path;
   }
@@ -183,14 +183,14 @@ export class AttachmentStorage {
     try {
       information = await statfs(this.root, { bigint: true });
     } catch (error) {
-      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "无法检查附件磁盘空间", undefined, {
+      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "Unable to check attachment disk space", undefined, {
         cause: error,
       });
     }
     const available = information.bavail * information.bsize;
     const required = BigInt(requiredBytes + DISK_MARGIN_BYTES);
     if (available < required) {
-      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "附件磁盘空间不足");
+      throw new ApplicationError(503, "DEPENDENCY_UNAVAILABLE", "Not enough disk space for attachments");
     }
   }
 }
@@ -199,17 +199,17 @@ async function ensureOwnedRoot(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
   const information = await lstat(path);
   if (!information.isDirectory() || information.isSymbolicLink()) {
-    throw new Error(`${path} 不是安全目录`);
+    throw new Error(`${path} is not a safe directory`);
   }
   const actualRoot = await realpath(path);
   if (actualRoot !== path) {
-    throw new Error("REQUIREMENTS_ATTACHMENT_ROOT 不能经过符号链接");
+    throw new Error("REQUIREMENTS_ATTACHMENT_ROOT must not go through a symbolic link");
   }
   const entries = await readdir(path);
   const markerPath = join(path, ROOT_MARKER);
   if (!entries.includes(ROOT_MARKER)) {
     if (entries.length !== 0 && !await isLegacyOwnedRoot(path, entries)) {
-      throw new Error("REQUIREMENTS_ATTACHMENT_ROOT 非空且缺少 SuDuo 所有权标记");
+      throw new Error("REQUIREMENTS_ATTACHMENT_ROOT is not empty and is missing the SuDuo ownership marker");
     }
     const marker = await open(markerPath, "wx", 0o600);
     try {
@@ -226,12 +226,12 @@ async function ensureOwnedRoot(path: string): Promise<void> {
       markerInformation.isSymbolicLink() ||
       await readFile(markerPath, "utf8") !== ROOT_MARKER_CONTENT
     ) {
-      throw new Error("REQUIREMENTS_ATTACHMENT_ROOT 的 SuDuo 所有权标记无效");
+      throw new Error("REQUIREMENTS_ATTACHMENT_ROOT has an invalid SuDuo ownership marker");
     }
   }
   const allowed = new Set([ROOT_MARKER, ".staging", "objects"]);
   if (entries.some((entry) => !allowed.has(entry))) {
-    throw new Error("REQUIREMENTS_ATTACHMENT_ROOT 包含非 SuDuo 管理内容");
+    throw new Error("REQUIREMENTS_ATTACHMENT_ROOT contains content not managed by SuDuo");
   }
   if (process.platform !== "win32") await chmod(path, 0o700);
 }
@@ -266,7 +266,7 @@ async function ensurePrivateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
   const information = await lstat(path);
   if (!information.isDirectory() || information.isSymbolicLink()) {
-    throw new Error(`${path} 不是安全目录`);
+    throw new Error(`${path} is not a safe directory`);
   }
   if (process.platform !== "win32") await chmod(path, 0o700);
 }
@@ -295,7 +295,7 @@ function safeFileName(input: string): string {
   const normalized = stripControls(leaf).trim();
   const value = Array.from(normalized).slice(0, 200).join("");
   if (!value || value === "." || value === "..") {
-    throw new ApplicationError(400, "ATTACHMENT_INVALID", "附件文件名无效");
+    throw new ApplicationError(400, "ATTACHMENT_INVALID", "Invalid attachment file name");
   }
   return value;
 }

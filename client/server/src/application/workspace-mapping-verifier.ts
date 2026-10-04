@@ -1,6 +1,8 @@
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { guardExistingPath } from "../infrastructure/workspace/path-guard.js";
+import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
+import type { FolderPermission } from "../i18n/messages/zh-CN/workspace.js";
 
 export interface WorkspaceMappingPathVerification {
   exists: boolean;
@@ -11,12 +13,17 @@ export interface WorkspaceMappingPathVerification {
   message: string;
 }
 
+/**
+ * `t` 是给人看的结论用的字典：由路由按请求语言传入；不传时用中文（与迁移前一致）。
+ */
 export async function verifyWorkspaceMappingPath(
   rootPath: string,
+  t: ServerMessages = messagesFor("zh-CN"),
 ): Promise<WorkspaceMappingPathVerification> {
+  const text = t.workspace.mappingCheck;
   const exists = await hasFilesystemAccess(rootPath, constants.F_OK);
   if (!exists) {
-    return unavailableWorkspacePath("本机工作目录不存在或无法访问");
+    return unavailableWorkspacePath(text.notFound);
   }
 
   let absolutePath: string;
@@ -24,15 +31,15 @@ export async function verifyWorkspaceMappingPath(
     // 复用现有 path-guard 的 realpath/包含关系处理；不会创建或修改任何路径。
     absolutePath = (await guardExistingPath(rootPath)).absolutePath;
   } catch {
-    return unavailableWorkspacePath("本机工作目录无法解析或访问");
+    return unavailableWorkspacePath(text.unresolvable);
   }
 
   try {
     if (!(await stat(absolutePath)).isDirectory()) {
-      return unavailableWorkspacePath("本机工作目录不是目录", true);
+      return unavailableWorkspacePath(text.notDirectory, true);
     }
   } catch {
-    return unavailableWorkspacePath("本机工作目录无法读取状态", true);
+    return unavailableWorkspacePath(text.statFailed, true);
   }
 
   const [readable, writable, executable] = await Promise.all([
@@ -48,13 +55,13 @@ export async function verifyWorkspaceMappingPath(
       writable,
       executable,
       available,
-      message: "本机工作目录可用",
+      message: text.available,
     };
   }
-  const missing = [
-    ...(readable ? [] : ["读取"]),
-    ...(writable ? [] : ["写入"]),
-    ...(executable ? [] : ["执行"]),
+  const missing: FolderPermission[] = [
+    ...(readable ? [] : (["read"] as const)),
+    ...(writable ? [] : (["write"] as const)),
+    ...(executable ? [] : (["execute"] as const)),
   ];
   return {
     exists: true,
@@ -62,7 +69,7 @@ export async function verifyWorkspaceMappingPath(
     writable,
     executable,
     available,
-    message: `本机工作目录缺少${missing.join("、")}权限`,
+    message: text.missingPermissions(missing),
   };
 }
 

@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import type { JsonValue, McpServerDto, McpServerStatusDto } from "@suduo/client-contracts";
+import type { JsonValue, Locale, McpServerDto, McpServerStatusDto } from "@suduo/client-contracts";
+import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
 import { decodeWindowsCommandOutput } from "../infrastructure/platform/windows-command-output.js";
-import { ApiError } from "./api-error.js";
+import { ApiError, errorTextOf, type ErrorText } from "./api-error.js";
 
 const DEFAULT_CLI_TIMEOUT_MS = 20_000;
 const DEFAULT_CLI_OUTPUT_LIMIT_BYTES = 256 * 1024;
@@ -186,7 +187,8 @@ export class McpService {
     }
   }
 
-  async create(input: CreateMcpServerInput): Promise<McpUpdateResult> {
+  /** locale：返回说明（message）用的语言。 */
+  async create(input: CreateMcpServerInput, locale: Locale): Promise<McpUpdateResult> {
     const server = normalizeCreate(input);
     return await this.withWriteMutex(async () => {
       await this.runCliOrThrow(this.addCommand(server));
@@ -202,12 +204,13 @@ export class McpService {
       return {
         server: await this.get(server.name),
         atomic: true,
-        message: "已通过 Codex 官方接口新增并重载 MCP 服务器。",
+        message: messagesFor(locale).config.mcp.created,
       };
     });
   }
 
-  async update(name: string, input: UpdateMcpServerInput): Promise<McpUpdateResult> {
+  /** locale：返回说明（message）用的语言。 */
+  async update(name: string, input: UpdateMcpServerInput, locale: Locale): Promise<McpUpdateResult> {
     const serverName = requireName(name);
     const patch = normalizeUpdate(input);
     return await this.withWriteMutex(async () => {
@@ -231,17 +234,17 @@ export class McpService {
         return {
           server: await this.get(serverName),
           atomic: true,
-          message: "已通过 Codex config/batchWrite 原子更新并重载 MCP 服务器。",
+          message: messagesFor(locale).config.mcp.updatedAtomically,
         };
       } catch (error) {
         if (!isControlPlaneUnavailable(error)) {
-          throw toRuntimeError(error, "Codex MCP 原子更新失败");
+          throw toRuntimeError(error, (t, detail) => t.config.mcp.atomicUpdateFailed(detail));
         }
         if (!canFallbackToCli(next)) {
           throw new ApiError(
             503,
             "RUNTIME_UNAVAILABLE",
-            "Codex RPC 不可用，且本次修改含 CLI 无法安全表达的字段；未执行非原子替换。",
+            (t) => t.config.mcp.cliCannotExpress,
           );
         }
         await this.runCliOrThrow({
@@ -255,7 +258,7 @@ export class McpService {
         return {
           server: await this.get(serverName),
           atomic: false,
-          message: "已用 Codex CLI 非原子替换；若后续步骤失败，请按原配置重建服务器。",
+          message: messagesFor(locale).config.mcp.updatedNonAtomically,
         };
       }
     });
@@ -325,9 +328,9 @@ export class McpService {
       timeoutMs: this.cliTimeoutMs,
       maxOutputBytes: this.cliOutputLimitBytes,
     });
-    const parsed = parseJson(result.stdout, "Codex MCP 列表");
+    const parsed = parseJson(result.stdout, (t) => t.config.mcp.listLabel);
     if (!Array.isArray(parsed)) {
-      throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 列表返回了无效 JSON");
+      throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.listNotArray);
     }
     return parsed.map((entry) => parseCliServer(entry));
   }
@@ -340,9 +343,9 @@ export class McpService {
       timeoutMs: this.cliTimeoutMs,
       maxOutputBytes: this.cliOutputLimitBytes,
     });
-    const server = parseCliServer(parseJson(result.stdout, "Codex MCP 详情"));
+    const server = parseCliServer(parseJson(result.stdout, (t) => t.config.mcp.detailLabel));
     if (server.name !== name) {
-      throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 详情名称不匹配");
+      throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.detailNameMismatch);
     }
     return server;
   }
@@ -367,7 +370,7 @@ export class McpService {
       }
       cursor = response.nextCursor;
     }
-    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 状态分页未结束");
+    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.statusPagesUnfinished);
   }
 
   private async writeEnvVars(name: string, envVars: string[]): Promise<void> {
@@ -399,26 +402,23 @@ export class McpService {
       throw new ApiError(
         503,
         "RUNTIME_REQUEST_FAILED",
-        "MCP 新增后的官方配置写入失败，且自动清理失败；请检查 Codex 配置后手动删除该服务器。",
+        (t) => t.config.mcp.createCleanupFailed,
       );
     }
-    throw toRuntimeError(originalError, "MCP 新增后的官方配置写入失败，已自动清理");
+    throw toRuntimeError(originalError, (t, detail) => t.config.mcp.createCleanedUp(detail));
   }
 
   private async runCliOrThrow(command: McpCliCommand): Promise<McpCliResult> {
     const result = await this.cliRunner(command);
     if (result.timedOut) {
-      throw new ApiError(504, "RUNTIME_REQUEST_FAILED", "Codex MCP 命令执行超时");
+      throw new ApiError(504, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.commandTimedOut);
     }
     if (result.outputLimitExceeded) {
-      throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 命令输出超过安全上限");
+      throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.commandOutputTooLarge);
     }
     if (result.status !== 0) {
-      throw new ApiError(
-        503,
-        "RUNTIME_REQUEST_FAILED",
-        "Codex MCP 命令失败：" + safeCommandFailure(result),
-      );
+      const detail = safeCommandFailure(result);
+      throw new ApiError(503, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.commandFailed(detail));
     }
     return result;
   }
@@ -518,7 +518,7 @@ export async function runMcpCli(command: McpCliCommand): Promise<McpCliResult> {
 
 function normalizeCreate(input: CreateMcpServerInput): NormalizedServer {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "MCP 新增请求必须是 JSON object");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.createBodyInvalid);
   }
   return {
     name: requireName(input.name),
@@ -541,7 +541,7 @@ function normalizeCreate(input: CreateMcpServerInput): NormalizedServer {
 
 function normalizeUpdate(input: UpdateMcpServerInput): UpdateMcpServerInput {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "MCP 编辑请求必须是 JSON object");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.updateBodyInvalid);
   }
   if (
     input.transport === undefined &&
@@ -550,7 +550,7 @@ function normalizeUpdate(input: UpdateMcpServerInput): UpdateMcpServerInput {
     input.startupTimeoutSeconds === undefined &&
     input.toolTimeoutSeconds === undefined
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", "没有提供任何要修改的 MCP 字段");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.nothingToUpdate);
   }
   return {
     ...(input.transport === undefined
@@ -578,7 +578,7 @@ function normalizeTransport(
   transport: McpTransportInput,
 ): NormalizedServer["transport"] {
   if (transport === null || typeof transport !== "object" || Array.isArray(transport)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "transport 必须是 JSON object");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.transportNotObject);
   }
   if (transport.type === "stdio") {
     return {
@@ -597,7 +597,7 @@ function normalizeTransport(
           : requireEnvVar(transport.bearerTokenEnvVar),
     };
   }
-  throw new ApiError(400, "VALIDATION_ERROR", "transport.type 仅允许 stdio 或 http");
+  throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.transportTypeInvalid);
 }
 
 function mergeServer(current: McpServerDto, patch: UpdateMcpServerInput): NormalizedServer {
@@ -608,7 +608,7 @@ function mergeServer(current: McpServerDto, patch: UpdateMcpServerInput): Normal
   const envVars =
     patch.envVars === undefined ? current.envVars : requireEnvVars(patch.envVars);
   if (transport.type !== "stdio" && patch.envVars !== undefined) {
-    throw new ApiError(400, "VALIDATION_ERROR", "HTTP MCP 服务器不支持 envVars");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.httpNoEnvVars);
   }
   return {
     name: current.name,
@@ -637,7 +637,7 @@ function transportFromDto(dto: McpServerDto): NormalizedServer["transport"] {
       bearerTokenEnvVar: dto.bearerTokenEnvVar,
     };
   }
-  throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 配置缺少传输字段");
+  throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.configMissingTransport);
 }
 
 function toConfigValue(server: NormalizedServer): JsonValue {
@@ -675,16 +675,16 @@ function canFallbackToCli(server: NormalizedServer): boolean {
 function parseCliServer(value: unknown): CliServer {
   const root = asObjectUnknown(value);
   if (!root) {
-    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 返回项不是 object");
+    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.entryNotObject);
   }
   const name = requireProtocolString(root["name"], "Codex MCP name");
   const transport = asObjectUnknown(root["transport"]);
   if (!transport) {
-    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 返回项缺少 transport");
+    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.entryMissingTransport);
   }
   const enabled = root["enabled"];
   if (typeof enabled !== "boolean") {
-    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 返回项缺少 enabled");
+    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.entryMissingEnabled);
   }
   const transportType = transport["type"];
   if (transportType === "stdio") {
@@ -715,7 +715,7 @@ function parseCliServer(value: unknown): CliServer {
       toolTimeoutSeconds: protocolNullableInteger(root["tool_timeout_sec"]),
     };
   }
-  throw new ApiError(502, "RUNTIME_REQUEST_FAILED", "Codex MCP 返回了未知 transport");
+  throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.unknownTransport);
 }
 
 function toDto(server: CliServer, statusValue: JsonValue | undefined): McpServerDto {
@@ -784,36 +784,28 @@ function unavailableStatus(name: string): McpServerStatusDto {
 
 function requireName(value: unknown): string {
   if (typeof value !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value)) {
-    throw new ApiError(
-      400,
-      "VALIDATION_ERROR",
-      "MCP 名称仅允许字母开头的字母、数字、下划线或连字符（最多 64 位）",
-    );
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.nameInvalid);
   }
   return value;
 }
 
 function requireCommand(value: unknown): string {
   if (typeof value !== "string" || value.trim() === "" || value.length > 1024 || /[\r\n]/.test(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "MCP stdio command 格式无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.commandInvalid);
   }
   return value;
 }
 
 function requireArgs(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 64) {
-    throw new ApiError(400, "VALIDATION_ERROR", "MCP args 必须是不超过 64 项的字符串数组");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.argsInvalid);
   }
   return value.map((item) => {
     if (typeof item !== "string" || item.length > 2048 || /[\r\n]/.test(item)) {
-      throw new ApiError(400, "VALIDATION_ERROR", "MCP args 含有无效字符串");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.argInvalid);
     }
     if (/^(?:--?(?:token|api[-_]?key|password|secret)(?:=|$)|(?:token|api[-_]?key|password|secret)=)/iu.test(item)) {
-      throw new ApiError(
-        400,
-        "VALIDATION_ERROR",
-        "敏感值必须来自系统环境变量；stdio 参数不能传 token/key/password/secret",
-      );
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.secretInArgs);
     }
     return item;
   });
@@ -821,41 +813,41 @@ function requireArgs(value: unknown): string[] {
 
 function requireHttpUrl(value: unknown): string {
   if (typeof value !== "string" || value.length > 2048 || /[\r\n]/.test(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "MCP HTTP URL 格式无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.urlInvalid);
   }
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new ApiError(400, "VALIDATION_ERROR", "MCP HTTP URL 格式无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.urlInvalid);
   }
   if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
-    throw new ApiError(400, "VALIDATION_ERROR", "MCP HTTP URL 仅支持无凭据的 http/https 地址");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.urlUnsupported);
   }
   return value;
 }
 
 function requireEnvVars(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 32) {
-    throw new ApiError(400, "VALIDATION_ERROR", "envVars 必须是不超过 32 项的环境变量名数组");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.envVarsInvalid);
   }
   return [...new Set(value.map(requireEnvVar))];
 }
 
 function requireEnvVar(value: unknown): string {
   if (typeof value !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", "环境变量必须是合法变量名，不能传入变量值");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.envVarInvalid);
   }
   return value;
 }
 
 function requireScopes(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 32) {
-    throw new ApiError(400, "VALIDATION_ERROR", "scopes 必须是不超过 32 项的字符串数组");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.scopesInvalid);
   }
   return value.map((scope) => {
     if (typeof scope !== "string" || scope.trim() === "" || scope.length > 256) {
-      throw new ApiError(400, "VALIDATION_ERROR", "OAuth scope 格式无效");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.scopeInvalid);
     }
     return scope;
   });
@@ -863,30 +855,30 @@ function requireScopes(value: unknown): string[] {
 
 function requireBoolean(value: unknown, label: string): boolean {
   if (typeof value !== "boolean") {
-    throw new ApiError(400, "VALIDATION_ERROR", label + " 必须是 boolean");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.mustBeBoolean(label));
   }
   return value;
 }
 
 function requireTimeoutSeconds(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 86_400) {
-    throw new ApiError(400, "VALIDATION_ERROR", label + " 必须是 1~86400 的整数秒数");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.mcp.timeoutInvalid(label));
   }
   return value;
 }
 
-function parseJson(value: Buffer, label: string): unknown {
+function parseJson(value: Buffer, label: (t: ServerMessages) => string): unknown {
   try {
     return JSON.parse(commandOutput(value));
   } catch {
-    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", label + " 返回了无效 JSON");
+    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.returnedInvalidJson(label(t)));
   }
 }
 
 function assertConfigContainsServer(config: Record<string, JsonValue>, name: string): void {
   const servers = asObject(config["mcp_servers"]);
   if (!servers || !asObject(servers[name])) {
-    throw new ApiError(404, "NOT_FOUND", "Codex MCP 服务器不存在：" + name);
+    throw new ApiError(404, "NOT_FOUND", (t) => t.config.mcp.serverNotFound(name));
   }
 }
 
@@ -898,7 +890,7 @@ function userLayerVersion(
     throw new ApiError(
       409,
       "VERSION_CONFLICT",
-      "Codex 未返回可写 user 配置层版本，拒绝无版本保护的写入",
+      (t) => t.config.userLayerVersionMissing,
     );
   }
   return user.version;
@@ -911,11 +903,17 @@ function isControlPlaneUnavailable(error: unknown): boolean {
   return /(?:connection|closed|timeout|unavailable|econn|app-server)/iu.test(messageOf(error));
 }
 
-function toRuntimeError(error: unknown, prefix: string): ApiError {
+/** describe 把原始报错包成一句说明（detail 是第三方原文，不翻译）。 */
+function toRuntimeError(
+  error: unknown,
+  describe: (t: ServerMessages, detail: string) => string,
+): ApiError {
   if (error instanceof ApiError) {
     return error;
   }
-  return new ApiError(503, "RUNTIME_REQUEST_FAILED", prefix + "：" + messageOf(error));
+  const detail = errorTextOf(error);
+  const text: ErrorText = (t) => describe(t, detail(t));
+  return new ApiError(503, "RUNTIME_REQUEST_FAILED", text);
 }
 
 function safeCommandFailure(result: McpCliResult): string {
@@ -952,14 +950,14 @@ function asObjectUnknown(value: unknown): Record<string, unknown> | null {
 
 function requireProtocolString(value: unknown, label: string): string {
   if (typeof value !== "string") {
-    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", label + " 无效");
+    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.protocolFieldInvalid(label));
   }
   return value;
 }
 
 function protocolStringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", label + " 无效");
+    throw new ApiError(502, "RUNTIME_REQUEST_FAILED", (t) => t.config.mcp.protocolFieldInvalid(label));
   }
   return value;
 }

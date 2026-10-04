@@ -35,6 +35,7 @@ import {
   saveEventCache,
 } from "../event-projection/cache.js";
 import { formatClock, messageOf } from "../ui/format.js";
+import { checkpointLabel } from "../ui/checkpoint-label.js";
 import { currentLocale } from "../i18n/locale.js";
 import { messagesFor } from "../i18n/messages/index.js";
 import { useT } from "../i18n/provider.js";
@@ -934,7 +935,7 @@ export function SessionRuntime(props: {
                     : text.restore.description(
                         restoreTarget.ownAuto
                           ? text.restore.ownAuto(formatClock(restoreTarget.checkpoint.ts))
-                          : text.restore.nearest(restoreTarget.checkpoint.subject, formatClock(restoreTarget.checkpoint.ts)),
+                          : text.restore.nearest(checkpointLabel(restoreTarget.checkpoint, t), formatClock(restoreTarget.checkpoint.ts)),
                       )
                 }
                 confirmLabel={text.restore.confirm}

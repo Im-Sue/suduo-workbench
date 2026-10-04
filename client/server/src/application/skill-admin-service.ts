@@ -49,24 +49,24 @@ export class SkillAdminService {
     overwrite?: boolean;
   }): Promise<SkillDto> {
     if (typeof input.dataBase64 !== "string" || input.dataBase64 === "") {
-      throw new ApiError(400, "VALIDATION_ERROR", "zip 内容不能为空");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.zipEmptyContent);
     }
     const bytes = Buffer.from(input.dataBase64, "base64");
     if (bytes.length > MAX_ZIP_BYTES) {
-      throw new ApiError(400, "VALIDATION_ERROR", "zip 超过 30 MiB 上限");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.zipTooLarge);
     }
     let files: Record<string, Uint8Array>;
     try {
       files = unzipSync(new Uint8Array(bytes));
     } catch {
-      throw new ApiError(400, "VALIDATION_ERROR", "zip 解压失败，文件可能损坏");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.zipCorrupted);
     }
     const entries = Object.entries(files).filter(([path]) => !path.endsWith("/"));
     if (entries.length === 0) {
-      throw new ApiError(400, "VALIDATION_ERROR", "zip 为空");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.zipEmpty);
     }
     if (entries.length > MAX_ENTRIES) {
-      throw new ApiError(400, "VALIDATION_ERROR", "zip 文件数超过 2000 上限");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.zipTooManyFiles);
     }
     let total = 0;
     for (const [path, data] of entries) {
@@ -74,7 +74,7 @@ export class SkillAdminService {
       total += data.length;
     }
     if (total > MAX_UNPACKED_BYTES) {
-      throw new ApiError(400, "VALIDATION_ERROR", "解压后超过 50 MiB 上限");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.unpackedTooLarge);
     }
 
     // 结构判定：单一顶层目录含 SKILL.md → 用该目录名；根含 SKILL.md → 用 zip 文件名。
@@ -90,7 +90,7 @@ export class SkillAdminService {
         throw new ApiError(
           400,
           "VALIDATION_ERROR",
-          "zip 必须在根目录或唯一顶层目录内包含 SKILL.md",
+          (t) => t.config.skill.zipMissingSkillFile,
         );
       }
       prefix = top + "/";
@@ -116,15 +116,15 @@ export class SkillAdminService {
     overwrite?: boolean;
   }): Promise<SkillDto> {
     if (typeof input.path !== "string" || input.path === "") {
-      throw new ApiError(400, "VALIDATION_ERROR", "必须提供文件夹路径");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.folderRequired);
     }
     const source = resolve(input.path);
     const info = await stat(source).catch(() => null);
     if (!info?.isDirectory()) {
-      throw new ApiError(400, "VALIDATION_ERROR", "文件夹不存在：" + source);
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.folderNotFound(source));
     }
     if (!existsSync(join(source, "SKILL.md"))) {
-      throw new ApiError(400, "VALIDATION_ERROR", "该文件夹内没有 SKILL.md");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.folderMissingSkillFile);
     }
     const skillName = sanitizeName(basename(source));
     const target = await this.prepareTarget(skillName, input.overwrite === true);
@@ -142,7 +142,7 @@ export class SkillAdminService {
         throw new ApiError(
           409,
           "VERSION_CONFLICT",
-          `全局已存在同名 skill「${skillName}」，确认后可覆盖更新`,
+          (t) => t.config.skill.alreadyExists(skillName),
         );
       }
       await rm(target, { recursive: true, force: true });
@@ -156,14 +156,14 @@ export class SkillAdminService {
       (skill) => dirname(skill.path) === join(this.globalRoot, skillName),
     );
     if (!installed) {
-      throw new ApiError(400, "VALIDATION_ERROR", "安装后未识别到有效 SKILL.md");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.notRecognized);
     }
     return installed;
   }
 
   private requireManagedSkillDir(path: string): string {
     if (typeof path !== "string" || path === "") {
-      throw new ApiError(400, "VALIDATION_ERROR", "必须提供 skill 路径");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.pathRequired);
     }
     // 接受 SKILL.md 路径或 skill 目录路径，归一到目录。
     const normalized = resolve(path);
@@ -173,7 +173,7 @@ export class SkillAdminService {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
-        "只允许管理全局 skills 目录内的 skill",
+        (t) => t.config.skill.outsideGlobalRoot,
       );
     }
     return directory;
@@ -193,7 +193,7 @@ function assertSafeEntryPath(path: string): void {
       .split("/")
       .some((segment) => segment === ".." || segment === "")
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", "zip 含非法路径：" + path);
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.zipUnsafePath(path));
   }
 }
 
@@ -205,14 +205,14 @@ function assertContained(root: string, candidate: string): void {
     !normalizedCandidate.startsWith(normalizedRoot + "/") &&
     !normalizedCandidate.startsWith(normalizedRoot + "\\")
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", "zip 条目越出安装目录");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.zipEntryEscapes);
   }
 }
 
 function sanitizeName(name: string): string {
   const cleaned = name.trim().replace(/[\\/:*?"<>|]/g, "-");
   if (cleaned === "" || cleaned === "." || cleaned === "..") {
-    throw new ApiError(400, "VALIDATION_ERROR", "无法从来源推断合法的 skill 名称");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.config.skill.nameUnresolvable);
   }
   return cleaned;
 }

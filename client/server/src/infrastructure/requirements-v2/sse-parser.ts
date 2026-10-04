@@ -22,9 +22,9 @@ export async function consumeServerSentEvents(
 ): Promise<void> {
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("text/event-stream")) {
-    throw new Error("远程 SSE 响应 Content-Type 无效");
+    throw new Error("Remote SSE response has an invalid Content-Type");
   }
-  if (!response.body) throw new Error("远程 SSE 响应缺少内容流");
+  if (!response.body) throw new Error("Remote SSE response has no body");
   const parser = new ServerSentEventParser(options.onEvent);
   const reader = response.body.getReader();
   const abort = () => void reader.cancel().catch(() => undefined);

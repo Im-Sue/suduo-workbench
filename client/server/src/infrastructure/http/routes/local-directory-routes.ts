@@ -24,7 +24,7 @@ export function registerLocalDirectoryRoutes(
     const query = localQuery(request.query, ["path", "hidden"]);
     const hidden = query["hidden"];
     if (hidden !== undefined && hidden !== "1" && hidden !== "0") {
-      throw new ApiError(400, "VALIDATION_ERROR", "hidden 仅支持 1 或 0");
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.localDirectory.hiddenInvalid);
     }
     const path = query["path"];
     return service.list({
@@ -37,7 +37,7 @@ export function registerLocalDirectoryRoutes(
     const query = localQuery(request.query, ["path"]);
     const path = query["path"];
     if (path === undefined) {
-      throw new ApiError(400, "LOCAL_PATH_INVALID", "请输入以根目录开头的完整路径", {
+      throw new ApiError(400, "LOCAL_PATH_INVALID", (t) => t.workspace.localDirectory.absoluteRequired, {
         path: null,
       });
     }
@@ -55,10 +55,10 @@ function localQuery(
   }
   for (const [key, item] of Object.entries(value)) {
     if (!allowed.includes(key)) {
-      throw new ApiError(400, "VALIDATION_ERROR", `不支持的查询参数: ${key}`);
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.localDirectory.unsupportedQuery(key));
     }
     if (typeof item !== "string") {
-      throw new ApiError(400, "VALIDATION_ERROR", `查询参数 ${key} 只能出现一次`);
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.localDirectory.repeatedQuery(key));
     }
     result[key] = item;
   }

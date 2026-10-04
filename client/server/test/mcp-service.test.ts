@@ -42,7 +42,7 @@ describe("McpService · Codex 官方 MCP 控制面", () => {
           args: ["server.mjs"],
           envVars: ["LOCAL_TOKEN"],
         },
-      }),
+      }, "zh-CN"),
     ).resolves.toMatchObject({ atomic: true });
 
     const add = commands.find((command) => command.args.slice(0, 3).join(" ") === "mcp add filesystem");
@@ -100,7 +100,7 @@ describe("McpService · Codex 官方 MCP 控制面", () => {
           url: "https://mcp.example.test/mcp",
           bearerTokenEnvVar: "MCP_TOKEN",
         },
-      }),
+      }, "zh-CN"),
     ).resolves.toMatchObject({
       server: { transport: "http", bearerTokenEnvVar: "MCP_TOKEN", envVars: [] },
     });
@@ -192,7 +192,7 @@ describe("McpService · Codex 官方 MCP 控制面", () => {
     const service = createService(control);
 
     await expect(
-      service.update("filesystem", { envVars: ["LOCAL_TOKEN"], enabled: false }),
+      service.update("filesystem", { envVars: ["LOCAL_TOKEN"], enabled: false }, "zh-CN"),
     ).resolves.toMatchObject({ atomic: true });
     expect(control.writeCalls).toHaveLength(1);
     expect(control.writeCalls[0]).toMatchObject({
@@ -223,7 +223,7 @@ describe("McpService · Codex 官方 MCP 控制面", () => {
     await expect(
       service.update("filesystem", {
         transport: { type: "stdio", command: "node", args: ["new-server.mjs"] },
-      }),
+      }, "zh-CN"),
     ).resolves.toMatchObject({ atomic: false, message: expect.stringContaining("非原子") });
     expect(commands.map((command) => command.args.slice(0, 3))).toContainEqual([
       "mcp",
@@ -255,11 +255,11 @@ describe("McpService · Codex 官方 MCP 控制面", () => {
     const alpha = service.create({
       name: "alpha",
       transport: { type: "stdio", command: "node", args: ["alpha.mjs"] },
-    });
+    }, "zh-CN");
     const beta = service.create({
       name: "beta",
       transport: { type: "stdio", command: "node", args: ["beta.mjs"] },
-    });
+    }, "zh-CN");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(commands.filter((command) => command.args[1] === "add")).toHaveLength(1);
     releaseFirst?.();

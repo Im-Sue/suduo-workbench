@@ -1,6 +1,7 @@
 import type {
   ListAllSessionsQuery,
   ListAllSessionsResponse,
+  Locale,
   SessionListItemDto,
 } from "@suduo/client-contracts";
 import type { ApprovalRepository } from "../infrastructure/db/repositories/approval-repository.js";
@@ -10,6 +11,7 @@ import type {
   SessionListRepository,
 } from "../infrastructure/db/repositories/session-list-repository.js";
 import type { SessionThreadRepository } from "../infrastructure/db/repositories/session-thread-repository.js";
+import { messagesFor } from "../i18n/messages/index.js";
 import { ApiError } from "./api-error.js";
 import { sessionDto } from "./dto.js";
 import { describeActivity } from "./session-activity.js";
@@ -33,7 +35,9 @@ export interface SessionListServiceDependencies {
 export class SessionListService {
   constructor(private readonly dependencies: SessionListServiceDependencies) {}
 
-  list(query: ListAllSessionsQuery): ListAllSessionsResponse {
+  /** locale：「正在做什么」那一行（runStatus.activity）用的语言，即请求的语言。 */
+  list(query: ListAllSessionsQuery, locale: Locale): ListAllSessionsResponse {
+    const t = messagesFor(locale);
     const limit = normalizeLimit(query.limit);
     const after = decodeCursor(query.cursor);
     // 多取一条判断是否还有下一页。
@@ -73,7 +77,7 @@ export class SessionListService {
           // 只对在跑的会话读一条最近步骤（通常没几个），空闲会话不查。
           activity:
             run?.running === true && run.runningFromSeq !== null
-              ? describeActivity(this.dependencies.events.latestStep(entry.session.id, run.runningFromSeq))
+              ? describeActivity(this.dependencies.events.latestStep(entry.session.id, run.runningFromSeq), t)
               : null,
         },
       };
@@ -94,7 +98,7 @@ function normalizeLimit(limit: number | undefined): number {
     return DEFAULT_LIMIT;
   }
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
-    throw new ApiError(400, "VALIDATION_ERROR", `limit 必须是 1 到 ${String(MAX_LIMIT)} 的整数`);
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.limitRange(MAX_LIMIT));
   }
   return limit;
 }
@@ -111,7 +115,7 @@ function decodeCursor(cursor: string | undefined): SessionListCursor | null {
   try {
     parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
   } catch {
-    throw new ApiError(400, "VALIDATION_ERROR", "cursor 无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.cursorInvalid);
   }
   if (
     !Array.isArray(parsed) ||
@@ -121,7 +125,7 @@ function decodeCursor(cursor: string | undefined): SessionListCursor | null {
     typeof parsed[1] !== "string" ||
     parsed[1] === ""
   ) {
-    throw new ApiError(400, "VALIDATION_ERROR", "cursor 无效");
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.cursorInvalid);
   }
   return { sortKey: parsed[0], id: parsed[1] };
 }

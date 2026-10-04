@@ -65,7 +65,7 @@ function collectAll(service: SessionListService, state: "active" | "archived" | 
   const all: SessionListItemDto[] = [];
   let cursor: string | undefined;
   for (let guard = 0; guard < 100; guard += 1) {
-    const page = service.list({ state, limit, ...(cursor === undefined ? {} : { cursor }) });
+    const page = service.list({ state, limit, ...(cursor === undefined ? {} : { cursor }) }, "zh-CN");
     all.push(...page.items);
     if (page.nextCursor === null) break;
     cursor = page.nextCursor;
@@ -80,17 +80,17 @@ describe("入账维护最后一句话预览", () => {
       const project = context.projects.create({ name: "p", rootPath: "/tmp/p", rootPathKey: "/tmp/p" });
       const session = context.sessions.create({ projectId: project.id, title: "s", state: "active", now: 10 });
       context.append(session.id, "message.submitted", { content: [{ type: "text", text: "帮我\n改一下" }], clientTurnId: "c" }, { ts: 20 });
-      let item = context.service.list({}).items[0]!;
+      let item = context.service.list({}, "zh-CN").items[0]!;
       expect(item.preview).toEqual({ role: "user", text: "帮我 改一下" });
       expect(item.lastActivityAt).toBe(20);
 
       context.append(session.id, "message.delta", { text: "好", itemId: "m" }, { ts: 30 });
       context.append(session.id, "item.completed", { item: { type: "reasoning", id: "r", summary: ["想"], content: [] } }, { ts: 31 });
-      item = context.service.list({}).items[0]!;
+      item = context.service.list({}, "zh-CN").items[0]!;
       expect(item.preview).toEqual({ role: "user", text: "帮我 改一下" });
 
       context.append(session.id, "item.completed", { item: { type: "agentMessage", id: "m", text: "改好了。" } }, { ts: 40 });
-      item = context.service.list({}).items[0]!;
+      item = context.service.list({}, "zh-CN").items[0]!;
       expect(item.preview).toEqual({ role: "assistant", text: "改好了。" });
       expect(item.lastActivityAt).toBe(40);
     } finally {
@@ -105,7 +105,7 @@ describe("入账维护最后一句话预览", () => {
       const session = context.sessions.create({ projectId: project.id, title: "s", state: "active" });
       context.sessions.recordLastMessage(session.id, { role: "assistant", text: "新", seq: 10, ts: 100 });
       context.sessions.recordLastMessage(session.id, { role: "user", text: "旧", seq: 5, ts: 50 });
-      expect(context.service.list({}).items[0]?.preview).toEqual({ role: "assistant", text: "新" });
+      expect(context.service.list({}, "zh-CN").items[0]?.preview).toEqual({ role: "assistant", text: "新" });
     } finally {
       context.database.close();
     }
@@ -138,26 +138,26 @@ describe("跨项目会话列表", () => {
       for (const limit of [1, 2, 3, 5, 50]) {
         expect(collectAll(context.service, "active", limit).map((item) => item.id)).toEqual(expected);
       }
-      const firstPage = context.service.list({ limit: 4 });
+      const firstPage = context.service.list({ limit: 4 }, "zh-CN");
       expect(firstPage.items.map((item) => item.project.name)).toEqual(
         firstPage.items.map((item) => (Number(item.id.slice(-2)) % 2 === 0 ? "A" : "B")),
       );
 
       // 翻页途中有会话变活跃：它回到第一页，后续页不重复它。
-      const page1 = context.service.list({ limit: 4 });
+      const page1 = context.service.list({ limit: 4 }, "zh-CN");
       const moved = expected.at(-1)!;
       context.sessions.touchActivity(moved, 500);
       const rest: string[] = [];
       let cursor = page1.nextCursor;
       while (cursor !== null) {
-        const page = context.service.list({ limit: 4, cursor });
+        const page = context.service.list({ limit: 4, cursor }, "zh-CN");
         rest.push(...page.items.map((item) => item.id));
         cursor = page.nextCursor;
       }
       const seen = [...page1.items.map((item) => item.id), ...rest];
       expect(new Set(seen).size).toBe(seen.length);
       expect(rest).not.toContain(moved);
-      expect(context.service.list({ limit: 1 }).items[0]?.id).toBe(moved);
+      expect(context.service.list({ limit: 1 }, "zh-CN").items[0]?.id).toBe(moved);
     } finally {
       context.database.close();
     }
@@ -178,9 +178,9 @@ describe("跨项目会话列表", () => {
       make("s-error", "error", 3);
       make("s-archived", "archived", 4);
       make("s-deleted", "deleted", 5);
-      expect(context.service.list({}).items.map((item) => item.id)).toEqual(["s-error", "s-starting", "s-active"]);
-      expect(context.service.list({ state: "archived" }).items.map((item) => item.id)).toEqual(["s-archived"]);
-      expect(context.service.list({ state: "all" }).items.map((item) => item.id)).toEqual(["s-archived", "s-error", "s-starting", "s-active"]);
+      expect(context.service.list({}, "zh-CN").items.map((item) => item.id)).toEqual(["s-error", "s-starting", "s-active"]);
+      expect(context.service.list({ state: "archived" }, "zh-CN").items.map((item) => item.id)).toEqual(["s-archived"]);
+      expect(context.service.list({ state: "all" }, "zh-CN").items.map((item) => item.id)).toEqual(["s-archived", "s-error", "s-starting", "s-active"]);
     } finally {
       context.database.close();
     }
@@ -232,7 +232,7 @@ describe("跨项目会话列表", () => {
         },
       });
 
-      const items = new Map(context.service.list({}).items.map((item) => [item.id, item]));
+      const items = new Map(context.service.list({}, "zh-CN").items.map((item) => [item.id, item]));
       expect(items.get("s-req")).toMatchObject({
         title: "需求会话",
         model: null,
@@ -263,7 +263,7 @@ describe("跨项目会话列表", () => {
     try {
       const project = context.projects.create({ name: "步骤项目", rootPath: "/tmp/steps", rootPathKey: "/tmp/steps" });
       const session = context.sessions.create({ id: "s-steps", projectId: project.id, title: "步骤会话", state: "active", now: 10 });
-      const activity = () => context.service.list({}).items.find((item) => item.id === session.id)?.runStatus.activity;
+      const activity = () => context.service.list({}, "zh-CN").items.find((item) => item.id === session.id)?.runStatus.activity;
 
       // 上一轮留下的命令不算本轮的当前步骤。
       context.append(session.id, "turn.started", {}, { turnId: "t0", ts: 11 });
@@ -318,7 +318,7 @@ describe("跨项目会话列表", () => {
             limit,
             ...(remoteProjectId === undefined ? {} : { remoteProjectId }),
             ...(cursor === undefined ? {} : { cursor }),
-          });
+          }, "zh-CN");
           all.push(...page.items.map((item) => item.id));
           if (page.nextCursor === null) break;
           cursor = page.nextCursor;
@@ -366,11 +366,11 @@ describe("跨项目会话列表", () => {
   it("limit 与 cursor 校验", () => {
     const context = createContext();
     try {
-      expect(() => context.service.list({ limit: 0 })).toThrow("limit");
-      expect(() => context.service.list({ limit: 201 })).toThrow("limit");
-      expect(() => context.service.list({ cursor: "not-a-cursor" })).toThrow("cursor");
-      expect(() => context.service.list({ cursor: Buffer.from(JSON.stringify(["x", 1])).toString("base64url") })).toThrow("cursor");
-      expect(context.service.list({})).toEqual({ items: [], nextCursor: null });
+      expect(() => context.service.list({ limit: 0 }, "zh-CN")).toThrow("limit");
+      expect(() => context.service.list({ limit: 201 }, "zh-CN")).toThrow("limit");
+      expect(() => context.service.list({ cursor: "not-a-cursor" }, "zh-CN")).toThrow("cursor");
+      expect(() => context.service.list({ cursor: Buffer.from(JSON.stringify(["x", 1])).toString("base64url") }, "zh-CN")).toThrow("cursor");
+      expect(context.service.list({}, "zh-CN")).toEqual({ items: [], nextCursor: null });
     } finally {
       context.database.close();
     }
@@ -415,7 +415,7 @@ describe("需求会话创建时快照需求编号与标题", () => {
         requirementNumber: 7,
         setup: {},
       });
-      expect(context.service.list({}).items.find((item) => item.id === created.id)?.requirement).toEqual({
+      expect(context.service.list({}, "zh-CN").items.find((item) => item.id === created.id)?.requirement).toEqual({
         remoteRequirementId: REMOTE_REQUIREMENT_ID,
         number: 7,
         title: "支付回调重试",

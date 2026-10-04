@@ -67,9 +67,16 @@ export function errorTextOf(error: unknown): (t: ServerMessages) => string {
   return () => message;
 }
 
+/**
+ * 结果不确定的操作（对外副作用可能已经发生）。幂等包装把它转成 409 IDEMPOTENCY_INDETERMINATE，
+ * 说明与 `ApiError` 一样到返回时才按请求语言生成；`Error.message` 固定是中文。
+ */
 export class IndeterminateOperationError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
+  constructor(
+    readonly text: ErrorText,
+    options?: ErrorOptions,
+  ) {
+    super(renderText(text, messagesFor(MESSAGE_LOCALE)), options);
     this.name = "IndeterminateOperationError";
   }
 }

@@ -15,6 +15,6 @@ export function registerRequirementsSettingsRoutes(
     return;
   }
   server.post("/api/v2/requirements/settings/test", async (request) =>
-    service.testSettings(request.body as { baseUrl?: unknown }),
+    service.testSettings(request.body as { baseUrl?: unknown }, request.locale),
   );
 }

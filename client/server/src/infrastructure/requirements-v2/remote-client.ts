@@ -62,7 +62,9 @@ import type {
   UpdateRequirementRequest,
 } from "@suduo/cloud-contracts";
 import { REQUIREMENTS_V2_ERROR_CODES, type RequirementsV2ErrorCode } from "@suduo/cloud-contracts";
-import { ApiError } from "../../application/api-error.js";
+import type { Locale } from "@suduo/client-contracts";
+import { ApiError, type ErrorText } from "../../application/api-error.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 import type { RequirementsCredentialStore } from "./credential-store.js";
 import type { RequirementsSettingsStore } from "./settings-store.js";
 
@@ -103,8 +105,9 @@ export class RequirementsRemoteClient {
   /**
    * 只探测调用方给出的地址，绝不读取或写入当前保存的地址、登录态。
    * 健康检查是 requirements-service 的公开端点，因此也不需要凭证。
+   * `locale` 是发起试连的请求的语言，成功时的说明按它生成。
    */
-  async testConnection(baseUrl: string): Promise<{
+  async testConnection(baseUrl: string, locale: Locale): Promise<{
     baseUrl: string;
     reachable: true;
     message: string;
@@ -123,7 +126,7 @@ export class RequirementsRemoteClient {
       throw new ApiError(
         503,
         "DEPENDENCY_UNAVAILABLE",
-        "无法连接远程需求服务，请确认地址、网络和服务状态",
+        (t) => t.remote.test.unreachable,
         undefined,
         { cause },
       );
@@ -131,23 +134,24 @@ export class RequirementsRemoteClient {
 
     const payload = await response.json().catch(() => null) as unknown;
     if (!response.ok) {
+      const status = response.status;
       throw new ApiError(
         503,
         "DEPENDENCY_UNAVAILABLE",
-        `远程需求服务健康检查失败（HTTP ${String(response.status)}）`,
+        (t) => t.remote.test.healthFailed(status),
       );
     }
     if (!isRequirementsHealth(payload)) {
       throw new ApiError(
         503,
         "DEPENDENCY_UNAVAILABLE",
-        "远程需求服务健康检查返回了无效响应",
+        (t) => t.remote.test.healthInvalid,
       );
     }
     return {
       baseUrl,
       reachable: true,
-      message: "远程需求服务连接正常",
+      message: messagesFor(locale).remote.test.ok,
       version: typeof payload.version === "string" && payload.version !== "" ? payload.version : null,
     };
   }
@@ -764,20 +768,20 @@ export class RequirementsRemoteClient {
       throw new ApiError(
         409,
         "REMOTE_SERVICE_NOT_CONFIGURED",
-        "请先在设置中配置远程需求服务地址",
+        (t) => t.remote.notConfigured,
       );
     }
     if (
       options.expectedBaseUrl !== undefined &&
       this.settings.getBaseUrl() !== baseUrl
     ) {
-      throw new ApiError(409, "AUTH_INVALID", "远程服务地址已变更，请重新登录");
+      throw new ApiError(409, "AUTH_INVALID", (t) => t.remote.baseUrlChanged);
     }
     const session = options.authenticated
       ? this.credentials.getForBaseUrl(baseUrl)
       : null;
     if (options.authenticated && !session) {
-      throw new ApiError(401, "AUTH_INVALID", "请先登录远程需求服务");
+      throw new ApiError(401, "AUTH_INVALID", (t) => t.remote.signInRequired);
     }
     let response: Response;
     try {
@@ -798,7 +802,7 @@ export class RequirementsRemoteClient {
       throw new ApiError(
         503,
         "DEPENDENCY_UNAVAILABLE",
-        "远程需求服务暂时不可用",
+        (t) => t.remote.unavailable,
       );
     }
     const payload = await response.json().catch(() => null) as unknown;
@@ -819,7 +823,7 @@ export class RequirementsRemoteClient {
       remoteError?.code === "AUTH_INVALID"
     ) {
       this.credentials.clear();
-      throw new ApiError(401, "AUTH_INVALID", "登录凭证无效或已过期，请重新登录");
+      throw new ApiError(401, "AUTH_INVALID", (t) => t.remote.credentialsExpired);
     }
     if (remoteError && ERROR_CODES.has(remoteError.code)) {
       const code = remoteError.code as RequirementsV2ErrorCode;
@@ -832,7 +836,7 @@ export class RequirementsRemoteClient {
     throw new ApiError(
       503,
       "DEPENDENCY_UNAVAILABLE",
-      "远程需求服务返回了无法识别的响应",
+      (t) => t.remote.unrecognizedResponse,
     );
   }
 
@@ -850,11 +854,11 @@ export class RequirementsRemoteClient {
   ): Promise<Response> {
     const baseUrl = this.settings.getBaseUrl();
     if (!baseUrl) {
-      throw new ApiError(409, "REMOTE_SERVICE_NOT_CONFIGURED", "请先在设置中配置远程需求服务地址");
+      throw new ApiError(409, "REMOTE_SERVICE_NOT_CONFIGURED", (t) => t.remote.notConfigured);
     }
     const session = this.credentials.getForBaseUrl(baseUrl);
     if (!session) {
-      throw new ApiError(401, "AUTH_INVALID", "请先登录远程需求服务");
+      throw new ApiError(401, "AUTH_INVALID", (t) => t.remote.signInRequired);
     }
     const signals = [
       ...(options.signal === undefined ? [] : [options.signal]),
@@ -883,7 +887,7 @@ export class RequirementsRemoteClient {
     try {
       response = await this.fetchImplementation(baseUrl + path, init);
     } catch (error) {
-      throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", "远程需求服务流连接不可用", undefined, {
+      throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.remote.streamUnavailable, undefined, {
         cause: error,
       });
     }
@@ -907,13 +911,13 @@ export class RequirementsRemoteClient {
       remoteError?.code === "AUTH_INVALID"
     ) {
       this.credentials.clear();
-      throw new ApiError(401, "AUTH_INVALID", "登录凭证无效或已过期，请重新登录");
+      throw new ApiError(401, "AUTH_INVALID", (t) => t.remote.credentialsExpired);
     }
     if (remoteError && ERROR_CODES.has(remoteError.code)) {
       const code = remoteError.code as RequirementsV2ErrorCode;
       throw new ApiError(safeRemoteStatus(status), code, safeRemoteMessage(code));
     }
-    throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", "远程需求服务返回了无法识别的响应");
+    throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.remote.unrecognizedResponse);
   }
 }
 
@@ -982,26 +986,12 @@ function safeRemoteStatus(status: number): number {
   return status >= 400 && status <= 599 ? status : 502;
 }
 
-function safeRemoteMessage(code: RequirementsV2ErrorCode): string {
-  const messages: Record<RequirementsV2ErrorCode, string> = {
-    AUTH_REQUIRED: "需要登录后访问",
-    AUTH_INVALID: "登录凭证无效或已过期，请重新登录",
-    LOGIN_CREDENTIALS_INVALID: "登录名或密码错误",
-    LOGIN_NAME_TAKEN: "登录名已被使用",
-    VALIDATION_ERROR: "远程服务拒绝了请求参数",
-    NOT_FOUND: "远程资源不存在或不可访问",
-    VERSION_CONFLICT: "远程数据版本已变化，请刷新后重试",
-    PROJECT_ARCHIVED: "项目已归档，不能执行该操作",
-    WORKSPACE_MAPPING_REQUIRED: "请先配置可用的本机工作目录",
-    ATTACHMENT_INVALID: "附件类型、名称、大小或数量不符合要求",
-    ATTACHMENT_TOO_LARGE: "附件超过 300 MiB 上限",
-    DEPENDENCY_UNAVAILABLE: "远程需求服务依赖不可用",
-    REMOTE_SERVICE_NOT_CONFIGURED: "远程需求服务尚未配置",
-    WORKSPACE_MAPPING_CONFLICT: "本机工作目录映射冲突",
-    ROOM_ARCHIVED: "房间已归档，只能查看",
-    INTERNAL_ERROR: "远程需求服务处理失败",
+/** 远程错误码的本机说明（按请求语言）；远程返回的原文不透传。 */
+function safeRemoteMessage(code: RequirementsV2ErrorCode): ErrorText {
+  return (t) => {
+    const messages: Record<RequirementsV2ErrorCode, string> = t.remote.errorCodes;
+    return messages[code] ?? t.remote.errorCodes.INTERNAL_ERROR;
   };
-  return messages[code] ?? "远程需求服务处理失败";
 }
 
 function isRequirementsHealth(value: unknown): value is RequirementsHealthDto {

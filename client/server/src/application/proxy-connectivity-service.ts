@@ -1,7 +1,8 @@
 import { lookup } from "node:dns/promises";
 import net from "node:net";
 import tls from "node:tls";
-import type { ProxyConnectivityDto } from "@suduo/client-contracts";
+import type { Locale, ProxyConnectivityDto } from "@suduo/client-contracts";
+import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
 import type { ProxySettings } from "./proxy-settings.js";
 import type { SettingsService } from "./settings-service.js";
 
@@ -13,9 +14,11 @@ export interface ModelGatewayBaseUrlProvider {
 
 export type ProxyConnectivityResult = ProxyConnectivityDto;
 
+/** t：结果说明（message）用的字典，按请求语言。 */
 export type ModelGatewayProbe = (
   baseUrl: string,
   proxy: ProxySettings,
+  t: ServerMessages,
 ) => Promise<ProxyConnectivityResult>;
 
 /**
@@ -29,9 +32,9 @@ export class ProxyConnectivityService {
     private readonly probe: ModelGatewayProbe = probeModelGateway,
   ) {}
 
-  async test(input: Record<string, unknown>): Promise<ProxyConnectivityResult> {
+  async test(input: Record<string, unknown>, locale: Locale): Promise<ProxyConnectivityResult> {
     const proxy = inheritUnsetProxySettings(this.settings.proxySettings(input));
-    return await this.probe(await this.modelGateway.modelGatewayBaseUrl(), proxy);
+    return await this.probe(await this.modelGateway.modelGatewayBaseUrl(), proxy, messagesFor(locale));
   }
 }
 
@@ -49,7 +52,9 @@ function inheritUnsetProxySettings(settings: ProxySettings): ProxySettings {
 export async function probeModelGateway(
   baseUrl: string,
   proxySettings: ProxySettings,
+  t: ServerMessages,
 ): Promise<ProxyConnectivityResult> {
+  const text = t.config.connectivity;
   let target: URL;
   try {
     target = modelListUrl(baseUrl);
@@ -58,7 +63,7 @@ export async function probeModelGateway(
       reachable: false,
       targetOrigin: "",
       usingProxy: false,
-      message: "当前模型网关地址无效，无法进行连通性检查",
+      message: text.invalidBaseUrl,
       failure: { reason: "invalid-base-url" },
     };
   }
@@ -70,7 +75,7 @@ export async function probeModelGateway(
       reachable: false,
       targetOrigin: target.origin,
       usingProxy: false,
-      message: "当前代理环境变量无效，无法进行连通性检查",
+      message: text.invalidProxy,
       failure: { reason: "invalid-proxy" },
     };
   }
@@ -81,17 +86,14 @@ export async function probeModelGateway(
       targetOrigin: target.origin,
       statusCode,
       usingProxy: proxy !== null,
-      message:
-        "已到达模型网关（HTTP " +
-        String(statusCode) +
-        "；401/403 仅表示网关仍需 Codex 凭据）",
+      message: text.reached(statusCode),
     };
   } catch (error) {
     return {
       reachable: false,
       targetOrigin: target.origin,
       usingProxy: proxy !== null,
-      message: "无法连接模型网关：" + readableNetworkError(error),
+      message: text.unreachable(networkErrorCode(error) ?? text.connectionFailed),
       failure: { reason: "unreachable", networkCode: networkErrorCode(error) },
     };
   }
@@ -143,6 +145,10 @@ function splitIpv6NoProxyEntry(entry: string): [string, string | null] {
   return match ? [match[1]!.slice(1, -1), match[2] ?? null] : [entry, null];
 }
 
+/**
+ * 下面各步抛出的 Error 只用来中断这次试连：probeModelGateway 接住后只取错误码（networkErrorCode），
+ * 说明文字不会进响应，所以直接写英文。
+ */
 async function requestModelList(target: URL, proxy: URL | null): Promise<number> {
   if (proxy === null) {
     return await requestOverSocket(
@@ -178,7 +184,7 @@ async function requestOverSocket(
     );
     const header = (await reader.readUntil("\r\n\r\n", 16_384)).toString("ascii");
     const match = /^HTTP\/1\.[01] (\d{3})\b/u.exec(header);
-    if (!match) throw new Error("模型网关返回无效 HTTP 响应");
+    if (!match) throw new Error("model gateway returned an invalid HTTP response");
     return Number(match[1]);
   } finally {
     reader.release();
@@ -196,7 +202,7 @@ async function connectHttpTunnel(target: URL, proxy: URL): Promise<net.Socket> {
     );
     const header = (await reader.readUntil("\r\n\r\n", 16_384)).toString("ascii");
     if (!/^HTTP\/1\.[01] 2\d\d\b/u.test(header)) {
-      throw new Error("代理拒绝 CONNECT 隧道");
+      throw new Error("proxy refused the CONNECT tunnel");
     }
     return await upgradeForTarget(target, socket, reader.release());
   } catch (error) {
@@ -212,13 +218,13 @@ async function connectSocksTunnel(target: URL, proxy: URL): Promise<net.Socket> 
     socket.write(Buffer.from([0x05, 0x01, 0x00]));
     const greeting = await reader.read(2);
     if (greeting[0] !== 0x05 || greeting[1] !== 0x00) {
-      throw new Error("SOCKS 代理不支持无鉴权连接");
+      throw new Error("SOCKS proxy does not allow unauthenticated connections");
     }
     const address = await socksTargetAddress(target, proxy.protocol === "socks5h:");
     socket.write(Buffer.concat([Buffer.from([0x05, 0x01, 0x00]), address, socksPort(target)]));
     const response = await reader.read(4);
     if (response[0] !== 0x05 || response[1] !== 0x00) {
-      throw new Error("SOCKS 代理拒绝连接模型网关");
+      throw new Error("SOCKS proxy refused to connect to the model gateway");
     }
     const addressLength = response[3] === 0x01 ? 4 : response[3] === 0x04 ? 16 : null;
     if (addressLength === null) {
@@ -241,7 +247,7 @@ async function connectSocket(proxy: URL): Promise<net.Socket> {
       ? tls.connect({ host: proxy.hostname, port, servername: proxy.hostname })
       : net.connect({ host: proxy.hostname, port });
   await onceConnected(socket);
-  socket.setTimeout(REQUEST_TIMEOUT_MS, () => socket.destroy(new Error("代理连接超时")));
+  socket.setTimeout(REQUEST_TIMEOUT_MS, () => socket.destroy(new Error("proxy connection timed out")));
   return socket;
 }
 
@@ -252,7 +258,7 @@ async function connectTarget(target: URL): Promise<net.Socket> {
       ? tls.connect({ host: target.hostname, port, servername: target.hostname })
       : net.connect({ host: target.hostname, port });
   await onceConnected(socket);
-  socket.setTimeout(REQUEST_TIMEOUT_MS, () => socket.destroy(new Error("模型网关连接超时")));
+  socket.setTimeout(REQUEST_TIMEOUT_MS, () => socket.destroy(new Error("model gateway connection timed out")));
   return socket;
 }
 
@@ -272,7 +278,7 @@ async function socksTargetAddress(target: URL, remoteDns: boolean): Promise<Buff
   const hostname = target.hostname;
   if (remoteDns) {
     const encoded = Buffer.from(hostname, "utf8");
-    if (encoded.length > 255) throw new Error("模型网关主机名过长");
+    if (encoded.length > 255) throw new Error("model gateway hostname is too long");
     return Buffer.concat([Buffer.from([0x03, encoded.length]), encoded]);
   }
   const resolved = await lookup(hostname);
@@ -338,7 +344,7 @@ class BufferedSocket {
     for (;;) {
       const index = this.buffer.indexOf(markerBytes);
       if (index >= 0) return await this.read(index + markerBytes.length);
-      if (this.buffer.length > maxBytes) throw new Error("代理响应头过长");
+      if (this.buffer.length > maxBytes) throw new Error("proxy response header is too long");
       await this.waitForData();
     }
   }
@@ -365,7 +371,7 @@ class BufferedSocket {
   };
 
   private readonly onEnd = () => {
-    this.error = new Error("代理提前关闭连接");
+    this.error = new Error("proxy closed the connection early");
     this.wake?.();
     this.wake = null;
   };
@@ -377,10 +383,6 @@ class BufferedSocket {
     });
     if (this.error) throw this.error;
   }
-}
-
-function readableNetworkError(error: unknown): string {
-  return networkErrorCode(error) ?? "连接失败";
 }
 
 /** 网络错误码（ECONNREFUSED 之类）；没有错误码时为 null。 */

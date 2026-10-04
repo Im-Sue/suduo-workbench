@@ -44,7 +44,7 @@ export class RoomFileService {
     // 之后的失败只会留下一个没有元数据的对象：存储只增不删（ADR-0004 红线），不在这里删除字节。
     await input.completion;
     if (input.stream.truncated === true) {
-      throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "文件超过 300 MiB 上限");
+      throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "File exceeds the 300 MiB limit");
     }
     return this.files.insert({
       id: randomUUID(),
@@ -60,7 +60,7 @@ export class RoomFileService {
 
   async find(fileId: string): Promise<RoomFileRecord> {
     const record = await this.files.find(fileId);
-    if (record === null) throw notFound("文件");
+    if (record === null) throw notFound("File");
     return record;
   }
 

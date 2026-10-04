@@ -7,8 +7,9 @@ import type {
   AgentHeartbeatRequest,
   RegisterAgentRequest,
 } from "@suduo/cloud-contracts";
-import { AgentPresence, deviceNameOf } from "../src/application/agent-presence.js";
+import { AgentPresence, deviceNameOf, renderAgentState } from "../src/application/agent-presence.js";
 import { ApiError } from "../src/application/api-error.js";
+import { messagesFor } from "../src/i18n/messages/index.js";
 
 /** 本机 Agent：安装标识、登记、30 秒心跳（browserActive）、共享期间常驻。 */
 
@@ -77,6 +78,8 @@ function createContext() {
   return {
     dataDirectory,
     presence,
+    /** 返回给界面的状态（说明按中文渲染，与迁移前逐字一致）；英文见 session-i18n-en.test.ts。 */
+    state: () => renderAgentState(presence.state(), messagesFor("zh-CN")),
     registrations,
     heartbeats,
     heartbeatResults,
@@ -113,7 +116,7 @@ describe("AgentPresence", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(context.registrations[1]!.deviceKey).toBe(deviceKey);
 
-    const state = context.presence.state();
+    const state = context.state();
     expect(state).toMatchObject({ status: "ready", message: null, queuedRuns: 2, activeRun: null });
     expect(state.agent?.id).toBe("agent-1");
     context.presence.stop();
@@ -142,10 +145,10 @@ describe("AgentPresence", () => {
     context.presence.restart();
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(context.presence.state()).toMatchObject({ status: "unavailable" });
-    expect(context.presence.state().message).toContain("心跳失败");
+    expect(context.state()).toMatchObject({ status: "unavailable" });
+    expect(context.state().message).toContain("心跳失败");
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(context.presence.state()).toMatchObject({ status: "unregistered", agent: null });
+    expect(context.state()).toMatchObject({ status: "unregistered", agent: null });
     expect(context.retained()).toBe(0);
     const count = context.heartbeats.length;
     await vi.advanceTimersByTimeAsync(120_000);
@@ -158,7 +161,7 @@ describe("AgentPresence", () => {
     context.presence.restart();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(context.registrations).toHaveLength(0);
-    expect(context.presence.state()).toMatchObject({ status: "unregistered", message: "还没有登录需求服务" });
+    expect(context.state()).toMatchObject({ status: "unregistered", message: "还没有登录需求服务" });
 
     context.setUser("user-dev");
     context.presence.restart();
@@ -173,6 +176,7 @@ describe("AgentPresence", () => {
 
   it("设备名", () => {
     expect(deviceNameOf("Sue-MBP.local")).toBe("Sue-MBP");
-    expect(deviceNameOf("  ")).toBe("本机");
+    // 设备名会上报给需求服务、给别人看：兜底与语言无关。
+    expect(deviceNameOf("  ")).toBe("localhost");
   });
 });

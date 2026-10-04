@@ -55,7 +55,7 @@ export class AttachmentService {
     });
     try {
       if (input.stream.truncated === true) {
-        throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "附件超过 300 MiB 上限");
+        throw new ApplicationError(413, "ATTACHMENT_TOO_LARGE", "Attachment exceeds the 300 MiB limit");
       }
       await input.beforeCommit?.();
       await this.repository.assertStorageOwnership();
@@ -85,7 +85,7 @@ export class AttachmentService {
           throw new ApplicationError(
             409,
             "ATTACHMENT_INVALID",
-            "附件上传幂等键已用于其他内容",
+            "This upload Idempotency-Key was already used for different content",
           );
         }
         return replayed;
@@ -142,7 +142,7 @@ function attachmentIdConflict(): ApplicationError {
   return new ApplicationError(
     409,
     "ATTACHMENT_INVALID",
-    "附件上传幂等键已用于已删除或其他附件",
+    "This upload Idempotency-Key was already used for a deleted or different attachment",
   );
 }
 

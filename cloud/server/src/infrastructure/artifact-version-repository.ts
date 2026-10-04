@@ -140,7 +140,7 @@ export class ArtifactVersionRepository {
       [versionId, fileId],
     );
     const row = result.rows[0];
-    if (row === undefined) throw notFound("产物版本文件");
+    if (row === undefined) throw notFound("Confirmed version file");
     return mapArtifactVersionFileSnapshot(row);
   }
 
@@ -160,7 +160,7 @@ export class ArtifactVersionRepository {
       [requirementId],
     );
     const row = result.rows[0];
-    if (row === undefined) throw notFound("需求");
+    if (row === undefined) throw notFound("Requirement");
     return {
       id: row.id,
       projectId: row.project_id,
@@ -349,7 +349,7 @@ export class ArtifactVersionRepository {
       "SELECT id FROM requirements WHERE id = $1",
       [requirementId],
     );
-    if (result.rows[0] === undefined) throw notFound("需求");
+    if (result.rows[0] === undefined) throw notFound("Requirement");
   }
 
   private async nextVersionNumber(
@@ -380,7 +380,7 @@ export class ArtifactVersionRepository {
       [versionId],
     );
     const versionRow = version.rows[0];
-    if (versionRow === undefined) throw notFound("产物版本");
+    if (versionRow === undefined) throw notFound("Confirmed version");
     const files = await executor.query<ArtifactVersionFileRow>(
       `
         SELECT id, version_id, attachment_id, file_name, size_bytes, sha256, storage_key

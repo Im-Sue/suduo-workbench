@@ -72,6 +72,6 @@ function mapUser(row: UserRow): CurrentUserDto {
 }
 
 function requiredRow<T>(row: T | undefined): T {
-  if (row === undefined) throw new Error("数据库写入未返回记录");
+  if (row === undefined) throw new Error("Database write returned no row");
   return row;
 }

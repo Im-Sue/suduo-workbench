@@ -15,18 +15,18 @@ export class LoopbackGuard {
 
 function assertLoopbackHost(host: string | undefined): void {
   if (!host) {
-    throw new ApiError(403, "ORIGIN_REJECTED", "缺少 Host 请求头");
+    throw new ApiError(403, "ORIGIN_REJECTED", (t) => t.http.hostMissing);
   }
   let hostname: string;
   try {
     hostname = new URL("http://" + host).hostname;
   } catch (error) {
-    throw new ApiError(403, "ORIGIN_REJECTED", "Host 请求头无效", undefined, {
+    throw new ApiError(403, "ORIGIN_REJECTED", (t) => t.http.hostInvalid, undefined, {
       cause: error,
     });
   }
   if (!isLoopback(hostname)) {
-    throw new ApiError(403, "ORIGIN_REJECTED", "Host 必须是 loopback 地址");
+    throw new ApiError(403, "ORIGIN_REJECTED", (t) => t.http.hostNotLoopback);
   }
 }
 
@@ -35,13 +35,13 @@ function assertSameLoopbackOrigin(
   host: string | undefined,
 ): void {
   if (!origin || origin === "null" || !host) {
-    throw new ApiError(403, "ORIGIN_REJECTED", "写请求必须携带同源 Origin");
+    throw new ApiError(403, "ORIGIN_REJECTED", (t) => t.http.originRequired);
   }
   let url: URL;
   try {
     url = new URL(origin);
   } catch (error) {
-    throw new ApiError(403, "ORIGIN_REJECTED", "Origin 无效", undefined, {
+    throw new ApiError(403, "ORIGIN_REJECTED", (t) => t.http.originInvalid, undefined, {
       cause: error,
     });
   }
@@ -50,7 +50,7 @@ function assertSameLoopbackOrigin(
     !isLoopback(url.hostname) ||
     url.host !== host
   ) {
-    throw new ApiError(403, "ORIGIN_REJECTED", "Origin 与当前 loopback Host 不匹配");
+    throw new ApiError(403, "ORIGIN_REJECTED", (t) => t.http.originMismatch);
   }
 }
 
