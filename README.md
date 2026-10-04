@@ -134,10 +134,10 @@ The [client guide](client/README.md) covers Codex setup in detail, updating, whe
 
 ## Language
 
-SuDuo's interface is available in English and Simplified Chinese. It follows your system language by default (as your browser reports it); to change it, go to **Settings → Appearance → Language**. Each person chooses their own language.
+SuDuo's interface is available in English and Simplified Chinese. It follows your system language by default (as your browser reports it); to change it, go to **Settings → Appearance → Language**. Each person chooses their own language. If you used an earlier version and your browser's language isn't Chinese, the interface switches to English after the upgrade; choose **简体中文** there to switch back.
 
 - **Only SuDuo's own text changes language.** Menus, messages, errors and the records SuDuo adds to activity feeds and rooms appear in each person's own language. What people write (requirements, comments, room messages, file names) and Codex's answers are shown exactly as written, never translated.
-- **Codex.** The instructions and tool descriptions SuDuo gives Codex are in the language the session was started in, and stay that way if you switch the interface later. Codex replies in the language of the conversation: ask in Chinese and it answers in Chinese, even when the interface is in English.
+- **Codex.** The instructions and tool descriptions SuDuo gives Codex are in the language the session was started in, and stay that way if you switch the interface later. SuDuo asks Codex to reply in the language you write in, so a question in Chinese normally gets an answer in Chinese even when the interface is in English. SuDuo never translates Codex's answers.
 - **Command line.** `pnpm start`, `pnpm run doctor` and the server script follow the system locale. Set `SUDUO_LOCALE=zh-CN` or `SUDUO_LOCALE=en` to choose. Ubuntu servers often default to `C.UTF-8`, which gives English. See the [client guide](client/README.md#language) and the [deployment guide](cloud/DEPLOYMENT.md#script-language).
 
 ## Status

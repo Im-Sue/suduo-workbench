@@ -7,11 +7,13 @@
 ### Added
 
 - English interface. Switch it under Settings → Appearance → Language; by default SuDuo follows your system language. Only SuDuo's own text changes: what people write (requirements, comments, room messages, file names) and Codex's answers are shown as written, never translated.
-- The instructions SuDuo gives Codex (requirement card, rules, tool descriptions and tool results) are written in the session's language, chosen when the session is created. Codex replies in the language of the conversation, whatever the interface language.
+- The instructions SuDuo gives Codex (requirement card, rules, tool descriptions and tool results) are written in the session's language, chosen when the session is created. SuDuo asks Codex to reply in the language you write in, whatever the interface language.
 - Command-line output (`pnpm start`, `pnpm run doctor`, local service startup errors and `suduo-cloud.sh`) follows the system language. Set `SUDUO_LOCALE=zh-CN` or `SUDUO_LOCALE=en` to choose; with `sudo`, put it after `sudo`.
 
 ### Changed
 
+- **If your browser's language isn't Chinese, the interface switches to English after you upgrade**, because the language follows your system by default. Choose 简体中文 under Settings → Appearance → Language to switch back. New sessions created while the interface is in English give Codex English instructions; existing sessions don't change.
+- The requirement list view shows icons for the materials, comments and sessions column headers, so they fit in both languages.
 - System text that other people see is stored as a type with parameters, so each person sees it in their own language: shared agent run reasons and progress (cloud database migration 013), @everyone mentions, the last message shown for a room, and runtime notices in a session.
 - The last message shown in a requirement's room section now matches the room itself: an agent appears without its device name, and attachments read like “[Image]” or “[File] spec.pdf and 2 more”.
 - The checkpoint name in the “Restore to before this turn?” dialog now matches the environment panel.
