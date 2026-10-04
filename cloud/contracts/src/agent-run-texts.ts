@@ -154,7 +154,8 @@ export function readAgentRunReason(
       if (codexError !== undefined) return isCodexError(codexError) ? { code, params: { codexError } } : null;
       if (category !== undefined) return isFailureCategory(category) ? { code, params: { category } } : null;
       if (detail !== undefined) return typeof detail === "string" ? { code, params: { detail } } : null;
-      return { code, params: {} };
+      // 只有参数为空才是「原因未知」；带着认不出的参数（新版本加的分支）时显示原文，不吞掉兜底文字里的信息。
+      return Object.keys(values).length === 0 ? { code, params: {} } : null;
     }
     default:
       return { code, params: {} };
@@ -167,11 +168,11 @@ const CODEX_ERROR_EN: Record<AgentRunCodexError, string> = {
   usageLimitExceeded: "The owner has reached their model usage limit. Try again later.",
   unauthorized:
     "The model service on the owner's computer rejected the credentials (401). The owner needs to check the model service settings.",
-  serverOverloaded: "The model service is busy right now. Wait a moment, then retry.",
-  internalServerError: "The model service had a temporary error. Retry later.",
+  serverOverloaded: "The model service is busy right now. Wait a moment and try again.",
+  internalServerError: "The model service had a temporary error. Try again later.",
   badRequest: "The model service rejected this request. A parameter or attachment may not be supported.",
   sandboxError: "A command couldn't run in the read-only sandbox.",
-  rateLimitExceeded: "The model service is limiting requests. Wait a few minutes, then retry.",
+  rateLimitExceeded: "The model service is rate limiting requests. Wait a few minutes and try again.",
   misalignmentPolicyViolation:
     "This request triggered the model service's safety policy and was stopped. Try rephrasing it.",
   sessionBudgetExceeded: "This thread has used up its usage budget. @ the agent again in a new thread.",
@@ -179,11 +180,11 @@ const CODEX_ERROR_EN: Record<AgentRunCodexError, string> = {
 };
 
 const FAILURE_CATEGORY_EN: Record<AgentRunFailureCategory, string> = {
-  rate_limited: "The model service is limiting requests (429). Wait a few minutes, then retry.",
+  rate_limited: "The model service is rate limiting requests (429). Wait a few minutes and try again.",
   unauthorized: CODEX_ERROR_EN.unauthorized,
   forbidden: "The model service refused the request (403). The owner's credentials may not have access to this model.",
   server_error: CODEX_ERROR_EN.internalServerError,
-  timeout: "The model service timed out. Retry later.",
+  timeout: "The model service timed out. Try again later.",
 };
 
 function englishReason(reason: AgentRunReason): string {
@@ -269,13 +270,18 @@ export interface AgentRunProgressParamMap {
 
 export type AgentRunProgress = { [C in AgentRunProgressCode]: { code: C; params: AgentRunProgressParamMap[C] } }[AgentRunProgressCode];
 
-/** 读线上的进度：code 认不出、或 activity 没有一项有效计数时返回 null，由调用方显示 `progress` 原文。多出来的参数忽略。 */
+/**
+ * 读线上的进度：code 认不出、activity 没有一项有效计数、或混有认不出的种类（新版本加的）时返回 null，
+ * 由调用方显示 `progress` 原文——只渲染认得的那部分会漏掉信息。
+ */
 export function readAgentRunProgress(
   code: string | null | undefined,
   params: AgentRunTextParams | null | undefined,
 ): AgentRunProgress | null {
   if (code === "thinking") return { code, params: {} };
   if (code !== "activity") return null;
+  const known: readonly string[] = AGENT_RUN_ACTIVITY_KINDS;
+  if (Object.keys(params ?? {}).some((key) => !known.includes(key))) return null;
   const counts: AgentRunActivityCounts = {};
   for (const kind of AGENT_RUN_ACTIVITY_KINDS) {
     const count = params?.[kind];

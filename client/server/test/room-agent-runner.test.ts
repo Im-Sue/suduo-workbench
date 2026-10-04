@@ -81,6 +81,8 @@ class FakeRuntime implements AgentRuntime {
   readonly threads: StartThreadInput[] = [];
   readonly turns: StartTurnInput[] = [];
   readonly interrupts: InterruptInput[] = [];
+  /** 让开回合失败（消息服务会把它包成「结果不确定」）。 */
+  failTurns = false;
   async startThread(input: StartThreadInput): Promise<StartThreadResult> {
     this.threads.push(input);
     const thread = {
@@ -91,6 +93,7 @@ class FakeRuntime implements AgentRuntime {
     return { primaryThread: thread, threads: [thread] };
   }
   async startTurn(input: StartTurnInput): Promise<StartTurnResult> {
+    if (this.failTurns) throw new Error("app-server closed");
     this.turns.push(input);
     return { turnRef: { threadId: input.threadRef.threadId, turnId: "turn-" + String(this.turns.length) }, acceptedAt: Date.now() };
   }
@@ -685,6 +688,20 @@ describe("RoomAgentRunner", () => {
       reasonCode: "reply_rejected",
       reasonParams: { detail: "The server rejected the request" },
     });
+  });
+
+  it("所有者界面语言为英文：开回合结果不确定时，原因里的说明也是英文（不混进固定中文的 Error.message）", async () => {
+    const context = setup({ ownerLocale: "en" });
+    context.remote.messages = [message(4)];
+    context.runtime.failTurns = true;
+    context.emitRun(runFixture("run-indeterminate"));
+    await until(() => context.remote.finished.length === 1, "finished");
+    expect(context.remote.finished[0]!.body).toMatchObject({
+      status: "failed",
+      reasonCode: "local_start_failed",
+      reasonParams: { detail: "Couldn't confirm whether the turn started" },
+    });
+    expect(JSON.stringify(context.remote.finished[0]!.body)).not.toMatch(/[\u4e00-\u9fff]/u);
   });
 
   it("重启：远程仍是执行中、不是本进程开始的任务标失败（执行中断）；已收尾的不重复标", async () => {

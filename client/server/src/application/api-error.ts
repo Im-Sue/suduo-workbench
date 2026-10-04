@@ -59,10 +59,11 @@ export class ApiError extends Error {
 
 /**
  * 任意错误的说明，拼进另一段说明时用：`(t) => t.activity.heartbeatFailed(errorTextOf(error)(t))`。
- * `ApiError` 按字典生成；其它错误用原文（多为系统或第三方的报错，不翻译）。
+ * `ApiError` 与 `IndeterminateOperationError` 按字典生成；其它错误用原文（多为系统或第三方的报错，不翻译）。
  */
 export function errorTextOf(error: unknown): (t: ServerMessages) => string {
   if (error instanceof ApiError) return (t) => error.render(t);
+  if (error instanceof IndeterminateOperationError) return (t) => renderText(error.text, t);
   const message = error instanceof Error ? error.message : String(error);
   return () => message;
 }

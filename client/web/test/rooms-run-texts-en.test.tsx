@@ -150,8 +150,10 @@ describe("任务进度按 code 渲染", () => {
     expect(model.runProgressText(run({ status: "running", progress: "查看了 6 个文件" }), en)).toBe("查看了 6 个文件");
     expect(model.runProgressText(progressRun("future_progress", { edits: 2 }, "Edited 2 files"), zh)).toBe("Edited 2 files");
     expect(model.runProgressText(progressRun("activity", { edits: 2 }, "Edited 2 files"), zh)).toBe("Edited 2 files");
-    // 多出来的种类忽略，认得的照常渲染。
-    expect(model.runProgressText(progressRun("activity", { read: 2, edits: 2 }), zh)).toBe("查看了 2 个文件");
+    // 混有认不出的种类（新版本加的）：只渲染认得的那部分会漏信息，退回原文。
+    expect(model.runProgressText(progressRun("activity", { read: 2, edits: 2 }, "Read 2 files · Edited 2 files"), zh)).toBe(
+      "Read 2 files · Edited 2 files",
+    );
   });
 
   it("状态行文字：按 code 渲染进度与原因", () => {

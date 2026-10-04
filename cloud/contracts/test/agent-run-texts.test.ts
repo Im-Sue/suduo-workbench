@@ -70,7 +70,9 @@ describe("任务原因的 code 与英文兜底", () => {
     expect(readAgentRunReason("turn_failed", { category: "teapot" })).toBeNull();
     expect(readAgentRunReason("turn_failed", { detail: 3 })).toBeNull();
     expect(readAgentRunReason("owner_offline", { extra: "x" })).toEqual({ code: "owner_offline", params: {} });
-    expect(readAgentRunReason("turn_failed", { other: "x" })).toEqual({ code: "turn_failed", params: {} });
+    expect(readAgentRunReason("turn_failed", {})).toEqual({ code: "turn_failed", params: {} });
+    // 带着认不出的参数（新版本加的分支）：退回原文，不当成「原因未知」。
+    expect(readAgentRunReason("turn_failed", { httpStatus: 418 })).toBeNull();
   });
 });
 
@@ -84,12 +86,14 @@ describe("任务进度的 code 与英文兜底", () => {
     expect(agentRunProgressFallback("activity", {})).toBe("Thinking");
   });
 
-  it("读线上的进度：认得的种类取正整数，多出来的忽略；没有有效计数或认不出的 code 为 null", () => {
+  it("读线上的进度：认得的种类取正整数；混有认不出的种类、没有有效计数或认不出的 code 为 null", () => {
     expect(readAgentRunProgress("thinking", null)).toEqual({ code: "thinking", params: {} });
-    expect(readAgentRunProgress("activity", { read: 2, edits: 3, command: 0, tool: "1" })).toEqual({
+    expect(readAgentRunProgress("activity", { read: 2, command: 0, tool: "1" })).toEqual({
       code: "activity",
       params: { read: 2 },
     });
+    // 新版本加的种类：只渲染认得的那部分会漏信息，退回原文。
+    expect(readAgentRunProgress("activity", { read: 2, edits: 3 })).toBeNull();
     expect(readAgentRunProgress("activity", { edits: 3 })).toBeNull();
     expect(readAgentRunProgress("future_progress", { read: 1 })).toBeNull();
     expect(readAgentRunProgress(null, null)).toBeNull();

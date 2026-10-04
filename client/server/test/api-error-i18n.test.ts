@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, errorResponse, errorTextOf, renderText } from "../src/application/api-error.js";
+import { ApiError, IndeterminateOperationError, errorResponse, errorTextOf, renderText } from "../src/application/api-error.js";
 import { messagesFor } from "../src/i18n/messages/index.js";
 
 describe("报错说明按语言生成", () => {
@@ -30,6 +30,9 @@ describe("报错说明按语言生成", () => {
   it("拼进另一段说明：ApiError 跟着字典走，其它错误用原文", () => {
     const en = messagesFor("en");
     expect(errorTextOf(error)(en)).toBe(en.common.internalError);
+    const indeterminate = new IndeterminateOperationError((t) => t.common.internalError);
+    expect(indeterminate.message).toBe(messagesFor("zh-CN").common.internalError);
+    expect(errorTextOf(indeterminate)(en)).toBe(en.common.internalError);
     expect(errorTextOf(new Error("ECONNREFUSED"))(en)).toBe("ECONNREFUSED");
     expect(errorTextOf("boom")(en)).toBe("boom");
   });
