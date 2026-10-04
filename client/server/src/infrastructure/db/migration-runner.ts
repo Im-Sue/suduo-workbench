@@ -1,4 +1,6 @@
+import { cliLocale } from "@suduo/client-contracts";
 import { readFileSync } from "node:fs";
+import { messagesFor } from "../../i18n/messages/index.js";
 import type { DatabasePort } from "./database-port.js";
 
 export interface Migration {
@@ -133,9 +135,8 @@ export function runMigrations(
     (version) => !V2_MIGRATION_VERSIONS.has(version),
   );
   if (legacyVersions.length > 0) {
-    throw new Error(
-      `检测到旧数据库迁移版本 [${legacyVersions.join(", ")}]；按 D4 删除本机数据库后重建。`,
-    );
+    // 只在启动时打开本机数据库会遇到（自检用的是新建的临时库），报错按系统语言（中英双语 S8）。
+    throw new Error(messagesFor(cliLocale(process.env)).cli.legacyMigrations(legacyVersions));
   }
   const appliedVersions: number[] = [];
 

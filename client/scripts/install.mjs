@@ -9,9 +9,12 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { cliLocale, scriptMessages } from "./i18n/index.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const args = process.argv.slice(2);
+// 提示跟随系统语言（规则与消息表见 scripts/i18n/）。
+const t = scriptMessages(cliLocale(process.env)).installer;
 const home = resolve(option("--home") ?? homedir());
 const codexHome = resolve(
   option("--codex-home") ?? process.env.CODEX_HOME ?? resolve(home, ".codex"),
@@ -141,7 +144,7 @@ function systemdQuote(value) {
 function normalizeServiceName(value) {
   const name = value.endsWith(".service") ? value : value + ".service";
   if (!/^[A-Za-z0-9_.@-]+\.service$/.test(name)) {
-    throw new Error("--service-name 无效");
+    throw new Error(t.invalidServiceName);
   }
   return name;
 }

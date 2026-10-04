@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EventEnvelope, JsonValue, RuntimeEventDraft } from "@suduo/client-contracts";
 import { EventLedger } from "../src/application/event-ledger.js";
 import { canonicalJson, hashIdempotencyRequest } from "../src/application/idempotency.js";
@@ -148,6 +148,8 @@ describe("T2 SQLite 存储层", () => {
   });
 
   it("拒绝包含旧迁移记录的数据库", () => {
+    // 这句报错按系统语言（中英双语 S8）；这里固定中文，英文见 cli-i18n.test.ts。
+    vi.stubEnv("SUDUO_LOCALE", "zh-CN");
     const database = openBetterSqlite3Database(":memory:");
     try {
       database.exec(`
@@ -163,7 +165,7 @@ describe("T2 SQLite 存储层", () => {
       expect(() => runMigrations(database)).toThrow(
         "检测到旧数据库迁移版本 [9]；按 D4 删除本机数据库后重建。",
       );
-    } finally { database.close(); }
+    } finally { database.close(); vi.unstubAllEnvs(); }
   });
 });
 

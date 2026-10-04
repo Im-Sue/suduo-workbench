@@ -21,10 +21,39 @@ CN_IMAGE_REGISTRY="docker.m.daocloud.io/library"
 CN_NPM_REGISTRY="https://registry.npmmirror.com"
 
 # ---------- language: Chinese when the system locale is Chinese, English otherwise ----------
-case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in
-  zh*) UI_LANG=zh ;;
-  *) UI_LANG=en ;;
-esac
+# 与 client/contracts/src/i18n.ts 的 cliLocale 同一规则（中英双语技术设计 §十 S8）：
+# SUDUO_LOCALE（只认 zh-CN / en，显式指定；其它值忽略）→ LC_ALL → LC_MESSAGES → LANG，
+# 第一个去掉首尾空白后非空的变量说了算：去掉「.」及之后的编码，是 zh 或以 zh_ / zh- 开头（不分大小写）为中文，
+# C / POSIX 与其它为英文。
+# 与 TS 版的差异：四个都没设时 TS 版再看系统区域（Intl），shell 里没有可靠的取法，这里直接用英文。
+# sudo 默认保留 LANG / LC_*，但会丢掉 SUDUO_LOCALE，要写成 sudo SUDUO_LOCALE=en ./scripts/suduo-cloud.sh …
+# 这一段只用 POSIX 写法（macOS 自带的 bash 3.2 也能跑）。
+trim() { # trim VALUE → 去掉首尾空白
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "${value%"${value##*[![:space:]]}"}"
+}
+
+detect_ui_lang() {
+  local value
+  case "${SUDUO_LOCALE:-}" in
+    zh-CN) UI_LANG=zh; return ;;
+    en) UI_LANG=en; return ;;
+  esac
+  for value in "${LC_ALL:-}" "${LC_MESSAGES:-}" "${LANG:-}"; do
+    value="$(trim "$value")"
+    [ -n "$value" ] || continue
+    value="$(trim "${value%%.*}")"
+    case "$value" in
+      [Zz][Hh] | [Zz][Hh][_-]*) UI_LANG=zh ;;
+      *) UI_LANG=en ;;
+    esac
+    return
+  done
+}
+
+UI_LANG=en
+detect_ui_lang
 # say "中文" "English"
 say() { if [ "$UI_LANG" = zh ]; then printf '%s\n' "$1"; else printf '%s\n' "$2"; fi; }
 ok() { if [ "$UI_LANG" = zh ]; then printf '  ✓ %s\n' "$1"; else printf '  ✓ %s\n' "$2"; fi; }

@@ -1,6 +1,6 @@
 // SuDuo 客户端源码运行入口：在 client/ 下执行 `pnpm start`。
 // 检查环境 → 需要时构建 → 已在运行就直接打开浏览器；否则启动本机服务、等它就绪、打开浏览器，Ctrl+C 停止。
-// 只用 Node 内置模块；提示语跟随系统语言（中文环境用中文，其他用英文）。
+// 只用 Node 内置模块；提示语跟随系统语言（规则与消息表见 scripts/i18n/，中文环境用中文，其他用英文）。
 import { spawn, spawnSync } from "node:child_process";
 import {
   createWriteStream,
@@ -18,11 +18,11 @@ import { delimiter, dirname, join, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { cliLocale, scriptMessages } from "./i18n/index.mjs";
 
 const clientRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cloudRoot = resolve(clientRoot, "..", "cloud");
-const zh = isChineseLocale();
-const t = (zhText, enText) => (zh ? zhText : enText);
+const t = scriptMessages(cliLocale(process.env)).start;
 const STAMP = join(clientRoot, "server", "dist", ".suduo-start-stamp");
 const READY_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 15_000;
@@ -51,17 +51,12 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${options.port}/`;
   const health = await probeHealth(baseUrl);
   if (health === "ok") {
-    ok(t("SuDuo 已在运行：", "SuDuo is already running: ") + baseUrl);
+    ok(t.alreadyRunning(baseUrl));
     if (options.open) openBrowser(baseUrl);
     return;
   }
   if (health === "foreign") {
-    fail(
-      t(
-        `端口 ${options.port} 被其他程序占用。换一个端口：pnpm start --port <端口>`,
-        `Port ${options.port} is used by another program. Choose another port: pnpm start --port <port>`,
-      ),
-    );
+    fail(t.portInUse(options.port));
   }
 
   buildIfNeeded(options.rebuild);
@@ -90,38 +85,17 @@ function parseArgs(args) {
     } else if (arg === "--help" || arg === "-h") {
       options.help = true;
     } else if (arg !== "--") {
-      fail(t(`不认识的参数：${arg}（pnpm start --help 查看用法）`, `Unknown option: ${arg} (see pnpm start --help)`));
+      fail(t.unknownOption(arg));
     }
   }
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65_535) {
-    fail(t("端口必须是 1–65535 之间的整数。", "The port must be an integer between 1 and 65535."));
+    fail(t.invalidPort);
   }
   return options;
 }
 
 function printHelp() {
-  print(
-    t(
-      [
-        "用法：pnpm start [参数]",
-        "",
-        "  --port <端口>   本机服务端口（默认 8787，也认环境变量 SUDUO_PORT）",
-        "  --no-open       不自动打开浏览器",
-        "  --rebuild       强制重新构建",
-        "",
-        "其他环境变量（SUDUO_DATA_DIR、SUDUO_REQUIREMENTS_SERVICE_URL 等）原样传给本机服务，见 server/.env.example。",
-      ].join("\n"),
-      [
-        "Usage: pnpm start [options]",
-        "",
-        "  --port <port>   port of the local service (default 8787; SUDUO_PORT also works)",
-        "  --no-open       do not open the browser",
-        "  --rebuild       force a rebuild",
-        "",
-        "Other environment variables (SUDUO_DATA_DIR, SUDUO_REQUIREMENTS_SERVICE_URL, ...) are passed to the local service; see server/.env.example.",
-      ].join("\n"),
-    ),
-  );
+  print(t.help);
 }
 
 // ---------- checks ----------
@@ -133,19 +107,14 @@ function checkNodeVersion(range) {
   for (let index = 0; index < 3; index += 1) {
     if (have[index] > want[index]) return;
     if (have[index] < want[index]) {
-      fail(
-        t(
-          `需要 Node ${want.join(".")} 或更新，当前是 ${process.versions.node}。请从 https://nodejs.org 安装 24.x（LTS），或用 mise / nvm / winget 切换版本。`,
-          `Node ${want.join(".")} or later is required; this is ${process.versions.node}. Install 24.x (LTS) from https://nodejs.org, or switch with mise / nvm / winget.`,
-        ),
-      );
+      fail(t.nodeTooOld(want.join("."), process.versions.node));
     }
   }
 }
 
 function checkInstalled() {
   if (!existsSync(join(clientRoot, "node_modules", ".modules.yaml")) || !existsSync(join(clientRoot, "server", "node_modules"))) {
-    fail(t("还没有安装依赖：先在 client/ 下执行 pnpm install。", "Dependencies are not installed yet: run pnpm install in client/ first."));
+    fail(t.notInstalled);
   }
 }
 
@@ -155,19 +124,14 @@ function checkSqlite() {
     const Database = requireFromServer("better-sqlite3");
     new Database(":memory:").close();
   } catch (error) {
-    fail(
-      t(
-        "SQLite 原生模块加载失败。先试 pnpm rebuild better-sqlite3；仍不行时需要编译工具：macOS 执行 xcode-select --install，Windows 安装 Visual Studio Build Tools（勾选「使用 C++ 的桌面开发」）后再 pnpm install。",
-        "The SQLite native module failed to load. Try pnpm rebuild better-sqlite3; if that fails you need build tools: on macOS run xcode-select --install, on Windows install Visual Studio Build Tools (\"Desktop development with C++\"), then pnpm install again.",
-      ) + `\n  ${error instanceof Error ? error.message : String(error)}`,
-    );
+    fail(t.sqliteFailed + `\n  ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 function checkCodexBinary() {
   const bin = join(clientRoot, "node_modules", ".bin", process.platform === "win32" ? "codex.cmd" : "codex");
   if (!existsSync(bin)) {
-    fail(t("找不到锁定版本的 Codex CLI：在 client/ 下重新执行 pnpm install。", "The pinned Codex CLI is missing: run pnpm install in client/ again."));
+    fail(t.codexMissing);
   }
 }
 
@@ -177,12 +141,7 @@ function warnIfCodexNotConfigured() {
   const loggedIn = existsSync(join(codexHome, "auth.json"));
   const hasProvider = /^\s*model_provider\s*=/m.test(config) || /^\s*\[model_providers\./m.test(config);
   if (!loggedIn && !hasProvider) {
-    warn(
-      t(
-        `Codex 还没有配置模型账号（${codexHome}）。可以在 SuDuo 的「设置 → 模型服务」里配置，或在 client/ 下执行 pnpm exec codex login。`,
-        `Codex has no model account configured yet (${codexHome}). Configure one in SuDuo under Settings → Model service (模型服务), or run pnpm exec codex login in client/.`,
-      ),
-    );
+    warn(t.codexNotConfigured(codexHome));
   }
 }
 
@@ -205,20 +164,13 @@ function buildIfNeeded(force) {
   ];
   const stale = !missing && newestModification(inputs) > stampTime;
   if (!force && !missing && !stale) return;
-  print(
-    missing
-      ? t("首次运行，正在构建（约 1–2 分钟）…", "First run: building (about 1–2 minutes)…")
-      : t("源码有更新，正在重新构建…", "Sources changed: rebuilding…"),
-  );
+  print(missing ? t.firstBuild : t.rebuilding);
   const result = runPnpm(["run", "build"]);
   if (result.error !== undefined || result.status !== 0) {
-    fail(
-      t("构建失败，见上方输出。", "The build failed; see the output above.") +
-        (result.error === undefined ? "" : `\n  ${result.error.message}`),
-    );
+    fail(t.buildFailed + (result.error === undefined ? "" : `\n  ${result.error.message}`));
   }
   writeFileSync(STAMP, new Date().toISOString() + "\n");
-  ok(t("构建完成", "Build complete"));
+  ok(t.buildComplete);
 }
 
 function newestModification(paths) {
@@ -304,28 +256,23 @@ async function startServer(options, baseUrl) {
       await closed;
     }
     await endLog(log);
-    fail(
-      t(
-        `本机服务没有启动成功。日志：${logPath}\n  排查：pnpm run doctor`,
-        `The local service did not start. Log: ${logPath}\n  To diagnose: pnpm run doctor`,
-      ),
-    );
+    fail(t.startFailed(logPath));
   }
 
-  ok(t("本机服务已启动：", "Local service started: ") + baseUrl);
-  print(t(`  数据目录：${dataDir}`, `  Data directory: ${dataDir}`));
-  print(t(`  日志：${logPath}`, `  Log: ${logPath}`));
+  ok(t.started(baseUrl));
+  print("  " + t.dataDir(dataDir));
+  print("  " + t.log(logPath));
   if (options.open) {
     openBrowser(baseUrl);
-    ok(t("已在浏览器中打开", "Opened in your browser"));
+    ok(t.opened);
   }
-  print(t("按 Ctrl+C 停止。", "Press Ctrl+C to stop."));
+  print(t.stopHint);
 
   let stopping = false;
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    print(t("正在停止…", "Stopping…"));
+    print(t.stopping);
     void requestShutdown(baseUrl, options.port);
     const force = setTimeout(() => {
       if (exited === null) child.kill();
@@ -339,16 +286,11 @@ async function startServer(options, baseUrl) {
   const result = await closed;
   await endLog(log);
   if (stopping) {
-    print(t("SuDuo 已停止。", "SuDuo stopped."));
+    print(t.stopped);
     return;
   }
   // 不是用户要求停止的：说明退出原因和日志位置。
-  warn(
-    t(
-      `本机服务意外退出（${result.signal ?? `退出码 ${result.code}`}）。日志：${logPath}`,
-      `The local service exited unexpectedly (${result.signal ?? `exit code ${result.code}`}). Log: ${logPath}`,
-    ),
-  );
+  warn(t.exitedUnexpectedly(result.signal ?? t.exitCode(result.code), logPath));
   process.exitCode = typeof result.code === "number" && result.code !== 0 ? result.code : 1;
 }
 
@@ -435,12 +377,7 @@ function hintLegacyDataDir(dataDir) {
   if (process.platform !== "darwin" || process.env["SUDUO_DATA_DIR"]) return;
   const legacy = join(process.env["XDG_DATA_HOME"] || join(homedir(), ".local", "share"), "suduo");
   if (existsSync(join(dataDir, "suduo.sqlite")) || !existsSync(join(legacy, "suduo.sqlite"))) return;
-  warn(
-    t(
-      `在旧位置 ${legacy} 发现了以前的本机数据，现在的默认位置是 ${dataDir}。要继续用以前的数据：先按 Ctrl+C 停止，把旧目录移动过来，或用 SUDUO_DATA_DIR="${legacy}" pnpm start。`,
-      `Found earlier local data in ${legacy}; the default location is now ${dataDir}. To keep using it: press Ctrl+C, move the old directory here, or run SUDUO_DATA_DIR="${legacy}" pnpm start.`,
-    ),
-  );
+  warn(t.legacyDataDir(legacy, dataDir));
 }
 
 /** 服务日志里只把警告和错误打到控制台，其余写进日志文件。 */
@@ -451,6 +388,7 @@ function importantLine(line) {
     if (typeof record.level === "number" && record.level >= 40) return String(record.msg ?? line);
     return null;
   } catch {
+    // 非 JSON 的行（启动早期的报错、第三方输出）可能是中文也可能是英文，两种都认；这是匹配不是输出，不进消息表。
     return /error|错误|失败|warn|不存在/i.test(line) ? line : null;
   }
 }
@@ -478,21 +416,11 @@ function openBrowser(url) {
       spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).on("error", ignore).unref();
     }
   } catch {
-    print(t(`请在浏览器中打开 ${url}`, `Open ${url} in your browser`));
+    print(t.openManually(url));
   }
 }
 
 // ---------- helpers ----------
-function isChineseLocale() {
-  const fromEnvironment = process.env["LC_ALL"] || process.env["LC_MESSAGES"] || process.env["LANG"];
-  if (fromEnvironment) return /^zh/i.test(fromEnvironment);
-  try {
-    return /^zh/i.test(Intl.DateTimeFormat().resolvedOptions().locale);
-  } catch {
-    return false;
-  }
-}
-
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }

@@ -80,4 +80,10 @@ export const doctor = {
     copy: "复制诊断信息",
     copied: "诊断信息已复制",
   },
+  /** 命令行 `pnpm run doctor`（scripts/doctor.ts）：结论与参数报错。 */
+  cli: {
+    passed: "自检通过，可以启动 SuDuo。",
+    failed: "自检未通过。请先修复上述问题；不会带病启动服务。",
+    invalidPort: "--port 必须是 1 到 65535 的整数",
+  },
 };

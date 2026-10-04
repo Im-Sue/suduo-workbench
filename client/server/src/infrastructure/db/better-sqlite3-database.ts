@@ -1,6 +1,8 @@
+import { cliLocale } from "@suduo/client-contracts";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
+import { messagesFor } from "../../i18n/messages/index.js";
 import type {
   DatabasePort,
   RunResult,
@@ -28,12 +30,13 @@ interface NativeDatabase {
 
 type NativeDatabaseConstructor = new (path: string) => NativeDatabase;
 
+/**
+ * 打开本机数据库失败，说明按系统语言（中英双语 S8）。出现在本机服务启动与 `pnpm doctor` 自检的 SQLite 一项，
+ * 都是命令行；界面的自检页也跑这一项，但服务已经起来就说明适配器能加载，实际走不到。
+ */
 export class DatabaseAdapterLoadError extends Error {
   constructor(cause: unknown) {
-    super(
-      "无法加载 better-sqlite3 原生适配器；请确认 Node 版本与平台预构建包匹配，并重新执行 pnpm install。",
-      { cause },
-    );
+    super(messagesFor(cliLocale(process.env)).cli.databaseAdapterLoadFailed, { cause });
     this.name = "DatabaseAdapterLoadError";
   }
 }

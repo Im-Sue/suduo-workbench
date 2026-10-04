@@ -1,9 +1,11 @@
 import {
   APPROVAL_MODE_POLICIES,
   ROOM_AGENT_SECURITY_POLICY,
+  cliLocale,
   type ApprovalMode,
   type RuntimeSecurityPolicy,
 } from "@suduo/client-contracts";
+import { messagesFor } from "../i18n/messages/index.js";
 import type { SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
 
 const APPROVAL_MODE_RANK: Record<ApprovalMode, number> = {
@@ -23,7 +25,9 @@ export function maxApprovalMode(
   if (raw === "ask" || raw === "auto" || raw === "full") {
     return raw;
   }
-  throw new Error("SUDUO_MAX_APPROVAL_MODE 仅支持 ask / auto / full");
+  // 部署配置错误，给运维看：按这个进程的系统语言（中英双语 S8）。启动时不校验，运行中取审批档时才抛；
+  // 经接口时界面只显示按请求语言的「服务端处理请求失败」、这句进日志，共享 Agent 任务起不来时原文嵌进任务原因。
+  throw new Error(messagesFor(cliLocale(env)).cli.maxApprovalModeInvalid);
 }
 
 /** 会话原始值不落库改写；每次取策略时按当前部署上限实时 clamp。 */

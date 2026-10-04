@@ -3,26 +3,27 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CODEX_VERSION } from "../contracts/src/config.js";
+import { cliLocale } from "../contracts/src/i18n.js";
 import {
   formatDoctorText,
   runDoctor,
   type DoctorOptions,
 } from "../server/src/infrastructure/doctor/doctor-service.js";
+import { messagesFor } from "../server/src/i18n/messages/index.js";
 
 const workspaceRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+// 输出跟随系统语言（SUDUO_LOCALE → LC_ALL → LC_MESSAGES → LANG → 系统区域，见 cliLocale）；--json 里的文字同样。
+// 这里经 tsx 直接跑源码，`@suduo/client-contracts` 从 client/ 根目录解析不到，所以按相对路径引（同上面的 config.js）。
+const locale = cliLocale(process.env);
+const t = messagesFor(locale).doctor.cli;
 const options = parseOptions(process.argv.slice(2));
-// 命令行输出暂时固定中文（与原来一致）；S8 改为跟随系统语言。
-const result = await runDoctor(options, "zh-CN");
+const result = await runDoctor(options, locale);
 
 if (process.argv.includes("--json")) {
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 } else {
   process.stdout.write(formatDoctorText(result));
-  process.stdout.write(
-    result.status === "PASS"
-      ? "\n自检通过，可以启动 SuDuo。\n"
-      : "\n自检未通过。请先修复上述问题；不会带病启动服务。\n",
-  );
+  process.stdout.write("\n" + (result.status === "PASS" ? t.passed : t.failed) + "\n");
 }
 if (result.status === "FAIL") {
   process.exitCode = 1;
@@ -35,7 +36,7 @@ function parseOptions(args: string[]): DoctorOptions {
   };
   const port = Number(value("--port") ?? process.env["SUDUO_PORT"] ?? "8787");
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error("--port 必须是 1 到 65535 的整数");
+    throw new Error(t.invalidPort);
   }
   const installed = args.includes("--installed");
   const codexHome = resolve(

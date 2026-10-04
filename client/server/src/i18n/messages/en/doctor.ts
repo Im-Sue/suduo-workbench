@@ -80,4 +80,9 @@ export const doctor = {
     copy: "Copy diagnostics",
     copied: "Diagnostics copied",
   },
+  cli: {
+    passed: "Self-check passed. You can start SuDuo.",
+    failed: "Self-check failed. Fix the problems above first; SuDuo won't start the service until they pass.",
+    invalidPort: "--port must be an integer between 1 and 65535",
+  },
 } satisfies ServerMessages["doctor"];
