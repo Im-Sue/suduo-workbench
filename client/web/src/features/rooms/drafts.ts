@@ -8,6 +8,8 @@ import { useCallback, useSyncExternalStore } from "react";
 import { api } from "../../api/client.js";
 import { classifyFailure } from "../../feedback/classify.js";
 import type { Failure } from "../../feedback/types.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 import { newClientId } from "./pending.js";
 
 /**
@@ -114,14 +116,15 @@ function upload(key: string, roomId: string, item: DraftFile): void {
 
 /** 选好 / 粘贴 / 拖入的文件：逐个开始上传。超过 300 MB 的直接标失败（不可重试）。 */
 export function addDraftFiles(key: string, roomId: string, files: readonly File[]): void {
+  const text = messagesFor(currentLocale()).rooms.composer.file;
   const items: DraftFile[] = files.map((file) => ({
     localId: newClientId(),
-    name: file.name === "" ? "粘贴的图片.png" : file.name,
+    name: file.name === "" ? text.pastedImageName : file.name,
     size: file.size,
     kind: fileKindOf(file),
     state: file.size > ROOM_FILE_MAX_BYTES ? "failed" : "uploading",
     progress: 0,
-    error: file.size > ROOM_FILE_MAX_BYTES ? "文件超过 300 MB，无法上传" : null,
+    error: file.size > ROOM_FILE_MAX_BYTES ? text.tooLarge : null,
     result: null,
     file,
   }));

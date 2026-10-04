@@ -14,6 +14,7 @@ import {
 } from "../features/requirements/format.js";
 import { formatDateTime, formatRelativeTime } from "../ui/format.js";
 import { requirementStatusLabel } from "../ui/requirement-status.js";
+import { useT } from "../i18n/provider.js";
 
 /** 外壳（会话列表）知道的关联需求。 */
 export interface LinkedRequirement {
@@ -53,18 +54,20 @@ export function RequirementMaterials({
   /** 站内跳转（会话画布不依赖路由上下文）。 */
   onNavigate(path: string): void;
 }) {
+  const t = useT();
+  const text = t.workbench.requirement;
   if (context.status === "loading") {
     return (
       <div className="flex flex-col items-center gap-2 py-10 text-center" data-testid="requirement-materials" data-state="loading">
         <FileTextIcon className="size-5 text-subtle-foreground" aria-hidden="true" />
-        <p className="m-0 text-small text-muted-foreground">正在读取关联需求…</p>
+        <p className="m-0 text-small text-muted-foreground">{text.loading}</p>
       </div>
     );
   }
   if (context.status === "error") {
     return (
       <div data-testid="requirement-materials" data-state="error">
-        <RegionError kind="runtime_failed" message={`查不到关联需求：${context.message}`} onRetry={onRetryContext} />
+        <RegionError kind="runtime_failed" message={text.loadFailed(context.message)} onRetry={onRetryContext} />
       </div>
     );
   }
@@ -74,7 +77,7 @@ export function RequirementMaterials({
       <div className="flex flex-col items-center gap-2 py-10 text-center" data-testid="requirement-materials" data-state="ready" data-linked="false">
         <FileTextIcon className="size-5 text-subtle-foreground" aria-hidden="true" />
         <p className="m-0 text-small text-muted-foreground">
-          {value.kind === "project" ? "这是项目会话，没有关联具体需求。" : "本会话没有关联需求。"}
+          {value.kind === "project" ? text.projectSession : text.notLinked}
         </p>
       </div>
     );
@@ -83,6 +86,8 @@ export function RequirementMaterials({
 }
 
 function RequirementSummary({ context, onNavigate }: { context: SessionContextDto; onNavigate(path: string): void }) {
+  const t = useT();
+  const text = t.workbench.requirement;
   const linked = context.requirement;
   const requirementId = linked?.remoteRequirementId ?? "";
   const [detail, retryDetail] = useRemote<RequirementDetailItemDto>(requirementId, () => api.getRequirement(requirementId));
@@ -106,19 +111,19 @@ function RequirementSummary({ context, onNavigate }: { context: SessionContextDt
           )}
         </div>
         <h3 className="m-0 text-body font-semibold text-foreground" data-testid="requirement-material-title">
-          {title ?? (detail.status === "loading" ? "正在读取需求…" : "这条需求")}
+          {title ?? (detail.status === "loading" ? text.titleLoading : text.titleFallback)}
         </h3>
         <p className="m-0 text-caption text-subtle-foreground" data-testid="requirement-material-version">
-          开工时第 {linked.startVersion} 版，
+          {text.startVersion(linked.startVersion)}
           {current !== null
-            ? `现在第 ${current.version} 版`
+            ? text.currentVersion(current.version)
             : detail.status === "loading"
-              ? "现在的版本正在读取…"
-              : "现在的版本查不到"}
-          {current !== null && current.version !== linked.startVersion ? <span className="text-warning"> · 开工后需求改过</span> : null}
+              ? text.currentVersionLoading
+              : text.currentVersionUnavailable}
+          {current !== null && current.version !== linked.startVersion ? <span className="text-warning">{text.changedSinceStart}</span> : null}
         </p>
         {detail.status === "error" ? (
-          <Unavailable message={`查不到需求详情：${detail.message}`} onRetry={retryDetail} part="detail" />
+          <Unavailable message={text.detailFailed(detail.message)} onRetry={retryDetail} part="detail" />
         ) : null}
         {href === null ? null : (
           <a
@@ -131,7 +136,7 @@ function RequirementSummary({ context, onNavigate }: { context: SessionContextDt
               onNavigate(href);
             }}
           >
-            在需求页打开
+            {text.openPage}
             <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
           </a>
         )}
@@ -139,14 +144,14 @@ function RequirementSummary({ context, onNavigate }: { context: SessionContextDt
 
       <section className="flex flex-col gap-1.5" aria-labelledby="rm-attachments">
         <h4 id="rm-attachments" className="m-0 text-small font-semibold text-foreground">
-          附件{attachments.status === "ready" ? <span className="ml-1.5 font-normal text-subtle-foreground">{attachments.value.length}</span> : null}
+          {text.attachments}{attachments.status === "ready" ? <span className="ml-1.5 font-normal text-subtle-foreground">{attachments.value.length}</span> : null}
         </h4>
-        {attachments.status === "loading" ? <p className="m-0 text-small text-subtle-foreground">正在读取附件…</p> : null}
+        {attachments.status === "loading" ? <p className="m-0 text-small text-subtle-foreground">{text.attachmentsLoading}</p> : null}
         {attachments.status === "error" ? (
-          <Unavailable message={`查不到附件：${attachments.message}`} onRetry={retryAttachments} part="attachments" />
+          <Unavailable message={text.attachmentsFailed(attachments.message)} onRetry={retryAttachments} part="attachments" />
         ) : null}
         {attachments.status === "ready" && attachments.value.length === 0 ? (
-          <p className="m-0 text-small text-subtle-foreground">这条需求没有附件</p>
+          <p className="m-0 text-small text-subtle-foreground">{text.noAttachments}</p>
         ) : null}
         {attachments.status === "ready" && attachments.value.length > 0 ? (
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
@@ -162,6 +167,8 @@ function RequirementSummary({ context, onNavigate }: { context: SessionContextDt
 
 /** 附件一行：能在线看的（图片、PDF、文本）点名字在新标签页打开，其余点名字下载；右侧固定一个下载按钮。 */
 function AttachmentRow({ attachment, index }: { attachment: RequirementsAttachmentDto; index: number }) {
+  const t = useT();
+  const text = t.workbench.requirement;
   const downloadUrl = api.requirementAttachmentDownloadUrl(attachment.id);
   const previewable = previewKind(attachment.fileName) !== null;
   const meta = [formatBytes(attachment.sizeBytes), attachment.uploadedBy.displayName, formatRelativeTime(attachment.createdAt)]
@@ -179,14 +186,14 @@ function AttachmentRow({ attachment, index }: { attachment: RequirementsAttachme
           className="truncate text-small text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           href={previewable ? inlineUrl(downloadUrl) : downloadUrl}
           {...(previewable ? { target: "_blank", rel: "noreferrer" } : { download: attachment.fileName })}
-          title={previewable ? `在新标签页查看「${attachment.fileName}」` : `下载「${attachment.fileName}」`}
+          title={previewable ? text.viewInNewTab(attachment.fileName) : text.download(attachment.fileName)}
         >
           {attachment.fileName}
         </a>
         <span className="truncate text-caption text-subtle-foreground" title={formatDateTime(attachment.createdAt)}>{meta}</span>
       </span>
       <Button asChild size="icon-sm" variant="ghost">
-        <a href={downloadUrl} download={attachment.fileName} aria-label={`下载「${attachment.fileName}」`}>
+        <a href={downloadUrl} download={attachment.fileName} aria-label={text.download(attachment.fileName)}>
           <DownloadIcon />
         </a>
       </Button>
@@ -195,12 +202,13 @@ function AttachmentRow({ attachment, index }: { attachment: RequirementsAttachme
 }
 
 function Unavailable({ message, onRetry, part }: { message: ReactNode; onRetry(): void; part: string }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 rounded-sm bg-danger-soft px-2.5 py-1.5 text-small text-foreground" role="alert" data-testid="requirement-material-error" data-part={part}>
       <span className="min-w-0 flex-1">{message}</span>
       <Button size="sm" variant="ghost" onClick={onRetry}>
         <RotateCwIcon />
-        重试
+        {t.workbench.requirement.retry}
       </Button>
     </div>
   );

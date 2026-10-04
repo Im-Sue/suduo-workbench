@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { FormDialog, InlineError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
 import { showMessage } from "../../../ui/message.js";
 import { UserAvatar } from "../../requirements/components/UserAvatar.js";
 import { usersQuery } from "../../requirements/queries.js";
@@ -30,6 +31,7 @@ import { ShareAgentButton } from "./ShareAgentPanel.js";
  * 归档可逆：不弹确认，给「撤销」。项目默认房间名称跟随项目，不能改名。
  */
 export function RoomHeader({ room, meId }: { room: RoomDto; meId: string | null }) {
+  const t = useT();
   const update = useUpdateRoom();
   const join = useJoinRoom();
   const [renaming, setRenaming] = useState(false);
@@ -41,8 +43,8 @@ export function RoomHeader({ room, meId }: { room: RoomDto; meId: string | null 
       { room, patch: { archived: next } },
       {
         onSuccess: () =>
-          showMessage(next ? `已归档「${room.name}」` : `已取消归档「${room.name}」`, "success", {
-            action: { label: "撤销", onClick: () => update.mutate({ room: { ...room, archivedAt: next ? new Date().toISOString() : null }, patch: { archived: !next } }) },
+          showMessage(next ? t.rooms.header.archivedToast(room.name) : t.rooms.header.unarchivedToast(room.name), "success", {
+            action: { label: t.rooms.header.undo, onClick: () => update.mutate({ room: { ...room, archivedAt: next ? new Date().toISOString() : null }, patch: { archived: !next } }) },
           }),
       },
     );
@@ -52,13 +54,13 @@ export function RoomHeader({ room, meId }: { room: RoomDto; meId: string | null 
     <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border pr-3 pl-5" data-testid="room-header">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <h1 className="m-0 truncate text-body font-semibold text-foreground">{roomTitle(room)}</h1>
-        {archived ? <Badge>已归档</Badge> : null}
+        {archived ? <Badge>{t.rooms.archived}</Badge> : null}
         <span className="hidden min-w-0 items-center gap-1 truncate text-caption text-subtle-foreground md:flex">
           {room.requirement === null ? (
-            "项目讨论 · 所有人都在"
+            t.rooms.header.projectScope
           ) : (
             <>
-              需求
+              {t.rooms.header.requirementPrefix}
               <Link
                 to="/p/$projectId/requirements/$number"
                 params={{ projectId: room.projectId, number: String(room.requirement.number) }}
@@ -73,13 +75,13 @@ export function RoomHeader({ room, meId }: { room: RoomDto; meId: string | null 
       <MembersButton room={room} />
       {!room.viewer.joined && room.kind === "requirement" ? (
         <Button size="sm" variant="secondary" loading={join.isPending} onClick={() => join.mutate({ roomId: room.id })}>
-          加入讨论
+          {t.rooms.header.join}
         </Button>
       ) : null}
       <ShareAgentButton room={room} meId={meId} />
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <Button size="icon-sm" variant="ghost" aria-label="房间的更多操作">
+          <Button size="icon-sm" variant="ghost" aria-label={t.rooms.header.moreActions}>
             <MoreHorizontalIcon />
           </Button>
         </DropdownMenuTrigger>
@@ -87,18 +89,18 @@ export function RoomHeader({ room, meId }: { room: RoomDto; meId: string | null 
           {room.kind === "requirement" ? (
             <DropdownMenuItem onSelect={() => setRenaming(true)}>
               <PencilIcon />
-              改名…
+              {t.rooms.header.rename}
             </DropdownMenuItem>
           ) : null}
           {archived ? (
             <DropdownMenuItem onSelect={() => setArchived(false)}>
               <ArchiveRestoreIcon />
-              取消归档
+              {t.rooms.header.unarchive}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem onSelect={() => setArchived(true)}>
               <ArchiveIcon />
-              归档
+              {t.rooms.header.archive}
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
@@ -124,6 +126,7 @@ function RenameDialog({
   onOpenChange(open: boolean): void;
   onSave(name: string): void;
 }) {
+  const t = useT();
   const [name, setName] = useState(room.name);
   const [error, setError] = useState(false);
   const trimmed = name.trim();
@@ -135,7 +138,7 @@ function RenameDialog({
         setError(false);
         onOpenChange(next);
       }}
-      title="给讨论改名"
+      title={t.rooms.rename.title}
       hasUnsavedChanges={trimmed !== room.name && trimmed !== ""}
       size="sm"
     >
@@ -151,7 +154,7 @@ function RenameDialog({
           onOpenChange(false);
         }}
       >
-        <label htmlFor={`room-name-${room.id}`} className="text-small font-medium">名称</label>
+        <label htmlFor={`room-name-${room.id}`} className="text-small font-medium">{t.rooms.rename.nameLabel}</label>
         <Input
           id={`room-name-${room.id}`}
           autoFocus
@@ -160,10 +163,10 @@ function RenameDialog({
           aria-invalid={error || undefined}
           onChange={(event) => setName(event.target.value)}
         />
-        {error ? <InlineError kind="validation">名称不能为空</InlineError> : null}
+        {error ? <InlineError kind="validation">{t.rooms.rename.nameRequired}</InlineError> : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button type="submit" variant="primary">保存名称</Button>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t.rooms.rename.cancel}</Button>
+          <Button type="submit" variant="primary">{t.rooms.rename.save}</Button>
         </div>
       </form>
     </FormDialog>
@@ -172,6 +175,7 @@ function RenameDialog({
 
 /** 成员头像叠放 + 人数；点开看成员与在线、拉人。讨论页头部与悬浮窗口标题栏共用。 */
 export function MembersButton({ room }: { room: RoomDto }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const members = useQuery(membersQuery(room.id));
   const items = members.data?.items ?? [];
@@ -183,7 +187,7 @@ export function MembersButton({ room }: { room: RoomDto }) {
         <button
           type="button"
           className="flex h-8 items-center gap-1.5 rounded-sm px-1.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`成员 ${room.memberCount} 人${members.isSuccess ? `，${online} 人在线` : ""}`}
+          aria-label={t.rooms.members.buttonLabel(room.memberCount, members.isSuccess ? online : null)}
           data-testid="room-members-button"
         >
           <span className="flex -space-x-1.5" aria-hidden="true">
@@ -200,20 +204,20 @@ export function MembersButton({ room }: { room: RoomDto }) {
       <PopoverContent align="end" className="w-72 p-0">
         <div className="flex flex-col">
           <div className="border-b border-border px-3 py-2 text-small font-semibold">
-            成员 {room.memberCount}
-            {members.isSuccess ? <span className="ml-1.5 font-normal text-subtle-foreground">{online} 人在线</span> : null}
+            {t.rooms.members.heading(room.memberCount)}
+            {members.isSuccess ? <span className="ml-1.5 font-normal text-subtle-foreground">{t.rooms.members.onlineCount(online)}</span> : null}
           </div>
           {members.isPending ? <Skeleton className="m-3 h-8" /> : null}
           {members.isError ? (
-            <p className="m-0 px-3 py-2 text-caption text-danger" role="alert">查不到成员：{classifyFailure(members.error).message}</p>
+            <p className="m-0 px-3 py-2 text-caption text-danger" role="alert">{t.rooms.members.loadFailed(classifyFailure(members.error).message)}</p>
           ) : null}
-          <ul className="m-0 flex max-h-64 list-none flex-col overflow-y-auto p-1" aria-label="成员">
+          <ul className="m-0 flex max-h-64 list-none flex-col overflow-y-auto p-1" aria-label={t.rooms.members.listLabel}>
             {items.map((member) => (
               <li key={member.user.id} className="flex h-8 items-center gap-2 rounded-sm px-2 text-small">
                 <UserAvatar user={member.user} />
                 <span className="min-w-0 flex-1 truncate">{member.user.displayName}</span>
                 <span className={cn("text-caption", member.online ? "text-success" : "text-subtle-foreground")}>
-                  {member.online ? "在线" : "离线"}
+                  {member.online ? t.rooms.members.online : t.rooms.members.offline}
                 </span>
               </li>
             ))}
@@ -228,6 +232,7 @@ export function MembersButton({ room }: { room: RoomDto }) {
 }
 
 function AddMembers({ roomId, memberIds }: { roomId: string; memberIds: ReadonlySet<string> }) {
+  const t = useT();
   const [adding, setAdding] = useState(false);
   const users = useQuery({ ...usersQuery, enabled: adding });
   const join = useJoinRoom();
@@ -236,7 +241,7 @@ function AddMembers({ roomId, memberIds }: { roomId: string; memberIds: Readonly
       <div className="border-t border-border p-1">
         <Button size="sm" variant="ghost" className="w-full justify-start" onClick={() => setAdding(true)}>
           <UserPlusIcon />
-          添加成员
+          {t.rooms.members.add}
         </Button>
       </div>
     );
@@ -245,17 +250,17 @@ function AddMembers({ roomId, memberIds }: { roomId: string; memberIds: Readonly
   return (
     <div className="border-t border-border">
       <Command>
-        <CommandInput placeholder="搜索要拉进来的人" />
+        <CommandInput placeholder={t.rooms.members.searchPlaceholder} />
         <CommandList className="max-h-48">
-          {users.isPending ? <div className="px-3 py-2 text-small text-subtle-foreground">正在加载成员…</div> : null}
-          {users.isError ? <div className="px-3 py-2 text-small text-danger">查不到人员列表：{classifyFailure(users.error).message}</div> : null}
-          <CommandEmpty>没有可以添加的人</CommandEmpty>
+          {users.isPending ? <div className="px-3 py-2 text-small text-subtle-foreground">{t.rooms.members.loading}</div> : null}
+          {users.isError ? <div className="px-3 py-2 text-small text-danger">{t.rooms.usersLoadFailed(classifyFailure(users.error).message)}</div> : null}
+          <CommandEmpty>{t.rooms.members.noneToAdd}</CommandEmpty>
           <CommandGroup>
             {candidates.map((user) => (
               <CommandItem
                 key={user.id}
                 value={`${user.displayName} ${user.id}`}
-                onSelect={() => join.mutate({ roomId, userIds: [user.id] }, { onSuccess: () => showMessage(`已把 ${user.displayName} 拉进讨论`, "success") })}
+                onSelect={() => join.mutate({ roomId, userIds: [user.id] }, { onSuccess: () => showMessage(t.rooms.members.added(user.displayName), "success") })}
               >
                 <UserAvatar user={user} />
                 {user.displayName}

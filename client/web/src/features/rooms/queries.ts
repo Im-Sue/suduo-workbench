@@ -3,6 +3,8 @@ import type { AgentRunSummaryDto, AgentShareDuration, RoomDto } from "@suduo/clo
 import { useCallback, useState } from "react";
 import { api } from "../../api/client.js";
 import { reportFailure } from "../../feedback/report.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 import { isRealtimeLive } from "../requirements/realtime-status.js";
 import { applyRun, findCachedRoom, noteServerRooms, patchRoom, upsertRoom, upsertShare } from "./cache.js";
 import { roomKeys } from "./keys.js";
@@ -123,7 +125,7 @@ export function useRoomMessages(roomId: string) {
       const base = queryClient.getQueryData<MessagesData>(key) ?? data;
       queryClient.setQueryData<MessagesData>(key, mergeOlderPage(base, page));
     } catch (cause) {
-      reportFailure(cause, { surface: "action", title: "没能加载更早的消息", retry: () => void loadOlder() });
+      reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.loadOlderMessages, retry: () => void loadOlder() });
     } finally {
       setLoadingOlder(false);
     }
@@ -177,7 +179,7 @@ export function useThreadMessages(roomId: string, rootId: string) {
       const base = queryClient.getQueryData<MessagesData>(key) ?? data;
       queryClient.setQueryData<MessagesData>(key, mergeOlderPage(base, page));
     } catch (cause) {
-      reportFailure(cause, { surface: "action", title: "没能加载更早的回复", retry: () => void loadOlder() });
+      reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.loadOlderReplies, retry: () => void loadOlder() });
     } finally {
       setLoadingOlder(false);
     }
@@ -243,7 +245,7 @@ export function useUpdateRoom() {
     onSuccess: (saved) => upsertRoom(queryClient, saved),
     onError: (cause, { room }) => {
       patchRoom(queryClient, room.id, (current) => ({ ...current, name: room.name, archivedAt: room.archivedAt }));
-      reportFailure(cause, { surface: "action", title: "没能保存房间" });
+      reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.saveRoom });
     },
   });
 }
@@ -258,7 +260,10 @@ export function useJoinRoom() {
       void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
       void queryClient.invalidateQueries({ queryKey: roomKeys.lists });
     },
-    onError: (cause, { userIds }) => reportFailure(cause, { surface: "action", title: userIds === undefined ? "没能加入" : "没能添加成员" }),
+    onError: (cause, { userIds }) => {
+      const failures = messagesFor(currentLocale()).rooms.failures;
+      reportFailure(cause, { surface: "action", title: userIds === undefined ? failures.join : failures.addMembers });
+    },
   });
 }
 
@@ -277,7 +282,7 @@ export function useOpenShare(roomId: string) {
       void queryClient.invalidateQueries({ queryKey: roomKeys.shares(roomId) });
       void queryClient.invalidateQueries({ queryKey: roomKeys.agents });
     },
-    onError: (cause) => reportFailure(cause, { surface: "action", title: "没能开启共享" }),
+    onError: (cause) => reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.openShare }),
   });
 }
 
@@ -289,7 +294,7 @@ export function useCloseShare(roomId: string) {
       void queryClient.invalidateQueries({ queryKey: roomKeys.shares(roomId) });
       void queryClient.invalidateQueries({ queryKey: roomKeys.agents });
     },
-    onError: (cause) => reportFailure(cause, { surface: "action", title: "没能关闭共享" }),
+    onError: (cause) => reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.closeShare }),
   });
 }
 
@@ -298,7 +303,7 @@ export function useRequestShare(roomId: string) {
   return useMutation({
     mutationFn: (agentId: string) => api.requestAgentShare(roomId, agentId),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: roomKeys.shareRequests(roomId) }),
-    onError: (cause) => reportFailure(cause, { surface: "action", title: "没能申请共享" }),
+    onError: (cause) => reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.requestShare }),
   });
 }
 
@@ -317,7 +322,7 @@ export function useResolveShareRequest(roomId: string) {
       void queryClient.invalidateQueries({ queryKey: roomKeys.shares(roomId) });
       void queryClient.invalidateQueries({ queryKey: roomKeys.agents });
     },
-    onError: (cause) => reportFailure(cause, { surface: "action", title: "没能处理申请" }),
+    onError: (cause) => reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.resolveRequest }),
   });
 }
 
@@ -330,6 +335,9 @@ export function useRunAction() {
     onSuccess: (run) => {
       if (run !== undefined && run !== null && typeof run === "object" && "id" in run) applyRun(queryClient, run);
     },
-    onError: (cause, { action }) => reportFailure(cause, { surface: "action", title: action === "stop" ? "没能停止" : "没能重试" }),
+    onError: (cause, { action }) => {
+      const failures = messagesFor(currentLocale()).rooms.failures;
+      reportFailure(cause, { surface: "action", title: action === "stop" ? failures.stopRun : failures.retryRun });
+    },
   });
 }

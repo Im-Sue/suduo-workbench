@@ -5,6 +5,7 @@ import { api } from "../../../api/client.js";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatBytes } from "../../requirements/format.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 出缩略图的图片类型：浏览器能直接显示、远程也会按原类型内联给出的（file-types.ts 的 INLINE_AS_IS）。
@@ -22,6 +23,7 @@ export function canShowThumbnail(file: Pick<RoomFileDto, "kind" | "contentType">
  * 其他文件（含不能缩略的图片）一张卡片（名字、大小、下载）。
  */
 export function RoomFiles({ files }: { files: readonly RoomFileDto[] }) {
+  const t = useT();
   const [preview, setPreview] = useState<RoomFileDto | null>(null);
   if (files.length === 0) return null;
   return (
@@ -35,7 +37,7 @@ export function RoomFiles({ files }: { files: readonly RoomFileDto[] }) {
               controls
               preload="metadata"
               src={api.roomFileUrl(file.id, "inline")}
-              aria-label={`视频 ${file.fileName}`}
+              aria-label={t.rooms.files.video(file.fileName)}
               className="max-h-72 max-w-[min(420px,100%)] rounded-md bg-black"
               data-testid="room-video"
             />
@@ -47,7 +49,7 @@ export function RoomFiles({ files }: { files: readonly RoomFileDto[] }) {
         <DialogContent size="lg" className="max-w-[min(1100px,calc(100vw-32px))]">
           <DialogHeader>
             <DialogTitle className="truncate">{preview?.fileName}</DialogTitle>
-            <DialogDescription className="sr-only">图片预览</DialogDescription>
+            <DialogDescription className="sr-only">{t.rooms.files.imagePreview}</DialogDescription>
           </DialogHeader>
           {preview === null ? null : <Lightbox key={preview.id} file={preview} />}
         </DialogContent>
@@ -58,13 +60,14 @@ export function RoomFiles({ files }: { files: readonly RoomFileDto[] }) {
 
 /** 图片缩略：取不到 / 显示不了（onError）时退回文件卡片，不留破图。 */
 function ImageThumbnail({ file, onOpen }: { file: RoomFileDto; onOpen(): void }) {
+  const t = useT();
   const [broken, setBroken] = useState(false);
   if (broken) return <FileCard file={file} />;
   return (
     <button
       type="button"
       className="overflow-hidden rounded-md border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={`查看图片 ${file.fileName}`}
+      aria-label={t.rooms.files.viewImage(file.fileName)}
       onClick={onOpen}
     >
       <img
@@ -79,6 +82,7 @@ function ImageThumbnail({ file, onOpen }: { file: RoomFileDto; onOpen(): void })
 }
 
 function FileCard({ file }: { file: RoomFileDto }) {
+  const t = useT();
   const Icon = file.contentType.startsWith("text/") || file.contentType === "application/pdf" ? FileTextIcon : FileIcon;
   return (
     <div className="flex h-12 max-w-[320px] min-w-[220px] items-center gap-2.5 rounded-md border border-border bg-card pr-1.5 pl-3" data-testid="room-file-card">
@@ -88,7 +92,7 @@ function FileCard({ file }: { file: RoomFileDto }) {
         <span className="text-caption text-subtle-foreground">{formatBytes(file.sizeBytes)}</span>
       </div>
       <Button asChild size="icon-sm" variant="ghost">
-        <a href={api.roomFileUrl(file.id)} download={file.fileName} aria-label={`下载 ${file.fileName}`}>
+        <a href={api.roomFileUrl(file.id)} download={file.fileName} aria-label={t.rooms.files.download(file.fileName)}>
           <DownloadIcon />
         </a>
       </Button>
@@ -97,15 +101,16 @@ function FileCard({ file }: { file: RoomFileDto }) {
 }
 
 function Lightbox({ file }: { file: RoomFileDto }) {
+  const t = useT();
   const [broken, setBroken] = useState(false);
   if (broken) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-md bg-muted px-6 py-10 text-center">
-        <p className="m-0 text-small text-muted-foreground">这张图片没法在线预览，可以下载后查看。</p>
+        <p className="m-0 text-small text-muted-foreground">{t.rooms.files.previewUnavailable}</p>
         <Button asChild variant="secondary">
           <a href={api.roomFileUrl(file.id)} download={file.fileName}>
             <DownloadIcon />
-            下载
+            {t.rooms.files.downloadAction}
           </a>
         </Button>
       </div>
@@ -123,7 +128,7 @@ function Lightbox({ file }: { file: RoomFileDto }) {
         <Button asChild size="sm" variant="secondary">
           <a href={api.roomFileUrl(file.id)} download={file.fileName}>
             <DownloadIcon />
-            下载原图
+            {t.rooms.files.downloadOriginal}
           </a>
         </Button>
       </div>

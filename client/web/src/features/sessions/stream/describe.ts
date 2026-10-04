@@ -1,4 +1,6 @@
 import type { TimelineStep, TurnTimeline } from "../../../event-projection/timeline.js";
+import { currentLocale } from "../../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../../i18n/messages/index.js";
 import { formatDuration } from "../../../ui/format.js";
 
 /**
@@ -7,25 +9,19 @@ import { formatDuration } from "../../../ui/format.js";
  * - 回合结束一行：「完成 · 用时 2 分 14 秒 · 修改 3 个文件 · 运行 5 条命令」。
  */
 
-const GROUP_PARTS: { kind: TimelineStep["kind"]; phrase(count: number): string }[] = [
-  { kind: "read", phrase: (count) => `查看了 ${count} 个文件` },
-  { kind: "search", phrase: (count) => `搜索了 ${count} 次` },
-  { kind: "list", phrase: (count) => `列了 ${count} 个目录` },
-  { kind: "command", phrase: (count) => `运行了 ${count} 条命令` },
-  { kind: "tool", phrase: (count) => `调用了 ${count} 次工具` },
-  { kind: "web", phrase: (count) => `搜索了 ${count} 次网页` },
-  { kind: "approval", phrase: (count) => `确认了 ${count} 次` },
-];
+/** 折叠摘要里依次列出的步骤类型（字典 conversation.summary 里同名的说法）。 */
+const GROUP_KINDS = ["read", "search", "list", "command", "tool", "web", "approval"] as const satisfies readonly TimelineStep["kind"][];
 
-export function stepGroupSummary(steps: readonly TimelineStep[]): string {
+export function stepGroupSummary(steps: readonly TimelineStep[], t: Messages = messagesFor(currentLocale())): string {
+  const text = t.conversation.summary;
   const parts: string[] = [];
-  for (const part of GROUP_PARTS) {
-    const count = steps.filter((step) => step.kind === part.kind).length;
-    if (count > 0) parts.push(part.phrase(count));
+  for (const kind of GROUP_KINDS) {
+    const count = steps.filter((step) => step.kind === kind).length;
+    if (count > 0) parts.push(text[kind](count));
   }
   if (parts.length === 0) {
     const thinking = steps.filter((step) => step.kind === "thinking").length;
-    parts.push(thinking === steps.length ? "思考" : `${steps.length} 个步骤`);
+    parts.push(thinking === steps.length ? text.thinking : text.steps(steps.length));
   }
   const duration = groupDuration(steps);
   if (duration !== null) parts.push(formatDuration(duration));
@@ -40,19 +36,12 @@ export function groupDuration(steps: readonly TimelineStep[]): number | null {
   return end > start ? end - start : null;
 }
 
-const OUTCOME: Record<TurnTimeline["status"], string> = {
-  running: "进行中",
-  completed: "完成",
-  interrupted: "已停止",
-  failed: "失败",
-  partial: "记录不完整",
-};
-
-export function turnSummaryText(turn: TurnTimeline): string {
-  const parts = [OUTCOME[turn.status]];
-  if (turn.summary.durationMs !== null && turn.summary.durationMs >= 1000) parts.push(`用时 ${formatDuration(turn.summary.durationMs)}`);
-  if (turn.summary.filesChanged > 0) parts.push(`修改 ${turn.summary.filesChanged} 个文件`);
-  if (turn.summary.commands > 0) parts.push(`运行 ${turn.summary.commands} 条命令`);
+export function turnSummaryText(turn: TurnTimeline, t: Messages = messagesFor(currentLocale())): string {
+  const text = t.conversation.summary;
+  const parts = [text.outcome[turn.status]];
+  if (turn.summary.durationMs !== null && turn.summary.durationMs >= 1000) parts.push(text.duration(formatDuration(turn.summary.durationMs)));
+  if (turn.summary.filesChanged > 0) parts.push(text.filesChanged(turn.summary.filesChanged));
+  if (turn.summary.commands > 0) parts.push(text.commands(turn.summary.commands));
   return parts.join(" · ");
 }
 
@@ -71,7 +60,7 @@ export function formatElapsed(ms: number): string {
  * 代码模式的模型在等工具结果（如等用户确认评论）时每隔几十秒就醒一次、留下一条空思考，
  * 逐条显示只会刷屏。有摘要的思考与其他步骤原样保留。
  */
-export function collapseEmptyThinking(steps: readonly TimelineStep[]): TimelineStep[] {
+export function collapseEmptyThinking(steps: readonly TimelineStep[], t: Messages = messagesFor(currentLocale())): TimelineStep[] {
   const result: TimelineStep[] = [];
   let run: TimelineStep[] = [];
   const flush = () => {
@@ -83,7 +72,7 @@ export function collapseEmptyThinking(steps: readonly TimelineStep[]): TimelineS
       const durations = run.map((step) => step.durationMs).filter((value): value is number => value !== null);
       result.push({
         ...first,
-        title: `思考 ×${run.length}`,
+        title: t.conversation.summary.thinkingRepeated(run.length),
         durationMs: durations.length === 0 ? null : durations.reduce((sum, value) => sum + value, 0),
         endedTs: last.endedTs,
       });

@@ -1,5 +1,6 @@
 import { LOCALE_HEADER } from "@suduo/client-contracts";
 import { currentLocale } from "../i18n/locale.js";
+import { messagesFor } from "../i18n/messages/index.js";
 import { markRequestNetworkFailure, markRequestReachedServer } from "./connectivity.js";
 import type {
   McpServerDto,
@@ -983,7 +984,7 @@ function uploadRoomFile(
   signal?: AbortSignal,
 ): Promise<RoomFileDto> {
   if (file.size > ROOM_FILE_MAX_BYTES) {
-    return Promise.reject(new ApiClientError(413, "ROOM_FILE_TOO_LARGE", "文件超过 300 MB，无法上传"));
+    return Promise.reject(new ApiClientError(413, "ROOM_FILE_TOO_LARGE", uploadText().tooLarge));
   }
   if (signal?.aborted === true) return Promise.reject(uploadAbortError());
   return new Promise((resolve, reject) => {
@@ -1026,11 +1027,11 @@ function uploadRoomFile(
     };
     request.onerror = () => {
       finish();
-      reject(new ApiClientError(0, "NETWORK_ERROR", "文件上传连接中断"));
+      reject(new ApiClientError(0, "NETWORK_ERROR", uploadText().fileInterrupted));
     };
     request.onabort = () => {
       finish();
-      reject(signal?.aborted === true ? uploadAbortError() : new ApiClientError(0, "NETWORK_ERROR", "文件上传已取消"));
+      reject(signal?.aborted === true ? uploadAbortError() : new ApiClientError(0, "NETWORK_ERROR", uploadText().fileCancelled));
     };
     signal?.addEventListener("abort", () => request.abort(), { once: true });
     const form = new FormData();
@@ -1062,7 +1063,7 @@ function uploadRequirementAttachment(
 ): Promise<AttachmentMutationResponse> {
   if (file.size > REQUIREMENT_ATTACHMENT_MAX_BYTES) {
     return Promise.reject(
-      new ApiClientError(413, "ATTACHMENT_TOO_LARGE", "文件超过 300 MB，无法上传"),
+      new ApiClientError(413, "ATTACHMENT_TOO_LARGE", uploadText().tooLarge),
     );
   }
   if (signal?.aborted === true) return Promise.reject(uploadAbortError());
@@ -1111,14 +1112,14 @@ function uploadRequirementAttachment(
     };
     request.onerror = () => {
       finish();
-      reject(new ApiClientError(0, "NETWORK_ERROR", "附件上传连接中断"));
+      reject(new ApiClientError(0, "NETWORK_ERROR", uploadText().attachmentInterrupted));
     };
     request.onabort = () => {
       finish();
       reject(
         signal?.aborted === true
           ? uploadAbortError()
-          : new ApiClientError(0, "NETWORK_ERROR", "附件上传已取消"),
+          : new ApiClientError(0, "NETWORK_ERROR", uploadText().attachmentCancelled),
       );
     };
     signal?.addEventListener("abort", () => request.abort(), { once: true });
@@ -1134,7 +1135,12 @@ export const REQUIREMENT_ATTACHMENT_MAX_BYTES = 314_572_800;
 
 /** 用户主动取消上传：与 fetch 被中止一致，抛 AbortError，调用方据此区分「取消」和「失败」。 */
 function uploadAbortError(): DOMException {
-  return new DOMException("上传已取消", "AbortError");
+  return new DOMException(uploadText().cancelled, "AbortError");
+}
+
+/** 上传在本地就失败时的说明：按出错那一刻的界面语言取。 */
+function uploadText() {
+  return messagesFor(currentLocale()).workbench.upload;
 }
 
 function parseJsonRecord(value: string): Record<string, unknown> | null {

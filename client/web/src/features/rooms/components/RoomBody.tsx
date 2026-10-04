@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { settingsQuery } from "../../../app/queries.js";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
 import { useMediaQuery } from "../../../ui/use-breakpoint.js";
 import { EMPTY_MESSAGES } from "../model.js";
 import { NO_PANEL, type RoomPanelState } from "../panel.js";
@@ -30,8 +31,9 @@ import { ThreadPanel } from "./ThreadPanel.js";
 const SIDE_BY_SIDE_QUERY = "(min-width: 1280px)";
 
 export function RoomSkeleton() {
+  const t = useT();
   return (
-    <div className="flex flex-1 flex-col" aria-busy="true" aria-label="正在打开讨论">
+    <div className="flex flex-1 flex-col" aria-busy="true" aria-label={t.rooms.opening}>
       <div className="flex h-[52px] items-center border-b border-border px-5">
         <Skeleton className="h-4 w-40" />
       </div>
@@ -57,6 +59,8 @@ export function RoomBody({
   layout?: "page" | "window";
   active?: boolean;
 }) {
+  const t = useT();
+  const text = t.rooms.body;
   const settings = useQuery(settingsQuery).data;
   const meId = settings?.session?.user.id ?? null;
   const messages = useRoomMessages(room.id);
@@ -85,7 +89,7 @@ export function RoomBody({
   const main = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {messages.isPending ? (
-        <div className="flex flex-1 flex-col justify-end gap-4 p-5" aria-busy="true" aria-label="正在加载消息">
+        <div className="flex flex-1 flex-col justify-end gap-4 p-5" aria-busy="true" aria-label={text.loadingMessages}>
           <Skeleton className="h-10 w-2/3" />
           <Skeleton className="h-10 w-1/2" />
         </div>
@@ -93,7 +97,7 @@ export function RoomBody({
         <div className="flex flex-1 items-center justify-center">
           <RegionError
             kind={classifyFailure(messages.error).kind}
-            message={`查不到消息：${classifyFailure(messages.error).message}`}
+            message={text.messagesLoadFailed(classifyFailure(messages.error).message)}
             busy={messages.isFetching}
             onRetry={() => void messages.refetch()}
           />
@@ -111,10 +115,8 @@ export function RoomBody({
           empty={
             <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center" data-testid="room-empty">
               <MessagesSquareIcon className="size-6 text-subtle-foreground" aria-hidden="true" />
-              <p className="m-0 text-body font-semibold text-foreground">还没有消息</p>
-              <p className="m-0 max-w-[420px] text-small text-muted-foreground">
-                发第一条消息开始讨论；同事把 Codex 共享进来后，@ 它就能直接问代码层面的问题。
-              </p>
+              <p className="m-0 text-body font-semibold text-foreground">{text.emptyTitle}</p>
+              <p className="m-0 max-w-[420px] text-small text-muted-foreground">{text.emptyDescription}</p>
             </div>
           }
         />
@@ -123,7 +125,7 @@ export function RoomBody({
         <RoomComposer
           room={room}
           threadRootId={null}
-          placeholder={`在「${room.name}」里发消息，@ 同事或共享进来的 Agent`}
+          placeholder={text.composerPlaceholder(room.name)}
           autoFocus
         />
       </div>
@@ -162,6 +164,7 @@ const DIVIDER_KEY_STEP = 16;
 
 /** 悬浮窗口：右侧分栏，分隔线可拖动 / 用 ←→ 调整；窗口太窄时右侧栏盖住整个窗口。 */
 function WindowSplit({ main, side }: { main: ReactNode; side: ReactNode }) {
+  const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const containerWidth = useElementWidth(containerRef);
   const [stored, setStored] = useState(() => readSideWidth() ?? SIDE_DEFAULT_WIDTH);
@@ -223,7 +226,7 @@ function WindowSplit({ main, side }: { main: ReactNode; side: ReactNode }) {
           <div
             role="separator"
             aria-orientation="vertical"
-            aria-label="调整话题栏宽度"
+            aria-label={t.rooms.body.resizeSide}
             aria-valuenow={Math.round(layout.width)}
             aria-valuemin={SIDE_MIN_WIDTH}
             aria-valuemax={Math.round(layout.max)}

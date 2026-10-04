@@ -1,0 +1,302 @@
+import { plural } from "@suduo/client-contracts";
+import type { ReactNode } from "react";
+import type { Messages } from "../zh-CN/index.js";
+
+const files = (count: number) => plural("en", count, { one: "1 file", other: `${String(count)} files` });
+
+export const conversation = {
+  untitled: "Untitled session",
+  list: {
+    label: "Session list",
+    title: "Sessions",
+    create: "New",
+    searchLabel: "Search sessions",
+    searchPlaceholder: "Search titles, requirement IDs, or content",
+    clearSearch: "Clear search",
+    filtersLabel: "Filter sessions",
+    filters: {
+      all: "All",
+      running: "Running",
+      runningCount: (count: number) => `Running ${String(count)}`,
+      needsMe: "Needs me",
+      needsMeCount: (count: number) => `Needs me ${String(count)}`,
+      roomTasks: "Room tasks",
+    },
+    loading: "Loading sessions",
+    empty: {
+      roomTasks: {
+        title: "No room tasks in this project yet",
+        description:
+          "When teammates @ the Codex you shared in this project's rooms, the tasks it runs on your computer show up here. You can view or stop them anytime.",
+      },
+      sessions: {
+        title: "No sessions in this project yet",
+        description:
+          "Start a session from a requirement on the Requirements page, or create a project session. To see another project's sessions, switch projects in the top left.",
+      },
+      noMatch: (keyword: string) => `No results for “${keyword}”`,
+      noMatchHint: "Try another keyword, or search by requirement ID, e.g. REQ-12.",
+      noRunning: "No running sessions",
+      noNeedsMe: "No sessions need your attention",
+      filterHint: "Switch to “All” to see every session.",
+    },
+    loadMore: "Load earlier sessions",
+    earlier: "Earlier",
+    row: {
+      previewFromYou: "You: ",
+      renameLabel: "Session name",
+      moreActions: (title: string) => `More actions for session “${title}”`,
+      rename: "Rename",
+      openInRoom: "View in room",
+      archive: "Archive",
+      delete: "Delete…",
+    },
+  },
+  page: {
+    regionLabel: "Session",
+    renameFailed: "Couldn't rename",
+    archived: (title: string) => `Archived “${title}”`,
+    undo: "Undo",
+    undoArchiveFailed: "Couldn't undo archiving",
+    archiveFailed: "Couldn't archive",
+    deleted: (title: string) => `Deleted “${title}”`,
+    deleteFailed: "Couldn't delete",
+    listFailed: (message: string) => `Couldn't load sessions: ${message}`,
+    createDisabled: {
+      noProject: "No project yet. Create one in the top left first.",
+      archivedProject: "This project is archived, so you can't create sessions in it.",
+    },
+    placeholder: {
+      title: "Pick a session to continue",
+      description:
+        "Open a session from the list on the left, start one from a requirement on the Requirements page, or create a project session. Press ⌘B to show or hide the list.",
+    },
+    deleteConfirm: {
+      title: (title: string) => `Delete session “${title}”?`,
+      description: "The conversation history can't be recovered. Project files and checkpoints aren't affected.",
+      confirm: "Delete",
+    },
+  },
+  header: {
+    titleLabel: "Session title",
+    rename: "Rename session",
+    requirementHint: "Linked requirement: view in the inspector panel",
+    requirementFallback: "Linked requirement",
+    noticesLabel: (count: number) =>
+      plural("en", count, { one: "1 runtime notice", other: `${String(count)} runtime notices` }),
+    noticesTitle: "Runtime notices",
+    openInspector: "Show inspector panel",
+    closeInspector: "Hide inspector panel",
+    inspector: "Inspector panel",
+  },
+  model: {
+    defaultModel: "Default model",
+    defaultEffort: "Default",
+    chipTitle: "Model and reasoning effort (this session; takes effect from the next turn)",
+    menuLabel: "This session · Takes effect from the next turn",
+    model: "Model",
+    effort: "Reasoning effort",
+    followDefault: "Use default",
+    loading: "Loading available models…",
+    loadFailed: "Couldn't load the model list. You can set up the model service in Settings.",
+    isDefault: "Default",
+    openSettings: "Global defaults and model service settings…",
+  },
+  approval: {
+    label: "Waiting for you",
+    question: {
+      command: "Codex wants to run a command",
+      fileChange: "Codex wants to edit files",
+      permissions: "Codex wants to change permissions",
+      other: "Codex needs your approval to continue",
+      stdin: "Codex wants to send input to a running command",
+    },
+    editFiles: (count: number) => `Codex wants to edit ${files(count)}`,
+    position: (total: number) => `1 of ${String(total)}`,
+    cwd: (cwd: string) => `In ${cwd}`,
+    viewPatch: (path: string) => `View changes to ${path}`,
+    keyHint: (keys: { approve: ReactNode; decline: ReactNode }): ReactNode[] => [keys.approve, " Approve · ", keys.decline, " Decline"],
+    approve: "Approve",
+    decline: "Decline",
+    moreOptions: "More approval options",
+    acceptForSession: {
+      title: "Allow for this session",
+      description: "Don't ask again for similar actions",
+    },
+    cancel: {
+      title: "Decline and stop",
+      description: "Stop Codex's current turn",
+    },
+    tool: {
+      noFiles: "No files listed to publish.",
+      unknownSize: "Size unknown",
+      noNote: "No publish note.",
+      note: "Publish note",
+      sending: "Sending…",
+      publishing: "Publishing…",
+      sendWarning: "Can't be undone once sent",
+      publishWarning: "Visible to the whole team once published. Can't be undone",
+      send: "Send",
+      dontSend: "Don't send",
+      publish: "Publish",
+      dontPublish: "Don't publish",
+    },
+  },
+  stream: {
+    loadingHistory: "Loading earlier history…",
+    newContent: "New updates",
+  },
+  turn: {
+    truncatedHead: "Earlier steps aren't in the local cache, so only the second half of this turn is shown.",
+    thinking: "Thinking…",
+    waiting: "Waiting for you",
+    exitCode: (code: number) => `Exit code ${String(code)}`,
+    unfinished: "Not finished",
+    outputTruncated: (count: number) => `…(showing only the last ${count.toLocaleString("en-US")} characters)`,
+    stepStatus: {
+      waiting: "Waiting for you",
+      completed: "Done",
+      failed: "Failed",
+      declined: "Declined",
+      aborted: "Stopped",
+    },
+    changes: {
+      writing: "Editing files…",
+      title: {
+        declined: (count: number) => `Declined changes to ${files(count)}`,
+        failed: (count: number) => `Couldn't write changes to ${files(count)}`,
+        aborted: (count: number) => `Unfinished changes to ${files(count)}`,
+        running: (count: number) => `Editing ${files(count)}`,
+        done: (count: number) => `Edited ${files(count)}`,
+      },
+      viewInInspector: (path: string) => `View changes to ${path} in the inspector panel`,
+      // 标记列很窄，用 Git 的 A / M / D（术语表 §十二）。
+      kind: {
+        add: "A",
+        delete: "D",
+        update: "M",
+      },
+    },
+    plan: {
+      label: "Plan",
+      completed: "Done",
+      inProgress: "In progress",
+      pending: "To do",
+    },
+    error: {
+      title: "This turn didn't finish",
+      retry: "Retry",
+      retried: "Resent",
+    },
+    viewChanges: "View changes",
+    restoreBefore: "Restore to before this turn",
+  },
+  summary: {
+    read: (count: number) => plural("en", count, { one: "Read 1 file", other: `Read ${String(count)} files` }),
+    search: (count: number) => plural("en", count, { one: "Searched once", other: `Searched ${String(count)} times` }),
+    list: (count: number) => plural("en", count, { one: "Listed 1 folder", other: `Listed ${String(count)} folders` }),
+    command: (count: number) => plural("en", count, { one: "Ran 1 command", other: `Ran ${String(count)} commands` }),
+    tool: (count: number) => plural("en", count, { one: "Made 1 tool call", other: `Made ${String(count)} tool calls` }),
+    web: (count: number) =>
+      plural("en", count, { one: "Searched the web once", other: `Searched the web ${String(count)} times` }),
+    approval: (count: number) => plural("en", count, { one: "1 approval", other: `${String(count)} approvals` }),
+    thinking: "Thinking",
+    steps: (count: number) => plural("en", count, { one: "1 step", other: `${String(count)} steps` }),
+    thinkingRepeated: (count: number) => `Thinking ×${String(count)}`,
+    outcome: {
+      running: "In progress",
+      completed: "Done",
+      interrupted: "Stopped",
+      failed: "Failed",
+      partial: "Incomplete record",
+    },
+    duration: (duration: string) => `Took ${duration}`,
+    filesChanged: (count: number) => `Edited ${files(count)}`,
+    commands: (count: number) => plural("en", count, { one: "Ran 1 command", other: `Ran ${String(count)} commands` }),
+  },
+  message: {
+    attribution: {
+      submitted: "Sent",
+      merged: "Merged into current work",
+      "new-turn": "Started a new turn",
+    },
+    mergedNote: "Recorded in the turn that's running",
+    mergedSuffix: (note: string) => ` (${note})`,
+    interruptedNote: "This turn was interrupted, so this message may not have been handled",
+    imageAttachment: "Image attachment",
+  },
+  status: {
+    command: "Running a command",
+    commandWith: (detail: string) => `Running ${detail}`,
+    file: "Updating files",
+    fileWith: (detail: string) => `Updating ${detail}`,
+    thinking: "Thinking",
+    tool: (title: string) => `Calling ${title}`,
+    toolWith: (title: string, detail: string) => `Calling ${title} · ${detail}`,
+  },
+  attention: {
+    title: {
+      completed: "Done",
+      approval: "Waiting for you",
+      error: "Didn't finish",
+    },
+    fallbackSession: "Session",
+    body: {
+      completed: "This turn is done.",
+      approval: "Codex is waiting for your approval to continue.",
+      error: "This turn didn't finish. Go back to the session to see why.",
+    },
+  },
+  runtime: {
+    conversationLabel: "Conversation",
+    inspectorLabel: "Inspector panel",
+    opening: "Opening…",
+    recovered:
+      "The session has recovered and you can keep working. A turn that was in progress may have been interrupted; its history has been filled in.",
+    noCheckpoint:
+      "There's no checkpoint from before this turn, so it can't be restored in one step. See which checkpoints exist under Environment in the inspector panel.",
+    restored: "Restored to before this turn",
+    outsideProject: (path: string) =>
+      `This file isn't in the project folder, so its changes can't be shown in the inspector panel: ${path}`,
+    retryMissing: "Couldn't find what was originally sent in this turn. Send it again from the composer.",
+    restore: {
+      title: "Restore to before this turn?",
+      ownAuto: (clock: string) => `Project files will go back to the auto-save made right before this turn (${clock}).`,
+      nearest: (subject: string, clock: string) =>
+        `This turn has no auto-save of its own. The closest one is “${subject}” (${clock}), and restoring it may also undo changes from earlier turns.`,
+      description: (lead: string) =>
+        `${lead} The current state (including new files) is auto-saved first, so you can restore it from Environment in the inspector panel if needed.`,
+      confirm: "Restore",
+    },
+    pendingPatch: "Pending",
+    stopMismatch: {
+      text: "That turn already ended. A new turn is running now.",
+      stopCurrent: "Stop current turn",
+      dismiss: "Got it",
+    },
+    dismissError: "Dismiss",
+    fileTree: {
+      label: "Project files",
+      empty: "This folder is empty.",
+      emptyDirectory: "Empty folder",
+    },
+    legacy: {
+      text: "This is an older requirement session, so requirement details no longer update. Start a new session to view the requirement, comments, and attachments directly with tools.",
+      back: "Back to requirement",
+    },
+    roomTask: {
+      text: "This is a room task session: an @ mention in a room started it, and replies go back to the room. It's read-only here. To ask follow-up questions privately, start a new session.",
+      openInRoom: "View in room",
+    },
+    empty: {
+      title: "Ready",
+      description: (keys: { skill: ReactNode; file: ReactNode }): ReactNode[] => [
+        "Describe the work for Codex. Type ",
+        keys.skill,
+        " to pick a Skill, or ",
+        keys.file,
+        " to reference a project file.",
+      ],
+    },
+  },
+} satisfies Messages["conversation"];

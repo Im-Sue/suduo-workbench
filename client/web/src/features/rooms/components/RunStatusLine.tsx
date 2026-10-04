@@ -1,12 +1,12 @@
 import type { AgentRunStatus, AgentRunSummaryDto } from "@suduo/cloud-contracts";
-import { AGENT_RUN_STATUS_LABELS } from "@suduo/cloud-contracts";
 import { BotIcon, CheckIcon, ChevronRightIcon, ClockIcon, RotateCcwIcon, SquareIcon, WifiOffIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "../../../ui/format.js";
-import { agentName, canRetryRun, canStopRun, isRunActive, runElapsedMs, runStatusText } from "../model.js";
+import { useT } from "../../../i18n/provider.js";
+import { agentName, canRetryRun, canStopRun, isRunActive, runElapsedMs, runStatusLabel, runStatusText } from "../model.js";
 import { useRunAction } from "../queries.js";
 
 /**
@@ -33,6 +33,7 @@ export function RunIcon({ status, className }: { status: AgentRunStatus; classNa
 }
 
 function RunActions({ run, meId }: { run: AgentRunSummaryDto; meId: string | null }) {
+  const t = useT();
   const action = useRunAction();
   const busy = action.isPending && action.variables?.run.id === run.id;
   return (
@@ -43,12 +44,12 @@ function RunActions({ run, meId }: { run: AgentRunSummaryDto; meId: string | nul
           variant="ghost"
           className="h-6 px-1.5"
           loading={busy && action.variables?.action === "stop"}
-          aria-label={`停止 ${agentName(run.agent)} 的任务`}
+          aria-label={t.rooms.run.stopLabel(agentName(run.agent, t))}
           data-testid="run-stop"
           onClick={() => action.mutate({ run, action: "stop" })}
         >
           <SquareIcon className="size-3" />
-          停止
+          {t.rooms.run.stop}
         </Button>
       ) : null}
       {canRetryRun(run, meId) ? (
@@ -57,12 +58,12 @@ function RunActions({ run, meId }: { run: AgentRunSummaryDto; meId: string | nul
           variant="ghost"
           className="h-6 px-1.5"
           loading={busy && action.variables?.action === "retry"}
-          aria-label={`重试 ${agentName(run.agent)} 的任务`}
+          aria-label={t.rooms.run.retryLabel(agentName(run.agent, t))}
           data-testid="run-retry"
           onClick={() => action.mutate({ run, action: "retry" })}
         >
           <RotateCcwIcon className="size-3" />
-          重试
+          {t.rooms.run.retry}
         </Button>
       ) : null}
     </>
@@ -70,8 +71,9 @@ function RunActions({ run, meId }: { run: AgentRunSummaryDto; meId: string | nul
 }
 
 export function RunStatusLine({ run, meId, onOpen }: { run: AgentRunSummaryDto; meId: string | null; onOpen(): void }) {
-  const text = runStatusText(run);
-  const name = agentName(run.agent);
+  const t = useT();
+  const text = runStatusText(run, t);
+  const name = agentName(run.agent, t);
   return (
     <div className="mt-1 flex min-w-0 items-center gap-1 text-caption" data-testid="run-status" data-status={run.status} data-run-id={run.id}>
       <button
@@ -80,7 +82,7 @@ export function RunStatusLine({ run, meId, onOpen }: { run: AgentRunSummaryDto; 
           "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-sm px-1.5 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
           run.status === "failed" ? "text-danger" : "text-muted-foreground",
         )}
-        aria-label={`${name}：${text}。打开话题`}
+        aria-label={t.rooms.run.lineLabel(name, text)}
         onClick={onOpen}
       >
         <RunIcon status={run.status} />
@@ -108,6 +110,7 @@ export function useTicker(active: boolean): number {
 
 /** 话题面板里的任务状态卡（需求 4.7 第二层）：状态、用时、「查看详情」。 */
 export function RunCard({ run, meId, onViewDetail }: { run: AgentRunSummaryDto; meId: string | null; onViewDetail(): void }) {
+  const t = useT();
   const now = useTicker(run.status === "running");
   const elapsed = runElapsedMs(run, now);
   const detail =
@@ -117,7 +120,7 @@ export function RunCard({ run, meId, onViewDetail }: { run: AgentRunSummaryDto; 
         ? run.summary
         : run.status === "queued"
           ? run.queuePosition !== null && run.queuePosition > 0
-            ? `前面还有 ${run.queuePosition} 个`
+            ? t.rooms.run.ahead(run.queuePosition)
             : null
           : run.reason;
   return (
@@ -132,16 +135,16 @@ export function RunCard({ run, meId, onViewDetail }: { run: AgentRunSummaryDto; 
     >
       <div className="flex min-w-0 items-center gap-2">
         <RunIcon status={run.status} />
-        <span className="min-w-0 truncate font-medium text-foreground">{agentName(run.agent)}</span>
+        <span className="min-w-0 truncate font-medium text-foreground">{agentName(run.agent, t)}</span>
         <span className={cn("shrink-0", run.status === "failed" ? "text-danger" : "text-muted-foreground")}>
-          {run.stopRequested && isRunActive(run) ? "正在停止…" : AGENT_RUN_STATUS_LABELS[run.status]}
+          {run.stopRequested && isRunActive(run) ? t.rooms.run.stopping : runStatusLabel(run.status, t)}
         </span>
         {elapsed === null || elapsed < 1_000 ? null : (
-          <span className="shrink-0 text-caption text-subtle-foreground">用时 {formatDuration(elapsed)}</span>
+          <span className="shrink-0 text-caption text-subtle-foreground">{t.rooms.run.elapsed(formatDuration(elapsed))}</span>
         )}
         <span className="flex-1" />
         <Button size="sm" variant="link" className="shrink-0 text-caption" onClick={onViewDetail} data-testid="run-view-detail">
-          查看详情
+          {t.rooms.run.viewDetail}
           <ChevronRightIcon className="size-3" />
         </Button>
       </div>

@@ -12,6 +12,7 @@ import type { LinkedRequirement } from "../../components/RequirementMaterials.js
 import { classifyFailure } from "../../feedback/classify.js";
 import { ConfirmDialog, RegionError } from "../../feedback/components/index.js";
 import { reportFailure } from "../../feedback/report.js";
+import { useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
 import { requirementKeys } from "../requirements/keys.js";
 import type { SessionLiveRunState } from "../../ui/session-status.js";
@@ -24,6 +25,8 @@ import { flattenSessions, sessionKeys, sessionListQuery, type SessionFilter, typ
  * 当前项目跟到会话所属项目。列表栏常驻，右侧会话按 key=sessionId 重挂，切会话时列表的搜索与筛选不丢。
  */
 export function SessionsPage({ session }: { session: SessionDto | null }) {
+  const t = useT();
+  const text = t.conversation.page;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const launcher = useSessionLauncher();
@@ -150,7 +153,7 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
       refresh();
     } catch (cause) {
       for (const [key, data] of before) queryClient.setQueryData(key, data);
-      reportFailure(cause, { surface: "action", title: "没能重命名" });
+      reportFailure(cause, { surface: "action", title: text.renameFailed });
     }
   };
 
@@ -160,18 +163,18 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
       await api.updateSession(item.id, { state: "archived" });
       if (item.id === activeId) void navigate({ to: "/sessions" });
       refresh();
-      showMessage(`已归档「${item.title || "未命名会话"}」`, "success", {
+      showMessage(text.archived(item.title || t.conversation.untitled), "success", {
         action: {
-          label: "撤销",
+          label: text.undo,
           onClick: () =>
             void api
               .updateSession(item.id, { state: "active" })
               .then(refresh)
-              .catch((cause: unknown) => reportFailure(cause, { surface: "action", title: "没能撤销归档" })),
+              .catch((cause: unknown) => reportFailure(cause, { surface: "action", title: text.undoArchiveFailed })),
         },
       });
     } catch (cause) {
-      reportFailure(cause, { surface: "action", title: "没能归档" });
+      reportFailure(cause, { surface: "action", title: text.archiveFailed });
     }
   };
 
@@ -184,9 +187,9 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
       await api.deleteSession(target.id);
       if (target.id === activeId) void navigate({ to: "/sessions" });
       refresh();
-      showMessage(`已删除「${target.title || "未命名会话"}」`, "success");
+      showMessage(text.deleted(target.title || t.conversation.untitled), "success");
     } catch (cause) {
-      reportFailure(cause, { surface: "action", title: "没能删除" });
+      reportFailure(cause, { surface: "action", title: text.deleteFailed });
     }
   };
 
@@ -195,7 +198,7 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
       <div className="p-2">
         <RegionError
           kind={classifyFailure(list.error).kind}
-          message={`没能读取会话列表：${classifyFailure(list.error).message}`}
+          message={text.listFailed(classifyFailure(list.error).message)}
           busy={list.isFetching}
           onRetry={() => void list.refetch()}
         />
@@ -218,7 +221,7 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
               filter={filter}
               keyword={keyword}
               canCreate={project !== null && !project.isArchived}
-              createDisabledReason={project === null ? "还没有项目：先在左上角新建一个项目" : "当前项目已归档，不能新建会话"}
+              createDisabledReason={project === null ? text.createDisabled.noProject : text.createDisabled.archivedProject}
               onFilterChange={setFilter}
               onKeywordChange={setKeyword}
               onLoadMore={() => void list.fetchNextPage()}
@@ -246,7 +249,7 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
         </Panel>
         <PanelSeparator className="w-px bg-border outline-none transition-colors hover:bg-primary focus-visible:bg-primary data-[separator=active]:bg-primary" />
         <Panel id="session-main" minSize={480}>
-          <section className="flex h-full min-w-0 flex-col" aria-label="会话区">
+          <section className="flex h-full min-w-0 flex-col" aria-label={text.regionLabel}>
             {session !== null ? (
               <SessionRuntime
                 key={session.id}
@@ -261,10 +264,8 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 p-9 text-center">
                 <MessagesSquareIcon className="size-6 text-subtle-foreground" aria-hidden="true" />
-                <h2 className="m-0 text-section font-semibold text-foreground">选一个会话继续</h2>
-                <p className="m-0 max-w-[380px] text-small text-muted-foreground">
-                  从左侧列表打开会话；也可以在需求页从某个需求开始会话，或者新建一个项目会话。按 ⌘B 收起或展开列表。
-                </p>
+                <h2 className="m-0 text-section font-semibold text-foreground">{text.placeholder.title}</h2>
+                <p className="m-0 max-w-[380px] text-small text-muted-foreground">{text.placeholder.description}</p>
               </div>
             )}
           </section>
@@ -273,9 +274,9 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && setPendingDelete(null)}
-        title={`删除会话「${pendingDelete?.title || "未命名会话"}」？`}
-        description="删除后对话记录不能恢复；项目文件和检查点不受影响。"
-        confirmLabel="删除"
+        title={text.deleteConfirm.title(pendingDelete?.title || t.conversation.untitled)}
+        description={text.deleteConfirm.description}
+        confirmLabel={text.deleteConfirm.confirm}
         onConfirm={() => void confirmDelete()}
       />
     </div>

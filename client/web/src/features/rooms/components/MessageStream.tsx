@@ -7,6 +7,7 @@ import { maxSeq, rootMessages, type MessagesData } from "../model.js";
 import type { PendingRoomMessage } from "../pending.js";
 import { DaySeparator, MessageItem, PendingMessageItem } from "./MessageItem.js";
 import { dayKey, formatDayLabel } from "../../../ui/format.js";
+import { useT } from "../../../i18n/provider.js";
 
 /**
  * 房间消息流（需求十一）：按日期分隔；同一人连续发的消息合并头像；向上滚到顶加载更早（滚动位置不跳）；
@@ -71,6 +72,7 @@ export function MessageStream({
   onViewState(state: { atBottom: boolean; maxSeq: number }): void;
   empty: ReactNode;
 }) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
@@ -183,18 +185,18 @@ export function MessageStream({
         onScroll={onScroll}
         className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]"
         role="log"
-        aria-label="消息记录"
+        aria-label={t.rooms.stream.label}
         data-testid="room-message-stream"
       >
         <div ref={contentRef} className="flex min-h-full flex-col justify-end pt-3 pb-2">
           {data.hasMoreBefore ? (
             <div className="flex justify-center py-2">
               <Button size="sm" variant="ghost" loading={loadingOlder} onClick={loadOlder} data-testid="room-load-older">
-                更早的消息 · 加载更多
+                {t.rooms.stream.loadOlder}
               </Button>
             </div>
           ) : roots.length > 0 ? (
-            <p className="m-0 py-3 text-center text-caption text-subtle-foreground">这是讨论的开始</p>
+            <p className="m-0 py-3 text-center text-caption text-subtle-foreground">{t.rooms.stream.start}</p>
           ) : null}
           {rows.length === 0 ? empty : null}
           {virtual ? (
@@ -234,7 +236,7 @@ export function MessageStream({
           }}
         >
           <ArrowDownIcon className="size-3.5" aria-hidden="true" />
-          有新消息
+          {t.rooms.stream.newMessages}
         </button>
       ) : null}
     </div>

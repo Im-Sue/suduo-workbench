@@ -27,6 +27,7 @@ import type {
   TurnPlan,
   TurnTimeline,
 } from "../../../event-projection/timeline.js";
+import { useT } from "../../../i18n/provider.js";
 import { Markdown } from "../../../ui/markdown.js";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -60,19 +61,20 @@ export function TurnView({
   now: number;
   actions: TurnViewActions;
 }) {
+  const t = useT();
   const lastIndex = turn.blocks.length - 1;
   const visible = turn.blocks.filter((block) => block.kind !== "text" || block.text.trim() !== "");
   const thinking = turn.status === "running" && visible.length === 0 && turn.plan === null;
   return (
     <article className="flex flex-col gap-3" data-turn-id={turn.turnId ?? undefined} data-testid="turn" data-status={turn.status}>
       {turn.truncatedHead ? (
-        <p className="m-0 text-caption text-subtle-foreground">更早的过程记录不在本机缓存里，这一轮只显示后半段。</p>
+        <p className="m-0 text-caption text-subtle-foreground">{t.conversation.turn.truncatedHead}</p>
       ) : null}
       {turn.plan === null ? null : <PlanChecklist plan={turn.plan} running={turn.status === "running"} />}
       {thinking ? (
         <p className="m-0 inline-flex items-center gap-2 text-small text-muted-foreground" role="status">
           <Spinner size="sm" />
-          思考中…
+          {t.conversation.turn.thinking}
         </p>
       ) : null}
       {turn.blocks.map((block, index) => (
@@ -134,6 +136,7 @@ function Block({ block, live, now, actions }: { block: TurnBlock; live: boolean;
 // ---------- 步骤组 ----------
 
 function StepGroup({ steps, live, now }: { steps: TimelineStep[]; live: boolean; now: number }) {
+  const t = useT();
   const running = steps.find((step) => step.status === "running");
   const waiting = steps.some((step) => step.status === "waiting");
   const failed = steps.some((step) => step.status === "failed" || (step.exitCode !== null && step.exitCode !== 0));
@@ -160,7 +163,7 @@ function StepGroup({ steps, live, now }: { steps: TimelineStep[]; live: boolean;
         ) : waiting ? (
           <>
             <HandIcon className="size-3.5 shrink-0 text-warning" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate font-medium text-foreground">等你确认</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-foreground">{t.conversation.turn.waiting}</span>
           </>
         ) : (
           <>
@@ -169,13 +172,13 @@ function StepGroup({ steps, live, now }: { steps: TimelineStep[]; live: boolean;
             ) : (
               <CheckIcon className="size-3.5 shrink-0 text-success" aria-hidden="true" />
             )}
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">{stepGroupSummary(steps)}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{stepGroupSummary(steps, t)}</span>
           </>
         )}
       </button>
       {open ? (
         <ol className="m-0 flex list-none flex-col gap-0.5 border-t border-border p-1.5">
-          {collapseEmptyThinking(steps).map((step) => (
+          {collapseEmptyThinking(steps, t).map((step) => (
             <StepRow key={step.id} step={step} now={now} />
           ))}
         </ol>
@@ -197,6 +200,8 @@ const STEP_ICON: Record<TimelineStep["kind"], typeof TerminalIcon> = {
 };
 
 function StepRow({ step, now }: { step: TimelineStep; now: number }) {
+  const t = useT();
+  const text = t.conversation.turn;
   const hasBody = step.output.trim() !== "" || (step.kind === "command" && step.detail !== "");
   const [open, setOpen] = useState(false);
   const Icon = STEP_ICON[step.kind];
@@ -217,9 +222,9 @@ function StepRow({ step, now }: { step: TimelineStep; now: number }) {
           {step.progress === null ? null : <span className="text-subtle-foreground"> · {step.progress}</span>}
         </span>
         {step.exitCode !== null && step.exitCode !== 0 ? (
-          <span className="shrink-0 rounded-xs bg-danger-soft px-1 font-mono text-caption text-danger">退出码 {step.exitCode}</span>
+          <span className="shrink-0 rounded-xs bg-danger-soft px-1 font-mono text-caption text-danger">{text.exitCode(step.exitCode)}</span>
         ) : null}
-        {step.status === "aborted" && step.kind !== "approval" ? <span className="shrink-0 text-caption text-subtle-foreground">未完成</span> : null}
+        {step.status === "aborted" && step.kind !== "approval" ? <span className="shrink-0 text-caption text-subtle-foreground">{text.unfinished}</span> : null}
         <span className="w-12 shrink-0 text-right font-mono text-caption text-subtle-foreground">
           {step.status === "running" ? formatElapsed(now - step.startedTs) : duration !== null && duration >= 1000 ? formatElapsed(duration) : ""}
         </span>
@@ -230,6 +235,7 @@ function StepRow({ step, now }: { step: TimelineStep; now: number }) {
 }
 
 function StepBody({ step }: { step: TimelineStep }) {
+  const t = useT();
   if (step.kind === "thinking") {
     return (
       <div className="ml-9 border-l border-border py-1 pl-3 text-small text-muted-foreground">
@@ -237,7 +243,10 @@ function StepBody({ step }: { step: TimelineStep }) {
       </div>
     );
   }
-  const output = step.output.length > 20_000 ? `…（只显示最后 20000 个字符）\n${step.output.slice(-20_000)}` : step.output;
+  const output =
+    step.output.length > OUTPUT_TAIL_CHARS
+      ? `${t.conversation.turn.outputTruncated(OUTPUT_TAIL_CHARS)}\n${step.output.slice(-OUTPUT_TAIL_CHARS)}`
+      : step.output;
   return (
     <div className="ml-9 mt-1 mb-1.5 overflow-hidden rounded-sm bg-code-bg">
       {step.detail === "" ? null : (
@@ -255,20 +264,24 @@ function StepBody({ step }: { step: TimelineStep }) {
   );
 }
 
+/** 步骤输出只显示末尾这么多字符。 */
+const OUTPUT_TAIL_CHARS = 20_000;
+
 function StepStatusMark({ status }: { status: StepStatus }) {
+  const label = useT().conversation.turn.stepStatus;
   switch (status) {
     case "running":
       return <Spinner size="sm" className="text-primary-text" />;
     case "waiting":
-      return <HandIcon className="size-3.5 shrink-0 text-warning" aria-label="等你确认" />;
+      return <HandIcon className="size-3.5 shrink-0 text-warning" aria-label={label.waiting} />;
     case "completed":
-      return <CheckIcon className="size-3.5 shrink-0 text-success" aria-label="完成" />;
+      return <CheckIcon className="size-3.5 shrink-0 text-success" aria-label={label.completed} />;
     case "failed":
-      return <XIcon className="size-3.5 shrink-0 text-danger" aria-label="失败" />;
+      return <XIcon className="size-3.5 shrink-0 text-danger" aria-label={label.failed} />;
     case "declined":
-      return <XIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-label="已拒绝" />;
+      return <XIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-label={label.declined} />;
     case "aborted":
-      return <SquareIcon className="size-3 shrink-0 text-subtle-foreground" aria-label="已停止" />;
+      return <SquareIcon className="size-3 shrink-0 text-subtle-foreground" aria-label={label.aborted} />;
   }
 }
 
@@ -285,11 +298,12 @@ function FileChangeCard({
   onOpen?: ((path: string) => void) | undefined;
   displayPath(path: string): string;
 }) {
+  const text = useT().conversation.turn.changes;
   if (changes.length === 0) {
     return status === "running" ? (
       <p className="m-0 inline-flex items-center gap-2 text-small text-muted-foreground">
         <Spinner size="sm" />
-        正在修改文件…
+        {text.writing}
       </p>
     ) : null;
   }
@@ -301,16 +315,15 @@ function FileChangeCard({
       <header className="flex h-9 items-center gap-2 border-b border-border px-3 text-small">
         <FileDiffIcon className="size-3.5 text-subtle-foreground" aria-hidden="true" />
         <span className="font-medium text-foreground">
-          {status === "declined"
-            ? "改动已被拒绝"
+          {(status === "declined"
+            ? text.title.declined
             : status === "failed"
-              ? "改动没能写入"
+              ? text.title.failed
               : status === "aborted"
-                ? "改动没有完成"
+                ? text.title.aborted
                 : status === "running"
-                  ? "正在修改"
-                  : "修改了"}{" "}
-          {changes.length} 个文件
+                  ? text.title.running
+                  : text.title.done)(changes.length)}
         </span>
         <DiffStat additions={additions} deletions={deletions} />
       </header>
@@ -322,9 +335,9 @@ function FileChangeCard({
               disabled={onOpen === undefined}
               className="flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-small outline-none enabled:hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => onOpen?.(change.path)}
-              title={onOpen === undefined ? displayPath(change.path) : `在检查面板查看 ${displayPath(change.path)} 的改动`}
+              title={onOpen === undefined ? displayPath(change.path) : text.viewInInspector(displayPath(change.path))}
             >
-              <span className="w-8 shrink-0 text-caption text-subtle-foreground">{CHANGE_KIND[change.kind]}</span>
+              <span className="w-8 shrink-0 text-caption text-subtle-foreground">{text.kind[change.kind]}</span>
               {/* 从左边截断：长路径也能看到文件名。 */}
               <span className="min-w-0 flex-1 truncate text-left font-mono text-caption text-foreground" dir="rtl">
                 <bdi>{change.movePath === null ? displayPath(change.path) : `${displayPath(change.path)} → ${displayPath(change.movePath)}`}</bdi>
@@ -338,8 +351,6 @@ function FileChangeCard({
   );
 }
 
-const CHANGE_KIND: Record<FileChangeEntry["kind"], string> = { add: "新增", delete: "删除", update: "修改" };
-
 export function DiffStat({ additions, deletions }: { additions: number; deletions: number }) {
   return (
     <span className="ml-auto shrink-0 font-mono text-caption">
@@ -351,11 +362,12 @@ export function DiffStat({ additions, deletions }: { additions: number; deletion
 // ---------- 计划 ----------
 
 function PlanChecklist({ plan, running }: { plan: TurnPlan; running: boolean }) {
+  const text = useT().conversation.turn.plan;
   const done = plan.steps.filter((step) => step.status === "completed").length;
   return (
-    <section className="rounded-md border border-border bg-card px-3 py-2.5" data-testid="plan-checklist" aria-label="计划">
+    <section className="rounded-md border border-border bg-card px-3 py-2.5" data-testid="plan-checklist" aria-label={text.label}>
       <header className="mb-1.5 flex items-center gap-2 text-small">
-        <span className="font-medium text-foreground">计划</span>
+        <span className="font-medium text-foreground">{text.label}</span>
         <span className="text-caption text-subtle-foreground">
           {done}/{plan.steps.length}
         </span>
@@ -374,21 +386,23 @@ function PlanChecklist({ plan, running }: { plan: TurnPlan; running: boolean }) 
 }
 
 function PlanMark({ status, running }: { status: PlanStepView["status"]; running: boolean }) {
-  if (status === "completed") return <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-success" aria-label="已完成" />;
+  const text = useT().conversation.turn.plan;
+  if (status === "completed") return <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-success" aria-label={text.completed} />;
   if (status === "in_progress" && running) return <Spinner size="sm" className="mt-0.5 text-primary-text" />;
-  return <CircleIcon className="mt-0.5 size-3.5 shrink-0 text-subtle-foreground" aria-label={status === "in_progress" ? "进行中" : "待做"} />;
+  return <CircleIcon className="mt-0.5 size-3.5 shrink-0 text-subtle-foreground" aria-label={status === "in_progress" ? text.inProgress : text.pending} />;
 }
 
 // ---------- 结束 ----------
 
 function ErrorCard({ message, onRetry }: { message: string; onRetry?: (() => void) | undefined }) {
+  const text = useT().conversation.turn.error;
   // 点过一次就不能再点：避免连点把同一句话排进队列好几份。
   const [retried, setRetried] = useState(false);
   return (
     <div className="flex items-start gap-2.5 rounded-md border border-danger/30 bg-danger-soft px-3 py-2.5" role="alert" data-testid="turn-error">
       <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className="m-0 text-small font-medium text-foreground">这一轮没能完成</p>
+        <p className="m-0 text-small font-medium text-foreground">{text.title}</p>
         <p className="m-0 text-small break-words text-muted-foreground">{message}</p>
       </div>
       {onRetry === undefined ? null : (
@@ -402,7 +416,7 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry?: (() => voi
           }}
         >
           <RotateCwIcon />
-          {retried ? "已重新发送" : "重试"}
+          {retried ? text.retried : text.retry}
         </Button>
       )}
     </div>
@@ -418,6 +432,7 @@ function TurnFooter({
   onViewChanges?: (() => void) | undefined;
   onRestoreBefore?: (() => void) | undefined;
 }) {
+  const t = useT();
   return (
     <footer className="flex items-center gap-2 text-caption text-subtle-foreground" data-testid="turn-summary">
       {turn.status === "completed" ? (
@@ -425,15 +440,15 @@ function TurnFooter({
       ) : (
         <SquareIcon className="size-3 text-subtle-foreground" aria-hidden="true" />
       )}
-      <span>{turnSummaryText(turn)}</span>
+      <span>{turnSummaryText(turn, t)}</span>
       {turn.summary.filesChanged > 0 && onViewChanges !== undefined ? (
         <button type="button" className="rounded-xs px-1 text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={onViewChanges}>
-          查看改动
+          {t.conversation.turn.viewChanges}
         </button>
       ) : null}
       {turn.summary.filesChanged > 0 && onRestoreBefore !== undefined ? (
         <button type="button" className="rounded-xs px-1 text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={onRestoreBefore}>
-          回到开始前
+          {t.conversation.turn.restoreBefore}
         </button>
       ) : null}
     </footer>

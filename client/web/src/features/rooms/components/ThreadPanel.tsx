@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
 import { roomKeys } from "../keys.js";
 import type { MessagesData } from "../model.js";
 import { hidePending, usePendingMessages } from "../pending.js";
@@ -37,6 +38,8 @@ export function ThreadPanel({
   onOpenRun(run: AgentRunSummaryDto): void;
   onCloseRun(): void;
 }) {
+  const t = useT();
+  const text = t.rooms.thread;
   const queryClient = useQueryClient();
   const thread = useThreadMessages(room.id, rootId);
   const pending = usePendingMessages(room.id, rootId);
@@ -78,16 +81,16 @@ export function ThreadPanel({
   return (
     <section
       className="flex h-full min-h-0 w-full flex-col bg-card"
-      aria-label="话题"
+      aria-label={text.title}
       data-testid="thread-panel"
       data-root-id={rootId}
     >
       <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border pr-2 pl-4">
-        <h2 className="m-0 flex-1 text-body font-semibold text-foreground">{runId === null ? "话题" : "执行过程"}</h2>
+        <h2 className="m-0 flex-1 text-body font-semibold text-foreground">{runId === null ? text.title : text.runTitle}</h2>
         <button
           type="button"
           className="inline-flex size-7 items-center justify-center rounded-sm text-subtle-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="关闭话题"
+          aria-label={text.close}
           onClick={onClose}
         >
           <XIcon className="size-4" />
@@ -101,7 +104,7 @@ export function ThreadPanel({
         <>
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-2" data-testid="thread-messages">
             {thread.isPending && root === undefined ? (
-              <div className="flex flex-col gap-3 p-4" aria-busy="true" aria-label="正在加载话题">
+              <div className="flex flex-col gap-3 p-4" aria-busy="true" aria-label={text.loading}>
                 <Skeleton className="h-4 w-1/2" />
                 <Skeleton className="h-12 w-full" />
               </div>
@@ -109,7 +112,7 @@ export function ThreadPanel({
             {thread.isError && root === undefined ? (
               <RegionError
                 kind={classifyFailure(thread.error).kind}
-                message={`查不到这个话题：${classifyFailure(thread.error).message}`}
+                message={text.loadFailed(classifyFailure(thread.error).message)}
                 busy={thread.isFetching}
                 onRetry={() => void thread.refetch()}
               />
@@ -120,20 +123,20 @@ export function ThreadPanel({
             {root === undefined ? null : (
               <div className="flex items-center gap-3 px-5 py-2" aria-hidden="true">
                 <span className="text-caption text-subtle-foreground">
-                  {replyCount === 0 ? "还没有回复" : `${replyCount} 条回复`}
+                  {replyCount === 0 ? text.noReplies : text.replies(replyCount)}
                 </span>
                 <span className="h-px flex-1 bg-border" />
               </div>
             )}
             {thread.isError && root !== undefined ? (
               <p className="m-0 px-5 py-1 text-caption text-danger" role="alert">
-                查不到这个话题的回复：{classifyFailure(thread.error).message}
+                {text.repliesLoadFailed(classifyFailure(thread.error).message)}
               </p>
             ) : null}
             {hasOlder ? (
               <div className="flex justify-center py-1">
                 <Button size="sm" variant="ghost" loading={thread.loadingOlder} onClick={loadOlder} data-testid="thread-load-older">
-                  加载更早的回复
+                  {text.loadOlder}
                 </Button>
               </div>
             ) : null}
@@ -145,7 +148,7 @@ export function ThreadPanel({
             ))}
           </div>
           <div className="shrink-0 border-t border-border px-3 pt-2 pb-3">
-            <RoomComposer room={room} threadRootId={rootId} placeholder="回复话题，@ 可以继续问 Agent" />
+            <RoomComposer room={room} threadRootId={rootId} placeholder={text.composerPlaceholder} />
           </div>
         </>
       )}

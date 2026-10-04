@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
-import { AGENT_RUN_STATUS_LABELS } from "@suduo/cloud-contracts";
 import { ArrowLeftIcon } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,8 +8,9 @@ import { projectEvents } from "../../../event-projection/reducer.js";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { EmptyState, RegionError } from "../../../feedback/components/index.js";
 import { formatDuration } from "../../../ui/format.js";
+import { useT } from "../../../i18n/provider.js";
 import { ConversationStream } from "../../sessions/stream/ConversationStream.js";
-import { agentName, runElapsedMs } from "../model.js";
+import { agentName, runElapsedMs, runStatusLabel } from "../model.js";
 import { runQuery } from "../queries.js";
 import { RunIcon, useTicker } from "./RunStatusLine.js";
 
@@ -30,6 +30,8 @@ export function toEnvelopes(events: readonly unknown[] | undefined): EventEnvelo
 const NO_ACTIONS = {};
 
 export function AgentRunDetail({ runId, onBack }: { runId: string; onBack(): void }) {
+  const t = useT();
+  const text = t.rooms.runDetail;
   const run = useQuery(runQuery(runId));
   const data = run.data;
   const projection = useMemo(() => projectEvents(toEnvelopes(data?.events)), [data?.events]);
@@ -41,21 +43,21 @@ export function AgentRunDetail({ runId, onBack }: { runId: string; onBack(): voi
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <Button size="sm" variant="ghost" onClick={onBack}>
           <ArrowLeftIcon />
-          返回话题
+          {text.back}
         </Button>
         {data === undefined ? null : (
           <span className="flex min-w-0 items-center gap-1.5 text-small">
             <RunIcon status={data.status} />
-            <span className="truncate font-medium text-foreground">{agentName(data.agent)}</span>
-            <span className="shrink-0 text-muted-foreground">{AGENT_RUN_STATUS_LABELS[data.status]}</span>
+            <span className="truncate font-medium text-foreground">{agentName(data.agent, t)}</span>
+            <span className="shrink-0 text-muted-foreground">{runStatusLabel(data.status, t)}</span>
             {elapsed === null || elapsed < 1_000 ? null : (
-              <span className="shrink-0 text-caption text-subtle-foreground">用时 {formatDuration(elapsed)}</span>
+              <span className="shrink-0 text-caption text-subtle-foreground">{t.rooms.run.elapsed(formatDuration(elapsed))}</span>
             )}
           </span>
         )}
       </div>
       {run.isPending ? (
-        <div className="flex flex-col gap-3 p-4" aria-busy="true" aria-label="正在加载执行过程">
+        <div className="flex flex-col gap-3 p-4" aria-busy="true" aria-label={text.loading}>
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-4 w-1/2" />
           <Skeleton className="h-24 w-full" />
@@ -64,7 +66,7 @@ export function AgentRunDetail({ runId, onBack }: { runId: string; onBack(): voi
       {run.isError && data === undefined ? (
         <RegionError
           kind={classifyFailure(run.error).kind}
-          message={`查不到执行过程：${classifyFailure(run.error).message}`}
+          message={text.loadFailed(classifyFailure(run.error).message)}
           busy={run.isFetching}
           onRetry={() => void run.refetch()}
         />
@@ -77,12 +79,8 @@ export function AgentRunDetail({ runId, onBack }: { runId: string; onBack(): voi
           actions={NO_ACTIONS}
           empty={
             <EmptyState
-              title={data.status === "queued" ? "还在排队" : data.status === "offline" ? "没有执行" : "还没有执行过程"}
-              description={
-                data.status === "offline"
-                  ? (data.reason ?? "所有者不在线或没有共享，这次没有执行。")
-                  : "开始执行后，这里会显示 Codex 查看了哪些文件、运行了哪些命令和它的回答。"
-              }
+              title={data.status === "queued" ? text.emptyQueued : data.status === "offline" ? text.emptyOffline : text.emptyNone}
+              description={data.status === "offline" ? (data.reason ?? text.offlineDescription) : text.emptyDescription}
             />
           }
         />

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { OpenMenu } from "./OpenMenu.js";
 import { CsvPreview, SheetPreview } from "./TablePreview.js";
+import { useT } from "../i18n/provider.js";
 
 export type DrawerState =
   | { mode: "diff"; diff: WorkspaceDiff }
@@ -19,8 +20,6 @@ export type DrawerState =
   | { mode: "fallback"; path: string; message: string }
   /** 还没写到磁盘的改动（例如等你确认的文件修改）：直接显示 Codex 给的统一 diff。 */
   | { mode: "patch"; path: string; diff: string; label: string };
-
-const KIND_LABEL = { created: "新建", modified: "修改", deleted: "删除" } as const;
 
 /** 超过该体量不再做 markdown 渲染（元素爆炸会卡主线程），退回纯文本。 */
 const MARKDOWN_RENDER_CAP = 300_000;
@@ -43,6 +42,7 @@ export function Drawer({
   onClose(): void;
   onSystemOpen(path: string, mode: SystemOpenTarget): void;
 }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -59,7 +59,7 @@ export function Drawer({
   }, [onClose]);
 
   return (
-    <section className="flex h-full min-h-0 flex-col" aria-label="文件详情">
+    <section className="flex h-full min-h-0 flex-col" aria-label={t.workbench.viewer.label}>
       {state.mode === "diff" ? (
         <DiffView diff={state.diff} targets={targets} onClose={onClose} onSystemOpen={onSystemOpen} />
       ) : state.mode === "patch" ? (
@@ -86,9 +86,10 @@ function ViewerHead({
   actions?: ReactNode;
   onClose(): void;
 }) {
+  const t = useT();
   return (
     <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border pr-2 pl-2">
-      <Button size="icon-sm" variant="ghost" aria-label="返回" title="返回（Esc）" onClick={onClose}>
+      <Button size="icon-sm" variant="ghost" aria-label={t.workbench.viewer.back} title={t.workbench.viewer.backTitle} onClick={onClose}>
         <ArrowLeftIcon />
       </Button>
       <span className="shrink-0 rounded-xs bg-muted px-1.5 text-caption text-muted-foreground">{badge}</span>
@@ -112,11 +113,12 @@ function DiffView({
   onClose(): void;
   onSystemOpen(path: string, mode: SystemOpenTarget): void;
 }) {
+  const t = useT();
   const result = useMemo(() => computeDiff(diff.before, diff.after), [diff.before, diff.after]);
   return (
     <>
       <ViewerHead
-        badge={KIND_LABEL[diff.kind]}
+        badge={t.workbench.changes.kind[diff.kind]}
         path={diff.path}
         stat={result.mode === "unified" ? <DiffStat additions={result.adds} deletions={result.dels} /> : undefined}
         actions={diff.kind === "deleted" ? undefined : <OpenMenu path={diff.path} targets={targets} onOpen={onSystemOpen} />}
@@ -124,20 +126,21 @@ function DiffView({
       />
       <div className="flex min-h-0 flex-1 flex-col" data-testid="diff-view">
         <MonacoView mode="diff" original={diff.before} modified={diff.after} path={diff.path} />
-        {diff.truncated ? <p className="m-0 px-3 py-2 text-caption text-subtle-foreground">二进制或超大文件只显示摘要。</p> : null}
+        {diff.truncated ? <p className="m-0 px-3 py-2 text-caption text-subtle-foreground">{t.workbench.viewer.diffSummaryOnly}</p> : null}
       </div>
     </>
   );
 }
 
 function PatchView({ path, diff, label, onClose }: { path: string; diff: string; label: string; onClose(): void }) {
+  const t = useT();
   const lines = diff.split("\n");
   return (
     <>
       <ViewerHead badge={label} path={path} onClose={onClose} />
       <div className="min-h-0 flex-1 overflow-auto bg-card" data-testid="patch-view">
         {diff.trim() === "" ? (
-          <p className="m-0 p-4 text-small text-subtle-foreground">没有可显示的改动内容。</p>
+          <p className="m-0 p-4 text-small text-subtle-foreground">{t.workbench.viewer.noPatch}</p>
         ) : (
           <pre className="m-0 py-2 font-mono text-caption leading-[18px]">
             {lines.map((line, index) => (
@@ -179,10 +182,11 @@ function PreviewView({
   onClose(): void;
   onSystemOpen(path: string, mode: SystemOpenTarget): void;
 }) {
+  const t = useT();
   return (
     <>
       <ViewerHead
-        badge="预览"
+        badge={t.workbench.viewer.preview}
         path={content.path}
         stat={<span className="shrink-0 text-caption text-subtle-foreground">{formatBytes(content.size)}</span>}
         actions={<OpenMenu path={content.path} targets={targets} onOpen={onSystemOpen} />}
@@ -208,6 +212,7 @@ function PreviewBody({
   targets: SystemOpenTarget[];
   onSystemOpen(path: string, mode: SystemOpenTarget): void;
 }) {
+  const t = useT();
   if (content.type === "binary") {
     if (content.mediaType === "application/pdf") {
       // 浏览器原生 PDF 查看器，零依赖。
@@ -218,8 +223,8 @@ function PreviewBody({
     }
     return (
       <Unpreviewable
-        title="这种文件没法在工作台里预览"
-        message="Word 等文件请用系统默认应用打开查看。"
+        title={t.workbench.viewer.unsupportedTitle}
+        message={t.workbench.viewer.unsupportedHint}
         action={<OpenMenu path={content.path} targets={targets} onOpen={onSystemOpen} />}
       />
     );
@@ -230,7 +235,7 @@ function PreviewBody({
   if (content.mediaType === "text/csv") {
     return (
       <>
-        {content.truncated === true ? <Truncated>文件较大，只解析了开头部分——完整内容请用系统应用打开。</Truncated> : null}
+        {content.truncated === true ? <Truncated>{t.workbench.viewer.csvTruncated}</Truncated> : null}
         <CsvPreview text={content.text} />
       </>
     );
@@ -241,8 +246,8 @@ function PreviewBody({
   const asMarkdown = content.mediaType === "text/markdown" && content.text.length <= MARKDOWN_RENDER_CAP;
   return (
     <>
-      {truncatedByServer || overCap ? <Truncated>文件较大，只显示开头部分——完整内容请用系统应用打开。</Truncated> : null}
-      {content.mediaType === "text/markdown" && !asMarkdown ? <Truncated>文档较大，已按纯文本显示以保证流畅。</Truncated> : null}
+      {truncatedByServer || overCap ? <Truncated>{t.workbench.viewer.textTruncated}</Truncated> : null}
+      {content.mediaType === "text/markdown" && !asMarkdown ? <Truncated>{t.workbench.viewer.markdownAsText}</Truncated> : null}
       {asMarkdown ? (
         <div className="text-body text-foreground">
           <Markdown text={display} />
@@ -284,11 +289,12 @@ function FallbackView({
   onClose(): void;
   onSystemOpen(path: string, mode: SystemOpenTarget): void;
 }) {
+  const t = useT();
   return (
     <>
-      <ViewerHead badge="文件" path={path} onClose={onClose} />
+      <ViewerHead badge={t.workbench.viewer.file} path={path} onClose={onClose} />
       <div className="min-h-0 flex-1 overflow-auto">
-        <Unpreviewable title="没法在工作台里预览" message={message} action={<OpenMenu path={path} targets={targets} onOpen={onSystemOpen} />} />
+        <Unpreviewable title={t.workbench.viewer.fallbackTitle} message={message} action={<OpenMenu path={path} targets={targets} onOpen={onSystemOpen} />} />
       </div>
     </>
   );

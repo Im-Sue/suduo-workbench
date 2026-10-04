@@ -35,6 +35,9 @@ import {
   saveEventCache,
 } from "../event-projection/cache.js";
 import { formatClock, messageOf } from "../ui/format.js";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor } from "../i18n/messages/index.js";
+import { useT } from "../i18n/provider.js";
 import { ChevronRightIcon, FileIcon as FileLucideIcon, FolderIcon as FolderLucideIcon, LockIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Group as PanelGroup, Panel, Separator as PanelSeparator, useDefaultLayout } from "react-resizable-panels";
@@ -163,6 +166,8 @@ export function SessionRuntime(props: {
   /** 会话本身改了（改名、审批档、模型）：通知列表刷新。 */
   onSessionChanged?(session: SessionDto): void;
 }) {
+  const t = useT();
+  const text = t.conversation.runtime;
   const [session, setSession] = useState<SessionDto | null>(null);
   const [events, setEvents] = useState<EventEnvelope<string, JsonValue>[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -537,7 +542,7 @@ export function SessionRuntime(props: {
         event.type === "runtime.recovery-required" &&
         Date.now() - event.ts < RECOVERY_BANNER_FRESH_MS
       ) {
-        setPersistentError("会话已恢复，可继续工作；进行中回合可能中断，历史进度已自动补齐。");
+        setPersistentError(messagesFor(currentLocale()).conversation.runtime.recovered);
       }
       if (
         event.type === "file.patch-updated" ||
@@ -684,7 +689,7 @@ export function SessionRuntime(props: {
         .filter((checkpoint) => checkpoint.ts <= turn.startedTs + 2_000)
         .sort((left, right) => right.ts - left.ts)[0];
       if (candidate === undefined) {
-        setPersistentError("这一轮开始前没有检查点，没法一键回到开始前。可以在检查面板的「环境」里看看有哪些检查点。", "stale_state");
+        setPersistentError(text.noCheckpoint, "stale_state");
         return;
       }
       const ownAuto = candidate.auto && turn.startedTs - candidate.ts <= 120_000;
@@ -700,7 +705,7 @@ export function SessionRuntime(props: {
     try {
       await api.gitRestore(props.projectId, target.checkpoint.hash);
       await refreshChanges(props.sessionId, setChanges, setChangeStats);
-      showMessage("已回到这一轮开始前", "success");
+      showMessage(text.restored, "success");
     } catch (cause) {
       reportError(cause, "action");
     }
@@ -710,7 +715,7 @@ export function SessionRuntime(props: {
   const openChange = (path: string) => {
     const relative = toProjectPath(path, projectRoot);
     if (relative === null) {
-      setPersistentError(`这个文件不在项目目录里，没法在检查面板里看改动：${path}`, "stale_state");
+      setPersistentError(text.outsideProject(path), "stale_state");
       return;
     }
     void openDiff(relative);
@@ -767,7 +772,7 @@ export function SessionRuntime(props: {
       (candidate) => candidate.role === "user" && candidate.turnId !== null && candidate.turnId === turn.turnId && candidate.attribution !== "merged",
     );
     if (message === undefined || message.text.trim() === "") {
-      setPersistentError("找不到这一轮最初发送的内容，请在输入框里重新发送。", "stale_state");
+      setPersistentError(text.retryMissing, "stale_state");
       return;
     }
     const skillName = message.skills[0];
@@ -808,7 +813,7 @@ export function SessionRuntime(props: {
     drawer === null && drawerLoading ? (
       <div className="flex items-center gap-2 p-4 text-small text-subtle-foreground" data-testid="drawer-loading" aria-busy="true" role="status">
         <Spinner size="sm" />
-        正在打开…
+        {text.opening}
       </div>
     ) : drawer !== null ? (
       <Drawer
@@ -895,7 +900,7 @@ export function SessionRuntime(props: {
         ) : null}
         <PanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
           <Panel id="conversation" minSize={420}>
-            <section className="flex h-full min-w-0 flex-col" aria-label="对话">
+            <section className="flex h-full min-w-0 flex-col" aria-label={text.conversationLabel}>
               {/* 回答里的项目文件链接点开在右侧文件面板（需求 4.6）。 */}
               <MarkdownLinkContext.Provider value={markdownLinks}>
                 <ConversationStream
@@ -922,17 +927,17 @@ export function SessionRuntime(props: {
               <ConfirmDialog
                 open={restoreTarget !== null}
                 onOpenChange={(open) => !open && setRestoreTarget(null)}
-                title="回到这一轮开始前？"
+                title={text.restore.title}
                 description={
                   restoreTarget === null
                     ? ""
-                    : `${
+                    : text.restore.description(
                         restoreTarget.ownAuto
-                          ? `项目文件会恢复到这一轮开始前自动存档时（${formatClock(restoreTarget.checkpoint.ts)}）的状态。`
-                          : `这一轮开始前没有它自己的自动存档；最近的是「${restoreTarget.checkpoint.subject}」（${formatClock(restoreTarget.checkpoint.ts)}），还原到它可能连带撤掉更早几轮的改动。`
-                      }还原前会先自动存一份当前状态（包括新建的文件），需要时可以在检查面板的「环境」里还原回来。`
+                          ? text.restore.ownAuto(formatClock(restoreTarget.checkpoint.ts))
+                          : text.restore.nearest(restoreTarget.checkpoint.subject, formatClock(restoreTarget.checkpoint.ts)),
+                      )
                 }
-                confirmLabel="回到开始前"
+                confirmLabel={text.restore.confirm}
                 onConfirm={() => void confirmRestore()}
               />
               <div className="shrink-0 px-6 pb-4">
@@ -942,7 +947,7 @@ export function SessionRuntime(props: {
                   changesFor={changesForApproval}
                   displayPath={displayPath}
                   onViewPatch={(change) => {
-                    setDrawer({ mode: "patch", path: displayPath(change.path), diff: change.diff, label: "待确认" });
+                    setDrawer({ mode: "patch", path: displayPath(change.path), diff: change.diff, label: text.pendingPatch });
                     setSideOpen(true);
                   }}
                 />
@@ -952,13 +957,13 @@ export function SessionRuntime(props: {
                     data-testid="stop-mismatch-notice"
                     role="status"
                   >
-                    <span className="flex-1">刚才那一轮已经结束，现在在跑的是新的一轮。</span>
+                    <span className="flex-1">{text.stopMismatch.text}</span>
                     {projection.runningTurnIds.includes(stopMismatch.runningTurnId) && (
                       <Button size="sm" variant="danger-ghost" data-testid="stop-current-turn" onClick={() => stopTurn(stopMismatch.runningTurnId)}>
-                        停止当前这一轮
+                        {text.stopMismatch.stopCurrent}
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => setStopMismatch(null)}>知道了</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setStopMismatch(null)}>{text.stopMismatch.dismiss}</Button>
                   </div>
                 )}
                 {context.status === "ready" && context.value.contextMode === "legacy" ? (
@@ -969,7 +974,7 @@ export function SessionRuntime(props: {
                     <div className="min-w-0 flex-1">
                       <RegionError kind={error.kind} message={error.message} />
                     </div>
-                    <Button size="icon-sm" variant="ghost" aria-label="关闭提示" onClick={() => setError(null)}>
+                    <Button size="icon-sm" variant="ghost" aria-label={text.dismissError} onClick={() => setError(null)}>
                       <XIcon />
                     </Button>
                   </div>
@@ -988,7 +993,7 @@ export function SessionRuntime(props: {
                     lastUserText={lastUserText}
                     runState={{
                       status: headStatus,
-                      stepText: stepText(activeMeta?.currentStep ?? null),
+                      stepText: stepText(activeMeta?.currentStep ?? null, t),
                       elapsedMs,
                       pendingApprovals: approvals.length,
                       stopping: stopping !== null && activeTurnId === stopping.turnId,
@@ -1060,7 +1065,7 @@ export function SessionRuntime(props: {
             <>
               <PanelSeparator className="w-px bg-border outline-none transition-colors hover:bg-primary data-[separator=active]:bg-primary focus-visible:bg-primary" />
               <Panel id="inspector" defaultSize={400} minSize={320} maxSize={720}>
-                <div className="flex h-full min-w-0 flex-col overflow-hidden bg-card" aria-label="检查面板" data-testid="session-inspector">
+                <div className="flex h-full min-w-0 flex-col overflow-hidden bg-card" aria-label={text.inspectorLabel} data-testid="session-inspector">
                   {inspectorContent}
                 </div>
               </Panel>
@@ -1085,16 +1090,17 @@ function RuntimeFileTree(props: {
   onPreview(path: string): void;
   depth?: number;
 }) {
+  const text = useT().conversation.runtime.fileTree;
   const depth = props.depth ?? 0;
   if (props.entries.length === 0) {
     return depth === 0 ? (
-      <p className="m-0 px-3 py-4 text-small text-subtle-foreground">当前目录为空。</p>
+      <p className="m-0 px-3 py-4 text-small text-subtle-foreground">{text.empty}</p>
     ) : (
-      <p className="m-0 py-1 text-caption text-subtle-foreground" style={{ paddingLeft: 12 + (depth + 1) * 14 }}>空目录</p>
+      <p className="m-0 py-1 text-caption text-subtle-foreground" style={{ paddingLeft: 12 + (depth + 1) * 14 }}>{text.emptyDirectory}</p>
     );
   }
   return (
-    <ul className="m-0 flex list-none flex-col p-0" role={depth === 0 ? "tree" : "group"} aria-label={depth === 0 ? "项目文件" : undefined}>
+    <ul className="m-0 flex list-none flex-col p-0" role={depth === 0 ? "tree" : "group"} aria-label={depth === 0 ? text.label : undefined}>
       {props.entries.map((entry) => {
         const directory = entry.type === "directory";
         const open = directory && props.expanded.has(entry.path);
@@ -1174,6 +1180,7 @@ function navigateInApp(path: string): void {
  * 旧版需求会话（创建时没有挂 suduo 工具）：输入框上方一行提示，不打断对话（需求 七 · 已有的需求会话）。
  */
 function LegacySessionBanner({ context, onNavigate }: { context: SessionContextDto; onNavigate(path: string): void }) {
+  const text = useT().conversation.runtime.legacy;
   const href = requirementPageHref(context);
   return (
     <Banner
@@ -1193,12 +1200,12 @@ function LegacySessionBanner({ context, onNavigate }: { context: SessionContextD
               onNavigate(href);
             }}
           >
-            回到需求
+            {text.back}
           </a>
         )
       }
     >
-      这是旧版需求会话：需求信息不会再自动更新。新建会话即可用工具直接查看需求、评论和附件。
+      {text.text}
     </Banner>
   );
 }
@@ -1210,6 +1217,7 @@ function roomThreadHref(task: SessionRoomTaskDto): string {
 
 /** 房间任务会话的输入区：换成一行只读说明；知道对应的房间话题时给「在讨论里查看」（同会话列表菜单）。 */
 function RoomTaskReadonlyNotice({ roomTask, onNavigate }: { roomTask: SessionRoomTaskDto | null; onNavigate(path: string): void }) {
+  const text = useT().conversation.runtime.roomTask;
   const href = roomTask === null ? null : roomThreadHref(roomTask);
   return (
     <div
@@ -1217,7 +1225,7 @@ function RoomTaskReadonlyNotice({ roomTask, onNavigate }: { roomTask: SessionRoo
       data-testid="room-task-readonly"
     >
       <LockIcon className="size-4 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 flex-1">这是房间任务会话：由房间里的 @ 触发，回答会发回房间。这里只读；要私下追问请新开会话。</span>
+      <span className="min-w-0 flex-1">{text.text}</span>
       {href === null ? null : (
         <a
           href={href}
@@ -1229,7 +1237,7 @@ function RoomTaskReadonlyNotice({ roomTask, onNavigate }: { roomTask: SessionRoo
             onNavigate(href);
           }}
         >
-          在讨论里查看
+          {text.openInRoom}
         </a>
       )}
     </div>
@@ -1237,11 +1245,15 @@ function RoomTaskReadonlyNotice({ roomTask, onNavigate }: { roomTask: SessionRoo
 }
 
 function EmptyConversation() {
+  const text = useT().conversation.runtime.empty;
   return (
     <div className="flex flex-col items-center gap-2 py-16 text-center">
-      <h2 className="m-0 text-section font-semibold text-foreground">准备好了</h2>
+      <h2 className="m-0 text-section font-semibold text-foreground">{text.title}</h2>
       <p className="m-0 max-w-[420px] text-small text-muted-foreground">
-        直接描述要交给 Codex 的工作；输入 <kbd className="font-mono">/</kbd> 选择 skill，<kbd className="font-mono">@</kbd> 引用项目文件。
+        {text.description({
+          skill: <kbd key="skill" className="font-mono">/</kbd>,
+          file: <kbd key="file" className="font-mono">@</kbd>,
+        })}
       </p>
     </div>
   );
@@ -1270,6 +1282,7 @@ const safeLocalStorage = {
  * 打开时焦点移进面板，Esc 收起并把焦点还给之前的位置（技术设计 §6.5）；文件查看器开着时 Esc 先交给它。
  */
 function InspectorOverlay({ children, viewerOpen, onClose }: { children: ReactNode; viewerOpen: boolean; onClose(): void }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1282,7 +1295,7 @@ function InspectorOverlay({ children, viewerOpen, onClose }: { children: ReactNo
       tabIndex={-1}
       className="absolute top-[53px] right-0 bottom-0 z-30 flex w-[min(420px,100%)] flex-col overflow-hidden border-l border-border bg-card shadow-3 outline-none"
       role="region"
-      aria-label="检查面板"
+      aria-label={t.conversation.runtime.inspectorLabel}
       data-testid="session-inspector"
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented || viewerOpen) return;

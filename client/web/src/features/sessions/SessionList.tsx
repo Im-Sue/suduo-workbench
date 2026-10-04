@@ -2,6 +2,7 @@ import type { SessionListItemDto } from "@suduo/client-contracts";
 import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import { ArchiveIcon, HashIcon, MessageCircleIcon, MessagesSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { useT } from "../../i18n/provider.js";
 import { formatRelativeTime } from "../../ui/format.js";
 import type { SessionLiveRunState } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
@@ -79,19 +80,21 @@ export function SessionList({
   onArchive(item: SessionListItemDto): void;
   onDelete(item: SessionListItemDto): void;
 }) {
+  const t = useT();
+  const text = t.conversation.list;
   const [renaming, setRenaming] = useState<string | null>(null);
   const statuses = new Map(items.map((item) => [item.id, rowStatus(item, live)]));
   const visible = items.filter((item) => matchesFilter(statuses.get(item.id) ?? "idle", filter) && matchesSearch(item, keyword));
-  const groups = groupByDay(visible);
+  const groups = groupByDay(visible, t);
   const counted = countItems ?? items;
   const countStatus = (item: SessionListItemDto) => statuses.get(item.id) ?? rowStatus(item, live);
   const runningCount = counted.filter((item) => matchesFilter(countStatus(item), "running")).length;
   const needsMeCount = counted.filter((item) => matchesFilter(countStatus(item), "needs-me")).length;
 
   return (
-    <nav className="flex h-full min-h-0 flex-col" aria-label="会话列表" data-testid="sessions-rail">
+    <nav className="flex h-full min-h-0 flex-col" aria-label={text.label} data-testid="sessions-rail">
       <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border pr-2 pl-4">
-        <h2 className="m-0 flex-1 text-body font-semibold text-foreground">会话</h2>
+        <h2 className="m-0 flex-1 text-body font-semibold text-foreground">{text.title}</h2>
         <Button
           size="sm"
           variant="primary"
@@ -101,16 +104,16 @@ export function SessionList({
           onClick={onCreate}
         >
           <PlusIcon />
-          新建
+          {text.create}
         </Button>
       </div>
       <div className="flex shrink-0 flex-col gap-2 px-3 pt-3 pb-2">
         <label className="relative flex items-center">
-          <span className="sr-only">搜索会话</span>
+          <span className="sr-only">{text.searchLabel}</span>
           <SearchIcon className="pointer-events-none absolute left-2.5 size-3.5 text-subtle-foreground" aria-hidden="true" />
           <Input
             className="h-8 pr-7 pl-8"
-            placeholder="搜索标题、需求编号或内容"
+            placeholder={text.searchPlaceholder}
             value={keyword}
             data-testid="session-search"
             onChange={(event) => onKeywordChange(event.target.value)}
@@ -124,7 +127,7 @@ export function SessionList({
           {keyword === "" ? null : (
             <button
               type="button"
-              aria-label="清除搜索"
+              aria-label={text.clearSearch}
               className="absolute right-1.5 inline-flex size-5 items-center justify-center rounded-xs text-subtle-foreground hover:bg-muted hover:text-foreground"
               onClick={() => onKeywordChange("")}
             >
@@ -134,20 +137,20 @@ export function SessionList({
         </label>
         <SegmentedControl
           size="sm"
-          aria-label="筛选会话"
+          aria-label={text.filtersLabel}
           value={filter}
           onValueChange={onFilterChange}
           options={[
-            { value: "all", label: "全部" },
-            { value: "running", label: runningCount > 0 ? `运行中 ${runningCount}` : "运行中" },
-            { value: "needs-me", label: needsMeCount > 0 ? `需要我 ${needsMeCount}` : "需要我" },
-            { value: "room-tasks", label: "房间任务" },
+            { value: "all", label: text.filters.all },
+            { value: "running", label: runningCount > 0 ? text.filters.runningCount(runningCount) : text.filters.running },
+            { value: "needs-me", label: needsMeCount > 0 ? text.filters.needsMeCount(needsMeCount) : text.filters.needsMe },
+            { value: "room-tasks", label: text.filters.roomTasks },
           ]}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {loading ? (
-          <div className="flex flex-col gap-3 p-2" aria-busy="true" aria-label="正在加载会话">
+          <div className="flex flex-col gap-3 p-2" aria-busy="true" aria-label={text.loading}>
             {[0, 1, 2, 3].map((index) => (
               <div key={index} className="flex flex-col gap-1.5">
                 <Skeleton className="h-3.5 w-3/4" />
@@ -159,21 +162,15 @@ export function SessionList({
         {error}
         {!loading && error === null && items.length === 0 ? (
           filter === "room-tasks" ? (
-            <EmptyList
-              title="这个项目还没有房间任务"
-              description="你共享到这个项目讨论里的 Codex 被同事 @ 后，它在你电脑上执行的任务会列在这里，可以随时查看或停止。"
-            />
+            <EmptyList title={text.empty.roomTasks.title} description={text.empty.roomTasks.description} />
           ) : (
-            <EmptyList
-              title="这个项目还没有会话"
-              description="在需求页从某个需求开始会话，或者新建一个项目会话。别的项目的会话在左上角切换项目后查看。"
-            />
+            <EmptyList title={text.empty.sessions.title} description={text.empty.sessions.description} />
           )
         ) : null}
         {!loading && items.length > 0 && visible.length === 0 ? (
           <EmptyList
-            title={keyword !== "" ? `没有找到「${keyword.trim()}」` : filter === "running" ? "没有正在运行的会话" : "没有需要你处理的会话"}
-            description={keyword !== "" ? "换个关键词，或按需求编号搜索，例如 REQ-12。" : "切到「全部」看看所有会话。"}
+            title={keyword !== "" ? text.empty.noMatch(keyword.trim()) : filter === "running" ? text.empty.noRunning : text.empty.noNeedsMe}
+            description={keyword !== "" ? text.empty.noMatchHint : text.empty.filterHint}
           />
         ) : null}
         {groups.map((group) => (
@@ -204,7 +201,7 @@ export function SessionList({
         ))}
         {hasMore ? (
           <Button size="sm" variant="ghost" className="mt-2 w-full" loading={loadingMore} onClick={onLoadMore}>
-            加载更早的会话
+            {text.loadMore}
           </Button>
         ) : null}
       </div>
@@ -237,10 +234,12 @@ function SessionRow({
   onDelete(): void;
   onOpenRoom?(): void;
 }) {
+  const t = useT();
+  const text = t.conversation.list.row;
   const [draft, setDraft] = useState(item.title);
   const number = item.requirement?.number ?? null;
   const roomTask = item.roomTask ?? null;
-  const preview = item.preview === null ? null : `${item.preview.role === "user" ? "你：" : ""}${item.preview.text}`;
+  const preview = item.preview === null ? null : `${item.preview.role === "user" ? text.previewFromYou : ""}${item.preview.text}`;
   return (
     <li
       className={cn(
@@ -254,7 +253,7 @@ function SessionRow({
       {renaming ? (
         <div className="flex w-full items-center gap-2 px-2 py-2">
           <SessionStatusDot status={status} />
-          <label htmlFor={`rename-${item.id}`} className="sr-only">会话名称</label>
+          <label htmlFor={`rename-${item.id}`} className="sr-only">{text.renameLabel}</label>
           <input
             id={`rename-${item.id}`}
             className="h-7 min-w-0 flex-1 rounded-sm border border-primary bg-card px-1.5 text-small text-foreground outline-none"
@@ -288,7 +287,7 @@ function SessionRow({
             <span className="flex w-full items-center gap-2">
               <SessionStatusDot status={status} />
               <span className={cn("min-w-0 flex-1 truncate text-small", active ? "font-semibold text-foreground" : "font-medium text-foreground")}>
-                {item.title || "未命名会话"}
+                {item.title || t.conversation.untitled}
               </span>
               <time className="shrink-0 text-caption text-subtle-foreground group-hover/row:invisible" dateTime={new Date(lastActivity(item)).toISOString()}>
                 {formatRelativeTime(lastActivity(item))}
@@ -312,7 +311,7 @@ function SessionRow({
               <button
                 type="button"
                 className="absolute top-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded-sm text-subtle-foreground opacity-0 outline-none group-hover/row:opacity-100 hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:opacity-100"
-                aria-label={`会话「${item.title}」的更多操作`}
+                aria-label={text.moreActions(item.title)}
               >
                 <MoreHorizontalIcon className="size-4" />
               </button>
@@ -325,22 +324,22 @@ function SessionRow({
                 }}
               >
                 <PencilIcon />
-                重命名
+                {text.rename}
               </DropdownMenuItem>
               {onOpenRoom === undefined ? null : (
                 <DropdownMenuItem onSelect={onOpenRoom}>
                   <MessageCircleIcon />
-                  在讨论里查看
+                  {text.openInRoom}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={onArchive}>
                 <ArchiveIcon />
-                归档
+                {text.archive}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="danger" onSelect={onDelete}>
                 <Trash2Icon />
-                删除…
+                {text.delete}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

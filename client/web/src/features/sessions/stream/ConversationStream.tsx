@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { TimelineEntry, TimelineNotice } from "../../../event-projection/timeline.js";
+import { useT } from "../../../i18n/provider.js";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { TurnView, type TurnViewActions } from "./TurnView.js";
@@ -30,6 +31,7 @@ export function ConversationStream({
   actions: TurnViewActions;
   empty: ReactNode;
 }) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
@@ -115,7 +117,7 @@ export function ConversationStream({
           {historyLoading ? (
             <p className="m-0 mb-4 flex items-center justify-center gap-2 text-caption text-subtle-foreground" role="status">
               <Spinner size="sm" />
-              正在加载更早的记录…
+              {t.conversation.stream.loadingHistory}
             </p>
           ) : null}
           {timeline.length === 0 && !historyLoading ? empty : null}
@@ -158,7 +160,7 @@ export function ConversationStream({
           }}
         >
           <ArrowDownIcon className="size-3.5" aria-hidden="true" />
-          有新内容
+          {t.conversation.stream.newContent}
         </button>
       ) : null}
     </div>

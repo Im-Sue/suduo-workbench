@@ -3,6 +3,8 @@ import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import { infiniteQueryOptions, type InfiniteData } from "@tanstack/react-query";
 import { isToday, isYesterday } from "date-fns";
 import { api } from "../../api/client.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 import { sessionUiStatus, type SessionLiveRunState, type SessionUiStatus } from "../../ui/session-status.js";
 
 /**
@@ -115,7 +117,7 @@ export function lastActivity(item: SessionListItemDto): number {
   return item.lastActivityAt ?? item.updatedAt ?? item.createdAt;
 }
 
-export function groupByDay(items: readonly SessionListItemDto[]): SessionGroup[] {
+export function groupByDay(items: readonly SessionListItemDto[], t: Messages = messagesFor(currentLocale())): SessionGroup[] {
   const today: SessionListItemDto[] = [];
   const yesterday: SessionListItemDto[] = [];
   const earlier: SessionListItemDto[] = [];
@@ -126,9 +128,9 @@ export function groupByDay(items: readonly SessionListItemDto[]): SessionGroup[]
     else earlier.push(item);
   }
   return [
-    { label: "今天", items: today },
-    { label: "昨天", items: yesterday },
-    { label: "更早", items: earlier },
+    { label: t.common.time.today, items: today },
+    { label: t.common.time.yesterday, items: yesterday },
+    { label: t.conversation.list.earlier, items: earlier },
   ].filter((group) => group.items.length > 0);
 }
 

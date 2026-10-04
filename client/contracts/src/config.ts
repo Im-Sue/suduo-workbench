@@ -69,12 +69,6 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return typeof value === "string" && REASONING_EFFORT_PATTERN.test(value);
 }
 
-export const APPROVAL_MODE_LABELS: Record<ApprovalMode, string> = {
-  ask: "每步询问",
-  auto: "替我审批",
-  full: "完全访问",
-};
-
 export const SUDUO_DEFAULTS = {
   host: "127.0.0.1",
   port: 8787,

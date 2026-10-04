@@ -1,5 +1,7 @@
 import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
 import type { ConversationProjection, CurrentStep, TurnStatus } from "../event-projection/reducer.js";
+import { currentLocale } from "../i18n/locale.js";
+import { messagesFor, type Messages } from "../i18n/messages/index.js";
 
 /**
  * 运行态的本页内存态（PR3）：计时锚点与停止中间态。纯函数，SessionRuntime 只做接线。
@@ -122,18 +124,19 @@ export function lastTurnOutcomeOf(
 }
 
 /** 状态行文案：当前步骤 → 「正在执行 pnpm test」这种人话；没有步骤时为 null。按步骤类型说，不看标题文字。 */
-export function stepText(step: CurrentStep | null): string | null {
+export function stepText(step: CurrentStep | null, t: Messages = messagesFor(currentLocale())): string | null {
   if (step === null) {
     return null;
   }
+  const text = t.conversation.status;
   switch (step.kind) {
     case "command":
-      return step.detail === "" ? "正在执行命令" : `正在执行 ${step.detail}`;
+      return step.detail === "" ? text.command : text.commandWith(step.detail);
     case "file":
-      return step.detail === "" ? "正在更新文件" : `正在更新 ${step.detail}`;
+      return step.detail === "" ? text.file : text.fileWith(step.detail);
     case "thinking":
-      return "正在思考";
+      return text.thinking;
     case "tool":
-      return step.detail === "" ? `正在调用 ${step.title}` : `正在调用 ${step.title} · ${step.detail}`;
+      return step.detail === "" ? text.tool(step.title) : text.toolWith(step.title, step.detail);
   }
 }

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { settingsQuery } from "../../../app/queries.js";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { InlineError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
 import { showMessage } from "../../../ui/message.js";
 import { formatBytes } from "../../requirements/format.js";
 import {
@@ -54,6 +55,8 @@ export function RoomComposer({
   placeholder: string;
   autoFocus?: boolean;
 }) {
+  const t = useT();
+  const text = t.rooms.composer;
   const queryClient = useQueryClient();
   const key = draftKey(room.id, threadRootId);
   const [draft, update] = useRoomDraft(key);
@@ -138,7 +141,7 @@ export function RoomComposer({
       // 离线但已共享的照常插入：发出后消息下显示「离线，未执行」，之后可重试。
       setPicker(null);
       requestShare.mutate(candidate.id, {
-        onSuccess: () => showMessage(`已向 ${candidate.agent.owner.displayName} 申请共享 ${agentName(candidate.agent)}`, "success"),
+        onSuccess: () => showMessage(text.shareRequested(candidate.agent.owner.displayName, agentName(candidate.agent, t)), "success"),
       });
       return;
     }
@@ -243,7 +246,7 @@ export function RoomComposer({
     return (
       <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3.5 py-3 text-small text-subtle-foreground" data-testid="room-composer-archived">
         <ArchiveIcon className="size-4 shrink-0" aria-hidden="true" />
-        这个讨论已归档，只能查看历史。需要继续讨论时，在右上角「更多」里取消归档。
+        {text.archived}
       </div>
     );
   }
@@ -274,10 +277,10 @@ export function RoomComposer({
     >
       {draft.error === null ? null : (
         <div className="mb-1.5 flex items-center gap-2" data-testid="room-send-error">
-          <InlineError kind={draft.error.kind}>没能发出：{draft.error.message}。内容已放回输入框。</InlineError>
+          <InlineError kind={draft.error.kind}>{text.sendFailed(draft.error.message)}</InlineError>
           <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={send} disabled={!canSend}>
             <RotateCwIcon className="size-3" />
-            重试
+            {text.retry}
           </Button>
         </div>
       )}
@@ -289,7 +292,7 @@ export function RoomComposer({
       >
         {dragActive ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg text-small font-medium text-primary-text">
-            松开以把文件加入这条消息
+            {text.dropFiles}
           </div>
         ) : null}
         {picker === null ? null : (
@@ -303,7 +306,7 @@ export function RoomComposer({
           />
         )}
         {draft.files.length === 0 ? null : (
-          <ul className="m-0 flex list-none flex-wrap gap-1.5 px-3 pt-2.5 pb-0" aria-label="要发送的文件">
+          <ul className="m-0 flex list-none flex-wrap gap-1.5 px-3 pt-2.5 pb-0" aria-label={text.filesLabel}>
             {draft.files.map((file) => (
               <DraftFileChip
                 key={file.localId}
@@ -315,7 +318,7 @@ export function RoomComposer({
           </ul>
         )}
         <label htmlFor={`${listboxId}-input`} className="sr-only">
-          {threadRootId === null ? `在「${room.name}」里发消息` : "回复话题"}
+          {threadRootId === null ? text.messageLabel(room.name) : text.replyLabel}
         </label>
         <textarea
           id={`${listboxId}-input`}
@@ -343,19 +346,19 @@ export function RoomComposer({
           <button
             type="button"
             className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            title="添加文件（也可以直接粘贴或拖进来）"
+            title={text.attachTitle}
             data-testid="room-attach"
             onClick={() => fileInputRef.current?.click()}
           >
             <PaperclipIcon className="size-3.5" aria-hidden="true" />
-            文件
+            {text.attach}
           </button>
           <input
             ref={fileInputRef}
             type="file"
             multiple
             hidden
-            aria-label="选择要发送的文件"
+            aria-label={text.fileInputLabel}
             onChange={(event) => {
               const files = [...(event.target.files ?? [])];
               event.target.value = "";
@@ -365,8 +368,8 @@ export function RoomComposer({
           <button
             type="button"
             className="inline-flex h-7 items-center rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            title="@ 同事或共享进来的 Agent"
-            aria-label="插入 @"
+            title={text.mentionTitle}
+            aria-label={text.mentionLabel}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               const element = textareaRef.current;
@@ -382,15 +385,15 @@ export function RoomComposer({
           >
             @
           </button>
-          <span className="ml-1 hidden text-caption text-subtle-foreground sm:inline">Enter 发送 · Shift+Enter 换行</span>
+          <span className="ml-1 hidden text-caption text-subtle-foreground sm:inline">{text.keyHint}</span>
           <div className="flex-1" />
           <button
             type="button"
             className="inline-flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-ring disabled:bg-muted-strong disabled:text-disabled-foreground"
             data-testid="room-send"
             disabled={!canSend}
-            title={uploading ? "等文件传完再发送" : "发送（Enter）"}
-            aria-label="发送"
+            title={uploading ? text.waitForUpload : text.sendTitle}
+            aria-label={text.send}
             onClick={send}
           >
             <SendHorizontalIcon className="size-4" aria-hidden="true" />
@@ -402,6 +405,7 @@ export function RoomComposer({
 }
 
 function DraftFileChip({ file, onRemove, onRetry }: { file: DraftFile; onRemove(): void; onRetry(): void }) {
+  const text = useT().rooms.composer.file;
   const Icon = file.kind === "image" ? ImageIcon : file.kind === "video" ? VideoIcon : FileIcon;
   return (
     <li
@@ -419,7 +423,7 @@ function DraftFileChip({ file, onRemove, onRetry }: { file: DraftFile; onRemove(
           <button
             type="button"
             className="inline-flex size-5 items-center justify-center rounded-xs text-muted-foreground hover:bg-background hover:text-foreground"
-            aria-label={`重新上传 ${file.name}`}
+            aria-label={text.retry(file.name)}
             onClick={onRetry}
           >
             <RotateCwIcon className="size-3" />
@@ -428,16 +432,16 @@ function DraftFileChip({ file, onRemove, onRetry }: { file: DraftFile; onRemove(
         <button
           type="button"
           className="inline-flex size-5 items-center justify-center rounded-xs text-muted-foreground hover:bg-background hover:text-foreground"
-          aria-label={`移除 ${file.name}`}
+          aria-label={text.remove(file.name)}
           onClick={onRemove}
         >
           <XIcon className="size-3" />
         </button>
       </span>
       {file.state === "uploading" ? (
-        <Progress value={file.progress} aria-label={`${file.name} 上传进度`} />
+        <Progress value={file.progress} aria-label={text.progress(file.name)} />
       ) : file.state === "failed" ? (
-        <span className="truncate text-danger" title={file.error ?? undefined}>{file.error ?? "上传失败"}</span>
+        <span className="truncate text-danger" title={file.error ?? undefined}>{file.error ?? text.failed}</span>
       ) : (
         <span className="text-subtle-foreground">{formatBytes(file.size)}</span>
       )}

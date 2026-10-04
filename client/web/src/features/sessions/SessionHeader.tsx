@@ -2,6 +2,7 @@ import type { SessionDto } from "@suduo/client-contracts";
 import { FileTextIcon, FolderGit2Icon, InfoIcon, PanelRightIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
+import { useT } from "../../i18n/provider.js";
 import { sessionStatusLabel, type SessionUiStatus } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -35,6 +36,8 @@ export function SessionHeader({
   onOpenRequirement(): void;
   onToggleInspector(): void;
 }) {
+  const t = useT();
+  const text = t.conversation.header;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
   const commit = () => {
@@ -49,7 +52,7 @@ export function SessionHeader({
       <SessionStatusDot status={status} />
       {editing ? (
         <>
-          <label htmlFor="session-title-input" className="sr-only">会话标题</label>
+          <label htmlFor="session-title-input" className="sr-only">{text.titleLabel}</label>
           <input
             id="session-title-input"
             data-testid="session-title-input"
@@ -81,8 +84,8 @@ export function SessionHeader({
             type="button"
             className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-subtle-foreground opacity-0 outline-none group-hover/title:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
             data-testid="rename-session"
-            aria-label="重命名会话"
-            title="重命名会话"
+            aria-label={text.rename}
+            title={text.rename}
             onClick={() => {
               setDraft(session.title);
               setEditing(true);
@@ -99,12 +102,12 @@ export function SessionHeader({
         <button
           type="button"
           className="inline-flex h-6 min-w-0 max-w-64 items-center gap-1 rounded-sm bg-muted px-2 text-caption text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          title="关联需求：在检查面板查看"
+          title={text.requirementHint}
           data-testid="side-requirement-entry"
           onClick={onOpenRequirement}
         >
           <FileTextIcon className="size-3 shrink-0" aria-hidden="true" />
-          <span className="truncate">{requirement.title ?? "关联需求"}</span>
+          <span className="truncate">{requirement.title ?? text.requirementFallback}</span>
         </button>
       )}
       <div className="flex-1" />
@@ -118,12 +121,12 @@ export function SessionHeader({
         <Popover>
           {/* 不与 Tooltip 叠两层 asChild 触发器：直接用 title。 */}
           <PopoverTrigger asChild>
-            <Button size="icon-sm" variant="ghost" aria-label={`运行提示 ${notices.length} 条`} title="运行提示">
+            <Button size="icon-sm" variant="ghost" aria-label={text.noticesLabel(notices.length)} title={text.noticesTitle}>
               <InfoIcon />
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-96">
-            <p className="m-0 mb-2 text-small font-medium text-foreground">运行提示</p>
+            <p className="m-0 mb-2 text-small font-medium text-foreground">{text.noticesTitle}</p>
             <ul className="m-0 flex list-none flex-col gap-2 p-0">
               {notices.map((notice) => (
                 <li key={notice.id} className="text-small text-muted-foreground">{notice.text}</li>
@@ -137,7 +140,7 @@ export function SessionHeader({
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label={inspectorOpen ? "收起检查面板" : "打开检查面板"}
+            aria-label={inspectorOpen ? text.closeInspector : text.openInspector}
             aria-pressed={inspectorOpen}
             className={cn(inspectorOpen && "bg-muted text-foreground")}
             onClick={onToggleInspector}
@@ -146,7 +149,7 @@ export function SessionHeader({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          检查面板 <Kbd>⌘J</Kbd>
+          {text.inspector} <Kbd>⌘J</Kbd>
         </TooltipContent>
       </Tooltip>
     </header>

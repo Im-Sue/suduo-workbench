@@ -15,8 +15,8 @@ import type { SessionUiStatus } from "../ui/session-status.js";
 import type { ContextUsage } from "../event-projection/timeline.js";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { useT } from "../i18n/provider.js";
 import {
-  PAUSED_REASON_TEXT,
   buildMessageContent,
   type PausedReason,
   type QueueItem,
@@ -117,6 +117,8 @@ export function Composer(props: {
   /** 输入框为空时按 ↑ 取回的上一条消息。 */
   lastUserText?: string | null;
 }) {
+  const t = useT();
+  const copy = t.workbench.composer;
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -289,7 +291,7 @@ export function Composer(props: {
                 <ZapIcon size={14} />
                 <span className="shrink-0 font-medium">{skill.name}</span>
                 {!isSubPath(skill.path, props.projectRoot) && (
-                  <span className="shrink-0 rounded-xs bg-muted px-1 text-caption text-muted-foreground">全局</span>
+                  <span className="shrink-0 rounded-xs bg-muted px-1 text-caption text-muted-foreground">{copy.globalSkill}</span>
                 )}
                 {skill.description && (
                   <span className="min-w-0 truncate text-caption text-subtle-foreground">{skill.description}</span>
@@ -411,7 +413,7 @@ export function Composer(props: {
   const uploadFiles = async (files: File[]) => {
     const images = files.filter((file) => file.type.startsWith("image/"));
     if (files.length > 0 && images.length === 0) {
-      props.onError("目前仅支持拖入/粘贴图片；其他文件请用 @ 引用项目内路径。");
+      props.onError(copy.imagesOnly);
       return;
     }
     if (images.length === 0 || !props.projectId) {
@@ -553,29 +555,27 @@ export function Composer(props: {
       >
         {dragActive && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg text-small font-medium text-primary-text">
-            松开以把图片加入本条消息
+            {copy.dropImages}
           </div>
         )}
         {palette && (
           <div
             className="absolute right-2 bottom-[calc(100%+6px)] left-2 z-30 max-h-72 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-3"
             role="listbox"
-            aria-label="选择候选"
+            aria-label={copy.palette.label}
           >
             <div className="flex items-center justify-between px-2 py-1 text-caption text-subtle-foreground">
-              <span className="font-medium text-muted-foreground">{palette.kind === "skill" ? "选择 skill" : "引用项目文件"}</span>
-              <span>↑↓ 选择 · Enter 确认 · Esc 关闭</span>
+              <span className="font-medium text-muted-foreground">{palette.kind === "skill" ? copy.palette.skillTitle : copy.palette.fileTitle}</span>
+              <span>{copy.palette.keys}</span>
             </div>
-            {palette.kind === "file" && fileIndex?.status === "loading" && <PaletteNote>正在索引项目文件…</PaletteNote>}
-            {palette.kind === "file" && fileIndex?.status === "error" && <PaletteNote>索引失败，稍后重试</PaletteNote>}
+            {palette.kind === "file" && fileIndex?.status === "loading" && <PaletteNote>{copy.palette.indexing}</PaletteNote>}
+            {palette.kind === "file" && fileIndex?.status === "error" && <PaletteNote>{copy.palette.indexFailed}</PaletteNote>}
             {paletteItems.length === 0 && palette.kind === "skill" && (
               <PaletteNote>
-                {props.skills.length === 0
-                  ? "没有可用的 skill：把 skill 放进项目 .codex/skills/ 或用户目录 .codex/skills/ 后刷新"
-                  : "没有匹配项"}
+                {props.skills.length === 0 ? copy.palette.noSkills : copy.palette.noMatches}
               </PaletteNote>
             )}
-            {paletteItems.length === 0 && palette.kind === "file" && fileIndex?.status === "ready" && <PaletteNote>没有匹配项</PaletteNote>}
+            {paletteItems.length === 0 && palette.kind === "file" && fileIndex?.status === "ready" && <PaletteNote>{copy.palette.noMatches}</PaletteNote>}
             {paletteItems.map((item, itemIndex) => (
               <button
                 key={item.key}
@@ -596,7 +596,7 @@ export function Composer(props: {
                 {item.node}
               </button>
             ))}
-            {palette.kind === "file" && fileIndex?.truncated && <PaletteNote>文件太多，仅索引前 8000 个</PaletteNote>}
+            {palette.kind === "file" && fileIndex?.truncated && <PaletteNote>{copy.palette.truncated}</PaletteNote>}
           </div>
         )}
         {(attachments.length > 0 || selectedSkill) && (
@@ -605,8 +605,8 @@ export function Composer(props: {
               <span className="inline-flex h-6 items-center gap-1 rounded-sm bg-primary-soft pr-1 pl-2 text-caption font-medium text-primary-text" data-testid="skill-chip">
                 <ZapIcon size={12} />
                 {selectedSkill.name}
-                {!isSubPath(selectedSkill.path, props.projectRoot) && <span className="font-normal opacity-80">全局</span>}
-                <ChipRemove label="移除 skill" onClick={() => props.onSkillPath("")} />
+                {!isSubPath(selectedSkill.path, props.projectRoot) && <span className="font-normal opacity-80">{copy.globalSkill}</span>}
+                <ChipRemove label={copy.removeSkill} onClick={() => props.onSkillPath("")} />
               </span>
             )}
             {attachments.map((attachment) => (
@@ -617,16 +617,16 @@ export function Composer(props: {
                 key={attachment.id}
               >
                 <ImageIcon size={12} />
-                {attachment.size === undefined ? "图片" : `图片 · ${formatBytes(attachment.size)}`}
+                {attachment.size === undefined ? copy.image : copy.imageWithSize(formatBytes(attachment.size))}
                 <ChipRemove
-                  label="移除图片"
+                  label={copy.removeImage}
                   onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
                 />
               </span>
             ))}
           </div>
         )}
-        <label htmlFor={`composer-${props.sessionId}`} className="sr-only">给 Codex 的消息</label>
+        <label htmlFor={`composer-${props.sessionId}`} className="sr-only">{copy.messageLabel}</label>
         <textarea
           id={`composer-${props.sessionId}`}
           ref={textareaRef}
@@ -641,10 +641,10 @@ export function Composer(props: {
           className="block max-h-[220px] min-h-11 w-full resize-none overflow-y-auto border-0 bg-transparent px-3.5 pt-2.5 pb-1 text-body text-foreground outline-none placeholder:text-subtle-foreground"
           placeholder={
             selectedSkill
-              ? `已选 ${selectedSkill.name}，补充说明后发送…`
+              ? copy.placeholder.withSkill(selectedSkill.name)
               : queueActive
-                ? "正在工作：Enter 并入这一轮，Tab 排到之后"
-                : "描述要交给 Codex 的工作；/ 选 skill，@ 引用文件"
+                ? copy.placeholder.running
+                : copy.placeholder.default
           }
         />
         <div className="flex items-center gap-1 px-2 pt-1 pb-2">
@@ -653,11 +653,11 @@ export function Composer(props: {
             className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             data-testid="attach-image"
             disabled={props.disabled || uploading}
-            title="添加图片（也可以直接粘贴或拖进来）"
+            title={copy.attachImage}
             onClick={() => fileInputRef.current?.click()}
           >
             {uploading ? <Spinner size="sm" /> : <ImageIcon size={15} />}
-            图片
+            {copy.image}
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={onPickFiles} />
           {props.settingsSlot}
@@ -670,10 +670,10 @@ export function Composer(props: {
               className="inline-flex h-7 items-center gap-1 rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               data-testid="queue-message"
               disabled={!canSend}
-              title="排进队列，这一轮结束后自动发出（Tab）"
+              title={copy.queueTitle}
               onClick={enqueue}
             >
-              排队
+              {copy.queue}
             </button>
           )}
           {/* R2：运行中停止与发送并存、都可点；终态后停止控件整个消失（不是禁用）。 */}
@@ -683,12 +683,12 @@ export function Composer(props: {
               className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border px-2 text-small font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
               data-testid="interrupt-turn"
               disabled={props.runState.stopping}
-              title={props.runState.stopping ? "停止中…" : "停止这一轮（输入框为空时按 Esc）"}
-              aria-label={props.runState.stopping ? "停止中" : "停止这一轮"}
+              title={props.runState.stopping ? copy.stoppingTitle : copy.stopTitle}
+              aria-label={props.runState.stopping ? copy.stoppingLabel : copy.stopLabel}
               onClick={props.runState.onStop}
             >
               {props.runState.stopping ? <Spinner size="sm" /> : <SquareIcon size={13} />}
-              {props.runState.stopping ? "正在停止…" : "停止"}
+              {props.runState.stopping ? copy.stopping : copy.stop}
             </button>
           )}
           <button
@@ -696,8 +696,8 @@ export function Composer(props: {
             className="inline-flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-ring disabled:bg-muted-strong disabled:text-disabled-foreground"
             data-testid="send-message"
             disabled={!canSend}
-            title="发送（Enter）"
-            aria-label="发送"
+            title={copy.sendTitle}
+            aria-label={copy.send}
             onClick={() => void send()}
           >
             {sending ? <Spinner size="sm" /> : <ArrowUpIcon size={15} />}
@@ -728,6 +728,7 @@ function ChipRemove({ label, onClick }: { label: string; onClick(): void }) {
 
 /** 上下文用量环：最近一次请求占了模型上下文窗口的多少；超过八成变色提醒。 */
 function ContextRing({ usage }: { usage: ContextUsage }) {
+  const t = useT();
   if (usage.contextWindow === null) return null;
   const ratio = Math.min(1, usage.usedTokens / usage.contextWindow);
   const percent = Math.round(ratio * 100);
@@ -737,7 +738,7 @@ function ContextRing({ usage }: { usage: ContextUsage }) {
   return (
     <span
       className="inline-flex h-7 items-center gap-1 px-1 text-caption text-subtle-foreground"
-      title={`上下文已用 ${percent}%（${formatTokens(usage.usedTokens)} / ${formatTokens(usage.contextWindow)}）。接近上限时 Codex 会自动压缩较早的对话。`}
+      title={t.workbench.composer.context.title(percent, formatTokens(usage.usedTokens), formatTokens(usage.contextWindow))}
       data-testid="context-ring"
     >
       <svg viewBox="0 0 18 18" className="size-4 -rotate-90" aria-hidden="true">
@@ -754,7 +755,7 @@ function ContextRing({ usage }: { usage: ContextUsage }) {
           className={tone}
         />
       </svg>
-      <span className="sr-only">上下文已用</span>
+      <span className="sr-only">{t.workbench.composer.context.used}</span>
       {percent}%
     </span>
   );
@@ -773,6 +774,8 @@ function isActiveRun(status: SessionUiStatus): boolean {
  * 只承诺当前标签页，标题里直说。
  */
 function QueuePanel({ queue, onTake }: { queue: ComposerQueue; onTake(id: string): void }) {
+  const t = useT();
+  const copy = t.workbench.composer.queuePanel;
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   if (queue.items.length === 0 && queue.status !== "paused") {
     return null;
@@ -782,15 +785,15 @@ function QueuePanel({ queue, onTake }: { queue: ComposerQueue; onTake(id: string
   return (
     <div className="mb-2 rounded-md border border-border bg-card px-3 py-2" data-testid="queue-panel" data-status={queue.status}>
       <div className="flex items-center gap-2 text-caption">
-        <b className="font-medium text-foreground">排队 {queue.items.length > 0 ? queue.items.length : ""}</b>
-        <span className="text-subtle-foreground">仅本标签页有效 · 这一轮结束后自动发出队首一条</span>
+        <b className="font-medium text-foreground">{copy.title(queue.items.length)}</b>
+        <span className="text-subtle-foreground">{copy.scope}</span>
       </div>
       {queue.status === "paused" && queue.pausedReason !== null && (
         <div className="mt-1.5 flex items-center gap-2 rounded-sm bg-warning-soft px-2 py-1 text-caption text-foreground" data-testid="queue-paused" data-reason={queue.pausedReason} role="status">
-          <span className="flex-1">已暂停 · {PAUSED_REASON_TEXT[queue.pausedReason]}</span>
+          <span className="flex-1">{copy.paused(copy.pausedReasons[queue.pausedReason])}</span>
           {/* 每一种暂停都给恢复入口（需求 4.3）；没有可发项时恢复只是解除暂停，不会发任何东西。 */}
           <button type="button" className={link} data-testid="queue-resume" onClick={queue.onResume}>
-            恢复
+            {copy.resume}
           </button>
         </div>
       )}
@@ -808,7 +811,7 @@ function QueuePanel({ queue, onTake }: { queue: ComposerQueue; onTake(id: string
               <div className="flex w-full flex-col gap-1.5">
                 <textarea
                   rows={2}
-                  aria-label="编辑排队的消息"
+                  aria-label={copy.editLabel}
                   className="w-full resize-none rounded-sm border border-border bg-background px-2 py-1 text-small text-foreground outline-none focus:border-primary"
                   value={editing.text}
                   onChange={(event) => setEditing({ id: item.id, text: event.target.value })}
@@ -822,23 +825,23 @@ function QueuePanel({ queue, onTake }: { queue: ComposerQueue; onTake(id: string
                       setEditing(null);
                     }}
                   >
-                    保存
+                    {copy.save}
                   </button>
-                  <button type="button" className={link} onClick={() => setEditing(null)}>取消</button>
+                  <button type="button" className={link} onClick={() => setEditing(null)}>{copy.cancel}</button>
                 </div>
               </div>
             ) : (
               <>
                 <span className="w-4 shrink-0 text-caption text-subtle-foreground">{index + 1}</span>
                 <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-small text-foreground" title={item.text}>
-                  {item.unconfirmed === true && <QueueTag>待核对</QueueTag>}
+                  {item.unconfirmed === true && <QueueTag>{copy.unconfirmed}</QueueTag>}
                   {item.skill !== undefined && (
                     <QueueTag>
                       <ZapIcon size={11} />
                       {item.skill.name}
                     </QueueTag>
                   )}
-                  <span className="truncate">{item.text === "" ? "（无文本）" : item.text}</span>
+                  <span className="truncate">{item.text === "" ? copy.noText : item.text}</span>
                   {item.attachmentIds.length > 0 && (
                     <QueueTag>
                       <ImageIcon size={11} />
@@ -848,13 +851,13 @@ function QueuePanel({ queue, onTake }: { queue: ComposerQueue; onTake(id: string
                 </span>
                 <span className="flex shrink-0 gap-0.5">
                   <button type="button" className={link} data-testid="queue-item-edit" onClick={() => setEditing({ id: item.id, text: item.text })}>
-                    编辑
+                    {copy.edit}
                   </button>
                   <button type="button" className={link} data-testid="queue-item-take" onClick={() => onTake(item.id)}>
-                    取回
+                    {copy.take}
                   </button>
                   <button type="button" className={link} data-testid="queue-item-delete" onClick={() => queue.onRemove(item.id)}>
-                    删除
+                    {copy.remove}
                   </button>
                 </span>
               </>
@@ -875,6 +878,8 @@ function QueueTag({ children }: { children: ReactNode }) {
  * 状态语义与会话头徽章来自同一判定函数，这里只是多说了步骤与时长。
  */
 function RunStatusLine({ runState }: { runState: ComposerRunState | undefined }) {
+  const t = useT();
+  const copy = t.workbench.composer;
   if (runState === undefined || !isActiveRun(runState.status)) {
     return null;
   }
@@ -882,14 +887,14 @@ function RunStatusLine({ runState }: { runState: ComposerRunState | undefined })
     return (
       <div className="mb-1.5 flex items-center gap-2 px-1 text-caption" data-testid="run-status-line" data-status="approval" role="status">
         <span className="size-2 rounded-full bg-warning" aria-hidden="true" />
-        <span className="font-medium text-foreground">等你确认 · {runState.pendingApprovals} 项</span>
+        <span className="font-medium text-foreground">{copy.run.waiting(runState.pendingApprovals)}</span>
         <button
           type="button"
           className="rounded-xs px-1 text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="run-status-approval-link"
           onClick={runState.onJumpToApproval}
         >
-          去看看
+          {copy.run.review}
         </button>
       </div>
     );
@@ -900,9 +905,9 @@ function RunStatusLine({ runState }: { runState: ComposerRunState | undefined })
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-50 motion-reduce:animate-none" />
         <span className="relative inline-flex size-2 rounded-full bg-primary" />
       </span>
-      <span className="shrink-0 font-medium text-foreground">{runState.stopping ? "正在停止…" : "Codex 正在工作"}</span>
+      <span className="shrink-0 font-medium text-foreground">{runState.stopping ? copy.stopping : copy.run.working}</span>
       <span aria-hidden="true">·</span>
-      <span className="min-w-0 truncate" data-testid="run-status-step">{runState.stepText ?? "运行中"}</span>
+      <span className="min-w-0 truncate" data-testid="run-status-step">{runState.stepText ?? copy.run.running}</span>
       {runState.elapsedMs !== null && (
         <>
           <span aria-hidden="true">·</span>
