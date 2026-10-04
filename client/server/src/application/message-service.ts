@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
+  type Locale,
   type MessageContent,
   type RuntimeInput,
   type RuntimeRegistry as RuntimeRegistryContract,
@@ -46,6 +47,8 @@ export class MessageService {
     sessionId: string,
     input: SendMessageRequest,
     idempotencyKey: string,
+    /** locale：回合前自动存档的提交标题用的语言（发消息的请求的语言）；房间任务不传，用记下的界面语言。 */
+    options: { locale?: Locale } = {},
   ): Promise<SendMessageAccepted> {
     if (!Array.isArray(input.content)) {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.contentNotArray);
@@ -68,7 +71,7 @@ export class MessageService {
     }
     // 回合前自动存档（按项目开关；失败不阻塞发消息）。房间任务是只读沙箱，不会改文件，不存档。
     if (session.kind !== "room_task") {
-      await this.git?.autoCheckpoint(project.id, project.rootPath);
+      await this.git?.autoCheckpoint(project.id, project.rootPath, options.locale);
     }
     let binding = this.route(sessionId, input);
     // resume 失败时自动重建 thread（F3 承诺：会话必须能继续新回合）。

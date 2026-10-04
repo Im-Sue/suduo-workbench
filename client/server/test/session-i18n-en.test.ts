@@ -98,7 +98,7 @@ describe("会话报错按请求语言", () => {
 
     expect(errorOf(await get("/api/v1/sessions?state=bad", EN)).message).toBe("state must be active, archived, or all");
     expect(errorOf(await get("/api/v1/sessions?state=bad", ZH)).message).toBe("state 仅允许 active / archived / all");
-    expect(errorOf(await get("/api/v1/sessions?limit=500", EN)).message).toBe("limit must be an integer from 1 to 200");
+    expect(errorOf(await get("/api/v1/sessions?limit=500", EN)).message).toBe("limit must be a whole number from 1 to 200");
     expect(errorOf(await get("/api/v1/sessions?limit=500", ZH)).message).toBe("limit 必须是 1 到 200 的整数");
 
     const projectId = await createProject();

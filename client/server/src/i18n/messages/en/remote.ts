@@ -37,11 +37,11 @@ export const remote = {
   validation: {
     baseUrlNotString: "baseUrl must be a string",
     baseUrlInvalid: "The server address isn't valid",
-    patchEmpty: "PATCH needs at least one field",
+    patchEmpty: "PATCH must include at least one field",
     publishInvalid: "The publish request isn't valid",
     loginNameInvalid: "That username isn't valid",
     passwordLengthInvalid: "The password length isn't valid",
-    summaryTooLong: "The requirement description must be a string of up to 4000 characters",
+    summaryTooLong: "The requirement description must be a string of up to 4,000 characters",
     assigneeInvalid: "assigneeId must be a user ID or null",
     lengthOutOfRange: (label: string, maximum: number) => `${label} must be 1 to ${String(maximum)} characters`,
     fields: {

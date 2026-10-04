@@ -687,6 +687,7 @@ export function buildHttpServer(
             request.params.sessionId,
             requireObject<SendMessageRequest>(request.body),
             key,
+            { locale: request.locale },
           ),
         }),
         key,
@@ -1193,7 +1194,7 @@ function registerRequirementsV2Routes(
       requireEmptyObject(request.body);
       return reply
         .code(201)
-        .send(await service.createProjectSession(request.params.projectId));
+        .send(await service.createProjectSession(request.params.projectId, request.locale));
     },
   );
 }

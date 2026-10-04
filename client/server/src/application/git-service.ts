@@ -65,7 +65,7 @@ export class GitService {
   ) {}
 
   /** `locale` 是请求的语言，lastError 按它渲染。 */
-  async status(projectId: string, locale: Locale = "zh-CN"): Promise<GitStatusDto> {
+  async status(projectId: string, locale: Locale): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const root = project.rootPath;
     const settings = await this.readSettings(root);
@@ -116,7 +116,7 @@ export class GitService {
    * 一键初始化版本管理：git init + 种子 .gitignore + 首次提交；自动存档默认开。
    * 首次提交的标题按发起初始化的请求的语言写。
    */
-  async init(projectId: string, locale: Locale = "zh-CN"): Promise<GitStatusDto> {
+  async init(projectId: string, locale: Locale): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const root = project.rootPath;
     if (!(await this.available())) {
@@ -143,7 +143,7 @@ export class GitService {
   async checkpoint(
     projectId: string,
     message: string | undefined,
-    locale: Locale = "zh-CN",
+    locale: Locale,
   ): Promise<GitCheckpointDto | null> {
     const project = this.requireProject(projectId);
     return this.snapshot(project.rootPath, false, message, locale);
@@ -206,7 +206,7 @@ export class GitService {
    * 还原到指定提交（git reset --hard）。
    * 未纳入版本管理的新文件不会被删除；后续提交仍可从 reflog 找回。
    */
-  async restore(projectId: string, hash: string, locale: Locale = "zh-CN"): Promise<GitStatusDto> {
+  async restore(projectId: string, hash: string, locale: Locale): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const root = project.rootPath;
     if (!/^[0-9a-f]{7,40}$/i.test(hash)) {
@@ -232,7 +232,7 @@ export class GitService {
   async updateSettings(
     projectId: string,
     input: { autoCheckpoint: boolean },
-    locale: Locale = "zh-CN",
+    locale: Locale,
   ): Promise<GitStatusDto> {
     const project = this.requireProject(projectId);
     const settings = await this.readSettings(project.rootPath);
@@ -251,7 +251,7 @@ export class GitService {
     root: string,
     auto: boolean,
     message: string | undefined,
-    locale: Locale = "zh-CN",
+    locale: Locale,
   ): Promise<GitCheckpointDto | null> {
     if (!(await this.available()) || !(await this.isRepoRoot(root))) {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.git.notRepo);

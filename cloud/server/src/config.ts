@@ -216,7 +216,7 @@ function boolean(
 function durationSeconds(raw: string): number {
   const matched = /^(\d+)([smhd]?)$/.exec(raw.trim());
   if (!matched) {
-    throw new Error("REQUIREMENTS_AUTH_TTL must be a number of seconds or a duration such as 30m, 8h or 7d");
+    throw new Error("REQUIREMENTS_AUTH_TTL must be a number of seconds or a duration such as 30m, 8h, or 7d");
   }
   const amount = Number(matched[1]);
   const unit = matched[2] ?? "";

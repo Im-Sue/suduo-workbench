@@ -32,7 +32,7 @@ export const http = {
   remoteEventsBodyMissing: "The server returned no event stream",
   uploadMustBeMultipart: "Attachment uploads must use multipart/form-data",
   uploadStreamInvalid: "The attachment upload stream is invalid",
-  unsupportedQueryParam: (key: string) => `Unsupported V2 query parameter: ${key}`,
+  unsupportedQueryParam: (key: string) => `Unsupported query parameter: ${key}`,
   limitRange: (max: number) => `limit must be a whole number from 1 to ${String(max)}`,
   requirementNumberInvalid: "The requirement number must be a positive whole number",
   resourceTypeInvalid: "resourceType is invalid",

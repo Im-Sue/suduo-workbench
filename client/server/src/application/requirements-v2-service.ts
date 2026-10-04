@@ -312,7 +312,8 @@ export class RequirementsV2Service {
   }
 
   /** `locale` 是请求的语言，复验结论（verification.message）按它生成；不传时用中文。 */
-  async listMappings(options: { verify?: boolean; locale?: Locale } = {}) {
+  /** `locale`：复验结论（`verify`）用的语言。 */
+  async listMappings(options: { verify?: boolean; locale: Locale }) {
     // 可用性灯只检查已保存的本机目录；不触网也不清理过期凭证，确保 verify=1
     // 严格是零副作用的本机只读操作。
     if (!options.verify) {
@@ -335,7 +336,7 @@ export class RequirementsV2Service {
     if (!options.verify) {
       return items;
     }
-    const t = messagesFor(options.locale ?? "zh-CN");
+    const t = messagesFor(options.locale);
     return await Promise.all(
       items.map(async (item) => ({
         ...item,
@@ -438,7 +439,8 @@ export class RequirementsV2Service {
     });
   }
 
-  async createProjectSession(remoteProjectId: string) {
+  /** `locale`：没给标题时默认名用的语言（创建请求的语言）。 */
+  async createProjectSession(remoteProjectId: string, locale: Locale) {
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
       const localProject = await this.requireValidatedLocalProject(remoteProjectId);
@@ -447,7 +449,7 @@ export class RequirementsV2Service {
           projectRoot: localProject.rootPath,
           remoteProjectId,
         })) ?? {};
-      const session = await this.sessions.create(localProject.id, { purpose: "general" }, setup);
+      const session = await this.sessions.create(localProject.id, { purpose: "general" }, setup, { locale });
       this.onSessionCreated?.(session.id);
       return session;
     });

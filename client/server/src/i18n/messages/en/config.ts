@@ -16,9 +16,9 @@ export const config = {
       contextWindow: "Context limit",
     },
   },
-  mustBeString: (field: string) => `${field} must be text`,
+  mustBeString: (field: string) => `${field} must be a string`,
   userLayerVersionMissing:
-    "Codex didn't return a version for your user config layer, so the change wasn't written without version protection",
+    "Codex didn't return a version for your user config layer, so SuDuo didn't write the change: it can't be written safely without one",
   proxy: {
     invalidUrl: (field: string) => `${field} isn't a valid proxy URL`,
     unsupportedProtocol: (field: string) => `${field} supports only http, https, socks5, and socks5h`,
@@ -105,7 +105,7 @@ export const config = {
     scopesInvalid: "scopes must be a list of at most 32 strings",
     scopeInvalid: "The OAuth scope is invalid",
     mustBeBoolean: (field: string) => `${field} must be a boolean`,
-    timeoutInvalid: (field: string) => `${field} must be a whole number of seconds from 1 to 86400`,
+    timeoutInvalid: (field: string) => `${field} must be a whole number of seconds from 1 to 86,400`,
     serverNotFound: (name: string) => `Codex MCP server not found: ${name}`,
   },
   skill: {

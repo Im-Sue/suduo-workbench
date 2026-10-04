@@ -2,7 +2,7 @@ import type { ServerMessages } from "../zh-CN/index.js";
 
 export const doctor = {
   names: {
-    codexDoctor: "Codex diagnostics",
+    codexDoctor: "Codex doctor",
     linuxSandbox: "Codex sandbox (Linux)",
     port: "Listening port",
   },
@@ -30,16 +30,16 @@ export const doctor = {
   sandbox: {
     readySystem: (path: string) => `The sandbox works, using the system bubblewrap (${path})`,
     readyBundled:
-      "The sandbox works, but it uses the bubblewrap bundled with Codex. OpenAI recommends installing the system bubblewrap",
+      "The sandbox works, but it uses the bubblewrap bundled with Codex. OpenAI recommends installing the system bubblewrap.",
     readyBundledRemediation: (docs: string) =>
       `sudo apt install bubblewrap (Fedora: sudo dnf install bubblewrap). See ${docs}`,
     timedOut: (seconds: number) =>
       `The sandbox command didn't finish within ${String(seconds)} seconds, so it's unclear whether the sandbox works`,
     timedOutRemediation:
-      "Check again later on the Diagnostics page. If it keeps happening, run codex sandbox -P :workspace -- true in a terminal to see where it gets stuck",
+      "Check again later on the Diagnostics page. If it keeps happening, run codex sandbox -P :workspace -- true in a terminal to see where it gets stuck.",
     exitCode: (status: string) => `exit code ${status}`,
     notRun: (detail: string) => `Couldn't run Codex's sandbox command, so it's unclear whether the sandbox works (${detail})`,
-    notRunRemediation: "Fix the problems under “Codex diagnostics” and “Codex CLI” above first, then check again",
+    notRunRemediation: "Fix the problems under “Codex doctor” and “Codex CLI” above first, then check again",
     causes: {
       container: "SuDuo runs in a container, and containers don't allow creating user namespaces by default",
       noSystemBwrap: "the system bubblewrap isn't installed",

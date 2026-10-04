@@ -5,19 +5,20 @@ export const activity = {
   step: {
     thinking: "Thinking",
     replying: "Replying",
-    justFinished: (step: string) => `Just finished: ${step}`,
-    runCommand: "Run command",
-    runCommandWith: (command: string) => `Run ${command}`,
-    editFiles: "Edit files",
-    editFile: (name: string) => `Edit ${name}`,
+    // 「Running npm test」→「Just finished running npm test」。
+    justFinished: (step: string) => `Just finished ${step.charAt(0).toLowerCase()}${step.slice(1)}`,
+    runCommand: "Running a command",
+    runCommandWith: (command: string) => `Running ${command}`,
+    editFiles: "Editing files",
+    editFile: (name: string) => `Editing ${name}`,
     editFilesMany: (name: string, count: number) =>
       plural("en", count - 1, {
-        one: `Edit ${name} and 1 more file`,
-        other: `Edit ${name} and ${String(count - 1)} more files`,
+        one: `Editing ${name} and 1 more file`,
+        other: `Editing ${name} and ${String(count - 1)} more files`,
       }),
-    callTool: "Call tool",
-    callToolWith: (tool: string) => `Call ${tool}`,
-    webSearch: "Search the web",
+    callTool: "Calling a tool",
+    callToolWith: (tool: string) => `Calling ${tool}`,
+    webSearch: "Searching the web",
   },
   agent: {
     notSignedIn: "Not signed in to the requirements service yet",

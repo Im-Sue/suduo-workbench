@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   InterruptRequest,
   JsonValue,
+  Locale,
   SendMessageAccepted,
   SendMessageRequest,
   SessionDto,
@@ -80,7 +81,7 @@ export interface RoomAgentRunnerDependencies {
       projectId: string,
       input: CreateSessionRequest,
       setup: ThreadSetup,
-      options: { kind?: SessionKind },
+      options: { kind?: SessionKind; locale: Locale },
     ): Promise<SessionDto>;
   };
   messages: { send(sessionId: string, input: SendMessageRequest, idempotencyKey: string): Promise<SendMessageAccepted> };
@@ -493,7 +494,8 @@ export class RoomAgentRunner {
       project.id,
       { title: roomTaskTitle(room.name, root.body), purpose: "general" },
       setup,
-      { kind: "room_task" },
+      // 任务会话自带标题，语言只影响默认名；S7 起任务会话按房间语言记下 locale。
+      { kind: "room_task", locale: "zh-CN" },
     );
     return this.deps.roomTasks.upsert({
       agentId: agent.id,

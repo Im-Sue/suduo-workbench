@@ -58,7 +58,7 @@ export class RoomMessageService {
   async search(roomId: string, query: SearchRoomMessagesQuery): Promise<SearchRoomMessagesResponse> {
     const room = await this.rooms.requireRef(roomId);
     const q = stripNul(query.q).trim();
-    if (q === "") throw new ApplicationError(400, "VALIDATION_ERROR", "Search keyword must not be empty", { field: "q" });
+    if (q === "") throw new ApplicationError(400, "VALIDATION_ERROR", "Search term must not be empty", { field: "q" });
     const page = await this.messages.search(roomId, {
       q,
       limit: query.limit ?? ROOM_MESSAGE_SEARCH_DEFAULT_LIMIT,

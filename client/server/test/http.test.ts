@@ -1006,6 +1006,33 @@ describe("Gate B HTTP", () => {
     }
   });
 
+  it("从需求服务的项目开本机会话：默认标题用创建请求的语言", async () => {
+    const context = createContext();
+    try {
+      configureRequirementsRemote(context);
+      const mappingRoot = join(context.projectRoot, "project-session-mapping");
+      mkdirSync(mappingRoot);
+      addWorkspaceMapping(context, SESSION_PROJECT_ID, mappingRoot);
+      const create = (headers: Record<string, string>) =>
+        context.server.inject({
+          method: "POST",
+          url: `/api/v2/projects/${SESSION_PROJECT_ID}/sessions`,
+          headers: { host: context.host, origin: `http://${context.host}`, ...headers },
+          payload: {},
+        });
+
+      const chinese = await create({});
+      expect(chinese.statusCode).toBe(201);
+      expect(chinese.json()).toMatchObject({ title: "新会话" });
+      const english = await create({ "x-suduo-locale": "en" });
+      expect(english.statusCode).toBe(201);
+      expect(english.json()).toMatchObject({ title: "New session" });
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
   it("创建需求会话：线程带需求卡与 suduo 工具，登记开工版本，不再生成快照与现状文件", async () => {
     const context = createContext();
     try {
@@ -1665,6 +1692,18 @@ function createRequirementsRemoteClient(
           artifactVersion: null,
         }],
         nextCursor: null,
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (init?.method === "GET" && url.pathname === `/v2/projects/${SESSION_PROJECT_ID}`) {
+      return new Response(JSON.stringify({
+        id: SESSION_PROJECT_ID,
+        name: "session-project",
+        isArchived: false,
+        createdBy: { id: "fixture-user", displayName: "Fixture User" },
+        updatedBy: { id: "fixture-user", displayName: "Fixture User" },
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        version: 1,
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (init?.method === "PATCH" && url.pathname === "/v2/projects/remote-project") {

@@ -23,7 +23,7 @@ export function registerProjectMappingRoutes(
         throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.mapping.unsupportedQuery);
       }
       if (query.verify === undefined) {
-        return { items: await service.listMappings() };
+        return { items: await service.listMappings({ locale: request.locale }) };
       }
       if (query.verify !== "1") {
         throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.mapping.verifyInvalid);

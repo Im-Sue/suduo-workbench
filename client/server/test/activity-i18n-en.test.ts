@@ -29,30 +29,30 @@ const zh = messagesFor("zh-CN");
 describe("「正在做什么」按语言生成", () => {
   it("命令、文件、工具、网页、思考与回复", () => {
     const command = { type: "commandExecution", command: "/bin/zsh -lc \"npm test\"" };
-    expect(describeActivity(command, en)).toBe("Run npm test");
+    expect(describeActivity(command, en)).toBe("Running npm test");
     expect(describeActivity(command, zh)).toBe("运行命令：npm test");
-    expect(describeActivity({ type: "commandExecution" }, en)).toBe("Run command");
-    expect(describeActivity({ type: "fileChange", changes: [] }, en)).toBe("Edit files");
-    expect(describeActivity({ type: "fileChange", changes: [{ path: "/a/cart.js" }] }, en)).toBe("Edit cart.js");
+    expect(describeActivity({ type: "commandExecution" }, en)).toBe("Running a command");
+    expect(describeActivity({ type: "fileChange", changes: [] }, en)).toBe("Editing files");
+    expect(describeActivity({ type: "fileChange", changes: [{ path: "/a/cart.js" }] }, en)).toBe("Editing cart.js");
     expect(describeActivity({ type: "fileChange", changes: [{ path: "/a/b.ts" }, { path: "/a/c.ts" }] }, en)).toBe(
-      "Edit b.ts and 1 more file",
+      "Editing b.ts and 1 more file",
     );
     expect(
       describeActivity({ type: "fileChange", changes: [{ path: "/a/b.ts" }, { path: "/a/c.ts" }, { path: "/a/d.ts" }] }, en),
-    ).toBe("Edit b.ts and 2 more files");
+    ).toBe("Editing b.ts and 2 more files");
     expect(describeActivity({ type: "fileChange", changes: [{ path: "/a/b.ts" }, { path: "/a/c.ts" }, { path: "/a/d.ts" }] }, zh)).toBe(
       "修改 b.ts 等 3 个文件",
     );
-    expect(describeActivity({ type: "mcpToolCall", tool: "search_docs" }, en)).toBe("Call search_docs");
-    expect(describeActivity({ type: "mcpToolCall" }, en)).toBe("Call tool");
-    expect(describeActivity({ type: "webSearch" }, en)).toBe("Search the web");
+    expect(describeActivity({ type: "mcpToolCall", tool: "search_docs" }, en)).toBe("Calling search_docs");
+    expect(describeActivity({ type: "mcpToolCall" }, en)).toBe("Calling a tool");
+    expect(describeActivity({ type: "webSearch" }, en)).toBe("Searching the web");
     expect(describeActivity({ type: "reasoning" }, en)).toBe("Thinking");
     expect(describeActivity({ type: "agentMessage", text: "" }, en)).toBe("Replying");
   });
 
   it("做完的步骤说「刚完成」；思考与回复做完不显示（按类型判断，两种语言一致）", () => {
     const done = { item: { type: "commandExecution", command: "npm test" }, completed: true };
-    expect(describeActivity(done, en)).toBe("Just finished: Run npm test");
+    expect(describeActivity(done, en)).toBe("Just finished running npm test");
     expect(describeActivity(done, zh)).toBe("刚完成：运行命令：npm test");
     for (const t of [en, zh]) {
       expect(describeActivity({ item: { type: "reasoning" }, completed: true }, t)).toBeNull();
@@ -103,7 +103,7 @@ describe("「正在做什么」按语言生成", () => {
       };
       // 不带头先发：夹具记下的 zh-CN（带头的请求会把语言记下来，之后不带头的请求沿用它）。
       expect(await activity({})).toBe("运行命令：pnpm test");
-      expect(await activity({ "x-suduo-locale": "en" })).toBe("Run pnpm test");
+      expect(await activity({ "x-suduo-locale": "en" })).toBe("Running pnpm test");
     } finally {
       await context.close();
     }

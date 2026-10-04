@@ -154,7 +154,7 @@ describe("模型服务", () => {
     );
     // 夹具里的 Codex 没给用户配置层版本。
     expect(errorOf(await send("PUT", "/api/v1/settings/model-provider", { model: "gpt-x" }, EN)).message).toBe(
-      "Codex didn't return a version for your user config layer, so the change wasn't written without version protection",
+      "Codex didn't return a version for your user config layer, so SuDuo didn't write the change: it can't be written safely without one",
     );
     expect(errorOf(await send("PUT", "/api/v1/settings/model-provider", { model: "gpt-x" }, ZH)).message).toBe(
       "Codex 未返回可写 user 配置层版本，拒绝无版本保护的写入",

@@ -201,7 +201,7 @@ function assigneeCondition(
   if (assignee === REQUIREMENT_ASSIGNEE_FILTER_NONE) return { kind: "none" };
   if (assignee === REQUIREMENT_ASSIGNEE_FILTER_ME) return { kind: "user", userId: actorId };
   if (!UUID.test(assignee)) {
-    throw new ApplicationError(400, "VALIDATION_ERROR", "assignee must be a user ID, me or none");
+    throw new ApplicationError(400, "VALIDATION_ERROR", "assignee must be a user ID, me, or none");
   }
   return { kind: "user", userId: assignee };
 }

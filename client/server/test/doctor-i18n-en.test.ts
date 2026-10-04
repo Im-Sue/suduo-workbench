@@ -101,7 +101,7 @@ describe("名称、结论与处理建议按语言生成", () => {
     const result = await run("en", { linuxSandbox: failingSandbox });
     const byId = (id: string) => result.checks.find((check) => check.id === id);
     expect(byId(SUDUO_DOCTOR_CHECK_IDS.node)?.message).toMatch(/^(.+ \(pinned\)|Needs 24\.10\.0; found .+)$/);
-    expect(byId(SUDUO_DOCTOR_CHECK_IDS.codexDoctor)).toMatchObject({ name: "Codex diagnostics", message: "overallStatus=ok" });
+    expect(byId(SUDUO_DOCTOR_CHECK_IDS.codexDoctor)).toMatchObject({ name: "Codex doctor", message: "overallStatus=ok" });
     expect(byId(SUDUO_DOCTOR_CHECK_IDS.codexCli)?.message).toBe(`codex-cli ${CODEX_VERSION} (pinned in the workspace)`);
     expect(byId(SUDUO_DOCTOR_CHECK_IDS.port)).toMatchObject({ name: "Listening port", message: "127.0.0.1:0 is available" });
     expect(byId(SUDUO_DOCTOR_CHECK_IDS.sqlite)?.message).toBe(
@@ -155,7 +155,7 @@ describe("名称、结论与处理建议按语言生成", () => {
     );
     const empty = await run("en", { stdout: JSON.stringify({ ...officialReport(), checks: {} }) });
     expect(empty.checks.find((check) => check.id === SUDUO_DOCTOR_CHECK_IDS.codexDoctorEmpty)).toMatchObject({
-      name: "Codex diagnostics",
+      name: "Codex doctor",
       status: "fail",
       message: "codex doctor --json returned no checks (overallStatus=ok)",
     });

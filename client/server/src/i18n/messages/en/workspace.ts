@@ -11,7 +11,7 @@ export const workspace = {
     removed: "This project was removed. Restore it explicitly with PATCH.",
     nameNotString: "Project name must be a string",
     stateActiveOnly: "Project state can only be active",
-    patchEmpty: "PATCH needs at least one field",
+    patchEmpty: "PATCH must include at least one field",
     hasActiveSessions: "This project still has active sessions. Archive or delete them first.",
     notFound: "Project not found",
     nameLength: "Project name must be 1 to 200 characters",

@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { guardExistingPath } from "../infrastructure/workspace/path-guard.js";
-import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
+import type { ServerMessages } from "../i18n/messages/index.js";
 import type { FolderPermission } from "../i18n/messages/zh-CN/workspace.js";
 
 export interface WorkspaceMappingPathVerification {
@@ -14,11 +14,11 @@ export interface WorkspaceMappingPathVerification {
 }
 
 /**
- * `t` 是给人看的结论用的字典：由路由按请求语言传入；不传时用中文（与迁移前一致）。
+ * `t` 是给人看的结论用的字典：由路由按请求语言传入。
  */
 export async function verifyWorkspaceMappingPath(
   rootPath: string,
-  t: ServerMessages = messagesFor("zh-CN"),
+  t: ServerMessages,
 ): Promise<WorkspaceMappingPathVerification> {
   const text = t.workspace.mappingCheck;
   const exists = await hasFilesystemAccess(rootPath, constants.F_OK);

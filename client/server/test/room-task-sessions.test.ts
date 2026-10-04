@@ -103,12 +103,12 @@ describe("房间任务会话", () => {
   it("普通列表（跨项目与按项目）都不显示房间任务；kind=room_task 筛选可见并带房间话题", async () => {
     const context = setup();
     try {
-      const normal = await context.sessionService.create(context.project.id, { title: "普通会话" });
+      const normal = await context.sessionService.create(context.project.id, { title: "普通会话" }, {}, { locale: "zh-CN" });
       const task = await context.sessionService.create(
         context.project.id,
         { title: "订单中心 · 收货信息" },
         { developerInstructions: "房间固定层" },
-        { kind: "room_task" },
+        { kind: "room_task", locale: "zh-CN" },
       );
       context.roomTasks.upsert({
         agentId: "agent-1",
@@ -150,8 +150,8 @@ describe("房间任务会话", () => {
   it("安全档：房间任务会话建线程与发回合都用房间 Agent 档；普通会话照旧按审批档", async () => {
     const context = setup();
     try {
-      const task = await context.sessionService.create(context.project.id, { title: "房间任务" }, {}, { kind: "room_task" });
-      const normal = await context.sessionService.create(context.project.id, { title: "普通" });
+      const task = await context.sessionService.create(context.project.id, { title: "房间任务" }, {}, { kind: "room_task", locale: "zh-CN" });
+      const normal = await context.sessionService.create(context.project.id, { title: "普通" }, {}, { locale: "zh-CN" });
       expect(context.runtime.threads[0]!.security).toEqual(ROOM_AGENT_SECURITY_POLICY);
       expect(context.runtime.threads[1]!.security).toEqual(APPROVAL_MODE_POLICIES.ask);
 

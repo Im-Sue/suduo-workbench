@@ -156,11 +156,11 @@ describe("项目、路径与本机目录的报错按请求语言", () => {
     const root = temporaryDirectory("suduo-workspace-i18n-perm-");
     chmodSync(root, 0o500);
     cleanups.push(() => chmodSync(root, 0o700));
-    expect((await verifyWorkspaceMappingPath(root)).message).toBe("本机工作目录缺少写入权限");
+    expect((await verifyWorkspaceMappingPath(root, messagesFor("zh-CN"))).message).toBe("本机工作目录缺少写入权限");
     expect((await verifyWorkspaceMappingPath(root, messagesFor("en"))).message)
       .toBe("The local folder is missing write permission");
     chmodSync(root, 0o100);
-    expect((await verifyWorkspaceMappingPath(root)).message).toBe("本机工作目录缺少读取、写入权限");
+    expect((await verifyWorkspaceMappingPath(root, messagesFor("zh-CN"))).message).toBe("本机工作目录缺少读取、写入权限");
     expect((await verifyWorkspaceMappingPath(root, messagesFor("en"))).message)
       .toBe("The local folder is missing read and write permissions");
   });
@@ -220,6 +220,6 @@ describe.skipIf(!gitAvailable)("版本管理按请求语言", () => {
     writeFileSync(join(root, "notes.md"), "v3", "utf8");
     await service.autoCheckpoint("p1", root);
     expect((await service.status("p1", "en")).lastError).toMatch(/^Git command failed/);
-    expect((await service.status("p1")).lastError).toMatch(/^git 操作失败/);
+    expect((await service.status("p1", "zh-CN")).lastError).toMatch(/^git 操作失败/);
   });
 });

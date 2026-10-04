@@ -76,10 +76,9 @@ export class SessionService {
     setup: SessionThreadSetup = {},
     /**
      * kind：room_task = 房间共享 Agent 的隐藏任务会话（只读 + 联网 + 不审批，不进普通列表）。
-     * locale：没给标题时默认名用的语言（创建请求的语言）。不带请求的调用方（房间任务）都自带标题；
-     * 兜底沿用迁移前的中文。
+     * locale：没给标题时默认名用的语言（创建请求的语言）。
      */
-    options: { kind?: SessionKind; locale?: Locale } = {},
+    options: { kind?: SessionKind; locale: Locale },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
@@ -102,7 +101,7 @@ export class SessionService {
     }
     const session = this.sessions.create({
       projectId,
-      title: normalizeTitle(input.title ?? messagesFor(options.locale ?? "zh-CN").session.defaultTitle),
+      title: normalizeTitle(input.title ?? messagesFor(options.locale).session.defaultTitle),
       purpose,
       approvalMode: effectiveApprovalMode(
         { approvalMode: this.defaultApprovalMode() },
