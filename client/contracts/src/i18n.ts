@@ -13,6 +13,26 @@ export {
   resolveLocale,
 } from "@suduo/cloud-contracts";
 export type { Locale, LocalePreference, PluralForms } from "@suduo/cloud-contracts";
+import { isLocale, localeFromTag, type Locale } from "@suduo/cloud-contracts";
+
+/**
+ * 命令行与启动输出的语言（中英双语 S8）：`SUDUO_LOCALE`（zh-CN / en，显式指定）→ POSIX 的
+ * `LC_ALL` → `LC_MESSAGES` → `LANG`（以 zh 开头为中文；`C` / `POSIX` 与其它为英文）→
+ * 都没设时看系统区域（Windows 一般不设 LANG）。`scripts/` 下的 .mjs 与 `suduo-cloud.sh` 按同一规则各写一份。
+ */
+export function cliLocale(
+  /** 一般传 `process.env`（契约包前后端共用，不直接读 process）。 */
+  env: Readonly<Record<string, string | undefined>>,
+  systemLocale: () => string | undefined = () => Intl.DateTimeFormat().resolvedOptions().locale,
+): Locale {
+  const explicit = env["SUDUO_LOCALE"];
+  if (isLocale(explicit)) return explicit;
+  for (const name of ["LC_ALL", "LC_MESSAGES", "LANG"]) {
+    const value = env[name]?.trim();
+    if (value) return localeFromTag(value.split(".")[0]) ?? "en";
+  }
+  return localeFromTag(systemLocale()) ?? "en";
+}
 
 /** 前端发往本机服务的每个请求都带上界面语言，本机服务按它生成错误与提示。 */
 export const LOCALE_HEADER = "X-SuDuo-Locale";
