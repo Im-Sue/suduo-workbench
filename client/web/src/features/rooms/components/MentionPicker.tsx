@@ -1,6 +1,7 @@
 import { BotIcon, UsersIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { useT } from "../../../i18n/provider.js";
 import { UserAvatar } from "../../requirements/components/UserAvatar.js";
 import { agentAvailabilityNote, type MentionCandidate } from "../model.js";
 import { AgentAvatar } from "./MessageItem.js";
@@ -13,9 +14,6 @@ import { AgentAvatar } from "./MessageItem.js";
 export function optionId(listboxId: string, index: number): string {
   return `${listboxId}-option-${index}`;
 }
-
-/** 离线 Agent 的提示：@ 了照样发出，消息下显示「离线，未执行」（离线不补跑，需求 R11），触发人之后可以重试。 */
-export const OFFLINE_AGENT_HINT = "离线时 @ 不会执行，之后可在消息上重试";
 
 /**
  * 这个候选能不能选。已共享到本房间的 Agent 离线也能选（插入 @，服务端记一条「离线，未执行」的任务）；
@@ -46,6 +44,8 @@ export function MentionPicker({
   onPick(candidate: MentionCandidate): void;
   onHover(index: number): void;
 }) {
+  const t = useT();
+  const text = t.rooms.mention;
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const active = document.getElementById(optionId(id, activeIndex));
@@ -73,7 +73,7 @@ export function MentionPicker({
         aria-selected={index === activeIndex}
         aria-disabled={selectable ? undefined : "true"}
         aria-describedby={offline && index === activeIndex ? hintId : undefined}
-        title={offline ? OFFLINE_AGENT_HINT : undefined}
+        title={offline ? text.offlineHint : undefined}
         data-testid="mention-option"
         data-kind={candidate.kind}
         data-availability={candidate.kind === "agent" ? candidate.availability : "available"}
@@ -102,16 +102,16 @@ export function MentionPicker({
           </span>
         )}
         <span className="min-w-0 flex-1 truncate">
-          {candidate.kind === "agent" ? candidate.agent.label : candidate.text}
+          {candidate.kind === "agent" ? candidate.agent.label : candidate.kind === "all" ? text.everyone : candidate.text}
         </span>
         <span className="shrink-0 text-caption text-subtle-foreground">
           {candidate.kind === "user"
             ? candidate.online
-              ? "在线"
+              ? text.online
               : ""
             : candidate.kind === "all"
-              ? "提醒所有人，不唤起 Agent"
-              : agentAvailabilityNote(candidate)}
+              ? text.everyoneNote
+              : agentAvailabilityNote(candidate, t)}
         </span>
       </div>
     );
@@ -122,31 +122,31 @@ export function MentionPicker({
       className="absolute right-2 bottom-[calc(100%+6px)] left-2 z-30 flex flex-col overflow-hidden rounded-md border border-border bg-popover shadow-3"
       data-testid="mention-picker"
     >
-      <div ref={listRef} id={id} role="listbox" aria-label="选择要 @ 的人或 Agent" className="max-h-72 overflow-y-auto p-1">
+      <div ref={listRef} id={id} role="listbox" aria-label={text.listLabel} className="max-h-72 overflow-y-auto p-1">
         {people.length > 0 ? (
-          <div role="group" aria-label="成员">
-            <div className="px-2 pt-1 pb-0.5 text-caption font-medium text-subtle-foreground" aria-hidden="true">成员</div>
+          <div role="group" aria-label={text.people}>
+            <div className="px-2 pt-1 pb-0.5 text-caption font-medium text-subtle-foreground" aria-hidden="true">{text.people}</div>
             {people.map(renderOption)}
           </div>
         ) : null}
         {agents.length > 0 ? (
-          <div role="group" aria-label="Agent">
+          <div role="group" aria-label={text.agents}>
             <div className="flex items-center gap-1 px-2 pt-1.5 pb-0.5 text-caption font-medium text-subtle-foreground" aria-hidden="true">
               <BotIcon className="size-3" />
-              Agent
+              {text.agents}
             </div>
             {agents.map(renderOption)}
           </div>
         ) : null}
         {candidates.length === 0 ? (
           <div className="px-2 py-2 text-small text-subtle-foreground" role="presentation">
-            {loading ? "正在加载成员…" : "没有匹配的人或 Agent"}
+            {loading ? text.loading : text.noMatch}
           </div>
         ) : null}
       </div>
       {showOfflineHint ? (
         <p id={hintId} className="m-0 border-t border-border px-3 py-1.5 text-caption text-subtle-foreground">
-          {OFFLINE_AGENT_HINT}
+          {text.offlineHint}
         </p>
       ) : null}
     </div>

@@ -9,6 +9,7 @@ import { useState } from "react";
 import { api } from "../../api/client.js";
 import { currentLocale } from "../../i18n/locale.js";
 import { messagesFor, type Messages } from "../../i18n/messages/index.js";
+import { useT } from "../../i18n/provider.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,8 +37,8 @@ export function effortName(value: string, t: Messages = messagesFor(currentLocal
 }
 
 /** gpt-5.6-sol → 5.6 Sol；空值显示「默认模型」。 */
-export function prettifyModel(id: string | null): string {
-  if (id === null || id === "") return "默认模型";
+export function prettifyModel(id: string | null, t: Messages = messagesFor(currentLocale())): string {
+  if (id === null || id === "") return t.conversation.model.defaultModel;
   const pretty = id
     .replace(/^(gpt|openai)[-_]/i, "")
     .split(/[-_]/)
@@ -59,9 +60,9 @@ export function offeredEfforts(declared: readonly string[]): string[] {
   return declared.filter((effort) => !WITHHELD_EFFORTS.has(effort));
 }
 
-export function effortLabel(value: string | null): string {
-  if (value === null) return "默认";
-  return effortName(value);
+export function effortLabel(value: string | null, t: Messages = messagesFor(currentLocale())): string {
+  if (value === null) return t.conversation.model.defaultEffort;
+  return effortName(value, t);
 }
 
 export function SessionModelSwitcher({
@@ -78,6 +79,8 @@ export function SessionModelSwitcher({
   onOpenSettings(): void;
   onError(cause: unknown): void;
 }) {
+  const t = useT();
+  const text = t.conversation.model;
   const [items, setItems] = useState<CodexModelOptionDto[] | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -91,7 +94,7 @@ export function SessionModelSwitcher({
             result.models.map((id) => ({
               id,
               model: id,
-              displayName: prettifyModel(id),
+              displayName: prettifyModel(id, t),
               isDefault: false,
               supportedReasoningEfforts: [],
               defaultReasoningEffort: null,
@@ -131,20 +134,20 @@ export function SessionModelSwitcher({
         className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 data-[state=open]:bg-muted"
         data-testid="model-chip"
         disabled={saving}
-        title="模型与推理强度（本会话，下个回合生效）"
+        title={text.chipTitle}
       >
         {saving ? <Spinner size="sm" /> : <CpuIcon className="size-3.5" aria-hidden="true" />}
-        {sessionModel === null ? (defaultModel === null ? "默认模型" : prettifyModel(defaultModel)) : prettifyModel(sessionModel)}
-        {sessionEffort !== null ? <span className="text-subtle-foreground">{effortLabel(sessionEffort)}</span> : null}
+        {sessionModel === null ? (defaultModel === null ? text.defaultModel : prettifyModel(defaultModel, t)) : prettifyModel(sessionModel, t)}
+        {sessionEffort !== null ? <span className="text-subtle-foreground">{effortLabel(sessionEffort, t)}</span> : null}
         <ChevronDownIcon className="size-3 opacity-70" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-64" data-testid="model-menu">
-        <DropdownMenuLabel>本会话 · 下个回合生效</DropdownMenuLabel>
+        <DropdownMenuLabel>{text.menuLabel}</DropdownMenuLabel>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <span>模型</span>
+            <span>{text.model}</span>
             <span className="ml-auto pl-6 text-caption text-muted-foreground">
-              {sessionModel === null ? "跟随默认" : prettifyModel(sessionModel)}
+              {sessionModel === null ? text.followDefault : prettifyModel(sessionModel, t)}
             </span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="max-h-80 w-64 overflow-y-auto">
@@ -163,17 +166,17 @@ export function SessionModelSwitcher({
               }}
             >
               <DropdownMenuRadioItem value={FOLLOW} disabled={saving}>
-                跟随默认
-                <span className="ml-auto pl-4 text-caption text-muted-foreground">{defaultModel === null ? "" : prettifyModel(defaultModel)}</span>
+                {text.followDefault}
+                <span className="ml-auto pl-4 text-caption text-muted-foreground">{defaultModel === null ? "" : prettifyModel(defaultModel, t)}</span>
               </DropdownMenuRadioItem>
-              {items === null ? <div className="px-2 py-1.5 text-caption text-subtle-foreground">正在获取可用模型…</div> : null}
+              {items === null ? <div className="px-2 py-1.5 text-caption text-subtle-foreground">{text.loading}</div> : null}
               {items !== null && modelOptions.length === 0 ? (
-                <div className="px-2 py-1.5 text-caption text-subtle-foreground">没能取到模型列表，可以到设置里配置模型服务</div>
+                <div className="px-2 py-1.5 text-caption text-subtle-foreground">{text.loadFailed}</div>
               ) : null}
               {modelOptions.map((item) => (
                 <DropdownMenuRadioItem key={item.id} value={item.model} disabled={saving}>
-                  <span className="truncate">{item.displayName || prettifyModel(item.model)}</span>
-                  {item.isDefault ? <span className="ml-auto pl-3 text-caption text-muted-foreground">默认</span> : null}
+                  <span className="truncate">{item.displayName || prettifyModel(item.model, t)}</span>
+                  {item.isDefault ? <span className="ml-auto pl-3 text-caption text-muted-foreground">{text.isDefault}</span> : null}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -181,9 +184,9 @@ export function SessionModelSwitcher({
         </DropdownMenuSub>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <span>推理强度</span>
+            <span>{text.effort}</span>
             <span className="ml-auto pl-6 text-caption text-muted-foreground">
-              {sessionEffort === null ? "跟随默认" : effortLabel(sessionEffort)}
+              {sessionEffort === null ? text.followDefault : effortLabel(sessionEffort, t)}
             </span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-52">
@@ -192,14 +195,14 @@ export function SessionModelSwitcher({
               onValueChange={(value) => void apply({ reasoningEffort: value === FOLLOW ? null : value })}
             >
               <DropdownMenuRadioItem value={FOLLOW} disabled={saving}>
-                跟随默认
+                {text.followDefault}
                 <span className="ml-auto pl-4 text-caption text-muted-foreground">
-                  {provider?.reasoningEffort ? effortLabel(provider.reasoningEffort) : ""}
+                  {provider?.reasoningEffort ? effortLabel(provider.reasoningEffort, t) : ""}
                 </span>
               </DropdownMenuRadioItem>
               {efforts.map((value) => (
                 <DropdownMenuRadioItem key={value} value={value} disabled={saving}>
-                  {effortLabel(value)}
+                  {effortLabel(value, t)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -208,7 +211,7 @@ export function SessionModelSwitcher({
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onOpenSettings}>
           <Settings2Icon />
-          全局默认与模型服务设置…
+          {text.openSettings}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { settingsQuery } from "../../../app/queries.js";
 import { classifyFailure } from "../../../feedback/classify.js";
+import { useT } from "../../../i18n/provider.js";
 import { MentionBadge, RoomKindIcon, roomAccessibleLabel, UnreadBadge } from "../components/RoomBadges.js";
 import { hasUnreadMention, quickAccessRooms, totalUnread } from "../model.js";
 import { requirementRoomsQuery } from "../queries.js";
@@ -27,6 +28,8 @@ import { CreateRoomDialog } from "./RequirementRooms.js";
  * 已归档的不列（需求完整页的「讨论」区块照常能看到）。打开一律走 useRoomWindow().open，窄屏直接进讨论页。
  */
 export function RequirementRoomButton({ requirement }: { requirement: RequirementListItemDto }) {
+  const t = useT();
+  const text = t.rooms.roomButton;
   const rooms = useQuery(requirementRoomsQuery(requirement.id));
   const user = useQuery(settingsQuery).data?.session?.user ?? null;
   const me = useMemo<UserSummaryDto | null>(() => (user === null ? null : { id: user.id, displayName: user.displayName }), [user]);
@@ -48,7 +51,7 @@ export function RequirementRoomButton({ requirement }: { requirement: Requiremen
 
   if (rooms.data === undefined) {
     if (rooms.isError) {
-      const reason = `查不到这条需求的讨论：${classifyFailure(rooms.error).message}，点击重试`;
+      const reason = text.loadFailed(classifyFailure(rooms.error).message);
       return (
         <Button
           variant="secondary"
@@ -60,13 +63,13 @@ export function RequirementRoomButton({ requirement }: { requirement: Requiremen
           data-mode="error"
         >
           <RotateCwIcon />
-          讨论
+          {text.retry}
         </Button>
       );
     }
     return (
       <Button variant="secondary" loading disabled data-testid="requirement-peek-room-button" data-mode="loading">
-        进入讨论
+        {text.enter}
       </Button>
     );
   }
@@ -77,7 +80,7 @@ export function RequirementRoomButton({ requirement }: { requirement: Requiremen
       <>
         <Button variant="secondary" onClick={() => setCreating(true)} data-testid="requirement-peek-room-button" data-mode="create">
           <MessageSquarePlusIcon />
-          创建讨论
+          {text.create}
         </Button>
         {dialog}
       </>
@@ -89,14 +92,14 @@ export function RequirementRoomButton({ requirement }: { requirement: Requiremen
       <>
         <Button
           variant="secondary"
-          aria-label={`进入讨论：${roomAccessibleLabel(first)}`}
+          aria-label={text.enterLabel(roomAccessibleLabel(first, t))}
           onClick={() => roomWindow.open(first.projectId, first.id)}
           data-testid="requirement-peek-room-button"
           data-mode="enter"
           data-room-id={first.id}
         >
           <MessagesSquareIcon />
-          进入讨论
+          {text.enter}
           {first.viewer.mentionCount > 0 ? <MentionBadge /> : null}
           <UnreadBadge count={first.viewer.unreadCount} />
         </Button>
@@ -111,12 +114,12 @@ export function RequirementRoomButton({ requirement }: { requirement: Requiremen
         <DropdownMenuTrigger asChild>
           <Button
             variant="secondary"
-            aria-label={`进入讨论：${active.length} 个讨论${unread > 0 ? `，${unread} 条未读` : ""}${mentioned ? "，有人 @ 你" : ""}`}
+            aria-label={text.menuLabel(active.length, unread, mentioned)}
             data-testid="requirement-peek-room-button"
             data-mode="menu"
           >
             <MessagesSquareIcon />
-            进入讨论
+            {text.enter}
             {mentioned ? <MentionBadge /> : null}
             <UnreadBadge count={unread} />
             <ChevronDownIcon className="size-3.5! text-subtle-foreground" />
@@ -127,7 +130,7 @@ export function RequirementRoomButton({ requirement }: { requirement: Requiremen
           {active.map((room) => (
             <DropdownMenuItem
               key={room.id}
-              aria-label={roomAccessibleLabel(room)}
+              aria-label={roomAccessibleLabel(room, t)}
               onSelect={() => roomWindow.open(room.projectId, room.id)}
               data-testid="requirement-peek-room-item"
               data-room-id={room.id}
@@ -141,7 +144,7 @@ export function RequirementRoomButton({ requirement }: { requirement: Requiremen
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setCreating(true)} data-testid="requirement-peek-new-room">
             <PlusIcon />
-            新建讨论
+            {text.newRoom}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -1,7 +1,7 @@
 import {
-  AGENT_RUN_STATUS_LABELS,
   formatRequirementNumber,
   type AgentDto,
+  type AgentRunStatus,
   type AgentRunSummaryDto,
   type AgentShareDto,
   type AgentShareDuration,
@@ -14,6 +14,8 @@ import {
 } from "@suduo/cloud-contracts";
 import { formatClock, formatMonthDay } from "../../ui/format.js";
 import { summaryPreview } from "../requirements/format.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 
 /**
  * 房间模块的纯逻辑（无 React、无请求），单测直接覆盖：
@@ -155,18 +157,21 @@ export function rootMessages(items: readonly RoomMessageDto[]): RoomMessageDto[]
 
 // ───────────────────────────── 房间列表与未读 ─────────────────────────────
 
-export function messageAuthorName(message: Pick<RoomMessageDto, "agent" | "author" | "authorKind">): string {
-  if (message.agent !== null) return agentName(message.agent);
-  if (message.authorKind === "system") return "系统";
-  return message.author?.displayName ?? "有人";
+export function messageAuthorName(
+  message: Pick<RoomMessageDto, "agent" | "author" | "authorKind">,
+  t: Messages = messagesFor(currentLocale()),
+): string {
+  if (message.agent !== null) return agentName(message.agent, t);
+  if (message.authorKind === "system") return t.rooms.message.systemAuthor;
+  return message.author?.displayName ?? t.rooms.message.someone;
 }
 
-export function messagePreview(message: Pick<RoomMessageDto, "body" | "files">): string {
+export function messagePreview(message: Pick<RoomMessageDto, "body" | "files">, t: Messages = messagesFor(currentLocale())): string {
   const text = summaryPreview(message.body, 80);
   if (text !== "") return text;
   const file = message.files[0];
   if (file === undefined) return "";
-  return file.kind === "image" ? "[图片]" : file.kind === "video" ? "[视频]" : `[文件] ${file.fileName}`;
+  return file.kind === "image" ? t.rooms.preview.image : file.kind === "video" ? t.rooms.preview.video : t.rooms.preview.file(file.fileName);
 }
 
 /** 这条消息是否提醒到我：@ 了我，或 @ 所有人。 */
@@ -273,16 +278,22 @@ export function roomRequirementCode(room: Pick<RoomDto, "requirement">): string 
 // ───────────────────────────── Agent 与任务 ─────────────────────────────
 
 /** 「陈思远 的 Codex」：Agent 在消息、状态行里的名字（设备名只在需要区分时显示）。 */
-export function agentName(agent: Pick<AgentSummaryDto, "owner">): string {
-  return `${agent.owner.displayName} 的 Codex`;
+export function agentName(agent: Pick<AgentSummaryDto, "owner">, t: Messages = messagesFor(currentLocale())): string {
+  return t.rooms.agent.name(agent.owner.displayName);
 }
 
-export function runStatusText(run: AgentRunSummaryDto): string {
-  const label = AGENT_RUN_STATUS_LABELS[run.status];
-  if (run.stopRequested && (run.status === "queued" || run.status === "running")) return "正在停止…";
+/** 任务状态名（取代云端契约的 AGENT_RUN_STATUS_LABELS，按界面语言）。 */
+export function runStatusLabel(status: AgentRunStatus, t: Messages = messagesFor(currentLocale())): string {
+  return t.rooms.run.status[status];
+}
+
+/** 状态行文字：状态名 + 排队位置 / 进度 / 摘要 / 原因（后三者是所有者本机写的文字，原样显示）。 */
+export function runStatusText(run: AgentRunSummaryDto, t: Messages = messagesFor(currentLocale())): string {
+  const label = runStatusLabel(run.status, t);
+  if (run.stopRequested && (run.status === "queued" || run.status === "running")) return t.rooms.run.stopping;
   switch (run.status) {
     case "queued":
-      return run.queuePosition !== null && run.queuePosition > 0 ? `${label}（前面还有 ${run.queuePosition} 个）` : label;
+      return run.queuePosition !== null && run.queuePosition > 0 ? t.rooms.run.queuedAhead(label, run.queuePosition) : label;
     case "running":
       return run.progress !== null && run.progress !== "" ? `${label} · ${run.progress}` : label;
     case "completed":
@@ -338,13 +349,13 @@ export function shareDurationOf(expiresAt: string | null): AgentShareDuration {
   return date.getHours() === 23 && date.getMinutes() === 59 && date.getSeconds() === 59 ? "today" : "two_hours";
 }
 
-export function expiresLabel(expiresAt: string | null, now: Date = new Date()): string {
-  if (expiresAt === null) return "直到关闭";
+export function expiresLabel(expiresAt: string | null, now: Date = new Date(), t: Messages = messagesFor(currentLocale())): string {
+  if (expiresAt === null) return t.rooms.share.expires.untilClosed;
   const date = new Date(expiresAt);
   if (Number.isNaN(date.getTime())) return "";
   const sameDay =
     date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
-  return sameDay ? `到 ${formatClock(date)}` : `到 ${formatMonthDay(date)} ${formatClock(date)}`;
+  return t.rooms.share.expires.until(sameDay ? formatClock(date) : `${formatMonthDay(date)} ${formatClock(date)}`);
 }
 
 // ───────────────────────────── @ 候选 ─────────────────────────────
@@ -365,10 +376,16 @@ export type MentionCandidate =
       requested: boolean;
     };
 
+/** 「@ 所有人」插进正文的文字（技术设计 §4.3：S6 起按提及的 kind 渲染，正文里 @所有人 / @everyone 都认）。 */
+// eslint-disable-next-line no-restricted-syntax -- 提及协议文字，S6 按 kind 渲染
 export const MENTION_ALL_TEXT = "所有人";
 
-/** 插进输入框的 @ 文字：人用名字；Agent 用「陈思远的Codex」，同一个人有多台设备时带设备名。 */
+/**
+ * 插进输入框的 @ 文字：人用名字；Agent 用「陈思远的Codex」，同一个人有多台设备时带设备名。
+ * 与服务端的 Agent 标签（「陈思远 的 Codex · 设备」）去掉空格后对得上，消息里的 @ 高亮靠它，不随界面语言变。
+ */
 export function agentMentionText(agent: AgentDto, all: readonly AgentDto[]): string {
+  // eslint-disable-next-line no-restricted-syntax -- 提及协议文字，S6 按 kind 渲染
   const base = `${agent.owner.displayName}的Codex`;
   const sameOwner = all.filter((item) => item.owner.id === agent.owner.id).length > 1;
   return sameOwner ? `${base}·${agent.deviceName}` : base;
@@ -416,11 +433,15 @@ export function buildMentionCandidates(input: {
 }
 
 /** @ 选择框里 Agent 的说明文字。 */
-export function agentAvailabilityNote(candidate: Extract<MentionCandidate, { kind: "agent" }>): string {
-  if (candidate.availability === "available") return "可用";
-  if (candidate.availability === "offline") return "离线";
-  if (candidate.mine) return "未共享 · 在「共享 Agent」里开启";
-  return candidate.requested ? "未共享 · 已申请" : "未共享 · 回车申请共享";
+export function agentAvailabilityNote(
+  candidate: Extract<MentionCandidate, { kind: "agent" }>,
+  t: Messages = messagesFor(currentLocale()),
+): string {
+  const note = t.rooms.mention.agentNote;
+  if (candidate.availability === "available") return note.available;
+  if (candidate.availability === "offline") return note.offline;
+  if (candidate.mine) return note.unsharedMine;
+  return candidate.requested ? note.unsharedRequested : note.unsharedRequest;
 }
 
 /** 消息正文里要高亮的 @ 文字：服务端给的标签及其常见写法（去掉设备名、去掉空格）。 */

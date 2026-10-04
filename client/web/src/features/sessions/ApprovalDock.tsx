@@ -22,6 +22,9 @@ import {
   suDuoToolConfirmationOf,
   suDuoToolConfirmationTitle,
 } from "../../event-projection/suduo-tools.js";
+import { useT } from "../../i18n/provider.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 import { formatBytes } from "../../ui/format.js";
 
 /**
@@ -35,13 +38,6 @@ import { formatBytes } from "../../ui/format.js";
  * 回车不会替你发出；Esc 仍是「不发」。
  */
 export type ApprovalDecisionInput = "accept" | "acceptForSession" | "decline" | "cancel";
-
-const QUESTION: Record<ApprovalKind, string> = {
-  command: "Codex 想运行命令",
-  "file-change": "Codex 想修改文件",
-  permissions: "Codex 想变更权限",
-  other: "Codex 请你确认后继续",
-};
 
 export function ApprovalDock({
   approvals,
@@ -58,6 +54,8 @@ export function ApprovalDock({
   onViewPatch?(change: FileChangeEntry): void;
   displayPath?(path: string): string;
 }) {
+  const t = useT();
+  const text = t.conversation.approval;
   const ordered = [...approvals].sort((left, right) => left.requestedAt - right.requestedAt);
   const current = ordered[0];
   const [deciding, setDeciding] = useState<ApprovalDecisionInput | null>(null);
@@ -114,7 +112,7 @@ export function ApprovalDock({
         ref={dockRef}
         tabIndex={-1}
         className="group/dock mx-auto mb-2 w-full max-w-[760px] rounded-lg border border-warning/40 bg-card shadow-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label="等你确认"
+        aria-label={text.label}
         data-testid="approval-card"
         data-status={current.status === "deciding" ? "deciding" : "pending"}
         data-variant="suduo-tool"
@@ -131,7 +129,7 @@ export function ApprovalDock({
       </section>
     );
   }
-  const subject = current.kind === "file-change" ? "" : approvalSubject(current.request);
+  const subject = current.kind === "file-change" ? "" : approvalSubject(current.request, t);
   const reason = approvalReason(current.request);
   const cwd = approvalCwd(current.request);
   const pending = current.kind === "file-change" ? (changesFor?.(current) ?? []) : [];
@@ -143,17 +141,17 @@ export function ApprovalDock({
       ref={dockRef}
       tabIndex={-1}
       className="group/dock mx-auto mb-2 w-full max-w-[760px] rounded-lg border border-warning/40 bg-card shadow-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label="等你确认"
+      aria-label={text.label}
       data-testid="approval-card"
       data-status="pending"
     >
       <header className="flex items-center gap-2 px-3.5 pt-3 text-small">
         <HandIcon className="size-4 text-warning" aria-hidden="true" />
         <span className="font-medium text-foreground">
-          {current.kind === "file-change" && pending.length > 0 ? `Codex 想修改 ${pending.length} 个文件` : approvalQuestion(current.kind, current.request)}
+          {current.kind === "file-change" && pending.length > 0 ? text.editFiles(pending.length) : approvalQuestion(current.kind, current.request, t)}
         </span>
         {ordered.length > 1 ? (
-          <span className="ml-auto text-caption text-subtle-foreground" aria-label={`第 1 个，共 ${ordered.length} 个`}>
+          <span className="ml-auto text-caption text-subtle-foreground" aria-label={text.position(ordered.length)}>
             1/{ordered.length}
           </span>
         ) : null}
@@ -165,7 +163,7 @@ export function ApprovalDock({
           </pre>
         )}
         {reason === null ? null : <p className="m-0 text-small text-muted-foreground">{reason}</p>}
-        {cwd === null ? null : <p className="m-0 truncate font-mono text-caption text-subtle-foreground">在 {cwd}</p>}
+        {cwd === null ? null : <p className="m-0 truncate font-mono text-caption text-subtle-foreground">{text.cwd(cwd)}</p>}
         {pending.length > 0 ? (
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {pending.map((change) => (
@@ -175,7 +173,7 @@ export function ApprovalDock({
                   className="flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:hover:bg-transparent"
                   disabled={onViewPatch === undefined}
                   onClick={() => onViewPatch?.(change)}
-                  title={`查看 ${displayPath(change.path)} 的改动`}
+                  title={text.viewPatch(displayPath(change.path))}
                 >
                   <FileDiffIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate text-left font-mono text-caption text-foreground" dir="rtl">
@@ -197,11 +195,11 @@ export function ApprovalDock({
       </div>
       <footer className="flex items-center gap-2 px-3.5 py-3">
         <span className="invisible text-caption text-subtle-foreground group-focus/dock:visible" aria-hidden="true">
-          <Kbd>⏎</Kbd> 批准 · <Kbd>Esc</Kbd> 拒绝
+          {text.keyHint({ approve: <Kbd key="approve">⏎</Kbd>, decline: <Kbd key="decline">Esc</Kbd> })}
         </span>
         <div className="flex-1" />
         <Button variant="secondary" size="sm" loading={deciding === "decline"} disabled={busy} data-testid="approval-decline" onClick={() => decide("decline")}>
-          拒绝
+          {text.decline}
         </Button>
         <div className="flex">
           <Button
@@ -213,7 +211,7 @@ export function ApprovalDock({
             data-testid="approval-accept"
             onClick={() => decide("accept")}
           >
-            批准
+            {text.approve}
           </Button>
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
@@ -221,7 +219,7 @@ export function ApprovalDock({
                 variant="primary"
                 size="sm"
                 className="rounded-l-none border-l border-primary-foreground/25 px-1.5"
-                aria-label="更多批准选项"
+                aria-label={text.moreOptions}
                 disabled={busy}
                 data-testid="approval-more"
               >
@@ -231,14 +229,14 @@ export function ApprovalDock({
             <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuItem data-testid="approval-accept-session" onSelect={() => decide("acceptForSession")}>
                 <span className="flex flex-col">
-                  <span>本会话都允许</span>
-                  <span className="text-caption text-subtle-foreground">同类操作不再询问</span>
+                  <span>{text.acceptForSession.title}</span>
+                  <span className="text-caption text-subtle-foreground">{text.acceptForSession.description}</span>
                 </span>
               </DropdownMenuItem>
               <DropdownMenuItem data-testid="approval-cancel" variant="danger" onSelect={() => decide("cancel")}>
                 <span className="flex flex-col">
-                  <span>拒绝并中断</span>
-                  <span className="text-caption text-subtle-foreground">停止 Codex 当前这一轮</span>
+                  <span>{text.cancel.title}</span>
+                  <span className="text-caption text-subtle-foreground">{text.cancel.description}</span>
                 </span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -268,8 +266,11 @@ function ToolConfirmationCard({
   deciding: ApprovalDecisionInput | null;
   onDecide(decision: ApprovalDecisionInput): void;
 }) {
+  const t = useT();
+  const text = t.conversation.approval;
+  const tool = text.tool;
   const comment = confirmation.tool === "comment_submit";
-  const duplicate = duplicateNotice(confirmation);
+  const duplicate = duplicateNotice(confirmation, t);
   // 卡片刚出现的一小会儿按钮不可点：前一张卡上的双击不会落到这张不可撤回的卡上。
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -283,9 +284,9 @@ function ToolConfirmationCard({
     <>
       <header className="flex items-center gap-2 px-3.5 pt-3 text-small">
         <SendIcon className="size-4 shrink-0 text-warning" aria-hidden="true" />
-        <span className="min-w-0 font-medium text-foreground" data-testid="tool-confirm-title">{suDuoToolConfirmationTitle(confirmation)}</span>
+        <span className="min-w-0 font-medium text-foreground" data-testid="tool-confirm-title">{suDuoToolConfirmationTitle(confirmation, t)}</span>
         {position === null ? null : (
-          <span className="ml-auto shrink-0 text-caption text-subtle-foreground" aria-label={`第 1 个，共 ${position} 个`}>
+          <span className="ml-auto shrink-0 text-caption text-subtle-foreground" aria-label={text.position(position)}>
             1/{position}
           </span>
         )}
@@ -301,16 +302,16 @@ function ToolConfirmationCard({
         ) : (
           <>
             {files.length === 0 ? (
-              <p className="m-0 text-small text-muted-foreground">没有列出要发布的文件。</p>
+              <p className="m-0 text-small text-muted-foreground">{tool.noFiles}</p>
             ) : (
               <ul className="m-0 flex max-h-48 list-none flex-col gap-0.5 overflow-auto p-0" data-testid="tool-confirm-files">
                 {files.map((file, index) => (
                   <li key={`${file.source}:${file.ref}:${String(index)}`} className="flex min-h-7 items-center gap-2 px-1.5 text-small" data-testid="tool-confirm-file">
                     <FileIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate text-foreground" title={file.name}>{file.name}</span>
-                    <span className="shrink-0 text-caption text-subtle-foreground">{file.sizeBytes === null ? "大小未知" : formatBytes(file.sizeBytes)}</span>
-                    <span className="max-w-[45%] shrink-0 truncate text-caption text-subtle-foreground" title={publishFileSource(file)}>
-                      {publishFileSource(file)}
+                    <span className="shrink-0 text-caption text-subtle-foreground">{file.sizeBytes === null ? tool.unknownSize : formatBytes(file.sizeBytes)}</span>
+                    <span className="max-w-[45%] shrink-0 truncate text-caption text-subtle-foreground" title={publishFileSource(file, t)}>
+                      {publishFileSource(file, t)}
                     </span>
                   </li>
                 ))}
@@ -318,10 +319,10 @@ function ToolConfirmationCard({
             )}
             <div className="text-small text-muted-foreground" data-testid="tool-confirm-note">
               {note === null ? (
-                "没有填写发布说明。"
+                tool.noNote
               ) : (
                 <>
-                  <span className="text-caption text-subtle-foreground">发布说明</span>
+                  <span className="text-caption text-subtle-foreground">{tool.note}</span>
                   <p className="m-0 mt-0.5 max-h-32 overflow-auto break-words whitespace-pre-wrap text-foreground">{note}</p>
                 </>
               )}
@@ -337,16 +338,16 @@ function ToolConfirmationCard({
       </div>
       <footer className="flex items-center gap-2 px-3.5 py-3">
         <span className="min-w-0 flex-1 text-caption text-subtle-foreground">
-          {executing ? (comment ? "正在发出…" : "正在发布…") : comment ? "发出后不能撤回" : "发布后全组可见，不能撤回"}
+          {executing ? (comment ? tool.sending : tool.publishing) : comment ? tool.sendWarning : tool.publishWarning}
           <span className="invisible group-focus/dock:visible" aria-hidden="true">
-            {" "}· <Kbd>Esc</Kbd> {comment ? "不发" : "不发布"}
+            {" "}· <Kbd>Esc</Kbd> {comment ? tool.dontSend : tool.dontPublish}
           </span>
         </span>
         <Button variant="secondary" size="sm" loading={deciding === "decline"} disabled={busy} data-testid="approval-decline" onClick={() => onDecide("decline")}>
-          {comment ? "不发" : "不发布"}
+          {comment ? tool.dontSend : tool.dontPublish}
         </Button>
         <Button variant="primary" size="sm" loading={deciding === "accept" || executing} disabled={busy} data-testid="approval-accept" onClick={() => onDecide("accept")}>
-          {comment ? "发出" : "发布"}
+          {comment ? tool.send : tool.publish}
         </Button>
       </footer>
     </>
@@ -363,19 +364,29 @@ function requestOf(payload: JsonValue): Record<string, JsonValue> {
 }
 
 /** 审批卡的标题。命令审批里 kind=writeStdin 是向已在运行的命令（终端）输入内容，不是运行新命令。 */
-export function approvalQuestion(kind: ApprovalKind, payload: JsonValue): string {
-  if (kind === "command" && requestOf(payload)["kind"] === "writeStdin") return "Codex 想向正在运行的命令输入内容";
-  return QUESTION[kind];
+export function approvalQuestion(kind: ApprovalKind, payload: JsonValue, t: Messages = messagesFor(currentLocale())): string {
+  const question = t.conversation.approval.question;
+  if (kind === "command" && requestOf(payload)["kind"] === "writeStdin") return question.stdin;
+  switch (kind) {
+    case "command":
+      return question.command;
+    case "file-change":
+      return question.fileChange;
+    case "permissions":
+      return question.permissions;
+    case "other":
+      return question.other;
+  }
 }
 
 /** 审批要确认的对象：命令原文，或要改的文件。 */
-export function approvalSubject(payload: JsonValue): string {
+export function approvalSubject(payload: JsonValue, t: Messages = messagesFor(currentLocale())): string {
   const request = requestOf(payload);
   const command = request["command"];
   if (typeof command === "string") return command;
   if (Array.isArray(command)) return command.map(String).join(" ");
   if (typeof request["path"] === "string") return request["path"];
-  const permissions = describePermissions(request["permissions"]);
+  const permissions = describePermissions(request["permissions"], t);
   if (permissions !== "") return permissions;
   const files = approvalFiles(payload);
   return files.length === 0 ? "" : files.join("\n");

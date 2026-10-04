@@ -12,5 +12,8 @@ import { requirements } from "./requirements.js";
 import { requirementDetail } from "./requirementDetail.js";
 import { myWork } from "./myWork.js";
 import { overview } from "./overview.js";
+import { rooms } from "./rooms.js";
+import { conversation } from "./conversation.js";
+import { workbench } from "./workbench.js";
 
-export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview } satisfies Messages;
+export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview, rooms, conversation, workbench } satisfies Messages;

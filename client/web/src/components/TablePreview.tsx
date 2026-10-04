@@ -4,6 +4,7 @@ import { api } from "../api/client.js";
 import { RegionError } from "../feedback/components/index.js";
 import { classifyFailure } from "../feedback/classify.js";
 import type { FailureKind } from "../feedback/types.js";
+import { useT } from "../i18n/provider.js";
 import { parseCsv } from "../ui/csv.js";
 
 const MAX_ROWS = 500;
@@ -33,6 +34,7 @@ export function SheetPreview({
   projectId: string;
   path: string;
 }) {
+  const t = useT();
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [sheets, setSheets] = useState<SheetData[]>([]);
   const [active, setActive] = useState(0);
@@ -93,13 +95,13 @@ export function SheetPreview({
   }, [projectId, path]);
 
   if (status === "loading") {
-    return <p className="m-0 text-small text-subtle-foreground" role="status">正在解析表格…</p>;
+    return <p className="m-0 text-small text-subtle-foreground" role="status">{t.workbench.table.parsing}</p>;
   }
   if (status === "error" || sheets.length === 0) {
     return (
       <RegionError
         kind={errorKind}
-        message="表格解析失败，请「用系统应用打开」查看完整内容。"
+        message={t.workbench.table.parseFailed}
       />
     );
   }
@@ -110,7 +112,7 @@ export function SheetPreview({
   return (
     <>
       {sheets.length > 1 && (
-        <div className="mb-2 flex flex-wrap gap-1" role="tablist" aria-label="工作表">
+        <div className="mb-2 flex flex-wrap gap-1" role="tablist" aria-label={t.workbench.table.sheets}>
           {sheets.map((sheet, index) => (
             <button
               key={sheet.name}
@@ -142,8 +144,9 @@ function SheetTable({
   rows: string[][];
   truncated: boolean;
 }) {
+  const t = useT();
   if (rows.length === 0) {
-    return <p className="m-0 text-small text-subtle-foreground">表格为空。</p>;
+    return <p className="m-0 text-small text-subtle-foreground">{t.workbench.table.empty}</p>;
   }
   const [head, ...body] = rows;
   return (
@@ -172,8 +175,7 @@ function SheetTable({
       </div>
       {truncated && (
         <p className="m-0 mt-2 text-caption text-subtle-foreground">
-          仅显示前 {String(MAX_ROWS)} 行 / {String(MAX_COLS)} 列 ——
-          完整内容请「用系统应用打开」。
+          {t.workbench.table.truncated(MAX_ROWS, MAX_COLS)}
         </p>
       )}
     </>

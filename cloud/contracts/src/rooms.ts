@@ -292,15 +292,6 @@ export interface ListAgentsResponse {
 export const AGENT_RUN_STATUSES = ["queued", "running", "completed", "failed", "stopped", "offline"] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 
-export const AGENT_RUN_STATUS_LABELS: Readonly<Record<AgentRunStatus, string>> = {
-  queued: "排队中",
-  running: "执行中",
-  completed: "已完成",
-  failed: "失败",
-  stopped: "已停止",
-  offline: "离线，未执行",
-};
-
 export interface AgentRunSummaryDto {
   id: string;
   roomId: string;

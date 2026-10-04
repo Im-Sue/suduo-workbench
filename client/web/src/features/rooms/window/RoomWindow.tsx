@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { settingsQuery } from "../../../app/queries.js";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
 import { useMediaQuery } from "../../../ui/use-breakpoint.js";
 import { MentionBadge, RoomKindIcon, roomAccessibleLabel, UnreadBadge } from "../components/RoomBadges.js";
 import { RoomBody } from "../components/RoomBody.js";
@@ -256,6 +257,8 @@ const RoomWindowHeader = memo(function RoomWindowHeader({
   titleId: string;
   compact: boolean;
 }) {
+  const t = useT();
+  const text = t.rooms.window;
   const room = useRoom(roomId).data;
   const meId = useQuery(settingsQuery).data?.session?.user.id ?? null;
   const join = useJoinRoom();
@@ -263,7 +266,7 @@ const RoomWindowHeader = memo(function RoomWindowHeader({
   const rawCode = room === undefined ? null : roomRequirementCode(room);
   // 名字里已经带了编号（缺省名「REQ-1 讨论」）就不再单独显示。
   const code = rawCode !== null && room !== undefined && !room.name.startsWith(rawCode) ? rawCode : null;
-  const kindLabel = room === undefined ? "" : room.kind === "project_default" ? "项目讨论" : "需求讨论";
+  const kindLabel = room === undefined ? "" : room.kind === "project_default" ? t.rooms.kind.project : t.rooms.kind.requirement;
   return (
     <header className="flex h-11 items-center gap-1 border-b border-border pr-1.5 pl-3" data-testid="room-window-header">
       {room === undefined ? null : <RoomKindIcon room={room} />}
@@ -273,31 +276,31 @@ const RoomWindowHeader = memo(function RoomWindowHeader({
         title={room === undefined ? undefined : `${room.name} · ${kindLabel}${room.requirement === null ? "" : ` · ${room.requirement.title}`}`}
       >
         {room === undefined ? <Skeleton className="h-4 w-28" /> : room.name}
-        {room === undefined ? null : <span className="sr-only">（{kindLabel}）</span>}
+        {room === undefined ? null : <span className="sr-only">{text.kindSuffix(kindLabel)}</span>}
       </h2>
       {code === null ? null : <span className="shrink-0 font-mono text-caption text-subtle-foreground">{code}</span>}
-      {room !== undefined && room.archivedAt !== null ? <Badge>已归档</Badge> : null}
+      {room !== undefined && room.archivedAt !== null ? <Badge>{t.rooms.archived}</Badge> : null}
       <RoomSwitcher projectId={projectId} currentRoomId={roomId} onPick={(id) => roomWindow.open(projectId, id)} />
       <div className="min-w-1 flex-1" />
       {room === undefined ? null : <MembersButton room={room} />}
       {room !== undefined && !room.viewer.joined && room.kind === "requirement" ? (
         <Button size="sm" variant="secondary" loading={join.isPending} onClick={() => join.mutate({ roomId: room.id })}>
-          加入
+          {text.join}
         </Button>
       ) : null}
       {room === undefined ? null : <ShareAgentButton room={room} meId={meId} compact={compact} />}
-      <ActionTip label="在讨论页打开">
-        <Button size="icon-sm" variant="ghost" aria-label="在讨论页打开" onClick={roomWindow.openInPage} data-testid="room-window-open-page">
+      <ActionTip label={text.openInPage}>
+        <Button size="icon-sm" variant="ghost" aria-label={text.openInPage} onClick={roomWindow.openInPage} data-testid="room-window-open-page">
           <Maximize2Icon />
         </Button>
       </ActionTip>
-      <ActionTip label="收起">
-        <Button size="icon-sm" variant="ghost" aria-label="收起" onClick={roomWindow.minimize} data-testid="room-window-minimize">
+      <ActionTip label={text.minimize}>
+        <Button size="icon-sm" variant="ghost" aria-label={text.minimize} onClick={roomWindow.minimize} data-testid="room-window-minimize">
           <MinusIcon />
         </Button>
       </ActionTip>
-      <ActionTip label="关闭">
-        <Button size="icon-sm" variant="ghost" aria-label="关闭" onClick={roomWindow.close} data-testid="room-window-close">
+      <ActionTip label={text.close}>
+        <Button size="icon-sm" variant="ghost" aria-label={text.close} onClick={roomWindow.close} data-testid="room-window-close">
           <XIcon />
         </Button>
       </ActionTip>
@@ -316,6 +319,8 @@ function ActionTip({ label, children }: { label: string; children: ReactNode }) 
 
 /** 标题栏的房间切换：本窗口所在项目的未归档房间，顺序同悬浮入口（@ 我 > 未读 > 最近消息）。 */
 function RoomSwitcher({ projectId, currentRoomId, onPick }: { projectId: string; currentRoomId: string; onPick(roomId: string): void }) {
+  const t = useT();
+  const text = t.rooms.window;
   const rooms = useQuery(projectRoomsQuery(projectId));
   const items = useMemo(() => quickAccessRooms(rooms.data?.items ?? []), [rooms.data]);
   return (
@@ -323,12 +328,12 @@ function RoomSwitcher({ projectId, currentRoomId, onPick }: { projectId: string;
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button size="icon-sm" variant="ghost" className="size-6" aria-label="切换讨论" data-testid="room-window-switcher">
+            <Button size="icon-sm" variant="ghost" className="size-6" aria-label={text.switchRoom} data-testid="room-window-switcher">
               <ChevronsUpDownIcon className="size-3.5!" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>切换讨论</TooltipContent>
+        <TooltipContent>{text.switchRoom}</TooltipContent>
       </Tooltip>
       {/* 选了房间后焦点交给窗口的输入框，不还给切换按钮（减少动态效果时菜单当场卸载，会抢在输入框之后还焦点）。 */}
       <DropdownMenuContent
@@ -336,15 +341,15 @@ function RoomSwitcher({ projectId, currentRoomId, onPick }: { projectId: string;
         className="max-h-[min(420px,70vh)] w-64 overflow-y-auto"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <DropdownMenuLabel>本项目的讨论</DropdownMenuLabel>
-        {rooms.isPending ? <div className="px-2 py-1.5 text-small text-subtle-foreground">正在加载…</div> : null}
+        <DropdownMenuLabel>{text.projectRooms}</DropdownMenuLabel>
+        {rooms.isPending ? <div className="px-2 py-1.5 text-small text-subtle-foreground">{text.loading}</div> : null}
         {rooms.isError && rooms.data === undefined ? (
-          <div className="px-2 py-1.5 text-small text-danger">查不到讨论：{classifyFailure(rooms.error).message}</div>
+          <div className="px-2 py-1.5 text-small text-danger">{t.rooms.loadFailed(classifyFailure(rooms.error).message)}</div>
         ) : null}
         {items.map((room) => (
           <DropdownMenuItem
             key={room.id}
-            aria-label={roomAccessibleLabel(room)}
+            aria-label={roomAccessibleLabel(room, t)}
             aria-current={room.id === currentRoomId ? "true" : undefined}
             onSelect={() => onPick(room.id)}
             data-testid="room-window-switcher-item"
@@ -372,6 +377,7 @@ const RoomWindowBody = memo(function RoomWindowBody({
   panel: RoomPanelState;
   active: boolean;
 }) {
+  const t = useT();
   const room = useRoom(roomId);
   if (room.data === undefined) {
     if (room.isError) {
@@ -380,7 +386,7 @@ const RoomWindowBody = memo(function RoomWindowBody({
         <div className="flex flex-1 items-center justify-center p-4">
           <RegionError
             kind={failure.kind}
-            message={failure.status === 404 ? "查不到这个讨论：它可能已被移走。" : `查不到这个讨论：${failure.message}`}
+            message={failure.status === 404 ? t.rooms.window.roomNotFound : t.rooms.roomLoadFailed(failure.message)}
             busy={room.isFetching}
             onRetry={() => void room.refetch()}
           />
@@ -388,7 +394,7 @@ const RoomWindowBody = memo(function RoomWindowBody({
       );
     }
     return (
-      <div className="flex flex-1 flex-col justify-end gap-4 p-4" aria-busy="true" aria-label="正在打开讨论">
+      <div className="flex flex-1 flex-col justify-end gap-4 p-4" aria-busy="true" aria-label={t.rooms.opening}>
         <Skeleton className="h-10 w-2/3" />
         <Skeleton className="h-10 w-1/2" />
         <Skeleton className="h-11 w-full" />

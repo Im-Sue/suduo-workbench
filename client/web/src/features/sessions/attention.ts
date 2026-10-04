@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 import type { SessionUiStatus } from "../../ui/session-status.js";
 
 /**
@@ -6,11 +8,18 @@ import type { SessionUiStatus } from "../../ui/session-status.js";
  * 在浏览器标题前加前缀，并在用户已允许时发一条系统通知；回到页面后前缀自动去掉。
  * 不主动申请通知权限——是否开启由设置页决定（本机偏好 suduo.notify.system）。
  */
-const PREFIX: Partial<Record<SessionUiStatus, string>> = {
-  completed: "✓ 已完成",
-  approval: "● 等你确认",
-  error: "✕ 没能完成",
+type AttentionStatus = "completed" | "approval" | "error";
+
+/** 标题前缀的符号；文字按提醒时的界面语言取。 */
+const MARK: Record<AttentionStatus, string> = {
+  completed: "✓",
+  approval: "●",
+  error: "✕",
 };
+
+function isAttentionStatus(status: SessionUiStatus): status is AttentionStatus {
+  return Object.hasOwn(MARK, status);
+}
 
 const NOTIFY_KEY = "suduo.notify.system";
 
@@ -30,15 +39,16 @@ export function useAttentionSignals(status: SessionUiStatus, sessionTitle: strin
     const before = previous.current;
     previous.current = status;
     if (typeof document === "undefined" || !document.hidden) return;
-    const prefix = PREFIX[status];
     // 只在状态真的变化成需要注意的样子时提醒（从运行中到结束，或新出现审批）。
-    if (prefix === undefined || before === status || (status !== "approval" && before !== "running")) return;
+    if (!isAttentionStatus(status) || before === status || (status !== "approval" && before !== "running")) return;
+    const text = messagesFor(currentLocale()).conversation.attention;
+    const label = text.title[status];
     baseTitle.current ??= document.title.replace(/^[✓●✕] [^·]+ · /, "");
-    document.title = `${prefix} · ${baseTitle.current}`;
+    document.title = `${MARK[status]} ${label} · ${baseTitle.current}`;
     if (systemNotifyEnabled() && typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
-        new Notification(`${prefix.slice(2)} · ${sessionTitle ?? "会话"}`, {
-          body: status === "approval" ? "Codex 在等你确认后继续。" : status === "error" ? "这一轮没能完成，回到会话看看原因。" : "这一轮已经完成。",
+        new Notification(`${label} · ${sessionTitle ?? text.fallbackSession}`, {
+          body: text.body[status],
           tag: "suduo-session",
         });
       } catch {

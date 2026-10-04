@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { avatarTone } from "@/components/ui/avatar";
 import { Markdown } from "../../../ui/markdown.js";
+import { useT } from "../../../i18n/provider.js";
 import { UserAvatar } from "../../requirements/components/UserAvatar.js";
 import { agentName, mentionHighlights } from "../model.js";
 import type { PendingRoomMessage } from "../pending.js";
@@ -49,6 +50,7 @@ export const MessageItem = memo(function MessageItem({
   onOpenThread(rootId: string): void;
   onOpenRun(run: AgentRunSummaryDto): void;
 }) {
+  const t = useT();
   const highlights = useMemo(() => mentionHighlights(message.mentions), [message.mentions]);
   if (message.authorKind === "system") {
     return (
@@ -57,13 +59,13 @@ export const MessageItem = memo(function MessageItem({
       </div>
     );
   }
-  const name = message.agent === null ? (message.author?.displayName ?? "有人") : agentName(message.agent);
+  const name = message.agent === null ? (message.author?.displayName ?? t.rooms.message.someone) : agentName(message.agent, t);
   const time = formatClock(message.createdAt);
   const thread = message.thread;
   return (
     <article
       className={cn("group/msg relative flex gap-3 px-5 hover:bg-muted/50 focus-within:bg-muted/50", compact ? "py-0.5" : "pt-2 pb-1")}
-      aria-label={`${name}，${time}`}
+      aria-label={t.rooms.message.label(name, time)}
       data-testid="room-message"
       data-message-id={message.id}
       data-seq={message.seq}
@@ -113,11 +115,11 @@ export const MessageItem = memo(function MessageItem({
           <button
             type="button"
             className="inline-flex h-7 items-center gap-1 rounded-sm border border-border bg-popover px-2 text-caption text-muted-foreground shadow-1 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={`回复 ${name} 的消息`}
+            aria-label={t.rooms.message.replyLabel(name)}
             onClick={() => onOpenThread(message.id)}
           >
             <MessageSquareReplyIcon className="size-3.5" aria-hidden="true" />
-            回复
+            {t.rooms.message.reply}
           </button>
         </div>
       ) : null}
@@ -136,6 +138,7 @@ function ThreadSummary({
   repliers: readonly UserSummaryDto[];
   onOpen(): void;
 }) {
+  const t = useT();
   return (
     <button
       type="button"
@@ -148,9 +151,9 @@ function ThreadSummary({
           <UserAvatar key={user.id} user={user} size="md" className="ring-2 ring-card" />
         ))}
       </span>
-      <span className="font-medium text-primary-text">{count} 条回复</span>
+      <span className="font-medium text-primary-text">{t.rooms.thread.replies(count)}</span>
       {lastReplyAt === null ? null : (
-        <span className="truncate text-subtle-foreground">最后回复 {formatRelativeTime(lastReplyAt)}</span>
+        <span className="truncate text-subtle-foreground">{t.rooms.thread.lastReply(formatRelativeTime(lastReplyAt))}</span>
       )}
       <ChevronRightIcon className="size-3 shrink-0 text-subtle-foreground" aria-hidden="true" />
     </button>
@@ -159,11 +162,13 @@ function ThreadSummary({
 
 /** 发送中的占位：先本地显示（灰），服务端返回后被正式消息替换。 */
 export function PendingMessageItem({ pending }: { pending: PendingRoomMessage }) {
+  const t = useT();
+  const name = pending.author?.displayName ?? t.rooms.message.me;
   return (
     <article
       className="flex gap-3 px-5 pt-2 pb-1 opacity-60"
       aria-busy="true"
-      aria-label={`${pending.author?.displayName ?? "我"}，发送中`}
+      aria-label={t.rooms.message.pendingLabel(name)}
       data-testid="room-message-pending"
       data-client-id={pending.clientId}
     >
@@ -172,15 +177,15 @@ export function PendingMessageItem({ pending }: { pending: PendingRoomMessage })
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-baseline gap-2">
-          <span className="text-small font-semibold text-foreground">{pending.author?.displayName ?? "我"}</span>
+          <span className="text-small font-semibold text-foreground">{name}</span>
           <span className="inline-flex items-center gap-1 text-caption text-subtle-foreground">
             <Spinner size="sm" />
-            发送中…
+            {t.rooms.message.sending}
           </span>
         </header>
         {pending.body === "" ? null : <div className="text-body whitespace-pre-wrap text-foreground">{pending.body}</div>}
         {pending.files.length === 0 ? null : (
-          <p className="m-0 mt-1 text-caption text-subtle-foreground">附带 {pending.files.length} 个文件</p>
+          <p className="m-0 mt-1 text-caption text-subtle-foreground">{t.rooms.message.attachedFiles(pending.files.length)}</p>
         )}
       </div>
     </article>

@@ -8,6 +8,8 @@ import {
 } from "@suduo/cloud-contracts";
 import { api } from "../../api/client.js";
 import { reportFailure } from "../../feedback/report.js";
+import { currentLocale } from "../../i18n/locale.js";
+import { messagesFor } from "../../i18n/messages/index.js";
 import { showMessage } from "../../ui/message.js";
 import {
   applyIncomingMessage,
@@ -134,11 +136,11 @@ function notifyShareRequest(queryClient: QueryClient, request: NonNullable<RoomE
   if (notified.has(request.id)) return;
   notified.add(request.id);
   const room = findCachedRoom(queryClient, request.roomId);
-  const where = room === undefined ? "一个讨论" : `「${room.name}」`;
-  showMessage(`${request.requester.displayName} 想在${where}里使用你的 Codex（${request.agent.deviceName}）`, "info", {
+  const text = messagesFor(currentLocale()).rooms;
+  showMessage(text.shareRequestToast.message(request.requester.displayName, room?.name ?? null, request.agent.deviceName), "info", {
     id: `share-request-${request.id}`,
     action: {
-      label: "开启共享",
+      label: text.shareRequestToast.accept,
       onClick: () =>
         void api
           .resolveShareRequest(request.id, { action: "accept", duration: "today", expiresAt: endOfLocalDay() })
@@ -146,9 +148,9 @@ function notifyShareRequest(queryClient: QueryClient, request: NonNullable<RoomE
             void queryClient.invalidateQueries({ queryKey: roomKeys.shareRequests(request.roomId) });
             void queryClient.invalidateQueries({ queryKey: roomKeys.shares(request.roomId) });
             void queryClient.invalidateQueries({ queryKey: roomKeys.agents });
-            showMessage("已共享到今天结束", "success");
+            showMessage(text.shareRequestToast.accepted, "success");
           })
-          .catch((cause: unknown) => reportFailure(cause, { surface: "action", title: "没能开启共享" })),
+          .catch((cause: unknown) => reportFailure(cause, { surface: "action", title: text.failures.openShare })),
     },
   });
 }

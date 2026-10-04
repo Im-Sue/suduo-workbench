@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useCurrentProject } from "../../../app/project-context.js";
 import { classifyFailure } from "../../../feedback/classify.js";
+import { useT } from "../../../i18n/provider.js";
 import { useMediaQuery } from "../../../ui/use-breakpoint.js";
 import { MentionBadge, RoomKindIcon, roomAccessibleLabel, UnreadBadge } from "../components/RoomBadges.js";
 import { hasUnreadMention, quickAccessRooms, totalUnread } from "../model.js";
@@ -84,6 +85,8 @@ interface Press {
 }
 
 function Launcher({ projectId }: { projectId: string }) {
+  const t = useT();
+  const text = t.rooms.launcher;
   const viewport = useViewport();
   const reducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
   const navigate = useNavigate();
@@ -107,7 +110,7 @@ function Launcher({ projectId }: { projectId: string }) {
   const stashed = windowState !== null && windowState.minimized ? windowState : null;
   const queryClient = useQueryClient();
   // 收起的窗口可能属于别的项目：从房间缓存里找名字，不只在当前项目的列表里找。
-  const stashedName = stashed === null ? null : (findCachedRoom(queryClient, stashed.roomId)?.name ?? "讨论");
+  const stashedName = stashed === null ? null : (findCachedRoom(queryClient, stashed.roomId)?.name ?? text.fallbackName);
 
   const close = useCallback((focusButton: boolean) => {
     setOpen(false);
@@ -186,10 +189,7 @@ function Launcher({ projectId }: { projectId: string }) {
     setOpen((value) => !value);
   };
 
-  const label =
-    (stashed === null ? "讨论快捷入口" : `恢复讨论窗口：${stashedName ?? "讨论"}`) +
-    (unread > 0 ? `，${unread} 条未读` : "") +
-    (mentioned ? "，有人 @ 你" : "");
+  const label = text.label(stashed === null ? null : (stashedName ?? text.fallbackName), unread, mentioned);
   const point = dragPoint ?? home;
 
   return (
@@ -208,7 +208,7 @@ function Launcher({ projectId }: { projectId: string }) {
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
-        title={stashed === null ? "讨论（可拖到左边）" : `恢复「${stashedName ?? "讨论"}」`}
+        title={stashed === null ? text.title : text.restoreTitle(stashedName ?? text.fallbackName)}
         data-testid="room-launcher"
         data-side={docked.side}
         data-unread={unread}
@@ -235,7 +235,7 @@ function Launcher({ projectId }: { projectId: string }) {
           id={listboxId}
           mode={reducedMotion ? "list" : "fan"}
           rooms={ordered}
-          status={rooms.data !== undefined ? null : rooms.isError ? `查不到讨论：${classifyFailure(rooms.error).message}` : "正在加载讨论…"}
+          status={rooms.data !== undefined ? null : rooms.isError ? t.rooms.loadFailed(classifyFailure(rooms.error).message) : text.loading}
           currentRoomId={windowState?.roomId ?? null}
           viewport={viewport}
           docked={docked}
@@ -278,6 +278,8 @@ function RoomStack({
   onActivate(option: StackOption): void;
   onClose(focusButton: boolean): void;
 }) {
+  const t = useT();
+  const text = t.rooms.launcher;
   const listRef = useRef<HTMLDivElement>(null);
   const options = useMemo<StackOption[]>(() => {
     const roomOptions = rooms.map((room, rank) => ({ key: room.id, kind: "room" as const, room, rank }));
@@ -409,7 +411,7 @@ function RoomStack({
     id,
     role: "listbox",
     tabIndex: 0,
-    "aria-label": "本项目的讨论",
+    "aria-label": t.rooms.window.projectRooms,
     "aria-activedescendant": activeOption === undefined ? undefined : `${id}-${activeOption.key}`,
     "data-state": "open",
     "data-mode": mode,
@@ -421,7 +423,12 @@ function RoomStack({
     const isAll = option.kind === "all";
     const room = isAll ? null : option.room;
     const hidden = slot !== null && slot.opacity < 0.05;
-    const label = room === null ? "全部讨论…，进入讨论页" : `${roomAccessibleLabel(room)}${room.id === currentRoomId ? "，已在窗口里打开" : ""}`;
+    const label =
+      room === null
+        ? text.allRoomsLabel
+        : room.id === currentRoomId
+          ? text.currentLabel(roomAccessibleLabel(room, t))
+          : roomAccessibleLabel(room, t);
     const optionProps = {
       id: `${id}-${option.key}`,
       role: "option",
@@ -464,7 +471,7 @@ function RoomStack({
         >
           {room === null ? <ListIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" /> : <RoomKindIcon room={room} />}
           <span className={cn("min-w-0 flex-1 truncate", room !== null && room.viewer.unreadCount > 0 && "font-semibold")}>
-            {room === null ? "全部讨论…" : room.name}
+            {room === null ? text.allRooms : room.name}
           </span>
           {room !== null && room.id === currentRoomId ? <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" /> : null}
           {room !== null && room.viewer.mentionCount > 0 ? <MentionBadge /> : null}
@@ -500,7 +507,7 @@ function RoomStack({
             selected ? "bg-primary text-primary-foreground" : "bg-popover text-popover-foreground",
           )}
         >
-          {room === null ? "全部讨论…" : room.name}
+          {room === null ? text.allRooms : room.name}
         </span>
       </div>
     );
@@ -522,7 +529,7 @@ function RoomStack({
       >
         <div role="presentation" className="min-h-0 flex-1 overflow-y-auto">
           {status === null ? null : <p className="m-0 px-2 py-2 text-small text-subtle-foreground">{status}</p>}
-          {status === null && rooms.length === 0 ? <p className="m-0 px-2 py-2 text-small text-subtle-foreground">这个项目还没有讨论</p> : null}
+          {status === null && rooms.length === 0 ? <p className="m-0 px-2 py-2 text-small text-subtle-foreground">{t.rooms.noRooms}</p> : null}
           {roomOptions.map((option, index) => renderOption(option, index, null))}
         </div>
         <div role="presentation" className="mt-1 border-t border-border pt-1">
@@ -558,7 +565,7 @@ function RoomStack({
           )}
           style={{ transform: `translate3d(0, ${expanded ? -(10 + FAN_STEP + 8) : 0}px, 0)`, opacity: expanded ? 1 : 0 }}
         >
-          {status ?? "这个项目还没有讨论"}
+          {status ?? t.rooms.noRooms}
         </p>
       )}
       {options.map((option, index) => {

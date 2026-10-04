@@ -6,6 +6,7 @@ import { DiffStat } from "../features/sessions/stream/TurnView.js";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EnvPanel } from "./EnvPanel.js";
+import { useT } from "../i18n/provider.js";
 
 /**
  * 会话检查面板（需求 §4.5）：改动 / 需求 / 环境 / 文件 四个标签。
@@ -16,11 +17,7 @@ import { EnvPanel } from "./EnvPanel.js";
  */
 export type SidePanelTab = "changes" | "requirement" | "env" | "files";
 
-const GROUPS = [
-  ["created", "新建", "新增"],
-  ["modified", "修改", "修改"],
-  ["deleted", "删除", "删除"],
-] as const;
+const GROUPS = ["created", "modified", "deleted"] as const;
 
 export function ChangesPanel(props: {
   fileTree?: ReactNode;
@@ -39,6 +36,7 @@ export function ChangesPanel(props: {
   onSystemOpen(path: string, mode: SystemOpenTarget): void;
   onError(message: string): void;
 }) {
+  const t = useT();
   const [innerTab, setInnerTab] = useState<SidePanelTab>("changes");
   const tab = props.tab ?? innerTab;
   const setTab = (next: SidePanelTab) => {
@@ -47,23 +45,23 @@ export function ChangesPanel(props: {
   };
 
   return (
-    <aside className="flex h-full min-h-0 flex-col" aria-label="检查面板">
+    <aside className="flex h-full min-h-0 flex-col" aria-label={t.workbench.inspector.label}>
       <Tabs value={tab} onValueChange={(value) => setTab(value as SidePanelTab)} className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border pr-2 pl-3">
           <TabsList className="h-full border-0">
             <TabsTrigger value="changes" data-testid="side-tab-changes">
-              改动{props.changes.length > 0 ? <span className="ml-1 text-subtle-foreground">{props.changes.length}</span> : null}
+              {t.workbench.inspector.tabs.changes}{props.changes.length > 0 ? <span className="ml-1 text-subtle-foreground">{props.changes.length}</span> : null}
             </TabsTrigger>
             {props.requirementPanel === undefined ? null : (
-              <TabsTrigger value="requirement" data-testid="side-tab-requirement">需求</TabsTrigger>
+              <TabsTrigger value="requirement" data-testid="side-tab-requirement">{t.workbench.inspector.tabs.requirement}</TabsTrigger>
             )}
-            <TabsTrigger value="env" data-testid="side-tab-env">环境</TabsTrigger>
+            <TabsTrigger value="env" data-testid="side-tab-env">{t.workbench.inspector.tabs.env}</TabsTrigger>
             {props.fileTree === undefined ? null : (
-              <TabsTrigger value="files" data-testid="side-tab-files">文件</TabsTrigger>
+              <TabsTrigger value="files" data-testid="side-tab-files">{t.workbench.inspector.tabs.files}</TabsTrigger>
             )}
           </TabsList>
           <div className="flex-1" />
-          <Button size="icon-sm" variant="ghost" aria-label="收起检查面板" title="收起检查面板（⌘J）" onClick={props.onCollapse}>
+          <Button size="icon-sm" variant="ghost" aria-label={t.workbench.inspector.collapse} title={t.workbench.inspector.collapseTitle} onClick={props.onCollapse}>
             <PanelRightCloseIcon />
           </Button>
         </div>
@@ -108,28 +106,30 @@ function ChangeList({
   deletions: number;
   onOpen(path: string): void;
 }) {
+  const t = useT();
+  const text = t.workbench.changes;
   if (changes.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
         <FileDiffIcon className="size-5 text-subtle-foreground" aria-hidden="true" />
-        <p className="m-0 text-small text-muted-foreground">还没有改动</p>
-        <p className="m-0 text-caption text-subtle-foreground">Codex 新建、修改或删除文件后会列在这里，点开可以看改动对比。</p>
+        <p className="m-0 text-small text-muted-foreground">{text.emptyTitle}</p>
+        <p className="m-0 text-caption text-subtle-foreground">{text.emptyDescription}</p>
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-3 p-3" data-testid="change-list">
       <div className="flex items-center gap-2 px-1 text-small">
-        <span className="font-medium text-foreground">相对会话开始前 · {changes.length} 个文件</span>
+        <span className="font-medium text-foreground">{text.summary(changes.length)}</span>
         <DiffStat additions={additions} deletions={deletions} />
       </div>
-      {GROUPS.map(([kind, title, tag]) => {
+      {GROUPS.map((kind) => {
         const items = changes.filter((change) => change.kind === kind);
         if (items.length === 0) return null;
         return (
           <section key={kind} className="flex flex-col gap-0.5">
             <h3 className="m-0 px-1 text-caption font-medium text-subtle-foreground">
-              {title} {items.length}
+              {text.kind[kind]} {items.length}
             </h3>
             <ul className="m-0 flex list-none flex-col p-0">
               {items.map((change) => (
@@ -141,7 +141,7 @@ function ChangeList({
                     title={change.path}
                     onClick={() => onOpen(change.path)}
                   >
-                    <span className="w-8 shrink-0 text-caption text-subtle-foreground">{tag}</span>
+                    <span className="w-8 shrink-0 text-caption text-subtle-foreground">{text.tag[kind]}</span>
                     <span className="min-w-0 flex-1 truncate font-mono text-caption text-foreground" dir="rtl">
                       <bdi>{change.path}</bdi>
                     </span>

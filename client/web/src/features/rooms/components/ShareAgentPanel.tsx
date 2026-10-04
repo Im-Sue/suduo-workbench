@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { requestProjectAction } from "../../../app/shell/shell-actions.js";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
+import type { Messages } from "../../../i18n/messages/index.js";
 import { requirementKeys } from "../../requirements/keys.js";
 import { api } from "../../../api/client.js";
 import { findCachedRoom } from "../cache.js";
@@ -35,18 +37,15 @@ import { readShareDuration, writeShareDuration } from "../share-prefs.js";
  * - 可申请的 Agent（别人的、在这里没共享的 →「申请共享」）；
  * - 我收到的待处理申请（开启 / 忽略）。
  */
-const DURATIONS: { value: AgentShareDuration; label: string }[] = [
-  { value: "until_closed", label: "直到我关闭" },
-  { value: "two_hours", label: "2 小时" },
-  { value: "today", label: "今天" },
-];
+const DURATIONS: readonly AgentShareDuration[] = ["until_closed", "two_hours", "today"];
 
-function durationLabel(duration: AgentShareDuration): string {
-  return DURATIONS.find((option) => option.value === duration)?.label ?? "";
+function durationOptions(t: Messages): { value: AgentShareDuration; label: string }[] {
+  return DURATIONS.map((value) => ({ value, label: t.rooms.share.duration[value] }));
 }
 
 /** compact：只留图标与数字（悬浮窗口窄时的标题栏），说明在 aria-label 与悬停提示里。 */
 export function ShareAgentButton({ room, meId, compact = false }: { room: RoomDto; meId: string | null; compact?: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const shares = useQuery(sharesQuery(room.id));
   const count = activeShares(shares.data?.items).length;
@@ -59,12 +58,12 @@ export function ShareAgentButton({ room, meId, compact = false }: { room: RoomDt
           size="sm"
           variant="secondary"
           className={compact ? "px-2" : undefined}
-          title={compact ? "共享 Agent" : undefined}
+          title={compact ? t.rooms.share.button : undefined}
           data-testid="share-agent-button"
-          aria-label={`共享 Agent${count > 0 ? `，已共享 ${count} 个` : ""}${incoming > 0 ? `，${incoming} 个申请待处理` : ""}`}
+          aria-label={t.rooms.share.buttonLabel(count, incoming)}
         >
           <BotIcon />
-          {compact ? null : "共享 Agent"}
+          {compact ? null : t.rooms.share.button}
           {count > 0 ? <span className="text-subtle-foreground">{count}</span> : null}
           {incoming > 0 ? <span className="size-1.5 rounded-full bg-warning" aria-hidden="true" /> : null}
         </Button>
@@ -77,6 +76,7 @@ export function ShareAgentButton({ room, meId, compact = false }: { room: RoomDt
 }
 
 export function ShareAgentPanel({ room, meId }: { room: RoomDto; meId: string | null }) {
+  const t = useT();
   const shares = useQuery(sharesQuery(room.id));
   const agents = useQuery(agentsQuery);
   const requests = useQuery(shareRequestsQuery(room.id));
@@ -97,13 +97,13 @@ export function ShareAgentPanel({ room, meId }: { room: RoomDto; meId: string | 
       <MyAgentSection room={room} meId={meId} />
 
       <section className="flex flex-col gap-2 px-4 py-3" aria-labelledby={`shared-${room.id}`}>
-        <h3 id={`shared-${room.id}`} className="m-0 text-small font-semibold">本房间已共享</h3>
+        <h3 id={`shared-${room.id}`} className="m-0 text-small font-semibold">{t.rooms.share.sharedHere}</h3>
         {shares.isPending ? <Skeleton className="h-8 w-full" /> : null}
         {shares.isError ? (
-          <p className="m-0 text-caption text-danger" role="alert">查不到共享：{classifyFailure(shares.error).message}</p>
+          <p className="m-0 text-caption text-danger" role="alert">{t.rooms.share.sharesLoadFailed(classifyFailure(shares.error).message)}</p>
         ) : null}
         {shares.isSuccess && active.length === 0 ? (
-          <p className="m-0 text-caption text-subtle-foreground">还没有人把 Agent 共享到这里。</p>
+          <p className="m-0 text-caption text-subtle-foreground">{t.rooms.share.noneShared}</p>
         ) : null}
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {active.map((share) => (
@@ -111,7 +111,7 @@ export function ShareAgentPanel({ room, meId }: { room: RoomDto; meId: string | 
               <OnlineDot online={share.agent.online} />
               <span className="min-w-0 flex-1 truncate">{share.agent.label}</span>
               <span className="shrink-0 text-caption text-subtle-foreground">
-                {share.agent.online ? "可用" : "离线"} · {expiresLabel(share.expiresAt)}
+                {share.agent.online ? t.rooms.agent.available : t.rooms.agent.offline} · {expiresLabel(share.expiresAt, undefined, t)}
               </span>
             </li>
           ))}
@@ -120,22 +120,22 @@ export function ShareAgentPanel({ room, meId }: { room: RoomDto; meId: string | 
 
       {incoming.length === 0 ? null : (
         <section className="flex flex-col gap-2 px-4 py-3" aria-labelledby={`incoming-${room.id}`}>
-          <h3 id={`incoming-${room.id}`} className="m-0 text-small font-semibold">待你处理的申请</h3>
+          <h3 id={`incoming-${room.id}`} className="m-0 text-small font-semibold">{t.rooms.share.incomingTitle}</h3>
           <SegmentedControl
             size="sm"
-            aria-label="开启后共享多久"
+            aria-label={t.rooms.share.incomingDurationLabel}
             value={incomingDuration}
             onValueChange={(next) => {
               setIncomingDuration(next);
               writeShareDuration(next);
             }}
-            options={DURATIONS}
+            options={durationOptions(t)}
           />
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {incoming.map((item) => (
               <li key={item.id} className="flex items-center gap-2 text-small" data-testid="incoming-share-request">
                 <span className="min-w-0 flex-1">
-                  {item.requester.displayName} 申请使用 <span className="font-medium">{agentName(item.agent)}</span>
+                  {t.rooms.share.incomingRequest(item.requester.displayName, <span key="agent" className="font-medium">{agentName(item.agent, t)}</span>)}
                 </span>
                 <Button
                   size="sm"
@@ -143,14 +143,14 @@ export function ShareAgentPanel({ room, meId }: { room: RoomDto; meId: string | 
                   loading={resolve.isPending && resolve.variables?.requestId === item.id && resolve.variables.action === "accept"}
                   onClick={() => resolve.mutate({ requestId: item.id, action: "accept", duration: incomingDuration })}
                 >
-                  开启
+                  {t.rooms.share.accept}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => resolve.mutate({ requestId: item.id, action: "ignore" })}
                 >
-                  忽略
+                  {t.rooms.share.ignore}
                 </Button>
               </li>
             ))}
@@ -159,18 +159,18 @@ export function ShareAgentPanel({ room, meId }: { room: RoomDto; meId: string | 
       )}
 
       <section className="flex flex-col gap-2 px-4 py-3" aria-labelledby={`requestable-${room.id}`}>
-        <h3 id={`requestable-${room.id}`} className="m-0 text-small font-semibold">可以申请的 Agent</h3>
+        <h3 id={`requestable-${room.id}`} className="m-0 text-small font-semibold">{t.rooms.share.requestableTitle}</h3>
         {agents.isPending ? <Skeleton className="h-8 w-full" /> : null}
         {agents.isError ? (
           <RegionError
             kind={classifyFailure(agents.error).kind}
-            message={`查不到 Agent 列表：${classifyFailure(agents.error).message}`}
+            message={t.rooms.share.agentsLoadFailed(classifyFailure(agents.error).message)}
             busy={agents.isFetching}
             onRetry={() => void agents.refetch()}
           />
         ) : null}
         {agents.isSuccess && requestable.length === 0 ? (
-          <p className="m-0 text-caption text-subtle-foreground">同事的 Agent 都已经在这里了，或者还没有人登记 Agent。</p>
+          <p className="m-0 text-caption text-subtle-foreground">{t.rooms.share.noneRequestable}</p>
         ) : null}
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {requestable.map((agent) => (
@@ -202,6 +202,7 @@ function RequestableRow({
   busy: boolean;
   onRequest(): void;
 }) {
+  const t = useT();
   return (
     <li className="flex items-center gap-2 text-small" data-testid="requestable-agent-row" data-agent-id={agent.id}>
       <OnlineDot online={agent.online} />
@@ -211,10 +212,10 @@ function RequestableRow({
         variant="ghost"
         disabled={requested || disabled}
         loading={busy}
-        aria-label={requested ? `已申请 ${agent.label}` : `申请共享 ${agent.label}`}
+        aria-label={requested ? t.rooms.share.requestedLabel(agent.label) : t.rooms.share.requestLabel(agent.label)}
         onClick={onRequest}
       >
-        {requested ? "已申请" : "申请共享"}
+        {requested ? t.rooms.share.requested : t.rooms.share.request}
       </Button>
     </li>
   );
@@ -230,6 +231,8 @@ function OnlineDot({ online }: { online: boolean }) {
 }
 
 function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) {
+  const t = useT();
+  const text = t.rooms.share.myAgent;
   const queryClient = useQueryClient();
   const self = useQuery(selfAgentQuery);
   const shares = useQuery(sharesQuery(room.id));
@@ -272,21 +275,19 @@ function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) 
 
   return (
     <section className="flex flex-col gap-2.5 px-4 py-3" aria-labelledby={`my-agent-${room.id}`} data-testid="my-agent-section">
-      <h3 id={`my-agent-${room.id}`} className="m-0 text-small font-semibold">我的 Agent</h3>
+      <h3 id={`my-agent-${room.id}`} className="m-0 text-small font-semibold">{text.title}</h3>
       {self.isPending ? <Skeleton className="h-9 w-full" /> : null}
       {self.isError ? (
         <RegionError
           kind={classifyFailure(self.error).kind}
-          message={`查不到本机 Agent：${classifyFailure(self.error).message}`}
+          message={text.loadFailed(classifyFailure(self.error).message)}
           busy={self.isFetching}
           onRetry={() => void self.refetch()}
         />
       ) : null}
       {self.isSuccess && (self.data.status !== "ready" || agent === null) ? (
         <p className="m-0 rounded-md bg-muted px-3 py-2 text-caption text-muted-foreground" data-testid="my-agent-unavailable" data-status={self.data.status}>
-          {self.data.status === "unregistered"
-            ? `本机的 Codex 还没登记成 Agent${self.data.message === null ? "：登录并打开本机 SuDuo 后会自动登记。" : `：${self.data.message}`}`
-            : `本机的 Codex 暂时不可用${self.data.message === null ? "，稍后再试。" : `：${self.data.message}`}`}
+          {self.data.status === "unregistered" ? text.unregistered(self.data.message) : text.unavailable(self.data.message)}
         </p>
       ) : null}
       {agent === null || self.data?.status !== "ready" ? null : (
@@ -297,41 +298,40 @@ function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) 
             <Switch
               checked={myShare !== undefined}
               disabled={busy || archived || meId === null}
-              aria-label={`把 ${agent.label} 共享到这个房间`}
+              aria-label={text.switchLabel(agent.label)}
               data-testid="my-agent-switch"
               onCheckedChange={toggle}
             />
           </div>
           <SegmentedControl
             size="sm"
-            aria-label="共享多久"
+            aria-label={text.durationLabel}
             data-testid="share-duration"
             value={duration}
             onValueChange={changeDuration}
-            options={DURATIONS.map((option) => ({ ...option, disabled: busy || archived }))}
+            options={durationOptions(t).map((option) => ({ ...option, disabled: busy || archived }))}
           />
           <p className="m-0 text-caption text-subtle-foreground" data-testid="my-agent-share-state">
             {myShare === undefined
-              ? `没有共享到这个房间。打开后按「${durationLabel(duration)}」共享，房间里的人可以 @ 它提问，它在你的电脑上只读地分析。`
-              : `已共享 · ${expiresLabel(myShare.expiresAt)}。随时可以关闭，正在执行的任务会停止。`}
+              ? text.notShared(t.rooms.share.duration[duration])
+              : text.shared(expiresLabel(myShare.expiresAt, undefined, t))}
           </p>
           {mapped ? null : (
             <div className="flex flex-col gap-1.5 rounded-md bg-warning-soft px-3 py-2 text-caption text-foreground" data-testid="my-agent-no-mapping">
-              <span>这个项目还没关联你电脑上的代码目录，Agent 回答不了代码相关的问题。</span>
+              <span>{text.noMapping}</span>
               <Button size="sm" variant="secondary" className="self-start" onClick={() => requestProjectAction("manage")}>
                 <FolderGit2Icon />
-                关联代码目录
+                {text.linkFolder}
               </Button>
             </div>
           )}
           {activeRun === null ? null : (
             <p className="m-0 text-caption text-muted-foreground" data-testid="my-agent-active-run">
-              正在为{activeRoom === undefined ? "另一个讨论" : `「${activeRoom.name}」`}执行
-              {(self.data?.queuedRuns ?? 0) > 0 ? `，还有 ${self.data?.queuedRuns ?? 0} 个在排队` : ""}
+              {text.activeRun(activeRoom?.name ?? null, self.data?.queuedRuns ?? 0)}
             </p>
           )}
           {activeRun === null && (self.data?.queuedRuns ?? 0) > 0 ? (
-            <p className="m-0 text-caption text-muted-foreground">还有 {self.data?.queuedRuns ?? 0} 个在排队</p>
+            <p className="m-0 text-caption text-muted-foreground">{text.queued(self.data?.queuedRuns ?? 0)}</p>
           ) : null}
         </>
       )}

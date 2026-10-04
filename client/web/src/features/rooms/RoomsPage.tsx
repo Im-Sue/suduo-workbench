@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import { settingsQuery } from "../../app/queries.js";
 import { classifyFailure } from "../../feedback/classify.js";
 import { EmptyState, RegionError } from "../../feedback/components/index.js";
+import { useT } from "../../i18n/provider.js";
 import { RoomBody, RoomSkeleton } from "./components/RoomBody.js";
 import { RoomHeader } from "./components/RoomHeader.js";
 import { RoomList } from "./components/RoomList.js";
@@ -28,6 +29,7 @@ export function validateRoomsSearch(search: Record<string, unknown>): RoomsSearc
 }
 
 export function RoomsPage({ projectId, roomId, search }: { projectId: string; roomId: string | null; search: RoomsSearch }) {
+  const t = useT();
   const rooms = useQuery(projectRoomsQuery(projectId));
 
   if (roomId === null) {
@@ -40,22 +42,22 @@ export function RoomsPage({ projectId, roomId, search }: { projectId: string; ro
   return (
     <div className="flex min-h-0 min-w-0 flex-1" data-testid="rooms-page">
       <RoomList projectId={projectId} rooms={rooms} activeRoomId={roomId} />
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="讨论区">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label={t.rooms.page.regionLabel}>
         {roomId !== null ? (
           <RoomView key={roomId} projectId={projectId} roomId={roomId} search={search} />
         ) : rooms.isSuccess ? (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               size="page"
-              title="这个项目还没有讨论"
-              description="项目讨论会在第一次打开时自动建立；需求下的讨论在需求详情里新建。"
+              title={t.rooms.noRooms}
+              description={t.rooms.page.emptyDescription}
             />
           </div>
         ) : rooms.isError ? (
           <div className="flex flex-1 items-center justify-center">
             <RegionError
               kind={classifyFailure(rooms.error).kind}
-              message={`查不到讨论：${classifyFailure(rooms.error).message}`}
+              message={t.rooms.loadFailed(classifyFailure(rooms.error).message)}
               busy={rooms.isFetching}
               onRetry={() => void rooms.refetch()}
             />
@@ -69,6 +71,7 @@ export function RoomsPage({ projectId, roomId, search }: { projectId: string; ro
 }
 
 function RoomView({ projectId, roomId, search }: { projectId: string; roomId: string; search: RoomsSearch }) {
+  const t = useT();
   const navigate = useNavigate();
   const room = useRoom(roomId);
   const data = room.data;
@@ -87,7 +90,7 @@ function RoomView({ projectId, roomId, search }: { projectId: string; roomId: st
         <div className="flex flex-1 items-center justify-center">
           <RegionError
             kind={failure.kind}
-            message={failure.status === 404 ? "查不到这个讨论：它可能已被移走，或链接有误。" : `查不到这个讨论：${failure.message}`}
+            message={failure.status === 404 ? t.rooms.page.roomNotFound : t.rooms.roomLoadFailed(failure.message)}
             busy={room.isFetching}
             onRetry={() => void room.refetch()}
           />

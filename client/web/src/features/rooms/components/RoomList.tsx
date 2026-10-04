@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
+import { useT } from "../../../i18n/provider.js";
 import { roomRequirementCode, roomTitle, sortRooms } from "../model.js";
 
 /**
@@ -22,22 +23,24 @@ export function RoomList({
   rooms: UseQueryResult<ListRoomsResponse>;
   activeRoomId: string | null;
 }) {
+  const t = useT();
+  const text = t.rooms.list;
   const [showArchived, setShowArchived] = useState(false);
   const sorted = sortRooms(rooms.data?.items ?? []);
   const activeArchived = sorted.archived.some((room) => room.id === activeRoomId);
   const archivedOpen = showArchived || activeArchived;
   return (
     <nav
-      aria-label="讨论列表"
+      aria-label={text.label}
       className="flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-background"
       data-testid="room-list"
     >
       <div className="flex h-[52px] shrink-0 items-center px-4">
-        <h2 className="m-0 text-body font-semibold text-foreground">讨论</h2>
+        <h2 className="m-0 text-body font-semibold text-foreground">{text.title}</h2>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {rooms.isPending ? (
-          <div className="flex flex-col gap-2 p-2" aria-busy="true" aria-label="正在加载讨论">
+          <div className="flex flex-col gap-2 p-2" aria-busy="true" aria-label={text.loading}>
             {[0, 1, 2].map((index) => (
               <Skeleton key={index} className="h-7 w-full" />
             ))}
@@ -46,12 +49,12 @@ export function RoomList({
         {rooms.isError && rooms.data === undefined ? (
           <RegionError
             kind={classifyFailure(rooms.error).kind}
-            message={`查不到讨论列表：${classifyFailure(rooms.error).message}`}
+            message={text.loadFailed(classifyFailure(rooms.error).message)}
             busy={rooms.isFetching}
             onRetry={() => void rooms.refetch()}
           />
         ) : null}
-        <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label="进行中的讨论">
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label={text.activeLabel}>
           {sorted.active.map((room) => (
             <RoomListItem key={room.id} projectId={projectId} room={room} active={room.id === activeRoomId} />
           ))}
@@ -65,10 +68,10 @@ export function RoomList({
               onClick={() => setShowArchived((value) => !value)}
             >
               <ChevronRightIcon className={cn("size-3 transition-transform", archivedOpen && "rotate-90")} aria-hidden="true" />
-              已归档 {sorted.archived.length}
+              {text.archivedToggle(sorted.archived.length)}
             </button>
             {archivedOpen ? (
-              <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label="已归档的讨论">
+              <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label={text.archivedLabel}>
                 {sorted.archived.map((room) => (
                   <RoomListItem key={room.id} projectId={projectId} room={room} active={room.id === activeRoomId} />
                 ))}
@@ -77,7 +80,7 @@ export function RoomList({
           </div>
         )}
         {rooms.isSuccess ? (
-          <p className="m-0 mt-4 px-2 text-caption text-subtle-foreground">需求下的讨论在需求详情里新建。</p>
+          <p className="m-0 mt-4 px-2 text-caption text-subtle-foreground">{text.requirementHint}</p>
         ) : null}
       </div>
     </nav>
@@ -85,6 +88,7 @@ export function RoomList({
 }
 
 function RoomListItem({ projectId, room, active }: { projectId: string; room: RoomDto; active: boolean }) {
+  const t = useT();
   const unread = Math.max(0, room.viewer.unreadCount);
   const mentions = Math.max(0, room.viewer.mentionCount);
   const rawCode = roomRequirementCode(room);
@@ -93,12 +97,12 @@ function RoomListItem({ projectId, room, active }: { projectId: string; room: Ro
   const code = rawCode !== null && title.startsWith(rawCode) ? null : rawCode;
   const label = [
     code === null ? title : `${code} ${title}`,
-    room.archivedAt === null ? null : "已归档",
-    unread > 0 ? `${unread} 条未读` : null,
-    mentions > 0 ? "有人 @ 你" : null,
+    room.archivedAt === null ? null : t.rooms.archivedState,
+    unread > 0 ? t.rooms.unread(unread) : null,
+    mentions > 0 ? t.rooms.mentioned : null,
   ]
     .filter((part) => part !== null)
-    .join("，");
+    .join(t.rooms.labelSeparator);
   const Icon = room.archivedAt !== null ? ArchiveIcon : room.kind === "project_default" ? HashIcon : MessagesSquareIcon;
   return (
     <li>

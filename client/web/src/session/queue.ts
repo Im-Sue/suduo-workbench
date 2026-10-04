@@ -344,13 +344,3 @@ export function buildMessageContent(input: {
     })),
   ];
 }
-
-export const PAUSED_REASON_TEXT: Record<PausedReason, string> = {
-  user_stop: "你点了停止",
-  turn_failed: "上一轮失败了",
-  turn_interrupted: "上一轮被中断了",
-  send_rejected: "发送失败，已放回队首",
-  send_uncertain: "这一条发没发出去还不确定",
-  attribution_unconfirmed: "这一条去了哪儿还没确认",
-  restored: "刷新或切回会话后，需要你确认继续",
-};
