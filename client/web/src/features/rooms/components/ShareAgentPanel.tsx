@@ -16,7 +16,7 @@ import type { Messages } from "../../../i18n/messages/index.js";
 import { requirementKeys } from "../../requirements/keys.js";
 import { api } from "../../../api/client.js";
 import { findCachedRoom } from "../cache.js";
-import { activeShares, agentName, expiresLabel, shareDurationOf } from "../model.js";
+import { activeShares, agentLabel, agentName, expiresLabel, shareDurationOf } from "../model.js";
 import {
   agentsQuery,
   selfAgentQuery,
@@ -109,7 +109,7 @@ export function ShareAgentPanel({ room, meId }: { room: RoomDto; meId: string | 
           {active.map((share) => (
             <li key={share.id} className="flex items-center gap-2 text-small" data-testid="shared-agent-row" data-agent-id={share.agent.id}>
               <OnlineDot online={share.agent.online} />
-              <span className="min-w-0 flex-1 truncate">{share.agent.label}</span>
+              <span className="min-w-0 flex-1 truncate">{agentLabel(share.agent, t)}</span>
               <span className="shrink-0 text-caption text-subtle-foreground">
                 {share.agent.online ? t.rooms.agent.available : t.rooms.agent.offline} · {expiresLabel(share.expiresAt, undefined, t)}
               </span>
@@ -203,16 +203,17 @@ function RequestableRow({
   onRequest(): void;
 }) {
   const t = useT();
+  const label = agentLabel(agent, t);
   return (
     <li className="flex items-center gap-2 text-small" data-testid="requestable-agent-row" data-agent-id={agent.id}>
       <OnlineDot online={agent.online} />
-      <span className="min-w-0 flex-1 truncate">{agent.label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       <Button
         size="sm"
         variant="ghost"
         disabled={requested || disabled}
         loading={busy}
-        aria-label={requested ? t.rooms.share.requestedLabel(agent.label) : t.rooms.share.requestLabel(agent.label)}
+        aria-label={requested ? t.rooms.share.requestedLabel(label) : t.rooms.share.requestLabel(label)}
         onClick={onRequest}
       >
         {requested ? t.rooms.share.requested : t.rooms.share.request}
@@ -294,11 +295,11 @@ function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) 
         <>
           <div className="flex items-center gap-2 text-small">
             <OnlineDot online={agent.online} />
-            <span className="min-w-0 flex-1 truncate">{agent.label}</span>
+            <span className="min-w-0 flex-1 truncate">{agentLabel(agent, t)}</span>
             <Switch
               checked={myShare !== undefined}
               disabled={busy || archived || meId === null}
-              aria-label={text.switchLabel(agent.label)}
+              aria-label={text.switchLabel(agentLabel(agent, t))}
               data-testid="my-agent-switch"
               onCheckedChange={toggle}
             />

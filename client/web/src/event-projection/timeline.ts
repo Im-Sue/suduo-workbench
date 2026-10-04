@@ -1,6 +1,6 @@
 import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
 import type { ConversationMessage, CurrentStep, TurnMeta, TurnStatus } from "./reducer.js";
-import { completedAgentMessageText, codexErrorDescription, describeCodexError, localizeTurnError, noticeOf, objectValue, describePermissions } from "./shared.js";
+import { completedAgentMessageText, codexErrorDescription, describeCodexError, localizeTurnError, noticeOf, objectValue, describePermissions, runtimeNoticeText } from "./shared.js";
 import {
   dynamicToolDetail,
   dynamicToolOutput,
@@ -280,7 +280,11 @@ export function buildTimeline(
         turn.timeline.error = { message: retrying && !described.reconnectAttempt ? retryText(raw, t) : described.text, retrying };
         continue;
       }
-      const text = event.type === "runtime.recovery-required" ? raw || t.timeline.notice.runtimeRecovered : localizeTurnError(raw, t);
+      // 断线重建（code connection-rebuilt）按当前语言渲染；没有 code 的旧事件显示存下的原文。
+      const text =
+        event.type === "runtime.recovery-required"
+          ? (runtimeNoticeText(payload, t) ?? (raw || t.timeline.notice.runtimeRecovered))
+          : localizeTurnError(raw, t);
       entries.push({
         kind: "notice",
         id: `notice:${event.eventId}`,

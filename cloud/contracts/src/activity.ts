@@ -1,5 +1,5 @@
 import type { UserSummaryDto } from "./auth.js";
-import type { AuditResourceType, RecordedAuditAction } from "./collaboration.js";
+import type { AuditResourceType, CommentSystemContent, RecordedAuditAction } from "./collaboration.js";
 import type {
   RequirementsCursorPage,
   RequirementsCursorQuery,
@@ -38,6 +38,8 @@ export type RequirementActivityChangeDto =
 export interface RequirementActivityCommentDto {
   id: string;
   body: string;
+  /** 系统代写的评论才有，前端按它用自己的语言渲染（同 `CommentDto.system`）。 */
+  system?: CommentSystemContent;
 }
 
 export interface RequirementActivityAttachmentDto {

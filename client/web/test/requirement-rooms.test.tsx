@@ -101,6 +101,34 @@ describe("需求详情 · 讨论区块", () => {
     expect(link?.textContent).toContain("小王：导出上限改成 1 万");
   });
 
+  it("最后一条按结构化字段用中文渲染（云端的兜底文字是英文）；老云端没有结构化字段时原样显示", async () => {
+    const at = new Date().toISOString();
+    const reqRoom = (id: string, lastMessage: NonNullable<ReturnType<typeof room>["lastMessage"]>) =>
+      room({ id, kind: "requirement", name: id, requirement: { id: "r1", number: 12, title: "订单导出" }, lastMessage });
+    apiMocks.listRequirementRooms.mockResolvedValue({
+      items: [
+        reqRoom("agent-files", {
+          seq: 5,
+          authorName: "小王's Codex · MacBook Pro",
+          preview: "[File] 方案.pdf and 1 more",
+          createdAt: at,
+          authorKind: "agent",
+          agent: { ownerName: "小王", deviceName: "MacBook Pro" },
+          text: "",
+          firstFile: { fileName: "方案.pdf", kind: "file" },
+          fileCount: 2,
+        }),
+        reqRoom("system", { seq: 2, authorName: "System", preview: "房间已归档", createdAt: at, authorKind: "system", agent: null, text: "房间已归档", firstFile: null, fileCount: 0 }),
+        reqRoom("legacy", { seq: 1, authorName: "小张", preview: "[附件] 截图.png", createdAt: at }),
+      ],
+    });
+    const node = await render();
+    const texts = [...node.querySelectorAll('[data-testid="requirement-room-link"]')].map((link) => link.textContent ?? "");
+    expect(texts.find((text) => text.startsWith("agent-files"))).toContain("小王 的 Codex：[文件] 方案.pdf 等 2 个");
+    expect(texts.find((text) => text.startsWith("system"))).toContain("系统：房间已归档");
+    expect(texts.find((text) => text.startsWith("legacy"))).toContain("小张：[附件] 截图.png");
+  });
+
   it("没有讨论时给出说明和「新建讨论」；查不到时说原因并给重试", async () => {
     apiMocks.listRequirementRooms.mockResolvedValueOnce({ items: [] });
     let node = await render();

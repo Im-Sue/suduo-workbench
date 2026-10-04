@@ -35,12 +35,14 @@ export function room(patch: Partial<RoomDto> = {}): RoomDto {
 
 export function agent(patch: Partial<AgentDto> = {}): AgentDto {
   const owner = patch.owner ?? WANG;
+  const deviceName = patch.deviceName ?? "MacBook Pro";
   return {
     id: "agent-wang",
     kind: "codex",
     owner,
-    deviceName: "MacBook Pro",
-    label: `${owner.displayName} 的 Codex · MacBook Pro`,
+    deviceName,
+    // 云端标签是英文兜底（S6 起）；界面上的 Agent 名由前端按所有者名与设备名自己拼，不读它。
+    label: `${owner.displayName}'s Codex · ${deviceName}`,
     online: true,
     lastSeenAt: "2026-09-30T09:00:00.000Z",
     activeShareCount: 1,

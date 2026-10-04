@@ -406,6 +406,8 @@ export function createSuDuoApplication(
     events,
     broker,
     context: sessionContext,
+    // 所有者的界面语言：替 Agent 写进房间的固定文字与原因里的报错原文按它写（前端最近一次用过的界面语言）。
+    ownerLocale: () => settingsService.locale() ?? "zh-CN",
   });
   const runner = roomRunner;
   sessionContext.setRoomRebuilder((record) => runner.rebuildSetup(record));

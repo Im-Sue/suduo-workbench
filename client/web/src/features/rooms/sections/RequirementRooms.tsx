@@ -18,7 +18,7 @@ import { requirementCode } from "../../requirements/format.js";
 import { usersQuery } from "../../requirements/queries.js";
 import { upsertRoom } from "../cache.js";
 import { roomKeys } from "../keys.js";
-import { sortRooms } from "../model.js";
+import { lastMessageAuthor, lastMessagePreview, sortRooms } from "../model.js";
 import { requirementRoomsQuery } from "../queries.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
@@ -83,7 +83,7 @@ export function RequirementRooms({ requirement, me }: { requirement: Requirement
                     <span className="truncate font-medium">{room.name}</span>
                     {room.lastMessage === null ? null : (
                       <span className="truncate text-caption text-subtle-foreground">
-                        {text.lastMessage(room.lastMessage.authorName, room.lastMessage.preview)}
+                        {text.lastMessage(lastMessageAuthor(room.lastMessage, t), lastMessagePreview(room.lastMessage, t))}
                       </span>
                     )}
                   </span>

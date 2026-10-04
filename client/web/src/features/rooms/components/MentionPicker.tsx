@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useT } from "../../../i18n/provider.js";
 import { UserAvatar } from "../../requirements/components/UserAvatar.js";
-import { agentAvailabilityNote, type MentionCandidate } from "../model.js";
+import { agentAvailabilityNote, agentLabel, type MentionCandidate } from "../model.js";
 import { AgentAvatar } from "./MessageItem.js";
 
 /**
@@ -102,7 +102,7 @@ export function MentionPicker({
           </span>
         )}
         <span className="min-w-0 flex-1 truncate">
-          {candidate.kind === "agent" ? candidate.agent.label : candidate.kind === "all" ? text.everyone : candidate.text}
+          {candidate.kind === "agent" ? agentLabel(candidate.agent, t) : candidate.kind === "all" ? text.everyone : candidate.text}
         </span>
         <span className="shrink-0 text-caption text-subtle-foreground">
           {candidate.kind === "user"

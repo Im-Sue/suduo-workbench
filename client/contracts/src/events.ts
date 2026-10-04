@@ -147,6 +147,30 @@ export interface ToolProgressPayload {
   message: string;
 }
 
+/**
+ * SuDuo 写进账本的会话提示（`runtime.warning`，及 `runtime.recovery-required` 里断线重建那条）的种类，
+ * 前端按它用看的人的语言渲染（中英双语技术设计 §4.3）：
+ * - `thread-rebuilt`：会话的历史线程续不上，已自动重建线程。
+ * - `unsupported-request`：Codex 发来 SuDuo 还不支持的请求，已跳过或替你拒绝；`params.method` 是请求方法名。
+ * - `connection-rebuilt`：与 Codex 的连接断开并已重建（`runtime.recovery-required`）。
+ * - `room-run-events-truncated`：共享 Agent 任务的执行过程太长，中间省略了 `params.omitted` 条记录。
+ */
+export type RuntimeNoticeCode =
+  | "thread-rebuilt"
+  | "unsupported-request"
+  | "connection-rebuilt"
+  | "room-run-events-truncated";
+
+/**
+ * 带 code 的会话提示 payload：`message` 是英文兜底，给认不出 code 的旧客户端看。
+ * 旧事件没有 code（文字是当时写下的中文），前端照原文显示。
+ */
+export interface RuntimeNoticePayload {
+  code: RuntimeNoticeCode;
+  message: string;
+  params?: Record<string, string | number>;
+}
+
 export interface EventEnvelope<
   TType extends string = KnownEventType,
   TPayload extends JsonValue = JsonValue,

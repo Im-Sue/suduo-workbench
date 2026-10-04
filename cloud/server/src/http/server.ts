@@ -100,6 +100,9 @@ export async function buildHttpServer(
   } = dependencies;
   const liveEventResponses = new Set<ServerResponse>();
   const server = Fastify({
+    // 任务进度 / 原因的参数取值是「字符串或数字」（`type: ["string", "number"]`）：不能写成 anyOf，
+    // 开着类型强转时 anyOf 会在第一个分支把数字转成字符串。其余默认选项（强转、去掉多余字段）不变。
+    ajv: { customOptions: { allowUnionTypes: true } },
     logger: config.logger
       ? {
           redact: {

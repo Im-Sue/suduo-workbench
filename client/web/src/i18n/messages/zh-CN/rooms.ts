@@ -1,4 +1,9 @@
-import type { AgentRunStatus, AgentShareDuration } from "@suduo/cloud-contracts";
+import type {
+  AgentRunCodexError,
+  AgentRunFailureCategory,
+  AgentRunStatus,
+  AgentShareDuration,
+} from "@suduo/cloud-contracts";
 import type { ReactNode } from "react";
 
 /** 讨论房间与共享 Agent（需求十一、快捷入口需求）：讨论页、悬浮窗口与入口、需求下的讨论、共享面板、任务状态。 */
@@ -101,6 +106,8 @@ export const rooms = {
     image: "[图片]",
     video: "[视频]",
     file: (name: string) => `[文件] ${name}`,
+    /** 多个附件：first 是第一个附件的预览，count 是附件总数（「[文件] a.pdf 等 3 个」）。 */
+    more: (first: string, count: number) => `${first} 等 ${String(count)} 个`,
   },
   thread: {
     title: "话题",
@@ -147,7 +154,7 @@ export const rooms = {
     listLabel: "选择要 @ 的人或 Agent",
     people: "成员",
     agents: "Agent",
-    /** 「@ 所有人」候选在列表里显示的名字（插进正文的文字见 model.ts 的 MENTION_ALL_TEXT）。 */
+    /** 「@ 所有人」候选在列表里显示的名字（插进正文的文字见下面的 text.everyone）。 */
     everyone: "所有人",
     everyoneNote: "提醒所有人，不唤起 Agent",
     online: "在线",
@@ -162,6 +169,15 @@ export const rooms = {
       unsharedRequested: "未共享 · 已申请",
       unsharedRequest: "未共享 · 回车申请共享",
     },
+    /**
+     * 选中候选后插进正文的文字（不含 @），按发送者的界面语言写；
+     * 高亮时各语言的写法都认（model.ts 的 mentionHighlights），所以别人用另一种语言看也能高亮。
+     */
+    text: {
+      everyone: "所有人",
+      /** 「陈思远的Codex」；同一个人有多台设备时带设备名「陈思远的Codex·MacBook Pro」。 */
+      agent: (owner: string, device: string | null) => (device === null ? `${owner}的Codex` : `${owner}的Codex·${device}`),
+    },
   },
   files: {
     video: (name: string) => `视频 ${name}`,
@@ -175,6 +191,8 @@ export const rooms = {
   agent: {
     /** 「陈思远 的 Codex」：Agent 在消息、状态行里的名字。 */
     name: (owner: string) => `${owner} 的 Codex`,
+    /** 「陈思远 的 Codex · MacBook Pro」：需要区分设备时（@ 候选、共享面板）的名字。 */
+    withDevice: (owner: string, device: string) => `${owner} 的 Codex · ${device}`,
     available: "可用",
     offline: "离线",
   },
@@ -197,6 +215,57 @@ export const rooms = {
     retryLabel: (agent: string) => `重试 ${agent} 的任务`,
     elapsed: (duration: string) => `用时 ${duration}`,
     viewDetail: "查看详情",
+    /**
+     * 任务失败 / 停止 / 离线的原因，键是原因 code（中英双语技术设计 §4.3）。云端与所有者本机只存 code + 参数，
+     * 各人按自己的语言看；参数里的路径、报错原文是所有者本机写下的原文，原样嵌进来。
+     */
+    reason: {
+      not_shared: "未共享到这个房间",
+      owner_offline: "所有者不在线",
+      share_closed: "共享已关闭",
+      share_expired: "共享已到期",
+      owner_disconnected: "所有者本机下线，执行中断",
+      stopped_by_owner: "所有者停止了任务",
+      stopped_by_requester: "发起人停止了任务",
+      no_local_folder: "这台电脑没有为这个项目关联代码目录",
+      local_folder_unavailable: (path: string) => `这台电脑为这个项目关联的代码目录不可用（${path}），需要所有者重新关联`,
+      trigger_message_missing: "找不到触发这次任务的消息",
+      stopped_before_start: "开始执行前被叫停",
+      stopped_while_running: "执行中被叫停",
+      interrupted_locally: "在所有者电脑上被中断",
+      stalled: (minutes: number) => `执行中断：${String(minutes)} 分钟没有任何进展`,
+      local_start_failed: (detail: string) => `没能在本机开始执行：${detail}`,
+      run_error: (detail: string) => `执行失败：${detail}`,
+      reply_rejected: (detail: string) => `回答没能发到房间：${detail}`,
+      local_service_restarted: "执行中断（本机服务重启）",
+      result_not_delivered: "执行结果没能发回房间，详情见所有者本机的房间任务会话",
+      start_connection_lost: "开始执行时与需求服务的连接中断，这次没有执行，可以重试",
+      /** 回合失败：Codex 错误码 / 按状态码归类 / 报错原文 / 原因未知。 */
+      turn_failed: {
+        codexError: {
+          contextWindowExceeded: "这段对话已经超出模型的上下文窗口。可以在新话题里重新 @，或请所有者处理。",
+          usageLimitExceeded: "所有者的模型用量已经到上限，请稍后再试。",
+          unauthorized: "所有者电脑上的模型服务认证失败（401），需要所有者检查模型服务设置。",
+          serverOverloaded: "模型服务现在很忙，请稍等一会儿再重试。",
+          internalServerError: "模型服务暂时出错，请稍后重试。",
+          badRequest: "模型服务拒绝了这次请求，可能是参数或附件不被支持。",
+          sandboxError: "命令没能在只读沙箱里运行。",
+          rateLimitExceeded: "模型服务限流了，请稍等几分钟再重试。",
+          misalignmentPolicyViolation: "这次请求触发了模型服务的安全策略，已停止。可以换个说法再试。",
+          sessionBudgetExceeded: "这个话题的用量预算已经用完，可以在新话题里重新 @。",
+          cyberPolicy: "请求涉及网络安全相关内容，被模型服务的安全策略拦下了。",
+        } satisfies Record<AgentRunCodexError, string>,
+        category: {
+          rate_limited: "模型服务限流（429），请稍等几分钟再重试。",
+          unauthorized: "所有者电脑上的模型服务认证失败（401），需要所有者检查模型服务设置。",
+          forbidden: "模型服务拒绝了请求（403），所有者的凭证可能没有权限使用这个模型。",
+          server_error: "模型服务暂时出错，请稍后重试。",
+          timeout: "模型服务响应超时，请稍后重试。",
+        } satisfies Record<AgentRunFailureCategory, string>,
+        detail: (detail: string) => `执行失败：${detail}`,
+        unknown: "执行失败，原因未知。",
+      },
+    },
   },
   runDetail: {
     back: "返回话题",

@@ -235,7 +235,8 @@ describe("消息", () => {
     });
     expect(mentionBob.mentions).toEqual([{ kind: "user", id: bob.id, label: "鲍勃" }]);
     const mentionAll = await sendMessage(context, alice, room.id, { body: "@所有人 开会", mentions: [{ kind: "all" }] });
-    expect(mentionAll.mentions).toEqual([{ kind: "all", id: null, label: "所有人" }]);
+    // 标签存英文兜底；新前端按 kind 用看的人的语言显示，正文里的 @所有人 / @everyone 都认。
+    expect(mentionAll.mentions).toEqual([{ kind: "all", id: null, label: "everyone" }]);
     await sendMessage(context, bob, room.id, { body: "我自己发的" });
 
     const aliceView = (await getRoom(alice, room.id)).viewer;
@@ -244,13 +245,23 @@ describe("消息", () => {
     const bobRoom = await getRoom(bob, room.id);
     // 鲍勃发消息时已读到第 4 条：之前的都算读过。
     expect(bobRoom.viewer).toMatchObject({ lastReadSeq: 4, unreadCount: 0, mentionCount: 0 });
-    expect(bobRoom.lastMessage).toMatchObject({ seq: 4, authorName: "鲍勃", preview: "我自己发的" });
+    expect(bobRoom.lastMessage).toMatchObject({
+      seq: 4,
+      authorName: "鲍勃",
+      preview: "我自己发的",
+      authorKind: "user",
+      agent: null,
+      text: "我自己发的",
+      firstFile: null,
+      fileCount: 0,
+    });
 
     await sendMessage(context, alice, room.id, { body: "@鲍勃 再看一下", mentions: [{ kind: "user", id: bob.id }] });
     await sendMessage(context, alice, room.id, { body: "x".repeat(200) });
     const unread = await getRoom(bob, room.id);
     expect(unread.viewer).toMatchObject({ unreadCount: 2, mentionCount: 1 });
     expect(unread.lastMessage?.preview).toBe(`${"x".repeat(80)}…`);
+    expect(unread.lastMessage?.text).toBe(`${"x".repeat(80)}…`);
 
     const markRead = async (upToSeq: number) => {
       const response = await context.server.inject({
@@ -371,7 +382,7 @@ describe("消息", () => {
 });
 
 describe("需求房间", () => {
-  it("初始成员 = 创建人 + 需求负责人 + 需求创建人 + memberIds；缺省名「REQ-n 讨论」；发言自动加入", async () => {
+  it("初始成员 = 创建人 + 需求负责人 + 需求创建人 + memberIds；缺省名（英文兜底）「REQ-n room」；发言自动加入", async () => {
     const pm = await createUser(context, "产品经理");
     const developer = await createUser(context, "开发");
     const tester = await createUser(context, "测试");
@@ -390,7 +401,7 @@ describe("需求房间", () => {
     const room = created.json<RoomDto>();
     expect(room).toMatchObject({
       kind: "requirement",
-      name: `REQ-${requirement.number} 讨论`,
+      name: `REQ-${requirement.number} room`,
       requirement: { id: requirement.id, number: requirement.number, title: requirement.title },
       memberCount: 4,
       createdBy: { id: roomCreator.id, displayName: "建房间的人" },
@@ -479,7 +490,7 @@ describe("需求房间", () => {
       payload: { archived: true },
     });
     expect(archive.json<RoomDto>().archivedAt).not.toBeNull();
-    // 界面没刷新时晚到的消息：收下，@ 与未归档一样处理（这里没共享 → 离线「未共享到这个房间」）。
+    // 界面没刷新时晚到的消息：收下，@ 与未归档一样处理（这里没共享 → 离线 not_shared）。
     const lateClientId = randomUUID();
     const late = await sendMessage(context, user, room.id, {
       clientId: lateClientId,
@@ -487,7 +498,9 @@ describe("需求房间", () => {
       mentions: [{ kind: "agent", id: agent.id }],
     });
     expect(late.seq).toBe(before.seq + 1);
-    expect(late.runs.map((run) => [run.status, run.reason])).toEqual([["offline", "未共享到这个房间"]]);
+    expect(late.runs.map((run) => [run.status, run.reasonCode, run.reason])).toEqual([
+      ["offline", "not_shared", "Not shared to this room"],
+    ]);
     // 客户端 ID 重试仍合并（归档前、归档后各一条）。
     const replayLate = await sendMessage(context, user, room.id, { clientId: lateClientId, body: "归档后晚到 @Codex" }, 200);
     expect(replayLate.id).toBe(late.id);

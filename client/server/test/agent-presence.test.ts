@@ -28,7 +28,7 @@ function agentFixture(overrides: Partial<AgentDto> = {}): AgentDto {
     kind: "codex",
     owner: { id: "user-dev", displayName: "陈思远" },
     deviceName: "MacBook-Pro",
-    label: "陈思远 的 Codex · MacBook-Pro",
+    label: "陈思远's Codex · MacBook-Pro",
     online: true,
     lastSeenAt: null,
     activeShareCount: 0,

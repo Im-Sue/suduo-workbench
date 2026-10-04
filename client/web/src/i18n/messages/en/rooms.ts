@@ -99,6 +99,7 @@ export const rooms = {
     image: "[Image]",
     video: "[Video]",
     file: (name: string) => `[File] ${name}`,
+    more: (first: string, count: number) => `${first} and ${String(count - 1)} more`,
   },
   thread: {
     title: "Thread",
@@ -157,6 +158,10 @@ export const rooms = {
       unsharedRequested: "Not shared · Requested",
       unsharedRequest: "Not shared · Press Enter to request",
     },
+    text: {
+      everyone: "everyone",
+      agent: (owner: string, device: string | null) => (device === null ? `${owner}'s Codex` : `${owner}'s Codex · ${device}`),
+    },
   },
   files: {
     video: (name: string) => `Video ${name}`,
@@ -169,6 +174,7 @@ export const rooms = {
   },
   agent: {
     name: (owner: string) => `${owner}'s Codex`,
+    withDevice: (owner: string, device: string) => `${owner}'s Codex · ${device}`,
     available: "Available",
     offline: "Offline",
   },
@@ -191,6 +197,58 @@ export const rooms = {
     retryLabel: (agent: string) => `Retry the task for ${agent}`,
     elapsed: (duration: string) => `Took ${duration}`,
     viewDetail: "View details",
+    // 与 cloud-contracts 的英文兜底（agentRunReasonFallback）逐字一致，测试 rooms-run-texts-en 守着。
+    reason: {
+      not_shared: "Not shared to this room",
+      owner_offline: "The owner is offline",
+      share_closed: "Sharing was turned off",
+      share_expired: "Sharing expired",
+      owner_disconnected: "The owner's computer went offline, so the run was interrupted",
+      stopped_by_owner: "Stopped by the owner",
+      stopped_by_requester: "Stopped by the person who asked",
+      no_local_folder: "The owner's computer has no local folder linked to this project",
+      local_folder_unavailable: (path: string) =>
+        `The local folder linked to this project on the owner's computer isn't available (${path}). The owner needs to link it again.`,
+      trigger_message_missing: "Couldn't find the message that started this task",
+      stopped_before_start: "Stopped before it started",
+      stopped_while_running: "Stopped while running",
+      interrupted_locally: "Interrupted on the owner's computer",
+      stalled: (minutes: number) =>
+        `Run interrupted: no progress for ${plural("en", minutes, { one: "1 minute", other: `${String(minutes)} minutes` })}`,
+      local_start_failed: (detail: string) => `Couldn't start running on the owner's computer: ${detail}`,
+      run_error: (detail: string) => `The run failed: ${detail}`,
+      reply_rejected: (detail: string) => `Couldn't post the answer to the room: ${detail}`,
+      local_service_restarted: "Run interrupted (the owner's local service restarted)",
+      result_not_delivered: "The result couldn't be sent back to the room. See the room task session on the owner's computer.",
+      start_connection_lost: "Lost the connection to the requirements service while starting, so this didn't run. You can retry.",
+      turn_failed: {
+        codexError: {
+          contextWindowExceeded:
+            "This conversation is past the model's context window. @ the agent again in a new thread, or ask the owner to look into it.",
+          usageLimitExceeded: "The owner has reached their model usage limit. Try again later.",
+          unauthorized:
+            "The model service on the owner's computer rejected the credentials (401). The owner needs to check the model service settings.",
+          serverOverloaded: "The model service is busy right now. Wait a moment and try again.",
+          internalServerError: "The model service had a temporary error. Try again later.",
+          badRequest: "The model service rejected this request. A parameter or attachment may not be supported.",
+          sandboxError: "A command couldn't run in the read-only sandbox.",
+          rateLimitExceeded: "The model service is rate limiting requests. Wait a few minutes and try again.",
+          misalignmentPolicyViolation: "This request triggered the model service's safety policy and was stopped. Try rephrasing it.",
+          sessionBudgetExceeded: "This thread has used up its usage budget. @ the agent again in a new thread.",
+          cyberPolicy: "The request involves cybersecurity content and was blocked by the model service's safety policy.",
+        },
+        category: {
+          rate_limited: "The model service is rate limiting requests (429). Wait a few minutes and try again.",
+          unauthorized:
+            "The model service on the owner's computer rejected the credentials (401). The owner needs to check the model service settings.",
+          forbidden: "The model service refused the request (403). The owner's credentials may not have access to this model.",
+          server_error: "The model service had a temporary error. Try again later.",
+          timeout: "The model service timed out. Try again later.",
+        },
+        detail: (detail: string) => `The run failed: ${detail}`,
+        unknown: "The run failed for an unknown reason.",
+      },
+    },
   },
   runDetail: {
     back: "Back to thread",

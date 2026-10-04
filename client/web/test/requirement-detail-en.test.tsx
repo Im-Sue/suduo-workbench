@@ -124,10 +124,10 @@ function entry(
   };
 }
 
-/** 系统代写的发布评论：正文是云端存的中文兜底句，渲染时应按 system 走字典。 */
+/** 系统代写的发布评论：正文是云端存的英文兜底句，渲染时应按 system 走字典（中文界面也显示中文）。 */
 const SYSTEM_COMMENT = {
   id: "c3",
-  body: "发布了产物 v3，含 2 个文件。",
+  body: "Published confirmed version 3 with 2 files.",
   system: { kind: "artifact_published", params: { versionNumber: 3, fileCount: 2 } },
 } as RequirementActivityEntryDto["comment"];
 

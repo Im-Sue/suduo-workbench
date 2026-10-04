@@ -6,7 +6,17 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "../../../ui/format.js";
 import { useT } from "../../../i18n/provider.js";
-import { agentName, canRetryRun, canStopRun, isRunActive, runElapsedMs, runStatusLabel, runStatusText } from "../model.js";
+import {
+  agentName,
+  canRetryRun,
+  canStopRun,
+  isRunActive,
+  runElapsedMs,
+  runProgressText,
+  runReasonText,
+  runStatusLabel,
+  runStatusText,
+} from "../model.js";
 import { useRunAction } from "../queries.js";
 
 /**
@@ -115,14 +125,14 @@ export function RunCard({ run, meId, onViewDetail }: { run: AgentRunSummaryDto; 
   const elapsed = runElapsedMs(run, now);
   const detail =
     run.status === "running"
-      ? run.progress
+      ? runProgressText(run, t)
       : run.status === "completed"
         ? run.summary
         : run.status === "queued"
           ? run.queuePosition !== null && run.queuePosition > 0
             ? t.rooms.run.ahead(run.queuePosition)
             : null
-          : run.reason;
+          : runReasonText(run, t);
   return (
     <div
       className={cn(

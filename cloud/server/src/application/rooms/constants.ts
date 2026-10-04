@@ -1,3 +1,5 @@
+import type { AgentRunCloudReasonCode } from "@suduo/cloud-contracts";
+
 /**
  * 房间与共享 Agent 的常量（技术设计第九节）。
  */
@@ -38,14 +40,22 @@ export const ROOM_FILE_ROOT_MARKER = {
   content: "suduo-room-files-v1\n",
 } as const;
 
-/** 任务失败 / 停止 / 离线的原因文案（直接展示给房间里的人）。 */
+/**
+ * 云端写的任务失败 / 停止 / 离线原因（中英双语技术设计 §4.3）：存 code，各人前端按自己的语言渲染；
+ * `reason` 文字列由仓储按 code 写英文兜底（`agentRunReasonFallback`），老客户端照常显示。
+ */
 export const RUN_REASONS = {
-  notShared: "未共享到这个房间",
-  ownerOffline: "所有者不在线",
-  shareClosed: "共享已关闭",
-  shareExpired: "共享已到期",
-  ownerDisconnected: "所有者本机下线，执行中断",
-} as const;
+  notShared: "not_shared",
+  ownerOffline: "owner_offline",
+  shareClosed: "share_closed",
+  shareExpired: "share_expired",
+  ownerDisconnected: "owner_disconnected",
+  stoppedByOwner: "stopped_by_owner",
+  stoppedByRequester: "stopped_by_requester",
+} as const satisfies Record<string, AgentRunCloudReasonCode>;
 
-/** @ 所有人的展示文字。 */
-export const MENTION_ALL_LABEL = "所有人";
+/**
+ * @ 所有人的标签（英文兜底，中英双语技术设计 §4.3）：新前端按提及的 kind 用看的人的语言显示，
+ * 正文里的 @所有人 / @everyone 都认；老客户端对 kind=all 总会额外认「所有人」，高亮不受影响。
+ */
+export const MENTION_ALL_LABEL = "everyone";

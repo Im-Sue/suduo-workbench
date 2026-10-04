@@ -3,6 +3,7 @@ import type {
   AgentKind,
   AgentRunStatus,
   AgentRunSummaryDto,
+  AgentRunTextParams,
   AgentShareDto,
   AgentShareRequestDto,
   AgentShareRequestStatus,
@@ -63,9 +64,12 @@ export interface AgentJson {
   activeShareCount: number;
 }
 
-/** 「陈思远 的 Codex · MacBook Pro」。 */
+/**
+ * Agent 标签（英文兜底）：“Sam's Codex · MacBook Pro”。新前端用所有者名与设备名按看的人的语言自己拼，
+ * 只在找不到 Agent 时由它推导；老客户端直接显示，消息里 @ 的高亮也由它推导。
+ */
 export function agentLabel(ownerName: string, deviceName: string): string {
-  return `${ownerName} 的 Codex · ${deviceName}`;
+  return `${ownerName}'s Codex · ${deviceName}`;
 }
 
 export function mapAgent(json: AgentJson): AgentDto {
@@ -129,6 +133,7 @@ export function mapFile(row: FileRow): RoomFileDto {
 export const RUN_COLUMNS = `
   ar.id, ar.room_id, ar.agent_id, ar.trigger_message_id, ar.thread_root_id, ar.triggered_by, ar.status,
   ar.progress, ar.summary, ar.reply_message_id, ar.reason, ar.stop_requested,
+  ar.progress_code, ar.progress_params, ar.reason_code, ar.reason_params,
   ar.created_at, ar.started_at, ar.finished_at,
   run_room.project_id AS project_id,
   run_agent.owner_id AS agent_owner_id,
@@ -162,6 +167,10 @@ export interface RunRow {
   reply_message_id: string | null;
   reason: string | null;
   stop_requested: boolean;
+  progress_code: string | null;
+  progress_params: AgentRunTextParams | null;
+  reason_code: string | null;
+  reason_params: AgentRunTextParams | null;
   created_at: Date;
   started_at: Date | null;
   finished_at: Date | null;
@@ -193,9 +202,13 @@ export function mapRun(row: RunRow): RunRecord {
       status: row.status,
       queuePosition: row.status === "queued" ? (row.queue_position ?? 0) : null,
       progress: row.progress,
+      progressCode: row.progress_code,
+      progressParams: row.progress_params,
       summary: row.summary,
       replyMessageId: row.reply_message_id,
       reason: row.reason,
+      reasonCode: row.reason_code,
+      reasonParams: row.reason_params,
       stopRequested: row.stop_requested,
       createdAt: row.created_at.toISOString(),
       startedAt: row.started_at?.toISOString() ?? null,

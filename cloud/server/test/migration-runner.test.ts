@@ -22,7 +22,8 @@ const VERSION_009 = "009_requirement_reads.sql";
 const VERSION_010 = "010_comment_created_at_clock_timestamp.sql";
 const VERSION_011 = "011_rooms_and_shared_agents.sql";
 const VERSION_012 = "012_i18n_structured_texts.sql";
-const LATEST_VERSION = VERSION_012;
+const VERSION_013 = "013_agent_run_text_codes.sql";
+const LATEST_VERSION = VERSION_013;
 const LEGACY_MIGRATIONS = [
   "001_initial.sql",
   "002_attachments.sql",
@@ -39,6 +40,7 @@ const ALL_MIGRATIONS = [
   VERSION_010,
   VERSION_011,
   VERSION_012,
+  VERSION_013,
 ];
 
 describe("迁移 005 审计项目归属", () => {
@@ -264,7 +266,8 @@ describe("迁移 006 需求编号与负责人", () => {
 describe("迁移 012 系统评论存类型与参数", () => {
   it("只回填挂在版本上、且正文逐字等于当时系统句式的评论", async () => {
     const legacyDirectory = await legacyMigrationsDirectory(
-      ALL_MIGRATIONS.filter((version) => version !== VERSION_012),
+      // 停在 011：012 之后的迁移都还没执行。
+      ALL_MIGRATIONS.slice(0, ALL_MIGRATIONS.indexOf(VERSION_012)),
     );
     try {
       await withTemporaryDatabase(async (pool) => {

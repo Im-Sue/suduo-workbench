@@ -13,6 +13,18 @@ const uuid = { type: "string", format: "uuid" } as const;
 const seq = { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER } as const;
 /** 执行过程（`EventEnvelope[]`）：服务端不解析，只原样存取。 */
 const runEvents = { type: "array", maxItems: 20_000 } as const;
+/**
+ * 任务进度 / 原因的 code 与参数（中英双语技术设计 §4.3）。只限长度、不限取值：
+ * 新版本客户端加的 code，老云端照样收下转发，前端认不出就显示兜底文字（ADR-0004：不为此拒收）。
+ */
+const runTextCode = { type: "string", minLength: 1, maxLength: 64 } as const;
+const runTextParams = {
+  type: "object",
+  maxProperties: 16,
+  // 用类型数组而不是 anyOf：Fastify 的 ajv 开着 coerceTypes，anyOf 会在第一个分支把数字强转成字符串
+  //（{ read: 6 } 存成 { read: "6" }）；类型数组只在哪个都不符时才转换，数字与字符串都原样保留。maxLength 只作用于字符串。
+  additionalProperties: { type: ["string", "number"], maxLength: 2_000 },
+} as const;
 
 export const ROOM_MESSAGE_PAGE_DEFAULT_LIMIT = 50;
 export const ROOM_MESSAGE_PAGE_MAX_LIMIT = 200;
@@ -166,6 +178,8 @@ export const REQUIREMENTS_V2_ROOM_SCHEMAS = {
     required: ["progress"],
     properties: {
       progress: { type: "string", maxLength: 2_000 },
+      progressCode: runTextCode,
+      progressParams: runTextParams,
       events: runEvents,
     },
   },
@@ -186,6 +200,8 @@ export const REQUIREMENTS_V2_ROOM_SCHEMAS = {
     properties: {
       status: { type: "string", enum: ["failed", "stopped"] },
       reason: { type: "string", maxLength: 2_000 },
+      reasonCode: runTextCode,
+      reasonParams: runTextParams,
       events: runEvents,
     },
   },

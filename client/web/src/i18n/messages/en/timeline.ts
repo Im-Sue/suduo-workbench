@@ -66,6 +66,18 @@ export const timeline = {
   },
   notice: {
     runtimeRecovered: "The runtime connection is back. You can keep working.",
+    threadRebuilt:
+      "This session's earlier context couldn't be restored, so a new thread was started to continue. The AI no longer remembers the earlier conversation, but the conversation history and file changes are all kept.",
+    connectionRebuilt: "The connection to Codex dropped and was re-established. A turn in progress may have been interrupted.",
+    unsupportedQuestion: "Codex asked you a question, but SuDuo can't answer it here yet, so it was skipped. Codex will keep going.",
+    unsupportedElicitation:
+      "Codex asked you to confirm an MCP tool action, but SuDuo doesn't support this kind of confirmation yet, so it was declined for you. Codex will try another way.",
+    unsupportedRequest: "Codex sent a request SuDuo doesn't support yet, so it was skipped. Codex will keep going.",
+    runEventsTruncated: (omitted: number) =>
+      `The run details were too long, so ${plural("en", omitted, {
+        one: "1 record in the middle was",
+        other: `${String(omitted)} records in the middle were`,
+      })} left out (the beginning and end are kept). The full details are in the room task session on the owner's computer.`,
     skillsBudget:
       "Many skills are available, so their descriptions were shortened to fit Codex's context budget. Every skill can still be used. Turn off skills you rarely use in Settings to keep descriptions complete.",
     unknownModel:

@@ -5,6 +5,7 @@ import {
   type Locale,
   type MessageContent,
   type RuntimeInput,
+  type RuntimeNoticePayload,
   type RuntimeRegistry as RuntimeRegistryContract,
   type RuntimeToolSpec,
   type SendMessageAccepted,
@@ -199,11 +200,12 @@ export class MessageService {
       event: {
         source: "suduo:api",
         type: "runtime.warning",
+        // 前端按 code 用看的人的语言渲染；message 是给旧客户端的英文兜底。
         payload: {
           code: "thread-rebuilt",
           message:
-            "该会话的历史执行上下文无法恢复，已自动重建线程继续。此前对话内容 AI 已不记得，但对话记录与文件改动都完整保留。",
-        },
+            "This session's earlier context couldn't be restored, so a new thread was started to continue. The AI no longer remembers the earlier conversation, but the conversation history and file changes are all kept.",
+        } satisfies RuntimeNoticePayload,
         threadRef: primaryRecord.threadRef,
         turnRef: null,
         ts: now,

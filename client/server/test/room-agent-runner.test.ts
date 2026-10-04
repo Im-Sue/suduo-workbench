@@ -8,6 +8,7 @@ import {
   type ApproveResult,
   type InterruptInput,
   type JsonValue,
+  type Locale,
   type RuntimeEventDraft,
   type StartThreadInput,
   type StartThreadResult,
@@ -61,7 +62,7 @@ const AGENT: AgentDto = {
   kind: "codex",
   owner: DEV,
   deviceName: "MacBook",
-  label: "陈思远 的 Codex · MacBook",
+  label: "陈思远's Codex · MacBook",
   online: true,
   lastSeenAt: null,
   activeShareCount: 1,
@@ -80,6 +81,8 @@ class FakeRuntime implements AgentRuntime {
   readonly threads: StartThreadInput[] = [];
   readonly turns: StartTurnInput[] = [];
   readonly interrupts: InterruptInput[] = [];
+  /** 让开回合失败（消息服务会把它包成「结果不确定」）。 */
+  failTurns = false;
   async startThread(input: StartThreadInput): Promise<StartThreadResult> {
     this.threads.push(input);
     const thread = {
@@ -90,6 +93,7 @@ class FakeRuntime implements AgentRuntime {
     return { primaryThread: thread, threads: [thread] };
   }
   async startTurn(input: StartTurnInput): Promise<StartTurnResult> {
+    if (this.failTurns) throw new Error("app-server closed");
     this.turns.push(input);
     return { turnRef: { threadId: input.threadRef.threadId, turnId: "turn-" + String(this.turns.length) }, acceptedAt: Date.now() };
   }
@@ -160,6 +164,8 @@ class FakeRoomRemote extends FakeRequirementsRemote implements RoomRunnerRemote 
   readonly notStartable = new Set<string>();
   /** complete 时远程回 400（模拟远程不收这个回答）。 */
   rejectComplete = false;
+  /** 不收回答时抛的错误。 */
+  completeRejection = new ApiError(400, "VALIDATION_ERROR", "远程服务拒绝了请求参数");
   /** 回写（complete / finish）远程暂不可用（503）的剩余次数。 */
   unavailableReports = 0;
   /** 带执行过程的回写一律 500（模拟执行过程里有远程存不了的内容）。 */
@@ -227,7 +233,7 @@ class FakeRoomRemote extends FakeRequirementsRemote implements RoomRunnerRemote 
   }
   async completeAgentRun(runId: string, body: CompleteAgentRunRequest) {
     this.completed.push({ runId, body });
-    if (this.rejectComplete) throw new ApiError(400, "VALIDATION_ERROR", "远程服务拒绝了请求参数");
+    if (this.rejectComplete) throw this.completeRejection;
     this.failReport(body.events);
     const run = { ...(this.runs.get(runId) ?? runFixture(runId)), status: "completed" as const };
     this.runs.set(runId, run);
@@ -266,6 +272,8 @@ function setup(
     eventsEveryTicks?: number;
     syncIntervalMs?: number;
     startRetryMs?: number[];
+    /** 所有者的界面语言，默认中文。 */
+    ownerLocale?: Locale;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "suduo-room-runner-"));
@@ -322,6 +330,7 @@ function setup(
     reportRetryMs: [],
     syncIntervalMs: options.syncIntervalMs ?? 0,
     startRetryMs: options.startRetryMs ?? [60_000],
+    ownerLocale: () => options.ownerLocale ?? "zh-CN",
     log: (line) => logs.push(line),
   });
   runner.start();
@@ -443,14 +452,22 @@ describe("RoomAgentRunner", () => {
     expect(text).toContain("李娜：@陈思远的Codex 商家后台的订单详情现在能拿到收货信息吗？");
     expect(context.runner.status().activeRun?.id).toBe("run-1");
 
-    // 进度：变了才回写（节流），与前端同口径。
-    await until(() => context.remote.progress.some((entry) => entry.body.progress === "正在思考"), "thinking progress");
+    // 进度：变了才回写（节流），与前端同口径；回写 code + 计数，文字列是英文兜底（前端按 code 用各人的语言渲染）。
+    await until(() => context.remote.progress.some((entry) => entry.body.progressCode === "thinking"), "thinking progress");
+    expect(context.remote.progress[0]!.body).toEqual({ progress: "Thinking", progressCode: "thinking" });
     context.append(record.sessionId, "turn-1", "item.started", {
       item: { id: "cmd-a", type: "commandExecution", commandActions: [{ type: "read", name: "a.ts" }] },
     });
-    await until(() => context.remote.progress.some((entry) => entry.body.progress === "查看了 1 个文件"), "read progress");
+    const readOne = (entry: { body: AgentRunProgressRequest }) =>
+      entry.body.progressCode === "activity" && entry.body.progressParams?.["read"] === 1;
+    await until(() => context.remote.progress.some(readOne), "read progress");
+    expect(context.remote.progress.find(readOne)!.body).toEqual({
+      progress: "Read 1 file",
+      progressCode: "activity",
+      progressParams: { read: 1 },
+    });
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(context.remote.progress.filter((entry) => entry.body.progress === "查看了 1 个文件")).toHaveLength(1);
+    expect(context.remote.progress.filter(readOne)).toHaveLength(1);
 
     context.completeTurn(record.sessionId, "turn-1", "## 结论\n后端已有 receiverSnapshot，前端抽屉没展示。\n\n细节……");
     await until(() => context.remote.completed.length === 1, "completed");
@@ -508,7 +525,7 @@ describe("RoomAgentRunner", () => {
     expect(context.logs.some((line) => line["event"] === "suduo.room_run.skipped" && line["runId"] === "run-c")).toBe(true);
   });
 
-  it("房间所属项目在本机没有映射：finish failed「这台电脑没有为这个项目关联代码目录」", async () => {
+  it("房间所属项目在本机没有映射：finish failed no_local_folder（code + 英文兜底）", async () => {
     const context = setup();
     context.remote.rooms.set("room-2", roomFixture({ id: "room-2", projectId: "proj-unmapped", name: "别的项目" }));
     context.remote.messages = [message(4, { roomId: "room-2" })];
@@ -516,7 +533,11 @@ describe("RoomAgentRunner", () => {
     await until(() => context.remote.finished.length === 1, "finished");
     expect(context.remote.finished[0]).toEqual({
       runId: "run-x",
-      body: { status: "failed", reason: "这台电脑没有为这个项目关联代码目录" },
+      body: {
+        status: "failed",
+        reason: "The owner's computer has no local folder linked to this project",
+        reasonCode: "no_local_folder",
+      },
     });
     expect(context.runtime.threads).toHaveLength(0);
   });
@@ -532,7 +553,12 @@ describe("RoomAgentRunner", () => {
     expect(context.runtime.interrupts[0]).toMatchObject({ sessionId: record.sessionId, turnId: "turn-1" });
     context.append(record.sessionId, "turn-1", "turn.interrupted", { turn: { id: "turn-1", status: "interrupted" } });
     await until(() => context.remote.finished.length === 1, "finished");
-    expect(context.remote.finished[0]!.body).toMatchObject({ status: "stopped", reason: "执行中被叫停" });
+    expect(context.remote.finished[0]!.body).toEqual({
+      status: "stopped",
+      reason: "Stopped while running",
+      reasonCode: "stopped_while_running",
+      events: expect.any(Array),
+    });
     expect(context.remote.completed).toHaveLength(0);
   });
 
@@ -548,7 +574,11 @@ describe("RoomAgentRunner", () => {
     await until(() => context.remote.finished.length === 1, "finished");
     const body = context.remote.finished[0]!.body;
     expect(body.status).toBe("failed");
-    expect(body.reason).toContain("用量已经到上限");
+    expect(body).toMatchObject({
+      reason: "The owner has reached their model usage limit. Try again later.",
+      reasonCode: "turn_failed",
+      reasonParams: { codexError: "usageLimitExceeded" },
+    });
     expect(body.events?.some((event) => (event as { type: string }).type === "turn.completed")).toBe(true);
   });
 
@@ -596,7 +626,82 @@ describe("RoomAgentRunner", () => {
     expect(context.remote.completed[0]!.body.replyBody.length).toBeLessThanOrEqual(100_000);
     expect(context.remote.completed[0]!.body.replyBody).toContain("回答太长，后面省略");
     expect(context.remote.finished[0]!.body).toMatchObject({ status: "failed" });
-    expect(context.remote.finished[0]!.body.reason).toContain("回答没能发到房间");
+    // 报错原文按所有者的界面语言（这里中文），兜底文字是英文。
+    expect(context.remote.finished[0]!.body).toMatchObject({
+      reason: "Couldn't post the answer to the room: 远程服务拒绝了请求参数",
+      reasonCode: "reply_rejected",
+      reasonParams: { detail: "远程服务拒绝了请求参数" },
+    });
+  });
+
+  it("没有文字回答时写占位（所有者的界面语言）；关联目录不可用时原因带路径", async () => {
+    const context = setup();
+    context.remote.messages = [message(4), message(5)];
+    context.emitRun(runFixture("run-empty"));
+    await until(() => context.runtime.turns.length === 1, "turn");
+    const record = context.roomTasks.get("agent-1", "room-1", "m-4")!;
+    context.completeTurn(record.sessionId, "turn-1", "   ");
+    await until(() => context.remote.completed.length === 1, "completed");
+    expect(context.remote.completed[0]!.body.replyBody).toBe("（这次没有给出文字回答，执行过程见详情。）");
+    await until(() => context.runner.status().activeRun === null, "idle");
+
+    rmSync(context.root, { recursive: true, force: true });
+    context.emitRun(runFixture("run-gone", { triggerMessageId: "m-5", threadRootId: "m-5" }));
+    await until(() => context.remote.finished.length === 1, "finished");
+    expect(context.remote.finished[0]!.body).toEqual({
+      status: "failed",
+      reason: `The local folder linked to this project on the owner's computer isn't available (${context.root}). The owner needs to link it again.`,
+      reasonCode: "local_folder_unavailable",
+      reasonParams: { path: context.root },
+    });
+  });
+
+  it("所有者界面语言为英文：占位、超长说明、截断后缀与原因里的报错原文都按英文写", async () => {
+    const context = setup({ ownerLocale: "en" });
+    context.remote.messages = [message(4), message(5)];
+    context.emitRun(runFixture("run-empty"));
+    await until(() => context.runtime.turns.length === 1, "turn");
+    const first = context.roomTasks.get("agent-1", "room-1", "m-4")!;
+    context.append(first.sessionId, "turn-1", "item.completed", {
+      item: { id: "cmd-long", type: "commandExecution", commandActions: [], aggregatedOutput: "x".repeat(5_000) },
+    });
+    context.completeTurn(first.sessionId, "turn-1", "");
+    await until(() => context.remote.completed.length === 1, "completed");
+    const completed = context.remote.completed[0]!.body;
+    expect(completed.replyBody).toBe("(No text answer this time. See the run details.)");
+    expect(JSON.stringify(completed.events)).toContain("x".repeat(4_000) + "… (cut off here; 5000 characters in total)");
+    await until(() => context.runner.status().activeRun === null, "idle");
+
+    context.remote.rejectComplete = true;
+    context.remote.completeRejection = new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.errorCodes.VALIDATION_ERROR);
+    context.emitRun(runFixture("run-long", { triggerMessageId: "m-5", threadRootId: "m-5" }));
+    await until(() => context.runtime.turns.length === 2, "second turn");
+    const second = context.roomTasks.get("agent-1", "room-1", "m-5")!;
+    context.completeTurn(second.sessionId, "turn-2", "long".repeat(30_000));
+    await until(() => context.remote.finished.length === 1, "fallback finish");
+    const reply = context.remote.completed.at(-1)!.body.replyBody;
+    expect(reply.length).toBeLessThanOrEqual(100_000);
+    expect(reply.endsWith("The full answer is in the room task session on the owner's computer.)")).toBe(true);
+    expect(context.remote.finished[0]!.body).toMatchObject({
+      status: "failed",
+      reason: "Couldn't post the answer to the room: The server rejected the request",
+      reasonCode: "reply_rejected",
+      reasonParams: { detail: "The server rejected the request" },
+    });
+  });
+
+  it("所有者界面语言为英文：开回合结果不确定时，原因里的说明也是英文（不混进固定中文的 Error.message）", async () => {
+    const context = setup({ ownerLocale: "en" });
+    context.remote.messages = [message(4)];
+    context.runtime.failTurns = true;
+    context.emitRun(runFixture("run-indeterminate"));
+    await until(() => context.remote.finished.length === 1, "finished");
+    expect(context.remote.finished[0]!.body).toMatchObject({
+      status: "failed",
+      reasonCode: "local_start_failed",
+      reasonParams: { detail: "Couldn't confirm whether the turn started" },
+    });
+    expect(JSON.stringify(context.remote.finished[0]!.body)).not.toMatch(/[\u4e00-\u9fff]/u);
   });
 
   it("重启：远程仍是执行中、不是本进程开始的任务标失败（执行中断）；已收尾的不重复标", async () => {
@@ -605,7 +710,14 @@ describe("RoomAgentRunner", () => {
     await context.runner.sync();
     await context.runner.sync();
     expect(context.remote.finished).toEqual([
-      { runId: "run-old", body: { status: "failed", reason: "执行中断（本机服务重启）" } },
+      {
+        runId: "run-old",
+        body: {
+          status: "failed",
+          reason: "Run interrupted (the owner's local service restarted)",
+          reasonCode: "local_service_restarted",
+        },
+      },
     ]);
     // 每次同步都对账执行中的任务（不只启动时一次）。
     expect(context.remote.listedStatuses.filter((status) => status === "running")).toHaveLength(2);

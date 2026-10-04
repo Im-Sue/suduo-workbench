@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AddRoomMembersRequest,
-  CreateRequirementRoomRequest,
-  ListRoomMembersResponse,
-  ListRoomsResponse,
-  MarkRoomReadRequest,
-  RoomDto,
-  RoomViewerStateDto,
-  RoomAuditAction,
-  UpdateRoomRequest,
+import {
+  formatRequirementNumber,
+  type AddRoomMembersRequest,
+  type CreateRequirementRoomRequest,
+  type ListRoomMembersResponse,
+  type ListRoomsResponse,
+  type MarkRoomReadRequest,
+  type RoomDto,
+  type RoomViewerStateDto,
+  type RoomAuditAction,
+  type UpdateRoomRequest,
 } from "@suduo/cloud-contracts";
 import { insertAuditLog } from "../../infrastructure/audit-log.js";
 import type { Database, QueryExecutor } from "../../infrastructure/database.js";
@@ -52,7 +53,8 @@ export class RoomService {
       const requirement = await this.requireRequirement(client, requirementId);
       const extraMembers = request.memberIds ?? [];
       await this.assertUsersExist(client, extraMembers, "memberIds");
-      const name = request.name === undefined ? `REQ-${requirement.number} 讨论` : roomName(request.name);
+      // 缺省名（英文兜底，与前端英文字典的 createDialog.defaultName 一致）：前端总会传按界面语言生成的名字，只有直接调接口不带 name 时才用到。
+      const name = request.name === undefined ? `${formatRequirementNumber(requirement.number)} room` : roomName(request.name);
       const id = randomUUID();
       await this.rooms.insertRequirementRoom(client, {
         id,

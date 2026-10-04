@@ -8,5 +8,6 @@ import { workspace } from "./workspace.js";
 import { config } from "./config.js";
 import { doctor } from "./doctor.js";
 import { http } from "./http.js";
+import { room } from "./room.js";
 
-export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http } satisfies ServerMessages;
+export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room } satisfies ServerMessages;

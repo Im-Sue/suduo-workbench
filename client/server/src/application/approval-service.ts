@@ -192,7 +192,10 @@ export class ApprovalService {
       this.ledger.orphanApproval({
         approval,
         // 重启时还在执行的工具确认卡：对外写可能已经发出，说清楚让人去核对，不要直接重发。
-        reason: deciding ? "执行结果未确认（本机服务在执行中重启），请到需求页核对是否已经发出，不要直接重发" : reason,
+        // 原因只记进账本（approval.orphaned），界面不显示，所以写英文、不进字典。
+        reason: deciding
+          ? "result unconfirmed (the local service restarted while it was running); check on the requirement page whether it was sent before sending it again"
+          : reason,
         ...this.approvalRefs(approval),
       });
       count += 1;

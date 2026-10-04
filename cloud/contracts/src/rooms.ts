@@ -29,9 +29,22 @@ export interface RoomViewerStateDto {
 
 export interface RoomLastMessageDto {
   seq: number;
+  /** 兜底文字（英文）：老客户端直接显示；新前端按下面的结构化字段用自己的语言渲染。 */
   authorName: string;
+  /** 兜底文字（英文），同上。 */
   preview: string;
   createdAt: string;
+  /**
+   * 结构化的作者与预览（中英双语技术设计 §4.3）。老云端没有这些字段，前端缺省时退回上面的兜底文字。
+   * authorKind 为 agent 时 agent 给所有者名与设备名，前端拼成本地化的 Agent 名。
+   */
+  authorKind?: RoomMessageAuthorKind;
+  agent?: { ownerName: string; deviceName: string } | null;
+  /** 正文压成一行、截过的预览；只有附件时为空串。 */
+  text?: string;
+  /** 第一个附件与附件总数（只有附件时前端据此给预览）。 */
+  firstFile?: { fileName: string; kind: RoomFileKind } | null;
+  fileCount?: number;
 }
 
 export interface RoomDto {
@@ -56,7 +69,7 @@ export interface ListRoomsResponse {
 }
 
 export interface CreateRequirementRoomRequest {
-  /** 缺省为「REQ-n 讨论」。 */
+  /** 缺省为英文兜底「REQ-n room」；前端总会传按界面语言生成的名字。 */
   name?: string;
   /** 额外拉进来的人；创建人、需求负责人、需求创建人总是在内。 */
   memberIds?: string[];
@@ -115,7 +128,10 @@ export const ROOM_FILE_MAX_BYTES = 314_572_800;
 export const ROOM_MESSAGE_AUTHOR_KINDS = ["user", "agent", "system"] as const;
 export type RoomMessageAuthorKind = (typeof ROOM_MESSAGE_AUTHOR_KINDS)[number];
 
-/** 消息里的 @：人、Agent、所有人（@ 所有人只提醒真人，不唤起 Agent）。 */
+/**
+ * 消息里的 @：人、Agent、所有人（@ 所有人只提醒真人，不唤起 Agent）。
+ * label 是发送时的兜底文字（all 为英文 everyone）；渲染与高亮按 kind，正文里 @所有人 / @everyone 都认。
+ */
 export type RoomMentionDto =
   | { kind: "user"; id: string; label: string }
   | { kind: "agent"; id: string; label: string }
@@ -205,7 +221,9 @@ export interface AgentSummaryDto {
   kind: AgentKind;
   owner: UserSummaryDto;
   deviceName: string;
-  /** 「陈思远 的 Codex · MacBook Pro」。 */
+  /**
+   * 英文兜底「陈思远's Codex · MacBook Pro」，老客户端直接显示；新前端按所有者名与设备名用自己的语言拼。
+   */
   label: string;
 }
 
@@ -289,6 +307,9 @@ export interface ListAgentsResponse {
 
 // ───────────────────────────── Agent 任务 ─────────────────────────────
 
+/** 任务进度、原因的参数：只放字符串与数字（各端按 code 取用，多出来的忽略）。 */
+export type AgentRunTextParams = Record<string, string | number>;
+
 export const AGENT_RUN_STATUSES = ["queued", "running", "completed", "failed", "stopped", "offline"] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 
@@ -303,13 +324,22 @@ export interface AgentRunSummaryDto {
   status: AgentRunStatus;
   /** 排队时前面还有几个；其他状态为 null。 */
   queuePosition: number | null;
-  /** 执行中的进度一句话（「查看了 6 个文件 · 运行了 2 条命令」）。 */
+  /** 执行中的进度一句话（兜底文字，英文；新前端按 progressCode 渲染）。 */
   progress: string | null;
+  /**
+   * 结构化的进度与原因（中英双语技术设计 §4.3）：各人前端按自己的语言渲染，认不出的 code 退回文字。
+   * 取值见 `AGENT_RUN_PROGRESS_CODES` / `AGENT_RUN_REASON_CODES`，类型故意放宽为 string：
+   * 新版本加的 code 老版本照样能存、能转发。老云端没有这些字段，旧任务为 null。
+   */
+  progressCode?: string | null;
+  progressParams?: AgentRunTextParams | null;
   /** 完成后的一句话摘要。 */
   summary: string | null;
   replyMessageId: string | null;
-  /** 失败 / 停止 / 离线的原因。 */
+  /** 失败 / 停止 / 离线的原因（兜底文字，英文；新前端按 reasonCode 渲染）。 */
   reason: string | null;
+  reasonCode?: string | null;
+  reasonParams?: AgentRunTextParams | null;
   stopRequested: boolean;
   createdAt: string;
   startedAt: string | null;
@@ -329,7 +359,10 @@ export interface StartAgentRunResponse {
 }
 
 export interface AgentRunProgressRequest {
+  /** 兜底文字（英文）。 */
   progress: string;
+  progressCode?: string;
+  progressParams?: AgentRunTextParams;
   /** 截至目前的执行过程（可选；完成时一定会给）。 */
   events?: unknown[];
 }
@@ -343,7 +376,10 @@ export interface CompleteAgentRunRequest {
 
 export interface FinishAgentRunRequest {
   status: "failed" | "stopped";
+  /** 兜底文字（英文）。 */
   reason: string;
+  reasonCode?: string;
+  reasonParams?: AgentRunTextParams;
   events?: unknown[];
 }
 
