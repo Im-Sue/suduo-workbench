@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 285,
+  "total": 286,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -49,6 +49,7 @@
     "web/src/components/Composer.tsx": [
       "attach-image",
       "attachment-chip",
+      "composer-maybe-sent",
       "context-ring",
       "interrupt-turn",
       "message-input",

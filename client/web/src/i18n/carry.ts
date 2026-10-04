@@ -8,8 +8,9 @@
  *    只在语言切换这一刻生效：平时离开页面、切会话照旧，不改原来的行为。
  * 2. 保不住的：打开的对话框、还没保存的表单。组件登记「现在切换会丢东西」的检查；
  *    设置页的语言选项据此先确认，别的标签页改了语言时这个标签页先不跟，等这些处理完再切（locale.ts）。
- * 3. 卸载时的清理分得清「真的离开」和「按新语言重建」：重建期间 isLocaleRebuilding() 为 true
- *    （例如悬浮的房间窗口在外壳卸载时关掉，重建时不能关）。
+ * 3. 重建期间 isLocaleRebuilding() 为 true，要分清「这一份马上被换掉」的地方据此先不动手
+ *    （例如会话页重建期间旧的一份不出队，免得新旧两份各发一次；见 app/SessionRuntime.tsx）。
+ *    结束靠 LocaleBoundary 在重建提交后的微任务，语言来回切、没真的重建时靠 1 秒的兜底计时器。
  *
  * 不依赖 React（locale.ts 也用它）；React 里用 provider.tsx 的 useCarried / useCarrySource / useLossCheck。
  */

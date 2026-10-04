@@ -122,8 +122,8 @@ describe("登录 / 注册表单", () => {
 });
 
 describe("会话流的滚动位置", () => {
-  it("往上翻着读时切换：重建后回到原来的位置，不跳到底部", async () => {
-    // jsdom 不做布局：按元素记下 scrollTop，内容高 2000、可视 400。
+  // jsdom 不做布局：按元素记下 scrollTop，内容高 2000、可视 400。
+  function mockLayout(): void {
     const tops = new WeakMap<Element, number>();
     vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(function (this: Element) {
       return tops.get(this) ?? 0;
@@ -133,20 +133,43 @@ describe("会话流的滚动位置", () => {
     });
     vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(2_000);
     vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(400);
-
-    const node = await render(<ConversationStream timeline={[]} historyLoading={false} now={0} actions={{}} empty={<span />} />);
-    const stream = () => node.querySelector<HTMLElement>("[data-testid='conversation-stream']");
+  }
+  const streams = (node: HTMLElement) => [...node.querySelectorAll<HTMLElement>("[data-testid='conversation-stream']")];
+  async function scrollTo(element: HTMLElement | undefined, top: number): Promise<void> {
+    if (element === undefined) throw new Error("stream not rendered");
     await act(async () => {
-      const element = stream();
-      if (element === null) throw new Error("stream not rendered");
-      element.scrollTop = 600;
+      element.scrollTop = top;
       element.dispatchEvent(new Event("scroll"));
     });
-    const before = stream();
+  }
+  const stream = (key: string | null) => (
+    <ConversationStream timeline={[]} historyLoading={false} now={0} actions={{}} empty={<span />} scrollCarryKey={key} />
+  );
+
+  it("往上翻着读时切换：重建后回到原来的位置，不跳到底部", async () => {
+    mockLayout();
+    const node = await render(stream("conversation-scroll:session:s1"));
+    await scrollTo(streams(node)[0], 600);
+    const before = streams(node)[0];
 
     await act(async () => applyLocalePreference("en"));
-    expect(stream()).not.toBe(before);
-    expect(stream()?.scrollTop).toBe(600);
+    expect(streams(node)[0]).not.toBe(before);
+    expect(streams(node)[0]?.scrollTop).toBe(600);
+  });
+
+  it("会话页与房间里的执行过程同时挂着：各回各的位置，不互相覆盖", async () => {
+    mockLayout();
+    const node = await render(
+      <>
+        {stream("conversation-scroll:session:s1")}
+        {stream("conversation-scroll:run:r1")}
+      </>,
+    );
+    await scrollTo(streams(node)[0], 600);
+    await scrollTo(streams(node)[1], 300);
+
+    await act(async () => applyLocalePreference("en"));
+    expect(streams(node).map((element) => element.scrollTop)).toEqual([600, 300]);
   });
 });
 

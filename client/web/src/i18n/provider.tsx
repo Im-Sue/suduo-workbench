@@ -40,7 +40,8 @@ export function LocaleBoundary({ children }: { children: ReactNode }) {
   useEffect(() => {
     // 重建结束（不再算「正在重建」，丢掉没被读走的快照）。同一次提交里，旧界面的卸载清理先于新界面的挂载 effect，
     // 这个 effect 又排在子组件的挂载 effect 之后；但开发模式下 StrictMode 还会在这之后、同一个任务里把新挂上的
-    // effect 卸载再挂载一遍，所以放进微任务，等这些都跑完再结束。放在判断前面：语言来回切、最后没变也要结束。
+    // effect 卸载再挂载一遍，所以放进微任务，等这些都跑完再结束。
+    // 语言来回切、最后没变时界面不重建，这个 effect 也不会再跑：那种情况靠 carry.ts 里 1 秒的兜底计时器结束。
     queueMicrotask(finishLocaleRebuild);
     if (previous.current === locale) return;
     previous.current = locale;
@@ -51,21 +52,24 @@ export function LocaleBoundary({ children }: { children: ReactNode }) {
 
 /**
  * 重建前登记的快照，重建后读回（只在挂载时读一次；没有时为 undefined）。
- * 与 useCarrySource 用同一个 key，key 里要带上区分对象的东西（会话 id、房间 id）。
+ * 与 useCarrySource 用同一个 key，key 里要带上区分对象的东西（会话 id、执行 id）；同一个组件可能同时挂在
+ * 好几处（如会话页与房间里的执行过程都用会话流），key 不能是全局的。key 为 null 时不带。
  */
-export function useCarried<T>(key: string): T | undefined {
-  const [value] = useState(() => peekCarried<T>(key));
-  useEffect(() => dropCarried(key), [key]);
+export function useCarried<T>(key: string | null): T | undefined {
+  const [value] = useState(() => (key === null ? undefined : peekCarried<T>(key)));
+  useEffect(() => {
+    if (key !== null) dropCarried(key);
+  }, [key]);
   return value;
 }
 
-/** 登记要带过语言切换的状态：snapshot 每次渲染都换成最新的，切换前由 locale.ts 统一调用。 */
-export function useCarrySource(key: string, snapshot: () => unknown): void {
+/** 登记要带过语言切换的状态：snapshot 每次渲染都换成最新的，切换前由 locale.ts 统一调用。key 为 null 时不登记。 */
+export function useCarrySource(key: string | null, snapshot: () => unknown): void {
   const latest = useRef(snapshot);
   useLayoutEffect(() => {
     latest.current = snapshot;
   });
-  useEffect(() => registerCarrySource(key, () => latest.current()), [key]);
+  useEffect(() => (key === null ? undefined : registerCarrySource(key, () => latest.current())), [key]);
 }
 
 /**

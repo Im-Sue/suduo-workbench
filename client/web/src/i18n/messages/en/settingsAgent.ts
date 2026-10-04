@@ -269,7 +269,7 @@ export const settingsAgent = {
       description: "“Follow system” shows Chinese if your browser language is Chinese, and English otherwise.",
       confirm: {
         title: "Switch language?",
-        body: "SuDuo reloads the interface in the new language. Open dialogs and unsaved edits on this page will be lost. Message drafts and queued messages are kept.",
+        body: "SuDuo reloads the interface in the new language. Open dialogs and unsaved edits on this page will be lost, and you may need to check whether messages being sent went through. Message drafts and queued messages are kept.",
         action: "Switch language",
       },
       otherTab: {

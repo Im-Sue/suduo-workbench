@@ -23,6 +23,7 @@ export function ConversationStream({
   now,
   actions,
   empty,
+  scrollCarryKey = null,
 }: {
   timeline: TimelineEntry[];
   historyLoading: boolean;
@@ -30,14 +31,19 @@ export function ConversationStream({
   now: number;
   actions: TurnViewActions;
   empty: ReactNode;
+  /**
+   * 切换语言时带过重建的滚动位置用的 key（i18n/carry.ts）。会话页与房间里的执行过程可能同时挂着，
+   * 由调用方给出区分对象的 key（会话 id / 执行 id）；不给就不带。
+   */
+  scrollCarryKey?: string | null;
 }) {
   const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   // 读到一半往上翻着时切换语言（别的标签页改的）：重建后回到原来的位置，不跳到底部（i18n/carry.ts）。
-  const carriedScroll = useCarried<{ atBottom: boolean; top: number }>("conversation-scroll");
+  const carriedScroll = useCarried<{ atBottom: boolean; top: number }>(scrollCarryKey);
   const atBottom = useRef(carriedScroll?.atBottom ?? true);
-  useCarrySource("conversation-scroll", () => ({ atBottom: atBottom.current, top: scrollRef.current?.scrollTop ?? 0 }));
+  useCarrySource(scrollCarryKey, () => ({ atBottom: atBottom.current, top: scrollRef.current?.scrollTop ?? 0 }));
   useLayoutEffect(() => {
     if (carriedScroll === undefined || carriedScroll.atBottom || scrollRef.current === null) return;
     scrollRef.current.scrollTop = carriedScroll.top;

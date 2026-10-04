@@ -12,6 +12,8 @@ export const workbench = {
       running: "Codex is working: Enter adds to this turn, Tab queues for later",
     },
     imagesOnly: "Only images can be dropped or pasted for now. To include other files, reference them with @.",
+    maybeSent: "This message was being sent when the language changed and may already have gone through. Check the conversation before sending it again.",
+    maybeSentDismiss: "Got it",
     dropImages: "Drop to add images to this message",
     palette: {
       label: "Suggestions",

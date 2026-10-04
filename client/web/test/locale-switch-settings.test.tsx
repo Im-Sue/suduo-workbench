@@ -175,7 +175,7 @@ describe("外观 · 语言", () => {
     await click(localeOption(page, "English"));
     const dialog = document.querySelector<HTMLElement>('[data-testid="confirm-dialog"]');
     expect(dialog?.textContent).toContain("切换语言？");
-    expect(dialog?.textContent).toContain("这一页上打开的对话框和还没保存的编辑会丢失");
+    expect(dialog?.textContent).toContain("这一页上打开的对话框和还没保存的编辑会丢失；正在发送的消息，结果可能需要你核对。");
     expect(currentLocale()).toBe("zh-CN");
 
     await click(buttonByText(dialog ?? document, "取消"));

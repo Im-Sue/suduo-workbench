@@ -360,7 +360,19 @@ export function SessionRuntime(props: {
   const [sideTab, setSideTab] = useState<SidePanelTab>(carried?.sideTab ?? "changes");
   useCarrySource(
     carryKey,
-    (): SessionRuntimeCarry => ({ session, approvals, queue: queueLatest.current, events, skillPath, timing, stopping, sideTab, drawer }),
+    (): SessionRuntimeCarry => ({
+      session,
+      approvals,
+      queue: queueLatest.current,
+      events,
+      skillPath,
+      timing,
+      // 停止请求还在路上（强制切换时）：它失败时解除「停止中」的那一步会落空，新的一份就一直显示「停止中」。
+      // 这时不带，新的一份照常显示停止按钮（再点一次服务端按幂等处理）；队列的「你点了停止」暂停照样带过去。
+      stopping: interruptingRef.current > 0 ? null : stopping,
+      sideTab,
+      drawer,
+    }),
   );
   const lastTurnOutcome = lastTurnOutcomeOf(projection);
   const pendingApprovals = approvals.length;
@@ -994,6 +1006,7 @@ export function SessionRuntime(props: {
               <MarkdownLinkContext.Provider value={markdownLinks}>
                 <ConversationStream
                   key={props.sessionId}
+                  scrollCarryKey={`conversation-scroll:session:${props.sessionId}`}
                   timeline={streamTimeline}
                   historyLoading={historyLoading}
                   now={now}

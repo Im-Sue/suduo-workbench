@@ -443,3 +443,172 @@ describe("会话页：切换语言后输入与排队的消息都还在", () => {
     expect(q(node, "queue-paused")?.getAttribute("data-reason")).toBe("restored");
   });
 });
+
+/**
+ * 强制切换：设置里确认后切换、或另一个标签页的提示条上点「现在切换」并确认，不等手头的事做完。
+ * 这时出队与发送的结果可能落在被换掉的那一份上，拿不准的一律停下等人，绝不重发。
+ */
+describe("强制切换（确认后不等）", () => {
+  const modes = [
+    ["普通渲染", false],
+    ["StrictMode（开发模式）", true],
+  ] as const;
+
+  it.each(modes)("%s：出队那一条的请求在途：只发了一次，那一条标待核对并暂停，恢复后只发剩下的", async (_mode, strict) => {
+    let resolveSend: (value: unknown) => void = () => undefined;
+    apiMocks.sendMessage.mockReturnValueOnce(new Promise((resolve) => (resolveSend = resolve))).mockResolvedValue(accepted("c2"));
+    const node = await render(<SessionRuntime projectId="p1" sessionId="s1" />, { strict });
+    await settle();
+    const first = liveStream();
+    await act(async () => first.emit("stream.live", {}));
+    await enqueue(node, "第二件事");
+    await enqueue(node, "第三件事");
+    await act(async () => first.emit("turn.completed", envelope(5, "turn.completed", "T1", { turn: { id: "T1", status: "completed" } })));
+    await settle();
+    expect(apiMocks.sendMessage).toHaveBeenCalledTimes(1);
+    expect(switchWouldLoseWork()).toBe(true);
+
+    await act(async () => applyLocalePreference("en"));
+    await settle();
+    expect(currentLocale()).toBe("en");
+    expect(q(node, "queue-paused")?.getAttribute("data-reason")).toBe("send_uncertain");
+    expect([...node.querySelectorAll<HTMLElement>("[data-testid='queue-item']")].map((item) => item.getAttribute("data-unconfirmed"))).toEqual([
+      "true",
+      null,
+    ]);
+
+    // 旧的那一份的请求回来了：落空，不会再发。
+    await act(async () => resolveSend(accepted("c1")));
+    await settle();
+    await act(async () => liveStream().emit("stream.live", {}));
+    await settle();
+    expect(apiMocks.sendMessage).toHaveBeenCalledTimes(1);
+
+    // 恢复：只发可发项（第三件事），待核对的那一条不重发。
+    await act(async () => q(node, "queue-resume")?.click());
+    await settle();
+    expect(apiMocks.sendMessage.mock.calls.map((call) => (call[1] as { content: unknown[] }).content)).toEqual([
+      [{ type: "text", text: "第二件事" }],
+      [{ type: "text", text: "第三件事" }],
+    ]);
+  });
+
+  it.each(modes)(
+    "%s：真实调度下「可以出队已提交、出队 effect 还没跑」的那一刻切换：旧的一份不发，新的一份暂停等人，恢复后只发一次",
+    async (_mode, strict) => {
+      apiMocks.sendMessage.mockResolvedValue(accepted("c1"));
+      const node = await render(<SessionRuntime projectId="p1" sessionId="s1" />, { strict });
+      await settle();
+      const first = liveStream();
+      await act(async () => first.emit("stream.live", {}));
+      await enqueue(node, "第二件事");
+      expect(q(node, "session-status")?.getAttribute("data-status")).toBe("running");
+
+      // 不用 act：让 React 按真实调度先提交渲染、再另找时机跑被动 effect，在两者之间切换。
+      const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+      environment.IS_REACT_ACT_ENVIRONMENT = false;
+      let hit = false;
+      try {
+        first.emit("turn.completed", envelope(5, "turn.completed", "T1", { turn: { id: "T1", status: "completed" } }));
+        for (let round = 0; round < 200; round += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const committed = q(node, "session-status")?.getAttribute("data-status") !== "running";
+          if (committed && apiMocks.sendMessage.mock.calls.length === 0) {
+            hit = true;
+            applyLocalePreference("en");
+            break;
+          }
+          if (apiMocks.sendMessage.mock.calls.length > 0) break;
+        }
+        for (let round = 0; round < 20; round += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+      } finally {
+        environment.IS_REACT_ACT_ENVIRONMENT = true;
+      }
+      await settle();
+      expect(hit).toBe(true);
+      expect(currentLocale()).toBe("en");
+      expect(apiMocks.sendMessage).not.toHaveBeenCalled();
+      expect(q(node, "queue-paused")?.getAttribute("data-reason")).toBe("locale_switched");
+
+      await act(async () => q(node, "queue-resume")?.click());
+      await settle();
+      expect(apiMocks.sendMessage).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(modes)("%s：输入框直接发送在途：重建后那段字还在，提示可能已经发出、先核对；不会自己再发", async (_mode, strict) => {
+    let resolveSend: (value: unknown) => void = () => undefined;
+    apiMocks.sendMessage.mockReturnValueOnce(new Promise((resolve) => (resolveSend = resolve))).mockResolvedValue(accepted("c2"));
+    const node = await render(<SessionRuntime projectId="p1" sessionId="s1" />, { strict });
+    await settle();
+    const first = liveStream();
+    await act(async () => first.emit("stream.live", {}));
+    await act(async () => first.emit("turn.completed", envelope(5, "turn.completed", "T1", { turn: { id: "T1", status: "completed" } })));
+    await settle();
+    await typeInto(messageInput(node), "已经点了发送的话");
+    await act(async () => q(node, "send-message")?.click());
+    expect(apiMocks.sendMessage).toHaveBeenCalledTimes(1);
+    expect(switchWouldLoseWork()).toBe(true);
+    expect(q(node, "composer-maybe-sent")).toBeNull();
+
+    await act(async () => applyLocalePreference("en"));
+    await settle();
+    await act(async () => resolveSend(accepted("c1")));
+    await settle();
+    // 不替人删：发失败时删掉就丢了。提示先核对。
+    expect(messageInput(node)?.value).toBe("已经点了发送的话");
+    expect(q(node, "composer-maybe-sent")?.textContent).toContain(messagesFor("en").workbench.composer.maybeSent);
+    expect(apiMocks.sendMessage).toHaveBeenCalledTimes(1);
+
+    // 「知道了」收起提示；之后正常发送成功也会收起。
+    await act(async () => [...(q(node, "composer-maybe-sent")?.querySelectorAll("button") ?? [])][0]?.click());
+    expect(q(node, "composer-maybe-sent")).toBeNull();
+  });
+
+  it("停止请求在途：重建后不一直显示「停止中」，停止按钮照常可点；队列的「你点了停止」暂停照样带过去", async () => {
+    apiMocks.interrupt.mockReturnValue(new Promise(() => undefined));
+    const node = await render(<SessionRuntime projectId="p1" sessionId="s1" />);
+    await settle();
+    await act(async () => liveStream().emit("stream.live", {}));
+    await enqueue(node, "等一下再发");
+    await act(async () => q(node, "interrupt-turn")?.click());
+    expect(q(node, "interrupt-turn")?.hasAttribute("disabled")).toBe(true);
+    expect(switchWouldLoseWork()).toBe(true);
+
+    await act(async () => applyLocalePreference("en"));
+    await settle();
+    expect(q(node, "interrupt-turn")?.hasAttribute("disabled")).toBe(false);
+    expect(q(node, "queue-paused")?.getAttribute("data-reason")).toBe("user_stop");
+  });
+});
+
+describe("重建期间先不动手的事，结束靠兜底计时器", () => {
+  it("语言来回切、界面没真的重建：1 秒兜底结束后照常出队，只发一次", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      apiMocks.sendMessage.mockResolvedValue(accepted("c1"));
+      const node = await render(<SessionRuntime projectId="p1" sessionId="s1" />);
+      await settle();
+      const stream = liveStream();
+      await act(async () => stream.emit("stream.live", {}));
+      await enqueue(node, "第二件事");
+      const input = messageInput(node);
+
+      await act(async () => {
+        applyLocalePreference("en");
+        applyLocalePreference("zh-CN");
+      });
+      // 最后没变：界面没重建（输入框还是原来那个），也就没有重建结束的那一下。
+      expect(messageInput(node)).toBe(input);
+      await act(async () => stream.emit("turn.completed", envelope(5, "turn.completed", "T1", { turn: { id: "T1", status: "completed" } })));
+      await settle();
+      expect(apiMocks.sendMessage).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTime(1_000));
+      await settle();
+      expect(apiMocks.sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

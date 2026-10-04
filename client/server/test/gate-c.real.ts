@@ -198,10 +198,11 @@ try {
   });
   if (gateLocale !== "zh-CN") {
     // 英文冒烟同时固定本机的界面语言偏好（设置 › 外观 › 语言），不只靠「跟随系统」：两条路都要是英文。
-    // 每次导航前写入，整轮（含另开的窗口）都是这个偏好。键名同前端 i18n/locale.ts 的 LOCALE_STORAGE_KEY。
+    // 只在还没有偏好时写入：en-locale-switch 在界面里切过语言后，另开的标签页要沿用界面里的选择，不能被这里改回去。
+    // 键名同前端 i18n/locale.ts 的 LOCALE_STORAGE_KEY。
     await context.addInitScript((value) => {
       try {
-        window.localStorage.setItem("suduo.locale", value);
+        if (window.localStorage.getItem("suduo.locale") === null) window.localStorage.setItem("suduo.locale", value);
       } catch {
         // 存不了时只剩浏览器语言这一条路，步骤里的英文断言会暴露出来。
       }

@@ -16,7 +16,7 @@ describe("gate-c 按语言选步骤组", () => {
     expect(resolveGateCStepSelection(run.steps, undefined, run.prerequisites).steps).toBe(gateCSteps);
   });
 
-  it("英文冒烟：登录复用 v2-user-path，覆盖我的工作、需求、会话一轮、房间、设置与英文视觉基线", () => {
+  it("英文冒烟：登录复用 v2-user-path，覆盖我的工作、需求、会话一轮、房间、切换语言、设置与英文视觉基线", () => {
     const run = gateCStepsFor("en");
     expect(run.steps).toBe(gateCEnglishSteps);
     expect(run.steps.map((step) => step.id)).toEqual([
@@ -25,6 +25,7 @@ describe("gate-c 按语言选步骤组", () => {
       "en-requirements",
       "en-session-turn",
       "en-rooms",
+      "en-locale-switch",
       "en-settings",
       "en-visual",
     ]);

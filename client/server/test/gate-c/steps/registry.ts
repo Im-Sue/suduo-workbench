@@ -18,6 +18,7 @@ import { finalInterruptStep } from "./final-interrupt.js";
 import { interruptAndReopenStep } from "./interrupt-and-reopen.js";
 import { supervisorRecoveryStep } from "./supervisor-recovery.js";
 import {
+  englishLocaleSwitchStep,
   englishMyWorkStep,
   englishRequirementsStep,
   englishRoomsStep,
@@ -93,8 +94,8 @@ export const gateCStepPrerequisites: Readonly<Record<string, readonly string[]>>
 
 /**
  * 英文冒烟（中英双语技术设计 §五，`SUDUO_GATE_LOCALE=en`）：登录与第一次开工复用 `v2-user-path`，
- * 其后是我的工作、需求（看板 / 列表 / 速览 / 详情 / 从需求开工 / 概览）、会话一轮、房间、设置，
- * 最后采英文视觉基线。不设 `GATE_C_STEPS` 时跑这一整组；中文全量不受影响。
+ * 其后是我的工作、需求（看板 / 列表 / 速览 / 详情 / 从需求开工 / 概览）、会话一轮、房间、
+ * 在真实浏览器里中英来回切换（草稿不丢、不多发消息）、设置，最后采英文视觉基线。不设 `GATE_C_STEPS` 时跑这一整组；中文全量不受影响。
  */
 export const gateCEnglishSteps = defineGateCSteps(
   v2UserPathStep,
@@ -102,6 +103,7 @@ export const gateCEnglishSteps = defineGateCSteps(
   englishRequirementsStep,
   englishSessionTurnStep,
   englishRoomsStep,
+  englishLocaleSwitchStep,
   englishSettingsStep,
   englishVisualStep,
 );
@@ -114,6 +116,7 @@ export const gateCEnglishStepPrerequisites: Readonly<Record<string, readonly str
     "en-requirements": ["v2-user-path"],
     "en-session-turn": ["v2-user-path"],
     "en-rooms": ["v2-user-path"],
+    "en-locale-switch": ["v2-user-path"],
     "en-settings": ["v2-user-path"],
     "en-visual": ["v2-user-path"],
   });
