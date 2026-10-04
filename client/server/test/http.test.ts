@@ -1350,6 +1350,8 @@ function createContext(options: {
     join(projectRoot, "settings.json"),
     options.settingsEnv,
   );
+  // 测试里的请求默认按中文出错误文字（与前端测试固定 zh-CN 一致）；英文由专门的测试带请求头覆盖。
+  settings.rememberLocale("zh-CN");
   const server = buildHttpServer({
     requestGuard: new LoopbackGuard(),
     idempotency: new IdempotencyService(new IdempotencyRepository(database)),

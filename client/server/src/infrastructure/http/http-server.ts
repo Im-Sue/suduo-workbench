@@ -98,7 +98,7 @@ import {
 import { registerSessionListRoutes } from "./routes/session-list-routes.js";
 import { registerRoomsRoutes, type RoomsRouteDependencies } from "./routes/rooms-routes.js";
 import type { SessionListService } from "../../application/session-list-service.js";
-import { registerRequestLocale } from "../../i18n/locale.js";
+import { registerRequestLocale, requestLocaleOf } from "../../i18n/locale.js";
 
 export interface HttpServerDependencies
   extends CodexStatusRouteDependencies,
@@ -178,10 +178,11 @@ export function buildHttpServer(
   registerRequestLocale(server, dependencies.settings);
 
   server.setErrorHandler((error, request, reply) => {
+    const locale = requestLocaleOf(request, dependencies.settings);
     if (error instanceof ApiError) {
       void reply
         .code(error.statusCode)
-        .send(errorResponse(error, request.id));
+        .send(errorResponse(error, request.id, locale));
       return;
     }
     request.log.error(error);
@@ -190,9 +191,10 @@ export function buildHttpServer(
         new ApiError(
           500,
           "RUNTIME_REQUEST_FAILED",
-          "服务端处理请求失败",
+          (t) => t.common.internalError,
         ),
         request.id,
+        locale,
       ),
     );
   });
@@ -1449,7 +1451,8 @@ async function idempotent(
         scope,
         key,
         error.statusCode,
-        jsonValue(errorResponse(error, request.id)),
+        // 重放时原样返回这一份：同一个幂等键是同一个界面的重试，语言不会变。
+        jsonValue(errorResponse(error, request.id, request.locale)),
       );
     }
     throw error;

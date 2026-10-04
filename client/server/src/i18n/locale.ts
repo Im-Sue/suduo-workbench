@@ -4,7 +4,7 @@ import {
   localeFromAcceptLanguage,
   type Locale,
 } from "@suduo/client-contracts";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -30,6 +30,20 @@ export function resolveRequestLocale(input: {
   return localeFromAcceptLanguage(
     typeof input.acceptLanguage === "string" ? input.acceptLanguage : null,
   ) ?? FALLBACK_LOCALE;
+}
+
+/**
+ * 当场按请求解析语言，不记录（错误处理用：LoopbackGuard 等更早的钩子拒绝请求时，request.locale 还没被设置）。
+ */
+export function requestLocaleOf(
+  request: FastifyRequest,
+  store: { locale(): Locale | null },
+): Locale {
+  return resolveRequestLocale({
+    header: request.headers[LOCALE_HEADER.toLowerCase()],
+    stored: store.locale(),
+    acceptLanguage: request.headers["accept-language"],
+  });
 }
 
 /**
