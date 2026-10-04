@@ -1,6 +1,7 @@
-import { CODEX_VERSION } from "@suduo/client-contracts";
+import { CODEX_VERSION, cliLocale } from "@suduo/client-contracts";
 import { existsSync, readdirSync } from "node:fs";
 import { posix, resolve, win32 } from "node:path";
+import { messagesFor } from "../../i18n/messages/index.js";
 
 /**
  * 源码运行时必须使用 workspace 锁定的 Codex，而不是回退到 PATH 的任意全局版本。
@@ -33,9 +34,8 @@ export function resolvePinnedCodexBin(input: {
   if (input.configuredBin && isPath(input.configuredBin)) {
     return resolve(workspaceRoot, input.configuredBin);
   }
-  throw new Error(
-    `未找到 workspace 锁定的 Codex ${CODEX_VERSION}；请通过绝对或相对路径设置 SUDUO_CODEX_BIN`,
-  );
+  // 只在启动时解析（入口），报错按系统语言（中英双语 S8）。
+  throw new Error(messagesFor(cliLocale(process.env)).cli.pinnedCodexNotFound(CODEX_VERSION));
 }
 
 /** pnpm 把锁定版本的 Windows 平台包装在 node_modules/.pnpm/@openai+codex@<版本>-win32-<架构>/ 下。 */

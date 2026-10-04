@@ -14,5 +14,6 @@ import { prompt } from "./prompt.js";
 import { toolSpec } from "./toolSpec.js";
 import { roomPrompt } from "./roomPrompt.js";
 import { toolReply } from "./toolReply.js";
+import { cli } from "./cli.js";
 
-export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply } satisfies ServerMessages;
+export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply, cli } satisfies ServerMessages;

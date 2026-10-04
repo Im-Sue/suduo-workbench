@@ -1,3 +1,4 @@
+import { cliLocale } from "@suduo/client-contracts";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
@@ -13,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { messagesFor } from "../../i18n/messages/index.js";
 
 export function readPrivateJson<T>(filePath: string): T | null {
   if (!existsSync(filePath)) {
@@ -22,7 +24,8 @@ export function readPrivateJson<T>(filePath: string): T | null {
   try {
     return JSON.parse(readFileSync(filePath, "utf8")) as T;
   } catch (error) {
-    throw new Error("V2 本机配置文件无法读取或解析", { cause: error });
+    // 不带请求语言，按这个进程的系统语言（中英双语 S8；见 settings-store.ts 的 cliText）。
+    throw new Error(messagesFor(cliLocale(process.env)).cli.privateJsonUnreadable, { cause: error });
   }
 }
 

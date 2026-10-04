@@ -42,6 +42,8 @@ const I18N_SCOPE = [
 const I18N_EXEMPT = [
   "web/src/i18n/messages/**",
   "server/src/i18n/messages/**",
+  // `pnpm start` 等启动脚本在构建之前就要跑，用不了本机服务的字典，自带一份（S8）。
+  "scripts/i18n/messages/**",
   "web/src/dev/**",
   "scripts/dist-win/**",
 ];

@@ -2,6 +2,7 @@ import {
   CODEX_VERSION,
   M1_RUNTIME_SECURITY_POLICY,
   SUDUO_DEFAULTS,
+  cliLocale,
 } from "@suduo/client-contracts";
 import {
   existsSync,
@@ -12,6 +13,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { messagesFor, type ServerMessages } from "./i18n/messages/index.js";
 import { seedCodexHome } from "./infrastructure/platform/codex-home.js";
 import { resolvePinnedCodexBin, withNodeOnPath } from "./infrastructure/platform/codex-bin.js";
 import { defaultSuDuoDataDir } from "./infrastructure/platform/host-platform.js";
@@ -41,7 +43,7 @@ async function startFromEnvironment(): Promise<void> {
   }
   const host = process.env["SUDUO_HOST"] ?? SUDUO_DEFAULTS.host;
   if (host !== "127.0.0.1") {
-    throw new Error("SUDUO_HOST 必须严格为 127.0.0.1");
+    throw new Error(cliText().hostMustBeLoopback);
   }
   const port = parseInteger(
     process.env["SUDUO_PORT"],
@@ -54,7 +56,7 @@ async function startFromEnvironment(): Promise<void> {
     process.env["SUDUO_CODEX_TRANSPORT"] !== undefined &&
     process.env["SUDUO_CODEX_TRANSPORT"] !== "stdio"
   ) {
-    throw new Error("M1 的 SUDUO_CODEX_TRANSPORT 仅允许 stdio");
+    throw new Error(cliText().transportStdioOnly);
   }
   // 实际用的 Codex 由 workspace 锁定解析（resolvePinnedCodexBin），这个变量只是安装时写下的版本号。
   // 升级代码后没重跑安装时它会是旧值：只提醒，不让服务起不来（否则 systemd 会一直重启）。
@@ -63,8 +65,7 @@ async function startFromEnvironment(): Promise<void> {
     process.env["SUDUO_CODEX_VERSION"] !== CODEX_VERSION
   ) {
     process.stderr.write(
-      `SuDuo: 安装配置里的 SUDUO_CODEX_VERSION=${process.env["SUDUO_CODEX_VERSION"]} 与锁定的 Codex ${CODEX_VERSION} 不一致；` +
-        "重新运行安装（pnpm install:m1）即可更新。\n",
+      "SuDuo: " + cliText().codexVersionMismatch(process.env["SUDUO_CODEX_VERSION"], CODEX_VERSION) + "\n",
     );
   }
   // 空字符串按未设置处理（与 pnpm start 一致）。
@@ -75,9 +76,7 @@ async function startFromEnvironment(): Promise<void> {
   const codexHome =
     process.env["SUDUO_CODEX_HOME"] ?? process.env["CODEX_HOME"];
   if (codexHome !== undefined && codexHome !== "" && !existsSync(codexHome)) {
-    process.stderr.write(
-      `SuDuo: CODEX_HOME 指向的目录不存在：${codexHome}。Codex 会无法启动；请检查 SUDUO_CODEX_HOME / CODEX_HOME，或删掉这个设置改用默认的 ~/.codex。\n`,
-    );
+    process.stderr.write("SuDuo: " + cliText().codexHomeMissing(codexHome) + "\n");
   }
   const codexDefaults = process.env["SUDUO_CODEX_DEFAULTS"];
   if (codexHome && codexDefaults && existsSync(codexDefaults)) {
@@ -242,16 +241,17 @@ function parseInteger(
     parsed < minimum ||
     parsed > maximum
   ) {
-    throw new Error(
-      name +
-        " 必须是 " +
-        String(minimum) +
-        " 到 " +
-        String(maximum) +
-        " 的整数",
-    );
+    throw new Error(cliText().integerOutOfRange(name, minimum, maximum));
   }
   return parsed;
+}
+
+/**
+ * 启动阶段的提示与报错按系统语言（中英双语 S8：SUDUO_LOCALE → LC_ALL → LC_MESSAGES → LANG → 系统区域）。
+ * 用到时才取，不在模块加载时固定；runtime config 不能设置语言相关的变量，所以先后取都一样。
+ */
+function cliText(): ServerMessages["cli"] {
+  return messagesFor(cliLocale(process.env)).cli;
 }
 
 function isMainModule(): boolean {

@@ -1,5 +1,7 @@
+import { cliLocale } from "@suduo/client-contracts";
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
 
 const ALLOWED_ENVIRONMENT_KEYS = new Set([
   "CODEX_HOME",
@@ -56,19 +58,21 @@ export function applyRuntimeConfigFromArgs(
   if (index < 0) {
     return null;
   }
+  // 启动阶段的报错按这个进程的系统语言（中英双语 S8）；运行配置本身不能设置语言相关的变量。
+  const t = messagesFor(cliLocale(environment)).cli;
   const rawPath = args[index + 1];
   if (!rawPath) {
-    throw new Error("--runtime-config 必须提供配置文件路径");
+    throw new Error(t.runtimeConfigPathRequired);
   }
   const configPath = resolve(cwd, rawPath);
   const installRoot = resolve(dirname(configPath), "..");
-  const parsed = parseRuntimeConfig(readFileSync(configPath, "utf8"));
+  const parsed = parseRuntimeConfig(readFileSync(configPath, "utf8"), t);
   for (const [key, rawValue] of Object.entries(parsed.environment)) {
     if (!ALLOWED_ENVIRONMENT_KEYS.has(key)) {
-      throw new Error("runtime config 包含不允许的环境项: " + key);
+      throw new Error(t.runtimeConfigKeyNotAllowed(key));
     }
     const value = PATH_KEYS.has(key)
-      ? resolveInstalledPath(installRoot, rawValue, key)
+      ? resolveInstalledPath(installRoot, rawValue, key, t)
       : rawValue;
     if (environment[key] === undefined) {
       environment[key] = value;
@@ -77,25 +81,25 @@ export function applyRuntimeConfigFromArgs(
   return { configPath, installRoot };
 }
 
-function parseRuntimeConfig(text: string): RuntimeConfigFile {
+function parseRuntimeConfig(text: string, t: ServerMessages["cli"]): RuntimeConfigFile {
   const value: unknown = JSON.parse(text);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("runtime config 必须是 JSON object");
+    throw new Error(t.runtimeConfigNotObject);
   }
   const candidate = value as Partial<RuntimeConfigFile>;
   if (candidate.schemaVersion !== 1) {
-    throw new Error("runtime config schemaVersion 必须为 1");
+    throw new Error(t.runtimeConfigSchemaVersion);
   }
   if (
     !candidate.environment ||
     typeof candidate.environment !== "object" ||
     Array.isArray(candidate.environment)
   ) {
-    throw new Error("runtime config environment 必须是 object");
+    throw new Error(t.runtimeConfigEnvironmentNotObject);
   }
   for (const [key, item] of Object.entries(candidate.environment)) {
     if (typeof item !== "string" || item.length === 0) {
-      throw new Error("runtime config 环境项必须是非空字符串: " + key);
+      throw new Error(t.runtimeConfigValueNotString(key));
     }
   }
   return candidate as RuntimeConfigFile;
@@ -105,14 +109,15 @@ function resolveInstalledPath(
   installRoot: string,
   value: string,
   key: string,
+  t: ServerMessages["cli"],
 ): string {
   if (isAbsolute(value)) {
-    throw new Error(key + " 必须是相对安装目录的路径");
+    throw new Error(t.runtimeConfigPathNotRelative(key));
   }
   const absolute = resolve(installRoot, value);
   const remainder = relative(installRoot, absolute);
   if (remainder === ".." || remainder.startsWith("..\\") || remainder.startsWith("../")) {
-    throw new Error(key + " 不得越出安装目录");
+    throw new Error(t.runtimeConfigPathOutsideInstall(key));
   }
   return absolute;
 }

@@ -13,11 +13,12 @@ import { prompt } from "./prompt.js";
 import { toolSpec } from "./toolSpec.js";
 import { roomPrompt } from "./roomPrompt.js";
 import { toolReply } from "./toolReply.js";
+import { cli } from "./cli.js";
 
 /**
  * 本机服务的中文字典，也是英文字典必须对齐的样板（中英双语技术设计 §4.2）。
  * 按功能区分文件；英文各分区用 `satisfies ServerMessages["分区"]` 约束，少键、多键、参数不一致都是类型错误。
  */
-export const zhCN = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply };
+export const zhCN = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply, cli };
 
 export type ServerMessages = typeof zhCN;

@@ -2,8 +2,11 @@ import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { cliLocale, scriptMessages } from "./i18n/index.mjs";
 
 const args = process.argv.slice(2);
+// 提示跟随系统语言（规则与消息表见 scripts/i18n/）。
+const t = scriptMessages(cliLocale(process.env)).installer;
 const home = resolve(option("--home") ?? homedir());
 const noSystemd = args.includes("--no-systemd");
 const purgeData = args.includes("--purge-data");
@@ -48,7 +51,7 @@ function option(name) {
 function normalizeServiceName(value) {
   const name = value.endsWith(".service") ? value : value + ".service";
   if (!/^[A-Za-z0-9_.@-]+\.service$/.test(name)) {
-    throw new Error("--service-name 无效");
+    throw new Error(t.invalidServiceName);
   }
   return name;
 }
