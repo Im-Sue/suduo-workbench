@@ -19,6 +19,7 @@ import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { cliLocale, scriptMessages } from "./i18n/index.mjs";
+import { importantLine } from "./start-output.mjs";
 
 const clientRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cloudRoot = resolve(clientRoot, "..", "cloud");
@@ -378,19 +379,6 @@ function hintLegacyDataDir(dataDir) {
   const legacy = join(process.env["XDG_DATA_HOME"] || join(homedir(), ".local", "share"), "suduo");
   if (existsSync(join(dataDir, "suduo.sqlite")) || !existsSync(join(legacy, "suduo.sqlite"))) return;
   warn(t.legacyDataDir(legacy, dataDir));
-}
-
-/** 服务日志里只把警告和错误打到控制台，其余写进日志文件。 */
-function importantLine(line) {
-  if (line.trim() === "") return null;
-  try {
-    const record = JSON.parse(line);
-    if (typeof record.level === "number" && record.level >= 40) return String(record.msg ?? line);
-    return null;
-  } catch {
-    // 非 JSON 的行（启动早期的报错、第三方输出）可能是中文也可能是英文，两种都认；这是匹配不是输出，不进消息表。
-    return /error|错误|失败|warn|不存在/i.test(line) ? line : null;
-  }
 }
 
 async function probeHealth(baseUrl) {

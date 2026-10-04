@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { cliLocale, scriptMessages, type ScriptMessages } from "../../scripts/i18n/index.mjs";
+import { importantLine } from "../../scripts/start-output.mjs";
 import { messagesFor } from "../src/i18n/messages/index.js";
 
 /**
@@ -61,6 +62,18 @@ describe("命令行语言判定", () => {
         const expected = contractsCliLocale(env, () => system);
         expect(cliLocale(env, () => system), JSON.stringify({ env, system })).toBe(expected);
       }
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("云端部署脚本的判定与契约包一致（shell 版没设变量时不看系统区域，按「取不到」比）", () => {
+    const script = fileURLToPath(new URL("../../../cloud/scripts/suduo-cloud.sh", import.meta.url));
+    for (const env of ENVIRONMENTS) {
+      const result = spawnSync("bash", [script, "help"], {
+        env: { PATH: process.env["PATH"] ?? "", ...env },
+        encoding: "utf8",
+      });
+      const shellLocale = result.stdout.startsWith("用法") ? "zh-CN" : result.stdout.startsWith("Usage") ? "en" : null;
+      expect([env, shellLocale]).toEqual([env, contractsCliLocale(env, () => undefined)]);
     }
   });
 
@@ -170,6 +183,20 @@ describe("脚本消息表", () => {
 });
 
 // install:m1 / uninstall:m1 会装卸 systemd 服务、删目录，这里不真跑，只由上面的消息表测试覆盖它们的报错文字。
+describe("pnpm start 的控制台输出过滤", () => {
+  it("本机服务自己的启动提醒（SuDuo: 开头）两种语言都显示；JSON 日志只显示警告以上；其余行按关键词", () => {
+    for (const locale of ["zh-CN", "en"] as const) {
+      const line = "SuDuo: " + messagesFor(locale).cli.codexHomeMissing("/tmp/no-such-codex-home");
+      expect(importantLine(line)).toBe(line);
+    }
+    expect(importantLine(JSON.stringify({ level: 30, msg: "incoming request" }))).toBeNull();
+    expect(importantLine(JSON.stringify({ level: 40, msg: "slow" }))).toBe("slow");
+    expect(importantLine("Error: The directory doesn't exist")).toBe("Error: The directory doesn't exist");
+    expect(importantLine("listening")).toBeNull();
+    expect(importantLine("   ")).toBeNull();
+  });
+});
+
 describe("脚本按系统语言输出", () => {
   const chinese = { LANG: "zh_CN.UTF-8" };
   const english = { LANG: "en_US.UTF-8" };

@@ -4,7 +4,7 @@ export const cli = {
   hostMustBeLoopback: "SUDUO_HOST must be exactly 127.0.0.1",
   transportStdioOnly: "SUDUO_CODEX_TRANSPORT only supports stdio in M1",
   integerOutOfRange: (name: string, minimum: number, maximum: number) =>
-    `${name} must be a whole number from ${String(minimum)} to ${String(maximum)}`,
+    `${name} must be an integer between ${String(minimum)} and ${String(maximum)}`,
   codexVersionMismatch: (configured: string, pinned: string) =>
     `SUDUO_CODEX_VERSION=${configured} in the install config doesn't match the pinned Codex ${pinned}. Run the installer again (pnpm install:m1) to update it.`,
   codexHomeMissing: (path: string) =>

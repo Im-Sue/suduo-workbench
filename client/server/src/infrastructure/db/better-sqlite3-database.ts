@@ -31,8 +31,8 @@ interface NativeDatabase {
 type NativeDatabaseConstructor = new (path: string) => NativeDatabase;
 
 /**
- * 打开本机数据库失败，说明按系统语言（中英双语 S8）。出现在本机服务启动与 `pnpm doctor` 自检的 SQLite 一项，
- * 都是命令行；界面的自检页也跑这一项，但服务已经起来就说明适配器能加载，实际走不到。
+ * 打开本机数据库失败，说明按系统语言（中英双语 S8）。主要出现在本机服务启动与 `pnpm doctor` 自检的 SQLite 一项；
+ * 界面的自检页也跑这一项，打开临时库失败（如临时目录不可写）时同样会出现，此时是服务进程的系统语言。
  */
 export class DatabaseAdapterLoadError extends Error {
   constructor(cause: unknown) {
