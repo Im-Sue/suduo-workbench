@@ -76,7 +76,10 @@ export const englishMyWorkStep: GateCStep = {
       await probe.goto(context.origin + "/my", { waitUntil: "domcontentloaded" });
       await probe.getByRole("heading", { level: 1, name: context.ui.myWork.title, exact: true }).waitFor({ timeout: 30_000 });
       const preference = await probe.evaluate(() => window.localStorage.getItem("suduo.locale"));
-      if (preference !== null) throw new Error(`「跟随系统」的上下文里不该有语言偏好，实际为 ${preference}`);
+      // 没选过语言时偏好为空，启动后会写成 system（跟随系统）；两种都是「跟随系统」，不能是固定语言。
+      if (preference !== null && preference !== "system") {
+        throw new Error(`「跟随系统」的上下文里不该有固定的语言偏好，实际为 ${preference}`);
+      }
     } finally {
       await followSystem.close();
     }
