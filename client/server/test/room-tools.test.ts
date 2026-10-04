@@ -181,6 +181,7 @@ function setup(options: { requirementRoom?: boolean } = {}) {
     approvals,
     ledger,
     context,
+    sessions,
     tools: new RequirementTools(remote),
     roomTools: new RoomTools(remote),
     log: () => undefined,

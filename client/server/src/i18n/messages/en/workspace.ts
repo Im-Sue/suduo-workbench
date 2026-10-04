@@ -75,6 +75,8 @@ export const workspace = {
     diffNotFound: "No such file to diff",
     sessionNotFound: "Session not found",
     baselineInvalid: "The session baseline is invalid",
+    storageDirOutsideProject: (path: string) =>
+      `SuDuo's local storage folder ${path} points outside the project folder (possibly through a symbolic link), so nothing was written, for safety. Check the .suduo folder in the project.`,
   },
   git: {
     unavailable: "Git wasn't found on this computer, so version control can't be initialized",

@@ -90,6 +90,7 @@ export function mapApprovalDecision(
     nativeMethod === "applyPatchApproval"
   ) {
     // ReviewDecision：拒绝是 { denied: { rejection } }（字符串 "denied" 在新版里不合法）；中断本回合是 abort。
+    // 拒绝原因回给 Codex：这一层只认线程、拿不到会话语言，固定写英文。
     return {
       decision:
         decision === "accept"
@@ -98,7 +99,7 @@ export function mapApprovalDecision(
             ? "approved_for_session"
             : decision === "cancel"
               ? "abort"
-              : { denied: { rejection: "用户拒绝了这个操作" } },
+              : { denied: { rejection: "The user declined this action." } },
     };
   }
   if (nativeMethod === "item/permissions/requestApproval") {

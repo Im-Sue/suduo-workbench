@@ -81,6 +81,9 @@ export const workspace = {
     diffNotFound: "diff 文件不存在",
     sessionNotFound: "会话不存在",
     baselineInvalid: "会话 baseline 无效",
+    /** 写 `.suduo/` 前发现目标经符号链接指到项目外（会回给 Codex，也可能出现在界面的报错里）。 */
+    storageDirOutsideProject: (path: string) =>
+      `本机落盘目录 ${path} 指向了项目目录之外（可能是符号链接），为安全起见没有写入，请检查项目里的 .suduo 目录`,
   },
   /** 版本管理（git）。 */
   git: {

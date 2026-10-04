@@ -36,7 +36,7 @@ import type { RequirementsRemoteClient } from "../../infrastructure/requirements
 import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
 import { errorTextOf } from "../api-error.js";
 import type { RemoteEventsSignal } from "../remote-events-hub.js";
-import { reasonOf } from "../session-tools/format.js";
+import { toolFormat } from "../session-tools/format.js";
 import type { RoomSetupInput, ThreadSetup } from "../session-tools/session-context.js";
 import { buildRoomTurnInput, rebuiltTopicSection, roomTaskTitle } from "./context.js";
 import {
@@ -283,7 +283,7 @@ export class RoomAgentRunner {
         this.accept(run, agent.id);
       }
     } catch (error) {
-      this.log({ event: "suduo.room_run.sync_failed", message: reasonOf(error) });
+      this.log({ event: "suduo.room_run.sync_failed", message: logMessageOf(error) });
     }
     this.pump();
   }
@@ -347,7 +347,7 @@ export class RoomAgentRunner {
           if (next === null) break;
           this.queue.delete(next.id);
           await this.execute(next).catch((error: unknown) => {
-            this.log({ event: "suduo.room_run.unexpected", runId: next.id, message: reasonOf(error) });
+            this.log({ event: "suduo.room_run.unexpected", runId: next.id, message: logMessageOf(error) });
           });
         }
       } finally {
@@ -382,7 +382,7 @@ export class RoomAgentRunner {
       started = await this.deps.remote.startAgentRun(queued.id);
     } catch (error) {
       // 开始不了（远程暂不可用）：任务仍是排队中，按退避安排一次同步再取。
-      this.log({ event: "suduo.room_run.start_failed", runId: queued.id, message: reasonOf(error) });
+      this.log({ event: "suduo.room_run.start_failed", runId: queued.id, message: logMessageOf(error) });
       this.scheduleRetrySync();
       return;
     } finally {
@@ -465,6 +465,8 @@ export class RoomAgentRunner {
     if (active.stopRequested) {
       return { kind: "stopped", reason: { code: "stopped_before_start", params: {} } };
     }
+    // 回合输入里 SuDuo 的框架文字按任务会话记下的语言（与固定层一致）。
+    const locale = this.deps.sessionRecords.getById(record.sessionId)?.locale ?? this.deps.ownerLocale();
 
     const mode = record.lastTriggerSeq > 0 ? "continue" : "new";
     let neighbors: RoomMessageDto[] = [];
@@ -473,10 +475,11 @@ export class RoomAgentRunner {
       try {
         neighbors = (await this.deps.remote.listRoomMessages(room.id, { before: trigger.seq, limit: 20 })).items;
       } catch (error) {
-        neighborsUnavailable = reasonOf(error);
+        neighborsUnavailable = toolFormat(locale).reasonOf(error);
       }
     }
     const input = buildRoomTurnInput({
+      locale,
       mode,
       trigger,
       threadBefore: thread.filter((message) => message.seq < trigger.seq),
@@ -507,7 +510,7 @@ export class RoomAgentRunner {
     const root = thread.find((message) => message.id === run.threadRootId) ?? trigger;
     const session = await this.deps.sessions.create(
       project.id,
-      { title: roomTaskTitle(room.name, root.body), purpose: "general" },
+      { title: roomTaskTitle(room.name, root.body, locale), purpose: "general" },
       setup,
       { kind: "room_task", locale },
     );
@@ -551,8 +554,8 @@ export class RoomAgentRunner {
     const setup = await this.deps.context.roomSetup({
       locale,
       projectRoot: project.rootPath,
-      ownerName: agent?.owner.displayName ?? "所有者",
-      deviceName: agent?.deviceName ?? "本机",
+      ownerName: agent?.owner.displayName ?? messagesFor(locale).roomPrompt.setup.ownerFallback,
+      deviceName: agent?.deviceName ?? messagesFor(locale).roomPrompt.setup.deviceFallback,
       projectName,
       roomName: room.name,
       requirement,
@@ -574,17 +577,18 @@ export class RoomAgentRunner {
     if (room === null) {
       return null;
     }
-    const { setup } = await this.buildSetup(room, this.deps.presence.currentAgent(), project, session?.locale ?? this.deps.ownerLocale());
+    const locale = session?.locale ?? this.deps.ownerLocale();
+    const { setup } = await this.buildSetup(room, this.deps.presence.currentAgent(), project, locale);
     if (record.lastTriggerSeq <= 0) {
       return setup;
     }
     // 这一回合已按「续接」组装（只有上次被 @ 之后的新消息）：把之前的话题消息补进新线程的固定层。
     const history = await this.loadThread(room.id, record.threadRootId).catch(
-      (error: unknown) => ({ unavailable: reasonOf(error) }),
+      (error: unknown) => ({ unavailable: toolFormat(locale).reasonOf(error) }),
     );
     return {
       ...setup,
-      developerInstructions: `${setup.developerInstructions}\n\n${rebuiltTopicSection(history, record.lastTriggerSeq, record.agentId)}`,
+      developerInstructions: `${setup.developerInstructions}\n\n${rebuiltTopicSection(history, record.lastTriggerSeq, record.agentId, locale)}`,
     };
   }
 
@@ -682,7 +686,7 @@ export class RoomAgentRunner {
         try {
           tick();
         } catch (error) {
-          this.log({ event: "suduo.room_run.tick_failed", runId, message: reasonOf(error) });
+          this.log({ event: "suduo.room_run.tick_failed", runId, message: logMessageOf(error) });
         }
       }, this.progressIntervalMs);
       ticker.unref();
@@ -715,7 +719,7 @@ export class RoomAgentRunner {
             }
           })
           .catch((error: unknown) => {
-            this.log({ event: "suduo.room_run.progress_failed", runId, message: reasonOf(error) });
+            this.log({ event: "suduo.room_run.progress_failed", runId, message: logMessageOf(error) });
           });
       };
 
@@ -774,7 +778,7 @@ export class RoomAgentRunner {
     try {
       await this.deps.interrupts.interrupt(sessionId, { turnId });
     } catch (error) {
-      this.log({ event: "suduo.room_run.interrupt_failed", sessionId, message: reasonOf(error) });
+      this.log({ event: "suduo.room_run.interrupt_failed", sessionId, message: logMessageOf(error) });
     }
   }
 
@@ -878,7 +882,7 @@ export class RoomAgentRunner {
         const wait = waits[index];
         const rejected = isRejected(error);
         if (wait === undefined || rejected) {
-          this.log({ event: "suduo.room_run.report_failed", runId, kind: outcome.kind, message: reasonOf(error) });
+          this.log({ event: "suduo.room_run.report_failed", runId, kind: outcome.kind, message: logMessageOf(error) });
           if (!rejected) {
             return "unavailable";
           }
@@ -1038,4 +1042,9 @@ function isRejected(error: unknown): boolean {
     status !== 409 &&
     status !== 429
   );
+}
+
+/** 日志里的报错说明：本机日志不翻译，`ApiError` 等按字典生成的取英文，其它用原文。 */
+function logMessageOf(error: unknown): string {
+  return errorTextOf(error)(messagesFor("en"));
 }

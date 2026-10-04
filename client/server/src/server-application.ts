@@ -158,6 +158,8 @@ export function createSuDuoApplication(
     codexBin: options.codexBin,
     env: codexEnvironment,
     runtimeId: DEFAULT_CODEX_RUNTIME_ID,
+    // 回给 Codex 的说明（Windows 编码说明、「不支持」的报错）按会话的语言（中英双语 S7）。
+    sessionLocale: (sessionId) => sessions.getById(sessionId)?.locale ?? null,
   });
   const registry = new RuntimeRegistry();
   registry.register(runtime);
@@ -232,6 +234,7 @@ export function createSuDuoApplication(
     context: sessionContext,
     tools: new RequirementTools(requirementsRemote),
     roomTools: new RoomTools(requirementsRemote),
+    sessions,
   });
   // 登录 / 退出 / 改服务地址后：上游推送重连、本机 Agent 重新登记、续期重新排期（下方组装后绑定）。
   let remoteConnectionChanged: () => void = () => undefined;

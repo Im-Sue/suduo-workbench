@@ -925,4 +925,35 @@ describe("RoomAgentRunner", () => {
     expect(rebuilt?.developerInstructions).not.toContain("之后别人补充的");
     expect(rebuilt?.dynamicTools.map((tool) => tool.name)).toContain("suduo_room_history");
   });
+
+  it("所有者界面语言为英文：任务会话记下英文，固定层、回合输入与线程重建的框架文字是英文，房间消息与人名原样", async () => {
+    const context = setup({ ownerLocale: "en" });
+    context.remote.messages = [
+      message(3, { author: DEV, body: "收货信息还没展示" }),
+      message(4, { body: "@陈思远的Codex 订单详情现在能拿到收货信息吗？" }),
+    ];
+    context.emitRun(runFixture("run-en"));
+    await until(() => context.runtime.turns.length === 1, "turn");
+    const record = context.roomTasks.get("agent-1", "room-1", "m-4")!;
+    expect(context.sessions.getById(record.sessionId)?.locale).toBe("en");
+    const instructions = context.runtime.threads[0]!.developerInstructions ?? "";
+    expect(instructions.startsWith("# SuDuo room\nYou're 陈思远's Codex (device “MacBook”)")).toBe(true);
+    expect(instructions).toContain(
+      "- Reply in the language of the message that @-mentioned you. The language of these instructions doesn't decide the language of your reply.",
+    );
+    // 人名、项目名 / 房间名之外没有中文。
+    expect(instructions.replaceAll("陈思远", "").replaceAll("商家端", "")).not.toMatch(/\p{Script=Han}/u);
+    const text = turnText(context.runtime.turns[0]!);
+    expect(text).toContain("[Recent room messages (before the triggering message, latest 1)]");
+    expect(text).toContain("陈思远: 收货信息还没展示");
+    expect(text).toMatch(/\[Message that @-mentioned you\]\n[^\n]* 李娜: @陈思远的Codex 订单详情现在能拿到收货信息吗？\nAnswer this message\.$/u);
+
+    context.completeTurn(record.sessionId, "turn-1", "第一次的回答");
+    await until(() => context.runner.status().activeRun === null, "idle");
+    context.remote.messages.push(message(5, { threadRootId: "m-4", authorKind: "agent", agent: AGENT, author: DEV, body: "第一次的回答" }));
+    const rebuilt = await context.runner.rebuildSetup(context.roomTasks.get("agent-1", "room-1", "m-4")!);
+    expect(rebuilt?.developerInstructions).toContain("# SuDuo room\n");
+    expect(rebuilt?.developerInstructions).toContain("# Earlier discussion in this thread (Codex thread rebuilt)");
+    expect(rebuilt?.developerInstructions).toContain("陈思远's Codex · MacBook: 第一次的回答");
+  });
 });

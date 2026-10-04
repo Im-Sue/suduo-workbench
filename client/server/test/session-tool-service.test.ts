@@ -127,6 +127,7 @@ function setup() {
     approvals,
     ledger,
     context,
+    sessions,
     tools: new RequirementTools(remote),
     log: (line) => logs.push(line),
   });

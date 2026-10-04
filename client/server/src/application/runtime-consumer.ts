@@ -93,11 +93,12 @@ async function declineToolCall(runtime: AgentRuntime, event: RuntimeEventDraft):
   if (typeof callRef !== "string") {
     return;
   }
+  // 这里没有会话记录可查（没挂工具服务时才会走到，正式运行总会挂上），拿不到会话语言，固定写英文。
   await runtime
     .respondToolCall?.({
       callRef,
       success: false,
-      contentItems: [{ type: "inputText", text: "SuDuo 工具服务不可用，这次调用没有执行。" }],
+      contentItems: [{ type: "inputText", text: "The SuDuo tool service is unavailable, so this call wasn't run." }],
     })
     .catch(() => undefined);
 }

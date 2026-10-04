@@ -3,20 +3,33 @@ import {
   currentSuDuoToolName,
   type ApprovalDecision,
   type JsonValue,
+  type Locale,
   type RuntimeEventDraft,
   type RuntimeRegistry,
   type RuntimeToolCallRequest,
   type SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
 import type { ApprovalRecord, ApprovalRepository } from "../../infrastructure/db/repositories/approval-repository.js";
-import type { SessionThreadRepository } from "../../infrastructure/db/repositories/session-thread-repository.js";
+import type { SessionRepository } from "../../infrastructure/db/repositories/session-repository.js";
+import type { SessionThreadRecord, SessionThreadRepository } from "../../infrastructure/db/repositories/session-thread-repository.js";
 import type { ToolConfirmationHandler } from "../approval-service.js";
 import type { EventLedger } from "../event-ledger.js";
 import { isWriteTool } from "./catalog.js";
-import { failure, reasonOf, type ToolResult } from "./format.js";
+import { failure, toolFormat, type ToolResult } from "./format.js";
 import type { RequirementTools, ToolSessionContext } from "./requirement-tools.js";
 import type { RoomTools } from "./room-tools.js";
 import type { SessionContextService } from "./session-context.js";
+
+/**
+ * 查不到会话记录时回给 Codex 的文字用的语言：与迁移 017 给存量会话记的语言一致。
+ * 只有调用来自 SuDuo 不认识的线程时才会用到。
+ */
+const FALLBACK_LOCALE: Locale = "zh-CN";
+
+/** 只进日志的报错说明：开发者看的，固定英文。 */
+function logReason(error: unknown): string {
+  return toolFormat("en").reasonOf(error);
+}
 
 /**
  * 会话工具的调度（ADR-0008）：Codex 发来的 `item/tool/call` 经 runtime 变成
@@ -39,6 +52,11 @@ export class SessionToolService implements ToolConfirmationHandler {
       tools: RequirementTools;
       /** 房间工具（房间任务会话用）；不传时房间工具一律回「不可用」。 */
       roomTools?: RoomTools;
+      /**
+       * 会话记录：会话没关联 SuDuo 项目（取不到工具上下文）时，按它记下的语言回包；
+       * 会话记录也查不到时用 `FALLBACK_LOCALE`。必填，免得漏接时英文会话悄悄收到中文。
+       */
+      sessions: Pick<SessionRepository, "getById">;
       log?: (line: Record<string, unknown>) => void;
     },
   ) {}
@@ -56,8 +74,9 @@ export class SessionToolService implements ToolConfirmationHandler {
       return;
     }
     void this.dispatch(event, request).catch((error: unknown) => {
-      this.log({ event: "suduo.tool.dispatch_failed", tool: request.tool, message: reasonOf(error) });
-      void this.respond(event, request.callRef, failure(`SuDuo 执行工具时出错：${reasonOf(error)}`));
+      this.log({ event: "suduo.tool.dispatch_failed", tool: request.tool, message: logReason(error) });
+      const f = toolFormat(this.safeLocaleOf(() => this.sessionOf(event).sessionId));
+      void this.respond(event, request.callRef, failure(f.t.toolReply.dispatch.failed(f.reasonOf(error))));
     });
   }
 
@@ -70,28 +89,33 @@ export class SessionToolService implements ToolConfirmationHandler {
     const confirmation = confirmationOf(approval);
     const accepted = decision === "accept" || decision === "acceptForSession";
     let result: ToolResult;
-    if (confirmation === null) {
-      result = failure("确认卡内容不完整，没有执行。");
-    } else if (!accepted) {
+    let locale: Locale;
+    if (confirmation === null || !accepted) {
+      locale = this.safeLocaleOf(() => approval.sessionId);
+      const text = toolFormat(locale).t.toolReply;
       result = failure(
-        confirmation.tool === "comment_submit"
-          ? "用户没有同意，评论没有发出。"
-          : "用户没有同意，确认版没有发布。",
+        confirmation === null
+          ? text.write.incomplete
+          : confirmation.tool === "comment_submit"
+            ? text.dispatch.declinedComment
+            : text.dispatch.declinedPublish,
       );
     } else {
       const context = this.deps.context.toolContext(approval.sessionId);
+      locale = this.safeLocaleOf(() => approval.sessionId, context);
+      const f = toolFormat(locale);
       result =
         context === null
-          ? failure("会话已经没有关联的 SuDuo 项目，没有执行。")
+          ? failure(f.t.toolReply.dispatch.sessionUnlinked)
           : await this.deps.tools.executeWrite(context, confirmation, approval.id).catch((error: unknown) =>
-              failure(`执行时出错：${reasonOf(error)}`),
+              failure(f.t.toolReply.dispatch.runFailed(f.reasonOf(error))),
             );
     }
     const binding = this.deps.threads.getById(approval.sessionThreadId);
     const delivered = binding
       ? await this.deliver(binding.threadRef.runtimeId, approval.runtimeApprovalRef, result)
       : { delivered: false };
-    const message = textOf(result);
+    const message = textOf(result, toolFormat(locale).t.toolReply.dispatch.image);
     this.log({
       event: "suduo.tool.confirmed",
       sessionId: approval.sessionId,
@@ -105,29 +129,24 @@ export class SessionToolService implements ToolConfirmationHandler {
 
   private async dispatch(event: RuntimeEventDraft, request: RuntimeToolCallRequest): Promise<void> {
     const startedAt = Date.now();
-    const binding = event.threadRef
-      ? this.deps.threads.getByRuntimeThread(event.threadRef.runtimeId, event.threadRef.threadId)
-      : null;
-    const sessionId = binding?.sessionId ?? event.sessionHint ?? null;
+    const { binding, sessionId } = this.sessionOf(event);
     const context = sessionId === null ? null : this.deps.context.toolContext(sessionId);
     if (context === null) {
-      await this.respond(event, request.callRef, failure("这个会话没有关联 SuDuo 项目，不能使用 suduo 工具。"));
+      const text = toolFormat(this.localeOf(sessionId)).t.toolReply;
+      await this.respond(event, request.callRef, failure(text.dispatch.noProject));
       return;
     }
+    const text = toolFormat(context.locale).t.toolReply;
     const args = isRecord(request.arguments) ? request.arguments : {};
     if (context.room !== undefined && !context.room.allowedTools.includes(request.tool)) {
       // 房间任务会话只挂房间工具与需求只读工具（ADR-0009）：清单外的调用（笔记、写工具）一律不执行。
-      await this.respond(
-        event,
-        request.callRef,
-        failure(`房间里的共享 Agent 只能用只读工具，不能调用 ${request.tool}。`),
-      );
+      await this.respond(event, request.callRef, failure(text.dispatch.roomReadOnly(request.tool)));
       this.log({ event: "suduo.tool.room_denied", sessionId: context.sessionId, tool: request.tool });
       return;
     }
     if (isWriteTool(request.tool)) {
       if (!binding) {
-        await this.respond(event, request.callRef, failure("找不到会话线程，没有执行。"));
+        await this.respond(event, request.callRef, failure(text.dispatch.threadMissing));
         return;
       }
       const prepared =
@@ -141,7 +160,7 @@ export class SessionToolService implements ToolConfirmationHandler {
       // 准备期间（查远程最长十几秒）回合可能已被中断或连接已断：调用已失效就不建卡，只记日志。
       const runtime = event.threadRef ? this.deps.runtimes.get(event.threadRef.runtimeId) : null;
       if (this.cancelledCalls.delete(request.callRef) || runtime?.isToolCallPending?.(request.callRef) === false) {
-        this.log({ event: "suduo.tool.confirmation_skipped", sessionId: binding.sessionId, tool: request.tool, reason: "调用已失效" });
+        this.log({ event: "suduo.tool.confirmation_skipped", sessionId: binding.sessionId, tool: request.tool, reason: "call no longer valid" });
         return;
       }
       const confirmation: SuDuoToolConfirmationDto = {
@@ -195,6 +214,7 @@ export class SessionToolService implements ToolConfirmationHandler {
 
   private runReadTool(context: ToolSessionContext, tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     const tools = this.deps.tools;
+    const text = toolFormat(context.locale).t.toolReply;
     const key = (requirementId: string) => context.sessionId + ":" + requirementId;
     const remember = (requirementId: string, sha256: string | null) => {
       this.notesReads.set(key(requirementId), sha256);
@@ -223,7 +243,7 @@ export class SessionToolService implements ToolConfirmationHandler {
       case "suduo_room_file_view": {
         const roomTools = this.deps.roomTools;
         if (!roomTools) {
-          return Promise.resolve(failure("房间工具暂时不可用。"));
+          return Promise.resolve(failure(text.dispatch.roomToolsUnavailable));
         }
         return tool === "suduo_room_history"
           ? roomTools.history(context, args)
@@ -232,7 +252,7 @@ export class SessionToolService implements ToolConfirmationHandler {
             : roomTools.fileView(context, args);
       }
       default:
-        return Promise.resolve(failure(`SuDuo 没有工具 ${tool}。`));
+        return Promise.resolve(failure(text.dispatch.unknownTool(tool)));
     }
   }
 
@@ -299,7 +319,7 @@ export class SessionToolService implements ToolConfirmationHandler {
     }
     const outcome = await this.deliver(event.threadRef.runtimeId, callRef, result);
     if (!outcome.delivered) {
-      this.log({ event: "suduo.tool.respond_dropped", reason: "调用已失效（连接换代或 Codex 已撤回）" });
+      this.log({ event: "suduo.tool.respond_dropped", reason: "call no longer valid (connection replaced or withdrawn by Codex)" });
     }
   }
 
@@ -309,9 +329,41 @@ export class SessionToolService implements ToolConfirmationHandler {
       const outcome = await this.deps.runtimes.get(runtimeId).respondToolCall?.({ callRef, ...result });
       return outcome ?? { delivered: false };
     } catch (error) {
-      this.log({ event: "suduo.tool.respond_failed", message: reasonOf(error) });
+      this.log({ event: "suduo.tool.respond_failed", message: logReason(error) });
       return { delivered: false };
     }
+  }
+
+  /** 调用所在的会话：先按线程找绑定，没有时用 runtime 给的会话提示。 */
+  private sessionOf(event: RuntimeEventDraft): { binding: SessionThreadRecord | null; sessionId: string | null } {
+    const binding = event.threadRef
+      ? this.deps.threads.getByRuntimeThread(event.threadRef.runtimeId, event.threadRef.threadId)
+      : null;
+    return { binding, sessionId: binding?.sessionId ?? event.sessionHint ?? null };
+  }
+
+  /**
+   * 兜底路径（调度出错、拒绝 / 卡片不完整）回包用的语言。查库本身也可能出错，而这些路径原来不查库、
+   * 不会抛：出错就用 `FALLBACK_LOCALE`，不让兜底回包抛错。已经取到的工具上下文直接传进来。
+   */
+  private safeLocaleOf(sessionIdOf: () => string | null, context?: ToolSessionContext | null): Locale {
+    try {
+      const sessionId = sessionIdOf();
+      return this.localeOf(
+        sessionId,
+        context !== undefined ? context : sessionId === null ? null : this.deps.context.toolContext(sessionId),
+      );
+    } catch {
+      return FALLBACK_LOCALE;
+    }
+  }
+
+  /** 回包用的语言：会话的语言（迁移 017）。取不到工具上下文时读会话记录，会话也查不到时用 `FALLBACK_LOCALE`。 */
+  private localeOf(sessionId: string | null, context?: ToolSessionContext | null): Locale {
+    if (context) {
+      return context.locale;
+    }
+    return (sessionId === null ? null : this.deps.sessions.getById(sessionId)?.locale) ?? FALLBACK_LOCALE;
   }
 
   private log(line: Record<string, unknown>): void {
@@ -334,10 +386,11 @@ function parseRequest(payload: JsonValue): RuntimeToolCallRequest | null {
   };
 }
 
+/** 撤回原因只记进账本（approval.orphaned），界面不显示，所以兜底写英文、不进字典。 */
 function reasonText(payload: JsonValue): string {
   return isRecord(payload) && typeof payload["reason"] === "string"
     ? payload["reason"]
-    : "回合已结束，这次确认已失效";
+    : "the turn ended, so this confirmation is no longer valid";
 }
 
 /** 审批记录是不是工具确认卡；是的话取出卡片内容。 */
@@ -371,9 +424,10 @@ function turnIdOf(approval: ApprovalRecord): string | null {
   return isRecord(request) && typeof request["turnId"] === "string" ? request["turnId"] : null;
 }
 
-function textOf(result: ToolResult): string {
+/** 回包的文字（记进审批结果）；图片换成 `image` 占位。 */
+function textOf(result: ToolResult, image: string): string {
   return result.contentItems
-    .map((item) => (item.type === "inputText" ? item.text : "（图片）"))
+    .map((item) => (item.type === "inputText" ? item.text : image))
     .join("\n");
 }
 
