@@ -21,9 +21,9 @@ const runTextCode = { type: "string", minLength: 1, maxLength: 64 } as const;
 const runTextParams = {
   type: "object",
   maxProperties: 16,
-  additionalProperties: {
-    anyOf: [{ type: "string", maxLength: 2_000 }, { type: "number" }],
-  },
+  // 用类型数组而不是 anyOf：Fastify 的 ajv 开着 coerceTypes，anyOf 会在第一个分支把数字强转成字符串
+  //（{ read: 6 } 存成 { read: "6" }）；类型数组只在哪个都不符时才转换，数字与字符串都原样保留。maxLength 只作用于字符串。
+  additionalProperties: { type: ["string", "number"], maxLength: 2_000 },
 } as const;
 
 export const ROOM_MESSAGE_PAGE_DEFAULT_LIMIT = 50;

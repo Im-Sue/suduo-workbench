@@ -9,6 +9,8 @@ import {
   catchUpAfter,
   endOfLocalDay,
   expiresLabel,
+  lastMessageAuthor,
+  lastMessagePreview,
   shareDurationOf,
   mentionHighlights,
   mergeMessages,
@@ -157,6 +159,29 @@ describe("房间列表与未读", () => {
     expect(roomAfterMessage(base, message({ id: "m-3", seq: 3 }), { meId: ME.id, reading: false }).viewer.unreadCount).toBe(0);
   });
 
+  it("最后一条按结构化字段渲染：只有附件时「[图片]」「[文件] 名」，多个附件补「等 N 个」；Agent 作者不带设备名", () => {
+    const file = (fileName: string, kind: "image" | "file") => ({
+      id: fileName,
+      roomId: "room-1",
+      fileName,
+      contentType: kind === "image" ? "image/png" : "application/pdf",
+      kind,
+      sizeBytes: 1,
+      sha256: "",
+      uploadedBy: WANG,
+      createdAt: "2026-09-30T09:00:00.000Z",
+    });
+    const base = room({ lastSeq: 3 });
+    const image = roomAfterMessage(base, message({ seq: 4, body: "", files: [file("截图.png", "image")] }), { meId: ME.id, reading: true }).lastMessage;
+    expect(image === null ? null : [lastMessageAuthor(image), lastMessagePreview(image)]).toEqual(["小王", "[图片]"]);
+    const many = roomAfterMessage(
+      base,
+      message({ seq: 4, authorKind: "agent", agent: agent(), body: "", files: [file("方案.pdf", "file"), file("截图.png", "image"), file("b.png", "image")] }),
+      { meId: ME.id, reading: true },
+    ).lastMessage;
+    expect(many === null ? null : [lastMessageAuthor(many), lastMessagePreview(many)]).toEqual(["小王 的 Codex", "[文件] 方案.pdf 等 3 个"]);
+  });
+
   it("没加入的需求房间不算未读；自己在里面发言后算加入", () => {
     const outsider = room({ kind: "requirement", lastSeq: 3, viewer: { joined: false, lastReadSeq: 0, unreadCount: 0, mentionCount: 0 } });
     expect(roomAfterMessage(outsider, message({ seq: 4 }), { meId: ME.id, reading: false }).viewer.unreadCount).toBe(0);
@@ -277,6 +302,26 @@ describe("@ 候选", () => {
     expect(mentionHighlights([{ kind: "agent", id: "a", label: "小王 的 Codex · MacBook Pro" }])).toEqual(
       expect.arrayContaining(["小王 的 Codex · MacBook Pro", "小王 的 Codex", "小王的Codex"]),
     );
+  });
+
+  it("插进正文的 @ 文字：同一个人有多台设备时带设备名（「小王的Codex·设备」）", () => {
+    const list = buildMentionCandidates({
+      members: [],
+      agents: [agent(), agent({ id: "agent-wang-2", deviceName: "ThinkPad" })],
+      shares: [share()],
+      requestedAgentIds: new Set(),
+      meId: ME.id,
+      query: "",
+    });
+    expect(list.filter((item) => item.kind === "agent").map((item) => item.text)).toEqual(["小王的Codex·MacBook Pro", "小王的Codex·ThinkPad"]);
+  });
+
+  it("新云端的标签是英文兜底：中文写的 @小王的Codex、@所有人 照样高亮（按 kind）", () => {
+    const highlights = mentionHighlights([
+      { kind: "agent", id: "agent-gone", label: "小王's Codex · MacBook Pro" },
+      { kind: "all", id: null, label: "everyone" },
+    ]);
+    expect(highlights).toEqual(expect.arrayContaining(["小王的Codex", "小王的Codex·MacBook Pro", "所有人", "everyone"]));
   });
 });
 

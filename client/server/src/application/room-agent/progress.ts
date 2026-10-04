@@ -4,26 +4,27 @@ import {
   type EventEnvelope,
   type JsonValue,
 } from "@suduo/client-contracts";
+import {
+  AGENT_RUN_ACTIVITY_KINDS,
+  AGENT_RUN_CODEX_ERRORS,
+  AGENT_RUN_EVENTS_TRUNCATED_CODE,
+  agentRunEventsTruncatedFallback,
+  type AgentRunActivityCounts,
+  type AgentRunActivityKind,
+  type AgentRunCodexError,
+  type AgentRunProgress,
+  type AgentRunReason,
+} from "@suduo/cloud-contracts";
+import type { ServerMessages } from "../../i18n/messages/index.js";
 
 /**
- * 房间任务的执行过程：进度一句话（与前端时间线同口径）、回写给远程的事件（截断）、失败原因人话化。
+ * 房间任务的执行过程：进度（code + 计数，与前端时间线同口径）、回写给远程的事件（截断）、失败原因归类。
+ * 进度与原因只给 code 与参数（中英双语技术设计 §4.3），各人前端按自己的语言渲染；文字兜底见 cloud-contracts。
  */
 
-type StepKind = "read" | "search" | "list" | "command" | "tool" | "web" | "other";
-
-/** 与前端 `features/sessions/stream/describe.ts` 的步骤组摘要同一套措辞与顺序。 */
-const PROGRESS_PARTS: Array<{ kind: StepKind; phrase(count: number): string }> = [
-  { kind: "read", phrase: (count) => `查看了 ${count} 个文件` },
-  { kind: "search", phrase: (count) => `搜索了 ${count} 次` },
-  { kind: "list", phrase: (count) => `列了 ${count} 个目录` },
-  { kind: "command", phrase: (count) => `运行了 ${count} 条命令` },
-  { kind: "tool", phrase: (count) => `调用了 ${count} 次工具` },
-  { kind: "web", phrase: (count) => `搜索了 ${count} 次网页` },
-];
-
-/** 按本回合的 item 统计进度：「查看了 6 个文件 · 运行了 2 条命令 · 调用了 1 次工具」。 */
+/** 按本回合的 item 统计进度：各种步骤的次数（前端说成「查看了 6 个文件 · 运行了 2 条命令」），没有步骤时 thinking。 */
 export class RunProgressTracker {
-  private readonly steps = new Map<string, StepKind>();
+  private readonly steps = new Map<string, AgentRunActivityKind>();
 
   observe(event: { type: string; payload: JsonValue }): void {
     if (event.type !== "item.started" && event.type !== "item.completed") {
@@ -38,20 +39,20 @@ export class RunProgressTracker {
     this.steps.set(id, kind);
   }
 
-  text(): string {
-    const parts: string[] = [];
-    for (const part of PROGRESS_PARTS) {
+  progress(): AgentRunProgress {
+    const counts: AgentRunActivityCounts = {};
+    for (const kind of AGENT_RUN_ACTIVITY_KINDS) {
       let count = 0;
-      for (const kind of this.steps.values()) {
-        if (kind === part.kind) count += 1;
+      for (const step of this.steps.values()) {
+        if (step === kind) count += 1;
       }
-      if (count > 0) parts.push(part.phrase(count));
+      if (count > 0) counts[kind] = count;
     }
-    return parts.length === 0 ? "正在思考" : parts.join(" · ");
+    return Object.keys(counts).length === 0 ? { code: "thinking", params: {} } : { code: "activity", params: counts };
   }
 }
 
-function classifyItem(item: Record<string, JsonValue>): StepKind | null {
+function classifyItem(item: Record<string, JsonValue>): AgentRunActivityKind | null {
   switch (item["type"]) {
     case "commandExecution": {
       const actions = Array.isArray(item["commandActions"]) ? item["commandActions"].map(objectOf) : [];
@@ -93,11 +94,14 @@ const LATEST_ONLY = new Set<string>(BACKFILL_LATEST_ONLY_EVENT_TYPES);
  * 这一回合在本机账本里的事件 → 回写给远程的 `EventEnvelope[]`（技术设计 4.2「执行过程上传」）：
  * - 和历史回放同口径去掉逐字增量（item.completed 里有完整内容），快照类只留最后一条；
  * - 去掉 `extensions`（Codex 原生参数副本，顶层已平铺同样的字段）；
- * - 单条里的长文本截到 4000 字；整段超过 1.5MB 时丢中间、保留开头与结尾，并在末尾加一条说明。
+ * - 单条里的长文本截到 4000 字，后缀按所有者的界面语言（`t`）写；
+ * - 整段超过 1.5MB 时丢中间、保留开头与结尾，并在末尾加一条说明（`runtime.warning`，带 code 与 `params.omitted`，
+ *   message 是英文兜底，前端按 code 渲染）。
  * 只为控制体积，不是脱敏（需求「执行过程对房间完整可见」）。
  */
 export function compactRunEvents(
   events: ReadonlyArray<EventEnvelope<string, JsonValue>>,
+  t: ServerMessages,
   limits: { stringChars: number; totalBytes: number } = RUN_EVENT_LIMITS,
 ): Array<EventEnvelope<string, JsonValue>> {
   const lastSnapshot = new Map<string, number>();
@@ -114,7 +118,7 @@ export function compactRunEvents(
       sessionId: event.sessionId,
       source: event.source,
       type: event.type,
-      payload: clipStrings(stripExtensions(event.payload), limits.stringChars),
+      payload: clipStrings(stripExtensions(event.payload), limits.stringChars, t),
       threadRef: event.threadRef,
       turnRef: event.turnRef,
       ts: event.ts,
@@ -133,8 +137,9 @@ export function compactRunEvents(
     source: "suduo:room-agent",
     type: "runtime.warning",
     payload: {
-      code: "room-run-events-truncated",
-      message: `执行过程太长，中间省略了 ${omitted} 条记录（保留了开头和结尾）。完整过程在所有者本机的房间任务会话里。`,
+      code: AGENT_RUN_EVENTS_TRUNCATED_CODE,
+      params: { omitted },
+      message: agentRunEventsTruncatedFallback(omitted),
     },
     threadRef: last.threadRef,
     turnRef: last.turnRef,
@@ -166,18 +171,18 @@ function stripExtensions(payload: JsonValue): JsonValue {
   return rest;
 }
 
-function clipStrings(value: JsonValue, limit: number): JsonValue {
+function clipStrings(value: JsonValue, limit: number, t: ServerMessages): JsonValue {
   if (typeof value === "string") {
     const text = withoutNul(value);
-    return text.length > limit ? text.slice(0, limit) + `…（以下省略，共 ${text.length} 字）` : text;
+    return text.length > limit ? text.slice(0, limit) + t.room.clipped(text.length) : text;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => clipStrings(item, limit));
+    return value.map((item) => clipStrings(item, limit, t));
   }
   if (value !== null && typeof value === "object") {
     const result: Record<string, JsonValue> = {};
     for (const [key, item] of Object.entries(value)) {
-      result[withoutNul(key)] = clipStrings(item, limit);
+      result[withoutNul(key)] = clipStrings(item, limit, t);
     }
     return result;
   }
@@ -194,27 +199,23 @@ export function withoutNul(text: string): string {
 
 // ───────────────────────────── 失败原因 ─────────────────────────────
 
-/** 与前端 `event-projection/shared.ts` 同口径的 Codex 错误人话化（任务失败原因给房间里的人看）。 */
-const CODEX_ERROR_TEXT: Record<string, string> = {
-  contextWindowExceeded: "这段对话已经超出模型的上下文窗口。可以在新话题里重新 @，或请所有者处理。",
-  usageLimitExceeded: "所有者的模型用量已经到上限，请稍后再试。",
-  unauthorized: "所有者电脑上的模型服务认证失败（401），需要所有者检查模型服务设置。",
-  serverOverloaded: "模型服务现在很忙，请稍等一会儿再重试。",
-  internalServerError: "模型服务暂时出错，请稍后重试。",
-  badRequest: "模型服务拒绝了这次请求，可能是参数或附件不被支持。",
-  sandboxError: "命令没能在只读沙箱里运行。",
-  rateLimitExceeded: "模型服务限流了，请稍等几分钟再重试。",
-  misalignmentPolicyViolation: "这次请求触发了模型服务的安全策略，已停止。可以换个说法再试。",
-  sessionBudgetExceeded: "这个话题的用量预算已经用完，可以在新话题里重新 @。",
-  cyberPolicy: "请求涉及网络安全相关内容，被模型服务的安全策略拦下了。",
-};
+const CODEX_ERRORS = new Set<string>(AGENT_RUN_CODEX_ERRORS);
 
-export function describeTurnFailure(payload: JsonValue): string {
+function isCodexError(value: JsonValue | undefined): value is AgentRunCodexError {
+  return typeof value === "string" && CODEX_ERRORS.has(value);
+}
+
+/**
+ * 回合失败的原因（给房间里的人看，前端按 code 渲染）：认得出的 Codex 错误码直接给码；
+ * 否则按状态码与报错原文归类（限流 / 认证 / 无权限 / 服务出错 / 超时）；都不像就给报错原文（≤ 500 字），
+ * 什么都没有时只给 code（原因未知）。归类口径与前端 `event-projection/shared.ts` 的 Codex 错误说明一致。
+ */
+export function describeTurnFailure(payload: JsonValue): Extract<AgentRunReason, { code: "turn_failed" }> {
   const turn = objectOf(objectOf(payload)["turn"]);
   const error = objectOf(turn["error"] ?? objectOf(payload)["error"]);
   const info = error["codexErrorInfo"];
-  if (typeof info === "string" && CODEX_ERROR_TEXT[info] !== undefined) {
-    return CODEX_ERROR_TEXT[info];
+  if (isCodexError(info)) {
+    return { code: "turn_failed", params: { codexError: info } };
   }
   let status: number | null = null;
   if (info !== null && typeof info === "object" && !Array.isArray(info)) {
@@ -226,12 +227,13 @@ export function describeTurnFailure(payload: JsonValue): string {
   const message = typeof error["message"] === "string" ? error["message"] : "";
   const details = typeof error["additionalDetails"] === "string" ? error["additionalDetails"] : "";
   const text = `${status === null ? "" : String(status)} ${details} ${message}`.trim();
-  if (/429|too many requests/iu.test(text)) return "模型服务限流（429），请稍等几分钟再重试。";
-  if (/401|unauthorized|authentication/iu.test(text)) return "所有者电脑上的模型服务认证失败（401），需要所有者检查模型服务设置。";
-  if (/403|forbidden/iu.test(text)) return "模型服务拒绝了请求（403），所有者的凭证可能没有权限使用这个模型。";
-  if (/5\d\d|internal server error|bad gateway|service unavailable/iu.test(text)) return "模型服务暂时出错，请稍后重试。";
-  if (/timeout|timed out/iu.test(text)) return "模型服务响应超时，请稍后重试。";
-  return text === "" ? "执行失败，原因未知。" : `执行失败：${text.slice(0, 500)}`;
+  const failed = (params: Extract<AgentRunReason, { code: "turn_failed" }>["params"]) => ({ code: "turn_failed" as const, params });
+  if (/429|too many requests/iu.test(text)) return failed({ category: "rate_limited" });
+  if (/401|unauthorized|authentication/iu.test(text)) return failed({ category: "unauthorized" });
+  if (/403|forbidden/iu.test(text)) return failed({ category: "forbidden" });
+  if (/5\d\d|internal server error|bad gateway|service unavailable/iu.test(text)) return failed({ category: "server_error" });
+  if (/timeout|timed out/iu.test(text)) return failed({ category: "timeout" });
+  return text === "" ? failed({}) : failed({ detail: text.slice(0, 500) });
 }
 
 /** 回答的第一句（≤ 80 字）作摘要：跳过标题行与列表符号。 */

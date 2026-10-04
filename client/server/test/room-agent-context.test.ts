@@ -7,12 +7,14 @@ import {
   rebuiltTopicSection,
   roomTaskTitle,
 } from "../src/application/room-agent/context.js";
+import { agentRunEventsTruncatedFallback, agentRunProgressFallback } from "@suduo/cloud-contracts";
 import {
   RunProgressTracker,
   compactRunEvents,
   describeTurnFailure,
   summaryOf,
 } from "../src/application/room-agent/progress.js";
+import { messagesFor } from "../src/i18n/messages/index.js";
 
 /**
  * 房间 Agent 的回合输入组装（技术设计 4.4）、进度口径、执行过程截断、摘要与失败原因。
@@ -20,7 +22,7 @@ import {
 
 const PM = { id: "user-pm", displayName: "李娜" };
 const DEV = { id: "user-dev", displayName: "陈思远" };
-const AGENT = { id: "agent-1", kind: "codex" as const, owner: DEV, deviceName: "MacBook", label: "陈思远 的 Codex · MacBook" };
+const AGENT = { id: "agent-1", kind: "codex" as const, owner: DEV, deviceName: "MacBook", label: "陈思远's Codex · MacBook" };
 
 function message(seq: number, overrides: Partial<RoomMessageDto> = {}): RoomMessageDto {
   return {
@@ -159,7 +161,7 @@ describe("buildRoomTurnInput：续接", () => {
       threadRootId: root.id,
       authorKind: "agent",
       author: PM,
-      agent: { ...AGENT, id: "agent-2", label: "李娜 的 Codex · PC" },
+      agent: { ...AGENT, id: "agent-2", label: "李娜's Codex · PC" },
       body: "别人的 Agent 说的",
     });
     const fresh = message(15, { threadRootId: root.id, body: "补充：历史订单也要" });
@@ -177,7 +179,7 @@ describe("buildRoomTurnInput：续接", () => {
     expect(input.text).toContain("[话题里的新消息（你上次被 @ 之后）]");
     expect(input.text).not.toContain("旧回复");
     expect(input.text).not.toContain("我上次的回答");
-    expect(input.text).toContain("李娜 的 Codex · PC：别人的 Agent 说的");
+    expect(input.text).toContain("李娜's Codex · PC：别人的 Agent 说的");
     expect(input.text).toContain("补充：历史订单也要");
     expect(input.text).toContain("@Codex 历史订单也有吗？");
   });
@@ -205,7 +207,7 @@ describe("buildRoomTurnInput：续接", () => {
       message(17, {
         threadRootId: "m-10",
         authorKind: "agent",
-        agent: { ...AGENT, id: "agent-2", label: "李娜 的 Codex · PC" },
+        agent: { ...AGENT, id: "agent-2", label: "李娜's Codex · PC" },
         body: "别人的 Agent 说的",
       }),
       message(18, { threadRootId: "m-10", body: "历史订单也要" }),
@@ -236,9 +238,9 @@ describe("buildRoomTurnInput：续接", () => {
 });
 
 describe("进度、摘要与失败原因", () => {
-  it("进度与前端同口径：查看 / 运行 / 工具按 item 计数，没有步骤时「正在思考」", () => {
+  it("进度与前端同口径：查看 / 运行 / 工具按 item 计数，没有步骤时 thinking；只给 code + 计数", () => {
     const tracker = new RunProgressTracker();
-    expect(tracker.text()).toBe("正在思考");
+    expect(tracker.progress()).toEqual({ code: "thinking", params: {} });
     const item = (id: string, value: Record<string, JsonValue>) => ({
       type: "item.started",
       payload: { item: { id, ...value } },
@@ -250,7 +252,13 @@ describe("进度、摘要与失败原因", () => {
     // 同一个 item 的 completed 不重复计数。
     tracker.observe({ type: "item.completed", payload: { item: { id: "c1", type: "commandExecution", commandActions: [{ type: "read" }] } } });
     tracker.observe(item("r1", { type: "reasoning" }));
-    expect(tracker.text()).toBe("查看了 2 个文件 · 运行了 1 条命令 · 调用了 1 次工具");
+    tracker.observe(item("w1", { type: "webSearch", query: "receiverSnapshot" }));
+    const progress = tracker.progress();
+    // 前端渲染成「查看了 2 个文件 · 运行了 1 条命令 · 调用了 1 次工具 · 搜索了 1 次网页」（web 测试 rooms-run-texts）。
+    expect(progress).toEqual({ code: "activity", params: { read: 2, command: 1, tool: 1, web: 1 } });
+    expect(agentRunProgressFallback(progress.code, progress.params)).toBe(
+      "Read 2 files · Ran 1 command · Made 1 tool call · Searched the web once",
+    );
   });
 
   it("摘要取回答第一句（≤ 80 字），跳过标题与列表符号", () => {
@@ -261,12 +269,24 @@ describe("进度、摘要与失败原因", () => {
     expect(Array.from(summaryOf("长".repeat(200)))).toHaveLength(80);
   });
 
-  it("失败原因人话化", () => {
-    expect(describeTurnFailure({ turn: { status: "failed", error: { message: "x", codexErrorInfo: "usageLimitExceeded" } } })).toContain(
-      "用量已经到上限",
-    );
-    expect(describeTurnFailure({ turn: { status: "failed", error: { message: "429 Too Many Requests" } } })).toContain("429");
-    expect(describeTurnFailure({ turn: { status: "failed" } })).toBe("执行失败，原因未知。");
+  it("失败原因归类：Codex 错误码 / 状态码归类 / 报错原文 / 原因未知（前端按 code 渲染）", () => {
+    const failed = (error: JsonValue | undefined) =>
+      describeTurnFailure({ turn: { status: "failed", ...(error === undefined ? {} : { error }) } });
+    expect(failed({ message: "x", codexErrorInfo: "usageLimitExceeded" })).toEqual({
+      code: "turn_failed",
+      params: { codexError: "usageLimitExceeded" },
+    });
+    expect(failed({ message: "429 Too Many Requests" }).params).toEqual({ category: "rate_limited" });
+    // 认不出的错误码按报错原文归类。
+    expect(failed({ message: "Unauthorized", codexErrorInfo: "somethingNew" }).params).toEqual({ category: "unauthorized" });
+    expect(failed({ message: "403 Forbidden" }).params).toEqual({ category: "forbidden" });
+    expect(failed({ message: "stream failed", codexErrorInfo: { responseStreamFailed: { httpStatusCode: 502 } } }).params).toEqual({
+      category: "server_error",
+    });
+    expect(failed({ message: "request timed out" }).params).toEqual({ category: "timeout" });
+    expect(failed({ message: "boom", additionalDetails: "disk full" }).params).toEqual({ detail: "disk full boom" });
+    expect((failed({ message: "长".repeat(800) }).params as { detail: string }).detail).toHaveLength(500);
+    expect(failed(undefined)).toEqual({ code: "turn_failed", params: {} });
   });
 });
 
@@ -284,34 +304,44 @@ describe("compactRunEvents：执行过程回写", () => {
     ts: seq,
   });
 
-  it("去掉逐字增量与 extensions，快照只留最后一条，长文本截 4000 字", () => {
-    const events = compactRunEvents([
+  it("去掉逐字增量与 extensions，快照只留最后一条，长文本截 4000 字（后缀按所有者的界面语言）", () => {
+    const source = [
       envelope(1, "turn.started", { turn: { id: "turn-1" }, extensions: { codex: { params: {} } } }),
       envelope(2, "message.delta", { text: "逐字" }),
       envelope(3, "usage.updated", { tokenUsage: null }),
       envelope(4, "item.completed", { item: { type: "commandExecution", aggregatedOutput: "x".repeat(10_000) } }),
       envelope(5, "usage.updated", { tokenUsage: { total: 1 } }),
       envelope(6, "turn.completed", { turn: { status: "completed" } }),
-    ]);
+    ];
+    const events = compactRunEvents(source, messagesFor("zh-CN"));
     expect(events.map((event) => event.seq)).toEqual([1, 4, 5, 6]);
     expect(events[0]!.payload).toEqual({ turn: { id: "turn-1" } });
     const output = (events[1]!.payload as { item: { aggregatedOutput: string } }).item.aggregatedOutput;
     expect(output.startsWith("x".repeat(4_000))).toBe(true);
-    expect(output).toContain("以下省略，共 10000 字");
-    expect(output.length).toBeLessThan(4_100);
+    expect(output).toBe("x".repeat(4_000) + "…（以下省略，共 10000 字）");
+    const english = compactRunEvents(source, messagesFor("en"));
+    expect((english[1]!.payload as { item: { aggregatedOutput: string } }).item.aggregatedOutput).toBe(
+      "x".repeat(4_000) + "… (cut off here; 10000 characters in total)",
+    );
   });
 
   it("总量超限时丢中间、保留开头结尾，末尾加一条说明", () => {
     const events = Array.from({ length: 100 }, (_, index) =>
       envelope(index + 1, "item.completed", { item: { id: "i" + String(index), text: "y".repeat(900) } }),
     );
-    const compacted = compactRunEvents(events, { stringChars: 4_000, totalBytes: 30_000 });
+    const compacted = compactRunEvents(events, messagesFor("zh-CN"), { stringChars: 4_000, totalBytes: 30_000 });
     const total = compacted.reduce((sum, event) => sum + Buffer.byteLength(JSON.stringify(event)), 0);
     expect(total).toBeLessThanOrEqual(30_000);
     expect(compacted[0]!.seq).toBe(1);
     const notice = compacted.at(-1)!;
     expect(notice.type).toBe("runtime.warning");
-    expect((notice.payload as { message: string }).message).toMatch(/中间省略了 \d+ 条记录/u);
+    // 说明带 code 与省略条数（前端按 code 渲染），message 是英文兜底。
+    const payload = notice.payload as { code: string; params: { omitted: number }; message: string };
+    expect(payload.code).toBe("room-run-events-truncated");
+    expect(payload.params.omitted).toBeGreaterThan(0);
+    expect(payload.message).toBe(agentRunEventsTruncatedFallback(payload.params.omitted));
+    expect(payload.message).toMatch(/^The run details were too long, so \d+ records in the middle were left out/u);
+    expect(compacted.length - 1 + payload.params.omitted).toBe(100);
     // 结尾那条（最后的事件）保留在说明之前。
     expect(compacted.at(-2)!.seq).toBe(100);
     expect(compacted.length).toBeLessThan(100);

@@ -10,7 +10,7 @@ import { EmptyState, RegionError } from "../../../feedback/components/index.js";
 import { formatDuration } from "../../../ui/format.js";
 import { useT } from "../../../i18n/provider.js";
 import { ConversationStream } from "../../sessions/stream/ConversationStream.js";
-import { agentName, runElapsedMs, runStatusLabel } from "../model.js";
+import { agentName, runElapsedMs, runReasonText, runStatusLabel } from "../model.js";
 import { runQuery } from "../queries.js";
 import { RunIcon, useTicker } from "./RunStatusLine.js";
 
@@ -80,7 +80,7 @@ export function AgentRunDetail({ runId, onBack }: { runId: string; onBack(): voi
           empty={
             <EmptyState
               title={data.status === "queued" ? text.emptyQueued : data.status === "offline" ? text.emptyOffline : text.emptyNone}
-              description={data.status === "offline" ? (data.reason ?? text.offlineDescription) : text.emptyDescription}
+              description={data.status === "offline" ? (runReasonText(data, t) ?? text.offlineDescription) : text.emptyDescription}
             />
           }
         />

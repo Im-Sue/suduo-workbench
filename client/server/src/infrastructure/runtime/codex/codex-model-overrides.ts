@@ -118,9 +118,10 @@ export class CodexThreadModelTracker {
       const target = resolved?.model ?? state.baselineModel;
       if (target === null) {
         if (state.modelPinned === true || state.model === undefined) {
+          // 只进日志（codex.turn_model_default_unresolved），写英文。
           warnings.push(
-            "无法确定全局默认模型，本回合不下发模型，线程可能仍沿用此前的覆盖值 " +
-              String(state.model ?? "（未知）"),
+            "could not resolve the global default model; not sending a model this turn, so the thread may keep its previous override " +
+              String(state.model ?? "(unknown)"),
           );
         }
       } else if (state.model !== target) {
@@ -151,9 +152,10 @@ export class CodexThreadModelTracker {
         const target = configured ?? modelDefault ?? state.baselineEffort;
         if (target === null) {
           if (state.effortPinned === true || state.effort === undefined) {
+            // 只进日志（codex.turn_model_default_unresolved），写英文。
             warnings.push(
-              "无法确定全局默认推理强度，本回合不下发强度，线程可能仍沿用此前的覆盖值 " +
-                String(state.effort ?? "（未知）"),
+              "could not resolve the global default reasoning effort; not sending an effort this turn, so the thread may keep its previous override " +
+                String(state.effort ?? "(unknown)"),
             );
           }
         } else if (state.effort !== target) {

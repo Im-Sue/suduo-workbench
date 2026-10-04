@@ -1,5 +1,9 @@
 import {
+  AGENT_RUN_ACTIVITY_KINDS,
   formatRequirementNumber,
+  LOCALES,
+  readAgentRunProgress,
+  readAgentRunReason,
   type AgentDto,
   type AgentRunStatus,
   type AgentRunSummaryDto,
@@ -7,6 +11,8 @@ import {
   type AgentShareDuration,
   type AgentSummaryDto,
   type RoomDto,
+  type RoomFileDto,
+  type RoomLastMessageDto,
   type RoomMemberDto,
   type RoomMentionDto,
   type RoomMessageDto,
@@ -166,12 +172,54 @@ export function messageAuthorName(
   return message.author?.displayName ?? t.rooms.message.someone;
 }
 
+/** 只有附件时的预览：「[图片]」「[视频]」「[文件] 名」，多个附件时接「等 N 个」。 */
+function filesPreview(first: Pick<RoomFileDto, "fileName" | "kind">, count: number, t: Messages): string {
+  const head =
+    first.kind === "image" ? t.rooms.preview.image : first.kind === "video" ? t.rooms.preview.video : t.rooms.preview.file(first.fileName);
+  return count > 1 ? t.rooms.preview.more(head, count) : head;
+}
+
 export function messagePreview(message: Pick<RoomMessageDto, "body" | "files">, t: Messages = messagesFor(currentLocale())): string {
   const text = summaryPreview(message.body, 80);
   if (text !== "") return text;
   const file = message.files[0];
-  if (file === undefined) return "";
-  return file.kind === "image" ? t.rooms.preview.image : file.kind === "video" ? t.rooms.preview.video : t.rooms.preview.file(file.fileName);
+  return file === undefined ? "" : filesPreview(file, message.files.length, t);
+}
+
+/**
+ * 推送来的新消息在房间列表里的「最后一条」：与云端同形（结构化字段 + 兜底文字），
+ * 显示时与云端给的走同一套渲染（lastMessageAuthor / lastMessagePreview）。
+ */
+export function lastMessageOf(message: RoomMessageDto, t: Messages = messagesFor(currentLocale())): RoomLastMessageDto {
+  const first = message.files[0];
+  return {
+    seq: message.seq,
+    authorName: messageAuthorName(message, t),
+    preview: messagePreview(message, t),
+    createdAt: message.createdAt,
+    authorKind: message.authorKind,
+    agent: message.agent === null ? null : { ownerName: message.agent.owner.displayName, deviceName: message.agent.deviceName },
+    text: summaryPreview(message.body, 80),
+    firstFile: first === undefined ? null : { fileName: first.fileName, kind: first.kind },
+    fileCount: message.files.length,
+  };
+}
+
+/**
+ * 「最后一条」的作者（中英双语技术设计 §4.3）：Agent 与系统按结构化字段用当前语言渲染，真人就是名字；
+ * 老云端没有结构化字段时显示兜底文字。
+ */
+export function lastMessageAuthor(last: RoomLastMessageDto, t: Messages = messagesFor(currentLocale())): string {
+  if (last.authorKind === "agent" && last.agent != null) return t.rooms.agent.name(last.agent.ownerName);
+  if (last.authorKind === "system") return t.rooms.message.systemAuthor;
+  return last.authorName;
+}
+
+/** 「最后一条」的预览：有正文给正文，只有附件时按第一个附件与附件数用当前语言渲染；老云端没有结构化字段时显示兜底文字。 */
+export function lastMessagePreview(last: RoomLastMessageDto, t: Messages = messagesFor(currentLocale())): string {
+  if (last.text === undefined) return last.preview;
+  if (last.text !== "") return last.text;
+  return last.firstFile == null ? last.preview : filesPreview(last.firstFile, last.fileCount ?? 1, t);
 }
 
 /** 这条消息是否提醒到我：@ 了我，或 @ 所有人。 */
@@ -198,14 +246,7 @@ export function roomAfterMessage(
     ...room,
     lastSeq: Math.max(room.lastSeq, message.seq),
     lastMessage:
-      room.lastMessage !== null && room.lastMessage.seq > message.seq
-        ? room.lastMessage
-        : {
-            seq: message.seq,
-            authorName: messageAuthorName(message),
-            preview: messagePreview(message),
-            createdAt: message.createdAt,
-          },
+      room.lastMessage !== null && room.lastMessage.seq > message.seq ? room.lastMessage : lastMessageOf(message),
     viewer: {
       ...room.viewer,
       joined: room.viewer.joined || mine,
@@ -282,26 +323,85 @@ export function agentName(agent: Pick<AgentSummaryDto, "owner">, t: Messages = m
   return t.rooms.agent.name(agent.owner.displayName);
 }
 
+/** 「陈思远 的 Codex · MacBook Pro」：需要区分设备时（@ 候选、共享面板）的名字，按界面语言（不用云端的标签）。 */
+export function agentLabel(agent: Pick<AgentSummaryDto, "owner" | "deviceName">, t: Messages = messagesFor(currentLocale())): string {
+  return t.rooms.agent.withDevice(agent.owner.displayName, agent.deviceName);
+}
+
 /** 任务状态名（取代云端契约的 AGENT_RUN_STATUS_LABELS，按界面语言）。 */
 export function runStatusLabel(status: AgentRunStatus, t: Messages = messagesFor(currentLocale())): string {
   return t.rooms.run.status[status];
 }
 
-/** 状态行文字：状态名 + 排队位置 / 进度 / 摘要 / 原因（后三者是所有者本机写的文字，原样显示）。 */
+/**
+ * 执行中的进度（中英双语技术设计 §4.3）：认得出 code 时按当前语言说（与会话时间线的步骤组摘要同一套说法），
+ * 没有 code（旧数据、老版本本机写的）或认不出时显示 `progress` 原文。
+ */
+export function runProgressText(
+  run: Pick<AgentRunSummaryDto, "progress" | "progressCode" | "progressParams">,
+  t: Messages = messagesFor(currentLocale()),
+): string | null {
+  const progress = readAgentRunProgress(run.progressCode, run.progressParams);
+  if (progress === null) return run.progress;
+  if (progress.code === "thinking") return t.conversation.status.thinking;
+  const counts = progress.params;
+  return AGENT_RUN_ACTIVITY_KINDS.flatMap((kind) => {
+    const count = counts[kind];
+    return count === undefined ? [] : [t.conversation.summary[kind](count)];
+  }).join(" · ");
+}
+
+/**
+ * 失败 / 停止 / 离线的原因（中英双语技术设计 §4.3）：认得出 code 时按当前语言说，参数里的路径、报错原文原样嵌进去；
+ * 没有 code（旧数据、老版本写的）或认不出时显示 `reason` 原文。
+ */
+export function runReasonText(
+  run: Pick<AgentRunSummaryDto, "reason" | "reasonCode" | "reasonParams">,
+  t: Messages = messagesFor(currentLocale()),
+): string | null {
+  const reason = readAgentRunReason(run.reasonCode, run.reasonParams);
+  if (reason === null) return run.reason;
+  const text = t.rooms.run.reason;
+  switch (reason.code) {
+    case "local_folder_unavailable":
+      return text.local_folder_unavailable(reason.params.path);
+    case "stalled":
+      return text.stalled(reason.params.minutes);
+    case "local_start_failed":
+    case "run_error":
+    case "reply_rejected":
+      return text[reason.code](reason.params.detail);
+    case "turn_failed": {
+      const params = reason.params;
+      if ("codexError" in params) return text.turn_failed.codexError[params.codexError];
+      if ("category" in params) return text.turn_failed.category[params.category];
+      if ("detail" in params) return text.turn_failed.detail(params.detail);
+      return text.turn_failed.unknown;
+    }
+    default:
+      return text[reason.code];
+  }
+}
+
+/** 状态行文字：状态名 + 排队位置 / 进度 / 摘要 / 原因（摘要是所有者本机写的文字，原样显示）。 */
 export function runStatusText(run: AgentRunSummaryDto, t: Messages = messagesFor(currentLocale())): string {
   const label = runStatusLabel(run.status, t);
   if (run.stopRequested && (run.status === "queued" || run.status === "running")) return t.rooms.run.stopping;
   switch (run.status) {
     case "queued":
       return run.queuePosition !== null && run.queuePosition > 0 ? t.rooms.run.queuedAhead(label, run.queuePosition) : label;
-    case "running":
-      return run.progress !== null && run.progress !== "" ? `${label} · ${run.progress}` : label;
+    case "running": {
+      const progress = runProgressText(run, t);
+      return progress !== null && progress !== "" ? `${label} · ${progress}` : label;
+    }
     case "completed":
       return run.summary !== null && run.summary !== "" ? `${label} · ${run.summary}` : label;
     case "failed":
     case "stopped":
-    case "offline":
-      return run.reason !== null && run.reason !== "" ? `${label} · ${run.reason}` : label;
+    case "offline": {
+      const reason = runReasonText(run, t);
+      return reason !== null && reason !== "" ? `${label} · ${reason}` : label;
+    }
   }
 }
 
@@ -376,19 +476,21 @@ export type MentionCandidate =
       requested: boolean;
     };
 
-/** 「@ 所有人」插进正文的文字（技术设计 §4.3：S6 起按提及的 kind 渲染，正文里 @所有人 / @everyone 都认）。 */
-// eslint-disable-next-line no-restricted-syntax -- 提及协议文字，S6 按 kind 渲染
-export const MENTION_ALL_TEXT = "所有人";
+/**
+ * 「@ 所有人」插进正文的文字（中英双语技术设计 §4.3）：按发送者的界面语言（「所有人」/ everyone）；
+ * 高亮按提及的 kind，正文里 @所有人 / @everyone 都认。
+ */
+export function mentionAllText(t: Messages = messagesFor(currentLocale())): string {
+  return t.rooms.mention.text.everyone;
+}
 
 /**
- * 插进输入框的 @ 文字：人用名字；Agent 用「陈思远的Codex」，同一个人有多台设备时带设备名。
- * 与服务端的 Agent 标签（「陈思远 的 Codex · 设备」）去掉空格后对得上，消息里的 @ 高亮靠它，不随界面语言变。
+ * 插进输入框的 @ 文字：人用名字；Agent 按发送者的界面语言写（中文「陈思远的Codex」，英文 “Sam's Codex”），
+ * 同一个人有多台设备时带设备名。高亮不靠它与云端标签对上：按 Agent 的所有者名与设备名把各语言的写法都认（mentionHighlights）。
  */
-export function agentMentionText(agent: AgentDto, all: readonly AgentDto[]): string {
-  // eslint-disable-next-line no-restricted-syntax -- 提及协议文字，S6 按 kind 渲染
-  const base = `${agent.owner.displayName}的Codex`;
+export function agentMentionText(agent: AgentDto, all: readonly AgentDto[], t: Messages = messagesFor(currentLocale())): string {
   const sameOwner = all.filter((item) => item.owner.id === agent.owner.id).length > 1;
-  return sameOwner ? `${base}·${agent.deviceName}` : base;
+  return t.rooms.mention.text.agent(agent.owner.displayName, sameOwner ? agent.deviceName : null);
 }
 
 export function agentAvailability(agent: AgentDto, shares: readonly AgentShareDto[]): AgentAvailability {
@@ -401,33 +503,49 @@ export function agentAvailability(agent: AgentDto, shares: readonly AgentShareDt
  * @ 候选：真人在前（不含自己），然后「所有人」，Agent 在后（可用 → 未共享 → 离线）。
  * query 为 @ 后面已输入的字（不含 @），按包含匹配。
  */
-export function buildMentionCandidates(input: {
-  members: readonly RoomMemberDto[];
-  agents: readonly AgentDto[];
-  shares: readonly AgentShareDto[];
-  requestedAgentIds: ReadonlySet<string>;
-  meId: string | null;
-  query: string;
-}): MentionCandidate[] {
+export function buildMentionCandidates(
+  input: {
+    members: readonly RoomMemberDto[];
+    agents: readonly AgentDto[];
+    shares: readonly AgentShareDto[];
+    requestedAgentIds: ReadonlySet<string>;
+    meId: string | null;
+    query: string;
+  },
+  t: Messages = messagesFor(currentLocale()),
+): MentionCandidate[] {
   const query = input.query.trim().toLowerCase();
   const matches = (...texts: string[]) => query === "" || texts.some((text) => text.toLowerCase().includes(query));
+  // 按任一语言的叫法都能搜到（中文界面打 everyone、英文界面打「所有人」也行）。
+  const dictionaries = LOCALES.map(messagesFor);
   const users: MentionCandidate[] = input.members
     .filter((member) => member.user.id !== input.meId && matches(member.user.displayName))
     .toSorted((left, right) => Number(right.online) - Number(left.online))
     .map((member) => ({ kind: "user", id: member.user.id, text: member.user.displayName, user: member.user, online: member.online }));
-  const all: MentionCandidate[] = matches(MENTION_ALL_TEXT, "all", "everyone") ? [{ kind: "all", id: null, text: MENTION_ALL_TEXT }] : [];
+  const everyone = mentionAllText(t);
+  const all: MentionCandidate[] = matches(...dictionaries.map(mentionAllText), "all")
+    ? [{ kind: "all", id: null, text: everyone }]
+    : [];
   const rank: Record<AgentAvailability, number> = { available: 0, unshared: 1, offline: 2 };
   const agents: MentionCandidate[] = input.agents
     .map((agent) => ({
       kind: "agent" as const,
       id: agent.id,
-      text: agentMentionText(agent, input.agents),
+      text: agentMentionText(agent, input.agents, t),
       agent,
       availability: agentAvailability(agent, input.shares),
       mine: agent.owner.id === input.meId,
       requested: input.requestedAgentIds.has(agent.id),
     }))
-    .filter((candidate) => matches(candidate.text, candidate.agent.label, candidate.agent.owner.displayName, "codex"))
+    .filter((candidate) =>
+      matches(
+        candidate.text,
+        ...dictionaries.map((messages) => agentLabel(candidate.agent, messages)),
+        candidate.agent.label,
+        candidate.agent.owner.displayName,
+        "codex",
+      ),
+    )
     .toSorted((left, right) => rank[left.availability] - rank[right.availability]);
   return [...users, ...all, ...agents];
 }
@@ -444,17 +562,60 @@ export function agentAvailabilityNote(
   return candidate.requested ? note.unsharedRequested : note.unsharedRequest;
 }
 
-/** 消息正文里要高亮的 @ 文字：服务端给的标签及其常见写法（去掉设备名、去掉空格）。 */
-export function mentionHighlights(mentions: readonly RoomMentionDto[]): string[] {
+/**
+ * 从云端 Agent 标签里取回所有者名与设备名（认不出时为 null）。云端标签与各语言的 agent.withDevice 同形：
+ * 新云端是英文 “Sam's Codex · MacBook Pro”，老云端（与旧消息里存下的）是中文「陈思远 的 Codex · MacBook Pro」，
+ * 所以由字典反推出各语言的形状来认，不另写一份。
+ */
+function parseAgentLabel(label: string): { owner: string; device: string } | null {
+  for (const locale of LOCALES) {
+    const sample = messagesFor(locale).rooms.agent.withDevice("\u0001", "\u0002");
+    const pattern = sample
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace("\u0001", "(?<owner>.+?)")
+      .replace("\u0002", "(?<device>.+)");
+    const groups = new RegExp(`^${pattern}$`, "u").exec(label)?.groups;
+    const owner = groups?.["owner"];
+    const device = groups?.["device"];
+    if (owner !== undefined && device !== undefined) return { owner, device };
+  }
+  return null;
+}
+
+/**
+ * 消息正文里要高亮的 @ 文字（中英双语技术设计 §4.3：按提及的 kind）：
+ * - 所有人：各语言插进正文的写法（@所有人 / @everyone）都认；
+ * - Agent：按 mention.id 在 Agent 列表里找到所有者名与设备名，拼出各语言插进正文的写法（带不带设备名）；
+ *   找不到（旧消息、列表没取到、Agent 已删）或改过名时由云端标签推导所有者名与设备名，同样拼出各语言的写法；
+ * - 另外都认云端标签本身及其常见写法（去掉设备名、去掉空格），兼容老客户端插进正文的文字。
+ */
+export function mentionHighlights(
+  mentions: readonly RoomMentionDto[],
+  agents: readonly Pick<AgentSummaryDto, "id" | "owner" | "deviceName">[] = [],
+): string[] {
   const set = new Set<string>();
+  const add = (text: string) => {
+    if (text.trim() !== "") set.add(text);
+  };
+  const dictionaries = LOCALES.map(messagesFor);
+  const addAgentTexts = (owner: string, device: string) => {
+    for (const messages of dictionaries) {
+      add(messages.rooms.mention.text.agent(owner, null));
+      add(messages.rooms.mention.text.agent(owner, device));
+    }
+  };
   for (const mention of mentions) {
+    if (mention.kind === "all") for (const messages of dictionaries) add(mentionAllText(messages));
     const label = mention.label.trim();
+    if (mention.kind === "agent") {
+      const agent = agents.find((item) => item.id === mention.id);
+      if (agent !== undefined) addAgentTexts(agent.owner.displayName, agent.deviceName);
+      const parsed = parseAgentLabel(label);
+      if (parsed !== null) addAgentTexts(parsed.owner, parsed.device);
+    }
     if (label === "") continue;
     const head = label.split(" · ")[0] ?? label;
-    for (const text of [label, head, label.replace(/\s+/g, ""), head.replace(/\s+/g, "")]) {
-      if (text !== "") set.add(text);
-    }
-    if (mention.kind === "all") set.add(MENTION_ALL_TEXT);
+    for (const text of [label, head, label.replace(/\s+/g, ""), head.replace(/\s+/g, "")]) add(text);
   }
   return [...set].toSorted((left, right) => right.length - left.length);
 }

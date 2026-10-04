@@ -12,8 +12,14 @@ import type {
 } from "@suduo/client-contracts";
 import {
   ROOM_SSE_EVENT_NAME,
+  agentRunProgressFallback,
+  agentRunReasonFallback,
   type AgentDto,
+  type AgentRunProgressRequest,
+  type AgentRunReason,
   type AgentRunSummaryDto,
+  type AgentRunTextParams,
+  type FinishAgentRunRequest,
   type RoomDto,
   type RoomEventDto,
   type RoomMessageDto,
@@ -27,6 +33,8 @@ import type {
 import type { SessionKind, SessionRepository } from "../../infrastructure/db/repositories/session-repository.js";
 import type { WorkspaceMappingRepository } from "../../infrastructure/db/repositories/workspace-mapping-repository.js";
 import type { RequirementsRemoteClient } from "../../infrastructure/requirements-v2/remote-client.js";
+import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
+import { errorTextOf } from "../api-error.js";
 import type { RemoteEventsSignal } from "../remote-events-hub.js";
 import { reasonOf } from "../session-tools/format.js";
 import type { RoomSetupInput, ThreadSetup } from "../session-tools/session-context.js";
@@ -47,6 +55,10 @@ import {
  *
  * 执行：start（started=false 跳过）→ 找 / 建房间任务会话（一个话题一个 Codex 线程，只读 + 联网 + 不审批）→
  * 发回合输入 → 每 3 秒回写进度 → 回合结束回写回答与执行过程。收到 stopRequested 就中断本回合。
+ *
+ * 进度与原因只回写 code + 参数（文字列是英文兜底），房间里的人各按自己的语言看（中英双语技术设计 §4.3）；
+ * 替 Agent 写进房间的固定文字（无文字回答的占位、回答超长的省略说明、执行过程的截断后缀）与原因里的报错原文
+ * 按所有者的界面语言写。
  *
  * 每次同步都对一遍远程「执行中」的任务，任务不会卡在执行中 / 排队中：
  * - 本机正在跑的：顺带拿到停止请求（推送丢了也不至于等到判定卡死）；
@@ -89,6 +101,8 @@ export interface RoomAgentRunnerDependencies {
   events: Pick<EventRepository, "maxSeq" | "listAfter" | "hasTurnTerminal">;
   broker: { subscribe(sessionId: string, listener: (event: EventEnvelope<string, JsonValue>) => void): () => void };
   context: { roomSetup(input: RoomSetupInput): Promise<ThreadSetup> };
+  /** 所有者的界面语言（本机记下的界面语言，没记下过时用中文）；每次写文字时现取。 */
+  ownerLocale(): Locale;
   /** 进度回写间隔，默认 3 秒。 */
   progressIntervalMs?: number;
   /** 每几次进度回写顺带一次执行过程（执行中也能看详情），默认 5（约 15 秒）。 */
@@ -113,8 +127,8 @@ type Outcome =
   /** 本机服务在执行中退出：不回写，下次启动时把它标失败（执行中断）。 */
   | { kind: "abandoned" }
   | { kind: "completed"; reply: string; events: Array<EventEnvelope<string, JsonValue>> }
-  | { kind: "failed"; reason: string; events?: Array<EventEnvelope<string, JsonValue>> }
-  | { kind: "stopped"; reason: string; events?: Array<EventEnvelope<string, JsonValue>> };
+  | { kind: "failed"; reason: AgentRunReason; events?: Array<EventEnvelope<string, JsonValue>> }
+  | { kind: "stopped"; reason: AgentRunReason; events?: Array<EventEnvelope<string, JsonValue>> };
 
 interface ActiveRun {
   run: AgentRunSummaryDto;
@@ -128,10 +142,6 @@ interface ActiveRun {
   abandon: (() => void) | null;
 }
 
-const NO_MAPPING_REASON = "这台电脑没有为这个项目关联代码目录";
-const RESTART_REASON = "执行中断（本机服务重启）";
-const UNREPORTED_REASON = "执行结果没能发回房间，详情见所有者本机的房间任务会话";
-const START_LOST_REASON = "开始执行时与需求服务的连接中断，这次没有执行，可以重试";
 const EVENTS_PAGE = 500;
 /** 远程单条消息正文上限（契约 ROOM_MESSAGE_BODY_MAX_LENGTH）与原因 / 进度的上限。 */
 const REPLY_MAX = 100_000;
@@ -256,14 +266,17 @@ export class RoomAgentRunner {
           this.accept(run, agent.id);
           continue;
         }
-        const reason = this.startedHere.has(run.id)
-          ? UNREPORTED_REASON
-          : this.startAttempted.has(run.id)
-            ? START_LOST_REASON
-            : RESTART_REASON;
+        const reason: AgentRunReason = {
+          code: this.startedHere.has(run.id)
+            ? "result_not_delivered"
+            : this.startAttempted.has(run.id)
+              ? "start_connection_lost"
+              : "local_service_restarted",
+          params: {},
+        };
         const result = await this.deliver(run.id, { kind: "failed", reason }, { retry: false });
         if (result !== "unavailable") this.settled.add(run.id);
-        this.log({ event: "suduo.room_run.failed", runId: run.id, roomId: run.roomId, reason, result });
+        this.log({ event: "suduo.room_run.failed", runId: run.id, roomId: run.roomId, reason: reason.code, result });
       }
       const queued = await this.deps.remote.listAgentRuns({ agentId: agent.id, status: "queued" });
       for (const run of queued.items) {
@@ -403,7 +416,7 @@ export class RoomAgentRunner {
     try {
       outcome = await this.runTurn(active, agent);
     } catch (error) {
-      outcome = { kind: "failed", reason: `执行失败：${reasonOf(error)}` };
+      outcome = { kind: "failed", reason: { code: "run_error", params: { detail: this.errorDetail(error) } } };
     }
     if (outcome.kind === "abandoned" || this.stopped) {
       this.active = null;
@@ -421,36 +434,36 @@ export class RoomAgentRunner {
       roomId: active.run.roomId,
       sessionId: active.sessionId,
       durationMs: this.now() - startedAt,
-      ...(outcome.kind === "failed" || outcome.kind === "stopped" ? { reason: outcome.reason } : {}),
+      ...(outcome.kind === "failed" || outcome.kind === "stopped" ? { reason: outcome.reason.code } : {}),
     });
   }
 
   private async runTurn(active: ActiveRun, agent: AgentDto): Promise<Outcome> {
     const run = active.run;
     if (active.stopRequested) {
-      return { kind: "stopped", reason: "开始执行前被叫停" };
+      return { kind: "stopped", reason: { code: "stopped_before_start", params: {} } };
     }
     const room = await this.deps.remote.getRoom(run.roomId);
     const mapping = this.deps.mappings.getByRemoteProjectId(room.projectId);
     const project = mapping === null ? null : this.deps.projects.getById(mapping.localProjectId);
     if (project === null || project.state !== "active") {
-      return { kind: "failed", reason: NO_MAPPING_REASON };
+      return { kind: "failed", reason: { code: "no_local_folder", params: {} } };
     }
     const rootOk = await stat(project.rootPath).then((info) => info.isDirectory(), () => false);
     if (!rootOk) {
-      return { kind: "failed", reason: `这台电脑为这个项目关联的代码目录不可用（${project.rootPath}），需要所有者重新关联` };
+      return { kind: "failed", reason: { code: "local_folder_unavailable", params: { path: project.rootPath } } };
     }
 
     const thread = await this.loadThread(room.id, run.threadRootId);
     const trigger = thread.find((message) => message.id === run.triggerMessageId) ?? null;
     if (trigger === null) {
-      return { kind: "failed", reason: "找不到触发这次任务的消息" };
+      return { kind: "failed", reason: { code: "trigger_message_missing", params: {} } };
     }
 
     const record = await this.ensureSession(room, run, agent, project, thread, trigger);
     active.sessionId = record.sessionId;
     if (active.stopRequested) {
-      return { kind: "stopped", reason: "开始执行前被叫停" };
+      return { kind: "stopped", reason: { code: "stopped_before_start", params: {} } };
     }
 
     const mode = record.lastTriggerSeq > 0 ? "continue" : "new";
@@ -637,7 +650,7 @@ export class RoomAgentRunner {
           `room-run:${runId}:${randomUUID()}`,
         );
       } catch (error) {
-        return { kind: "failed", reason: `没能在本机开始执行：${reasonOf(error)}` };
+        return { kind: "failed", reason: { code: "local_start_failed", params: { detail: this.errorDetail(error) } } };
       }
       turnId = accepted.turnRef.turnId;
       clientTurnId = accepted.clientTurnId ?? null;
@@ -684,15 +697,15 @@ export class RoomAgentRunner {
           resolveTerminal(null);
           return;
         }
-        const progress = withoutNul(tracker.text());
+        const progress = progressFields(tracker);
         const withEvents = ticks % this.eventsEveryTicks === 0;
         const events = withEvents ? this.collectEvents(sessionId, startSeq, { turnId, clientTurnId }) : null;
         const eventsChanged = events !== null && events.length !== lastEventsCount;
-        if (progress === lastProgress && !eventsChanged) return;
-        lastProgress = progress;
+        if (progress.progress === lastProgress && !eventsChanged) return;
+        lastProgress = progress.progress;
         if (events !== null) lastEventsCount = events.length;
         void this.deps.remote
-          .progressAgentRun(runId, { progress, ...(eventsChanged && events !== null ? { events } : {}) })
+          .progressAgentRun(runId, { ...progress, ...(eventsChanged && events !== null ? { events } : {}) })
           .then((run) => {
             if (this.active === active && (run.stopRequested || run.status === "stopped")) {
               this.requestStop(active);
@@ -710,13 +723,21 @@ export class RoomAgentRunner {
       const events = this.collectEvents(sessionId, startSeq, { turnId, clientTurnId });
       if (ended === null) {
         if (active.stopRequested) {
-          return { kind: "stopped", reason: "执行中被叫停", events };
+          return { kind: "stopped", reason: { code: "stopped_while_running", params: {} }, events };
         }
         await this.interruptQuietly(sessionId, turnId);
-        return { kind: "failed", reason: `执行中断：${Math.round(this.stallMs / 60_000)} 分钟没有任何进展`, events };
+        return {
+          kind: "failed",
+          reason: { code: "stalled", params: { minutes: Math.round(this.stallMs / 60_000) } },
+          events,
+        };
       }
       if (ended.type === "turn.interrupted") {
-        return { kind: "stopped", reason: active.stopRequested ? "执行中被叫停" : "在所有者电脑上被中断", events };
+        return {
+          kind: "stopped",
+          reason: { code: active.stopRequested ? "stopped_while_running" : "interrupted_locally", params: {} },
+          events,
+        };
       }
       if (ended.type === "turn.start-failed" || turnStatus(ended.payload) === "failed") {
         return { kind: "failed", reason: describeTurnFailure(ended.payload), events };
@@ -724,7 +745,7 @@ export class RoomAgentRunner {
       const reply = lastAgentMessage(this.turnEvents(sessionId, startSeq), turnId);
       return {
         kind: "completed",
-        reply: reply.trim() === "" ? "（这次没有给出文字回答，执行过程见详情。）" : reply,
+        reply: reply.trim() === "" ? this.ownerMessages().room.noTextReply : reply,
         events,
       };
     } finally {
@@ -789,7 +810,20 @@ export class RoomAgentRunner {
     startSeq: number,
     turn: { turnId: string | null; clientTurnId: string | null },
   ): Array<EventEnvelope<string, JsonValue>> {
-    return compactRunEvents(this.turnEvents(sessionId, startSeq).filter((event) => belongsToTurn(event, turn)));
+    return compactRunEvents(
+      this.turnEvents(sessionId, startSeq).filter((event) => belongsToTurn(event, turn)),
+      this.ownerMessages(),
+    );
+  }
+
+  /** 所有者的界面语言的字典：替 Agent 写进房间的固定文字、原因里的报错原文用它。 */
+  private ownerMessages(): ServerMessages {
+    return messagesFor(this.deps.ownerLocale());
+  }
+
+  /** 原因里嵌的报错原文：本机服务的报错按所有者的界面语言，其它（系统、第三方）用原文。 */
+  private errorDetail(error: unknown): string {
+    return errorTextOf(error)(this.ownerMessages());
   }
 
   /**
@@ -823,13 +857,13 @@ export class RoomAgentRunner {
     const attempt = () =>
       outcome.kind === "completed"
         ? this.deps.remote.completeAgentRun(runId, {
-            replyBody: clipReply(withoutNul(outcome.reply)),
+            replyBody: clipReply(withoutNul(outcome.reply), this.ownerMessages()),
             summary: withoutNul(summaryOf(outcome.reply)),
             events: outcome.events,
           })
         : this.deps.remote.finishAgentRun(runId, {
             status: outcome.kind,
-            reason: clipText(withoutNul(outcome.reason), REASON_MAX),
+            ...reasonFields(outcome.reason),
             ...(outcome.events === undefined ? {} : { events: outcome.events }),
           });
     const waits = options.retry ? this.reportRetryMs : [];
@@ -849,7 +883,11 @@ export class RoomAgentRunner {
             // 远程不收这个回答（例如格式不符）：改成失败收尾，任务不至于一直停在执行中。
             return this.deliver(
               runId,
-              { kind: "failed", reason: `回答没能发到房间：${reasonOf(error)}`, events: outcome.events },
+              {
+                kind: "failed",
+                reason: { code: "reply_rejected", params: { detail: this.errorDetail(error) } },
+                events: outcome.events,
+              },
               options,
             );
           }
@@ -884,10 +922,37 @@ function clipText(text: string, limit: number): string {
   return characters.length > limit ? characters.slice(0, limit - 1).join("") + "…" : text;
 }
 
-function clipReply(reply: string): string {
+function clipReply(reply: string, t: ServerMessages): string {
   if (reply.length <= REPLY_MAX) return reply;
-  const note = "\n\n…（回答太长，后面省略；完整内容在所有者本机的房间任务会话里）";
+  const note = t.room.replyClipped;
   return reply.slice(0, REPLY_MAX - note.length) + note;
+}
+
+/** 进度回写的字段：英文兜底文字 + code + 计数（没有计数时不带参数）。 */
+function progressFields(tracker: RunProgressTracker): AgentRunProgressRequest {
+  const { code, params } = tracker.progress();
+  return {
+    progress: withoutNul(agentRunProgressFallback(code, params)),
+    progressCode: code,
+    ...(Object.keys(params).length === 0 ? {} : { progressParams: params }),
+  };
+}
+
+/**
+ * 原因回写的字段：code + 参数 + 英文兜底文字（中英双语技术设计 §4.3）。
+ * 参数里的字符串（报错原文、路径）去掉 NUL、截到远程的上限；兜底文字按截过的参数生成，再截到上限。
+ */
+function reasonFields(reason: AgentRunReason): Pick<FinishAgentRunRequest, "reason" | "reasonCode" | "reasonParams"> {
+  const params: AgentRunTextParams = {};
+  for (const [key, value] of Object.entries(reason.params as AgentRunTextParams)) {
+    params[key] = typeof value === "string" ? clipText(withoutNul(value), REASON_MAX) : value;
+  }
+  const clipped = { ...reason, params } as AgentRunReason;
+  return {
+    reason: clipText(withoutNul(agentRunReasonFallback(clipped.code, clipped.params)), REASON_MAX),
+    reasonCode: reason.code,
+    ...(Object.keys(params).length === 0 ? {} : { reasonParams: params }),
+  };
 }
 
 function compareQueued(a: AgentRunSummaryDto, b: AgentRunSummaryDto): number {

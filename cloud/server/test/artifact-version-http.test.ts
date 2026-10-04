@@ -19,6 +19,7 @@ import { buildHttpServer } from "../src/http/server.js";
 import { Database } from "../src/infrastructure/database.js";
 import type { AttachmentStorage } from "../src/infrastructure/attachment-storage.js";
 import { ArtifactVersionRepository } from "../src/infrastructure/artifact-version-repository.js";
+import { insertAuditLog } from "../src/infrastructure/audit-log.js";
 import { CollaborationRepository } from "../src/infrastructure/collaboration-repository.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
 import { ignoreTerminatedConnections } from "./pg-test-support.js";
@@ -265,11 +266,11 @@ describe("产物版本 HTTP 路由", () => {
       operationKey: "http-system-comment-v1",
       attachmentIds: [attachment.id],
     });
-    // 用户手写的说明恰好和系统句式一样：它仍是用户的说明。
+    // 用户手写的说明恰好和系统兜底句一样：它仍是用户的说明。
     const sameAsSystem = await publish(seeded.actorId, seeded.requirementId, {
       operationKey: "http-system-comment-v2",
       attachmentIds: [attachment.id],
-      note: "发布了产物 v2，含 1 个文件。",
+      note: "Published confirmed version 2 with 1 file.",
     });
     const v1 = withoutNote.json<ArtifactVersionDetailDto>().id;
     const v2 = sameAsSystem.json<ArtifactVersionDetailDto>().id;
@@ -280,8 +281,9 @@ describe("产物版本 HTTP 路由", () => {
       headers: authorization(seeded.actorId),
     });
     const items = comments.json<ListCommentsResponse>().items;
+    // 正文是英文兜底（老客户端显示它），类型 + 参数给新客户端按看的人的语言渲染。
     expect(items.find((item) => item.artifactVersionId === v1)).toMatchObject({
-      body: "发布了产物 v1，含 1 个文件。",
+      body: "Published confirmed version 1 with 1 file.",
       system: { kind: "artifact_published", params: { versionNumber: 1, fileCount: 1 } },
     });
     expect(items.find((item) => item.artifactVersionId === v2)).not.toHaveProperty("system");
@@ -296,8 +298,57 @@ describe("产物版本 HTTP 路由", () => {
       .map((item) => item.artifactVersion);
     expect(published).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: v1, note: null }),
-      expect.objectContaining({ id: v2, note: "发布了产物 v2，含 1 个文件。" }),
+      expect.objectContaining({ id: v2, note: "Published confirmed version 2 with 1 file." }),
     ]));
+  });
+
+  it("活动里单独成条的评论：系统代写的带出类型与参数，用户写的不带", async () => {
+    const seeded = await seedRequirement();
+    // 眼下系统评论都挂在确认版上、并进发布那一条；这里直接写一条不挂版本的，验证活动接口照样带出类型。
+    const systemCommentId = randomUUID();
+    await pool.query(
+      `
+        INSERT INTO requirement_comments (id, requirement_id, body, author_id, system_kind, system_params)
+        VALUES ($1, $2, 'Published confirmed version 4 with 2 files.', $3, 'artifact_published', $4::jsonb)
+      `,
+      [systemCommentId, seeded.requirementId, seeded.actorId, JSON.stringify({ versionNumber: 4, fileCount: 2 })],
+    );
+    await insertAuditLog(pool, {
+      actorId: seeded.actorId,
+      projectId: seeded.projectId,
+      requirementId: seeded.requirementId,
+      resourceType: "comment",
+      resourceId: systemCommentId,
+      action: "comment.created",
+      before: null,
+      after: { requirementId: seeded.requirementId, body: "Published confirmed version 4 with 2 files." },
+    });
+    const created = await server.inject({
+      method: "POST",
+      url: `/v2/requirements/${seeded.requirementId}/comments`,
+      headers: authorization(seeded.actorId),
+      payload: { body: "looks good" },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const activity = await server.inject({
+      method: "GET",
+      url: `/v2/requirements/${seeded.requirementId}/activity`,
+      headers: authorization(seeded.actorId),
+    });
+    const comments = activity.json<ListRequirementActivityResponse>().items
+      .filter((item) => item.action === "comment.created")
+      .map((item) => item.comment);
+    expect(comments).toHaveLength(2);
+    expect(comments.find((comment) => comment?.id === systemCommentId)).toEqual({
+      id: systemCommentId,
+      body: "Published confirmed version 4 with 2 files.",
+      system: { kind: "artifact_published", params: { versionNumber: 4, fileCount: 2 } },
+    });
+    expect(comments.find((comment) => comment?.id !== systemCommentId)).toEqual({
+      id: expect.any(String),
+      body: "looks good",
+    });
   });
 });
 

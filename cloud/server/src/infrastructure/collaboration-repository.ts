@@ -80,6 +80,8 @@ interface ActivityRow {
   after_json: Record<string, unknown> | null;
   created_at: Date;
   comment_body: string | null;
+  comment_system_kind: string | null;
+  comment_system_params: unknown;
   attachment_file_name: string | null;
   artifact_version_number: number | null;
   artifact_file_count: number | null;
@@ -972,6 +974,8 @@ export class CollaborationRepository {
           a.created_at,
           ${cursorTimestampColumn("a.created_at")},
           activity_comment.body AS comment_body,
+          activity_comment.system_kind AS comment_system_kind,
+          activity_comment.system_params AS comment_system_params,
           activity_attachment.file_name AS attachment_file_name,
           artifact_version.version_number AS artifact_version_number,
           (
@@ -1096,6 +1100,8 @@ function mapActivity(row: ActivityRow): RequirementActivityEntryDto {
       ? {
           id: row.resource_id,
           body: row.comment_body ?? stringField(after, "body") ?? "",
+          // 系统代写的评论带出类型 + 参数，前端按看的人的语言渲染（同 CommentDto.system）。
+          ...commentSystemFields(row.comment_system_kind, row.comment_system_params),
         }
       : null,
     attachment: row.resource_type === "attachment"
@@ -1234,14 +1240,14 @@ function mapComment(row: CommentRow): CommentDto {
     body: row.body,
     author: row.author_user,
     createdAt: row.created_at.toISOString(),
-    ...commentSystemFields(row),
+    ...commentSystemFields(row.system_kind, row.system_params),
   };
 }
 
 /** 认识的系统类型才带出类型 + 参数；不认识的（更新的云端写入的）只给正文，前端照常显示兜底文字。 */
-function commentSystemFields(row: CommentRow): Pick<CommentDto, "system"> {
-  if (row.system_kind !== "artifact_published") return {};
-  const params = row.system_params as Record<string, unknown> | null;
+function commentSystemFields(kind: string | null, systemParams: unknown): Pick<CommentDto, "system"> {
+  if (kind !== "artifact_published") return {};
+  const params = systemParams as Record<string, unknown> | null;
   const versionNumber = params?.["versionNumber"];
   const fileCount = params?.["fileCount"];
   if (typeof versionNumber !== "number" || typeof fileCount !== "number") return {};

@@ -1,4 +1,4 @@
-import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
+import type { EventEnvelope, JsonValue, RuntimeNoticeCode } from "@suduo/client-contracts";
 import type { StreamNotice } from "./reducer.js";
 import { currentLocale } from "../i18n/locale.js";
 import { messagesFor, type Messages } from "../i18n/messages/index.js";
@@ -10,7 +10,8 @@ import { messagesFor, type Messages } from "../i18n/messages/index.js";
 
 /**
  * 会话级提示：runtime.warning 与线程重建。不是提示类事件返回 undefined；是但文本为空返回 null。
- * 线程重建是系统状态提示，文案必须直接取事件值，不猜测、不改写。
+ * SuDuo 写的提示带 code，按 code 用当前语言渲染（线程重建是系统状态提示，只按 code 取字典，不改写）；
+ * 没有 code 的旧事件、认不出的 code 显示存下的原文（Codex 自带的英文提示照常本地化）。
  */
 export function noticeOf(
   event: EventEnvelope<string, JsonValue>,
@@ -19,7 +20,7 @@ export function noticeOf(
   const payload = objectValue(event.payload);
   if (event.type === "runtime.warning") {
     const rebuilt = payload["code"] === "thread-rebuilt";
-    const text = rebuilt ? String(payload["message"] ?? "") : localizeNotice(String(payload["message"] ?? ""), t);
+    const text = runtimeNoticeText(payload, t) ?? localizeNotice(String(payload["message"] ?? ""), t);
     if (text === "") return null;
     return {
       id: event.eventId,
@@ -33,6 +34,40 @@ export function noticeOf(
     return text === "" ? null : { id: event.eventId, ts: event.ts, text, level: "info" };
   }
   return undefined;
+}
+
+type NoticeTexts = Messages["timeline"]["notice"];
+
+/** 每种 code 的说法；参数不全（如旧版写的事件）返回 null，退回原文。契约新增 code 而这里漏写是类型错误。 */
+const RUNTIME_NOTICE_TEXT: {
+  [K in RuntimeNoticeCode]: (notice: NoticeTexts, params: Record<string, JsonValue>) => string | null;
+} = {
+  "thread-rebuilt": (notice) => notice.threadRebuilt,
+  "connection-rebuilt": (notice) => notice.connectionRebuilt,
+  // 与本机服务回「不支持」时的分支一致（codex-runtime.ts unsupportedRequestNotice）。
+  "unsupported-request": (notice, { method }) =>
+    typeof method !== "string"
+      ? null
+      : method === "item/tool/requestUserInput"
+        ? notice.unsupportedQuestion
+        : method === "mcpServer/elicitation/request"
+          ? notice.unsupportedElicitation
+          : notice.unsupportedRequest,
+  "room-run-events-truncated": (notice, { omitted }) =>
+    typeof omitted === "number" ? notice.runEventsTruncated(omitted) : null,
+};
+
+/**
+ * SuDuo 写进账本的提示（runtime.warning / runtime.recovery-required 的 payload.code + params）按当前语言渲染。
+ * 没有 code、认不出的 code 或参数不全时返回 null，由调用方显示存下的原文。
+ */
+export function runtimeNoticeText(
+  payload: Record<string, JsonValue>,
+  t: Messages = messagesFor(currentLocale()),
+): string | null {
+  const code = payload["code"];
+  if (typeof code !== "string" || !Object.hasOwn(RUNTIME_NOTICE_TEXT, code)) return null;
+  return RUNTIME_NOTICE_TEXT[code as RuntimeNoticeCode](t.timeline.notice, objectValue(payload["params"]));
 }
 
 /** runtime 自带提示是英文的；已知条目本地化，未知条目原样透出。 */

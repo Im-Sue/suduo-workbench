@@ -312,7 +312,7 @@ describe("讨论页：英文界面", () => {
     expect(panel?.textContent).not.toMatch(CJK);
   });
 
-  it("输入框与 @ 候选；插进正文的 @ 文字仍是提及协议（S6 再按 kind 渲染）", async () => {
+  it("输入框与 @ 候选；插进正文的 @ 文字按发送者的界面语言（S6）", async () => {
     const node = await render(<RoomsPage projectId="p1" roomId="room-1" search={{}} />);
     const composer = q(node, "room-composer");
     const textarea = input(node);
@@ -338,7 +338,18 @@ describe("讨论页：英文界面", () => {
 
     await type(textarea, "@every");
     await key(textarea, "Enter");
-    expect(textarea.value).toBe(`@${model.MENTION_ALL_TEXT} `);
+    expect(textarea.value).toBe("@everyone ");
+
+    // Agent 的名字由前端按所有者名与设备名拼（不读云端标签）；插进正文的是英文写法。
+    await type(textarea, "@everyone @codex");
+    const agentOptions = all(document, "mention-option").filter((option) => option.getAttribute("data-kind") === "agent");
+    expect(agentOptions.map((option) => option.textContent)).toEqual([
+      expect.stringContaining("Sam's Codex · MacBook Pro"),
+      expect.stringContaining("Chris's Codex · iMac"),
+      expect.stringContaining("Jo's Codex · ThinkPad"),
+    ]);
+    await key(textarea, "Enter");
+    expect(textarea.value).toBe("@everyone @Sam's Codex ");
   });
 
   it("运行详情：返回话题、状态名、没执行时的说明", async () => {

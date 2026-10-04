@@ -233,7 +233,7 @@ describe("产物版本发布", () => {
     );
     expect(comment.rows).toEqual([
       {
-        body: "发布了产物 v1，含 1 个文件。",
+        body: "Published confirmed version 1 with 1 file.",
         artifact_version_id: result.artifactVersion.id,
         system_kind: "artifact_published",
         system_params: { versionNumber: 1, fileCount: 1 },
@@ -248,14 +248,14 @@ describe("产物版本发布", () => {
     await service.publish(seeded.actorId, seeded.requirementId, {
       operationKey: "publish-user-note",
       attachmentIds: [attachment.id],
-      note: "发布了产物 v1，含 1 个文件。",
+      note: "Published confirmed version 1 with 1 file.",
     });
 
     const comment = await pool.query<{ body: string; system_kind: string | null }>(
       "SELECT body, system_kind FROM requirement_comments WHERE requirement_id = $1",
       [seeded.requirementId],
     );
-    expect(comment.rows).toEqual([{ body: "发布了产物 v1，含 1 个文件。", system_kind: null }]);
+    expect(comment.rows).toEqual([{ body: "Published confirmed version 1 with 1 file.", system_kind: null }]);
   });
 
   it("单版本超过 50 个文件时拒绝且不创建记录", async () => {

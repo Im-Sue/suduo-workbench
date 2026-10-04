@@ -103,7 +103,7 @@ describe("T4 CodexRuntime", () => {
     expect(asObject(connection.requests.filter((request) => request.method === "thread/start").at(-1)?.params)["config"]).toBeUndefined();
 
     connection.failConfigRead = true;
-    await expect(runtime.startThread({ ...base, mode: "create" })).rejects.toThrow("无法确认已关闭所有者的 MCP 工具");
+    await expect(runtime.startThread({ ...base, mode: "create" })).rejects.toThrow("confirm the owner's MCP tools are turned off");
   });
 
   it("全局通知不挂到唯一的会话上；currentTime/read 回当前时间，其余非审批请求回「不支持」", async () => {
@@ -130,9 +130,13 @@ describe("T4 CodexRuntime", () => {
     const time = connection.responses.find((response) => response.id === 51)?.result as { currentTimeAt: number } | undefined;
     expect(time?.currentTimeAt).toBeGreaterThanOrEqual(before);
     expect(connection.errors).toEqual([{ id: 52, code: -32601, message: expect.stringContaining("item/tool/requestUserInput") }]);
-    // 回了「不支持」的请求在时间线上有说明。
-    expect(events.filter((event) => event.type === "runtime.warning").map((event) => asObject(event.payload)["message"])).toEqual([
-      expect.stringContaining("Codex 想请你回答一个问题"),
+    // 回了「不支持」的请求在时间线上有说明：带 code 与方法名（前端按它渲染），message 是英文兜底。
+    expect(events.filter((event) => event.type === "runtime.warning").map((event) => event.payload)).toEqual([
+      {
+        code: "unsupported-request",
+        message: "Codex asked you a question, but SuDuo can't answer it here yet, so it was skipped. Codex will keep going.",
+        params: { method: "item/tool/requestUserInput" },
+      },
     ]);
     // 仍记为 runtime.unknown，便于排查。
     const requestIds = events
@@ -140,6 +144,48 @@ describe("T4 CodexRuntime", () => {
       .map((event) => asObject(event.payload)["requestId"])
       .filter((id) => id !== undefined);
     expect(requestIds).toEqual(["51", "52"]);
+  });
+
+  it("回「不支持」的说明按方法名分支；连接断开补发的恢复事件带 code，message 都是英文兜底", async () => {
+    const connection = new FakeRpcConnection();
+    const runtime = createRuntime(connection);
+    await runtime.startThread({
+      mode: "create",
+      sessionId: "session-1",
+      projectRoot: "/tmp/project",
+      workspaceRoots: ["/tmp/project"],
+      security: M1_RUNTIME_SECURITY_POLICY,
+    });
+    connection.inbound = [
+      { kind: "server-request", id: 61, method: "mcpServer/elicitation/request", params: { threadId: "thread-1" } },
+      { kind: "server-request", id: 62, method: "item/somethingNew", params: { threadId: "thread-1" } },
+    ];
+    connection.failWith = new Error("codex app-server exited");
+    const events = [];
+    for await (const event of runtime.subscribe({ signal: new AbortController().signal })) {
+      events.push(event);
+    }
+    expect(events.filter((event) => event.type === "runtime.warning").map((event) => event.payload)).toEqual([
+      {
+        code: "unsupported-request",
+        message:
+          "Codex asked you to confirm an MCP tool action, but SuDuo doesn't support this kind of confirmation yet, so it was declined for you. Codex will try another way.",
+        params: { method: "mcpServer/elicitation/request" },
+      },
+      {
+        code: "unsupported-request",
+        message: "Codex sent a request SuDuo doesn't support yet, so it was skipped. Codex will keep going.",
+        params: { method: "item/somethingNew" },
+      },
+    ]);
+    const recovery = events.filter((event) => event.type === "runtime.recovery-required");
+    expect(recovery.map((event) => event.payload)).toEqual([
+      {
+        code: "connection-rebuilt",
+        message: "The connection to Codex dropped and was re-established. A turn in progress may have been interrupted.",
+      },
+    ]);
+    expect(recovery[0]?.sessionHint).toBe("session-1");
   });
 
   it("归一化通知并通过不透明 approvalRef 回应审批", async () => {
@@ -371,6 +417,8 @@ class FakeRpcConnection implements RpcConnection {
   /** config/read 回的生效配置。 */
   config: Record<string, JsonValue> = { model_provider: "fixture" };
   failConfigRead = false;
+  /** 送完 inbound 后让消息流抛出这个错误（模拟连接异常断开）。 */
+  failWith: Error | null = null;
 
   async request(
     method: string,
@@ -458,6 +506,7 @@ class FakeRpcConnection implements RpcConnection {
   }): AsyncIterable<RpcInbound> {
     void options;
     yield* this.inbound;
+    if (this.failWith !== null) throw this.failWith;
   }
 
   async close(): Promise<void> {}

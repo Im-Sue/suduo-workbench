@@ -74,12 +74,20 @@ export class AgentRunService {
     };
   }
 
-  /** 进度一句话（+ 可选执行过程）；只对执行中的任务生效。外部字符串写库前去掉 NUL（见 stripNul）。 */
+  /**
+   * 进度一句话（+ 可选执行过程）；只对执行中的任务生效。外部字符串写库前去掉 NUL（见 stripNul）。
+   * 进度的 code / 参数（中英双语技术设计 §4.3）照收不校验取值：老本机不带时为 null，前端显示文字原文。
+   */
   async progress(actorId: string, runId: string, raw: AgentRunProgressRequest): Promise<WithEvents<AgentRunSummaryDto>> {
     const request = stripNulDeep(raw);
     const changed = await this.database.transaction(async (client) => {
       await this.lockOwned(client, actorId, runId);
-      return this.runs.progress(client, runId, request.progress, request.events);
+      return this.runs.progress(client, runId, {
+        text: request.progress,
+        code: request.progressCode ?? null,
+        params: request.progressCode === undefined ? null : (request.progressParams ?? null),
+        events: request.events,
+      });
     });
     return this.outcome(runId, changed);
   }
@@ -125,7 +133,10 @@ export class AgentRunService {
     };
   }
 
-  /** 失败 / 已停止：已完成的不改；其余以所有者本机回写为准。原因与执行过程写库前去掉 NUL。 */
+  /**
+   * 失败 / 已停止：已完成的不改；其余以所有者本机回写为准（原因的文字、code、参数整体覆盖）。
+   * 原因与执行过程写库前去掉 NUL。
+   */
   async finish(actorId: string, runId: string, raw: FinishAgentRunRequest): Promise<WithEvents<AgentRunSummaryDto>> {
     const request = stripNulDeep(raw);
     const changed = await this.database.transaction(async (client) => {
@@ -133,7 +144,11 @@ export class AgentRunService {
       if (run.status === "completed") return false;
       await this.runs.finish(client, runId, {
         status: request.status,
-        reason: request.reason,
+        reason: {
+          text: request.reason,
+          code: request.reasonCode ?? null,
+          params: request.reasonCode === undefined ? null : (request.reasonParams ?? null),
+        },
         events: request.events,
       });
       return true;
@@ -146,7 +161,7 @@ export class AgentRunService {
     const changed = await this.database.transaction(async (client) => {
       const run = await this.runs.lock(client, runId);
       if (run === null || (run.triggered_by !== actorId && run.owner_id !== actorId)) throw notFound("Agent run");
-      const reason = run.owner_id === actorId ? "所有者停止了任务" : "发起人停止了任务";
+      const reason = run.owner_id === actorId ? RUN_REASONS.stoppedByOwner : RUN_REASONS.stoppedByRequester;
       return this.runs.requestStop(client, run, reason);
     });
     return this.outcome(runId, changed);

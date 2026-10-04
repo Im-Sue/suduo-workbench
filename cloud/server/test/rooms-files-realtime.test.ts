@@ -90,7 +90,7 @@ describe("房间文件", () => {
     expect(missing.statusCode).toBe(404);
   });
 
-  it("消息关联文件：只能用本房间的文件；只有附件的消息预览为「[附件] 文件名」", async () => {
+  it("消息关联文件：只能用本房间的文件；只有附件的消息给出第一个附件与附件数，兜底预览为英文", async () => {
     const user = await createUser(context, "关联文件的人");
     const project = await createProject(context, user, "关联项目");
     const room = await defaultRoom(context, user, project.id);
@@ -109,7 +109,23 @@ describe("房间文件", () => {
     expect(message.files.map((file) => file.id)).toEqual([mine.id]);
     const roomView = (await context.server.inject({ method: "GET", url: `/v2/rooms/${room.id}`, headers: user.headers }))
       .json<RoomDto>();
-    expect(roomView.lastMessage?.preview).toBe("[附件] 设计稿.png");
+    expect(roomView.lastMessage).toMatchObject({
+      preview: "[Image]",
+      text: "",
+      firstFile: { fileName: "设计稿.png", kind: "image" },
+      fileCount: 1,
+    });
+
+    const doc = (await upload(user, room.id, "说明.pdf", Buffer.from("pdf"))).json<RoomFileDto>();
+    await sendMessage(context, user, room.id, { body: "", fileIds: [doc.id, mine.id] });
+    const twoFiles = (await context.server.inject({ method: "GET", url: `/v2/rooms/${room.id}`, headers: user.headers }))
+      .json<RoomDto>();
+    expect(twoFiles.lastMessage).toMatchObject({
+      preview: "[File] 说明.pdf and 1 more",
+      text: "",
+      firstFile: { fileName: "说明.pdf", kind: "file" },
+      fileCount: 2,
+    });
   });
 
   it("下载：整文件 / Range 206 / 后缀 Range / 416；inline 只对安全类型；下载不写审计", async () => {

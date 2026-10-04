@@ -172,7 +172,7 @@ describe("房间任务会话", () => {
     expect(() => assertM1SecurityPolicy(ROOM_AGENT_SECURITY_POLICY)).not.toThrow();
     expect(() =>
       assertM1SecurityPolicy({ approvalPolicy: "never", approvalsReviewer: "user", sandbox: { mode: "workspace-write", networkAccess: true } }),
-    ).toThrow("不在允许的组合内");
+    ).toThrow("not an allowed combination");
 
     const connection = new FakeRpcConnection();
     const transport: CodexTransportFactory = { kind: "stdio", connect: async () => connection };

@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentRunDetailDto,
-  AgentRunStatus,
-  AgentRunSummaryDto,
+import {
+  agentRunReasonFallback,
+  type AgentRunCloudReasonCode,
+  type AgentRunDetailDto,
+  type AgentRunStatus,
+  type AgentRunSummaryDto,
+  type AgentRunTextParams,
 } from "@suduo/cloud-contracts";
 import { PRESENCE_WINDOW_SECONDS, RUNNING_STALE_SECONDS } from "../../application/rooms/constants.js";
 import type { Database, QueryExecutor } from "../database.js";
@@ -17,6 +20,27 @@ export interface RunLockRow {
   status: AgentRunStatus;
   stop_requested: boolean;
   owner_id: string;
+}
+
+/**
+ * 写库的原因（中英双语技术设计 §4.3）：`text` 是 `reason` 列的英文兜底，`code` / `params` 给新前端按语言渲染。
+ * 所有者本机回写的照收（老本机不带 code 时为 null，前端显示原文）；云端自己写的用 `cloudReason`。
+ */
+export interface RunReasonValue {
+  text: string;
+  code: string | null;
+  params: AgentRunTextParams | null;
+}
+
+/** 云端写的原因：code + 英文兜底，不带参数。 */
+export function cloudReason(code: AgentRunCloudReasonCode): RunReasonValue {
+  return { text: agentRunReasonFallback(code, {}), code, params: null };
+}
+
+/** 原因三列的 SQL 参数（参数对象存 jsonb）。 */
+function reasonValues(reason: RunReasonValue | null): [string | null, string | null, string | null] {
+  if (reason === null) return [null, null, null];
+  return [reason.text, reason.code, reason.params === null ? null : JSON.stringify(reason.params)];
 }
 
 /**
@@ -36,14 +60,17 @@ export class AgentRunRepository {
       threadRootId: string;
       triggeredBy: string;
       status: "queued" | "offline";
-      reason: string | null;
+      reason: AgentRunCloudReasonCode | null;
     },
   ): Promise<string> {
     const inserted = await executor.query<{ id: string }>(
       `
         INSERT INTO agent_runs (
-          id, room_id, agent_id, trigger_message_id, thread_root_id, triggered_by, status, reason, finished_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7::varchar, $8, CASE WHEN $7::varchar = 'offline' THEN now() END)
+          id, room_id, agent_id, trigger_message_id, thread_root_id, triggered_by, status,
+          reason, reason_code, reason_params, finished_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7::varchar, $8, $9, $10::jsonb, CASE WHEN $7::varchar = 'offline' THEN now() END
+        )
         ON CONFLICT (trigger_message_id, agent_id) DO NOTHING
         RETURNING id
       `,
@@ -55,7 +82,7 @@ export class AgentRunRepository {
         input.threadRootId,
         input.triggeredBy,
         input.status,
-        input.reason,
+        ...reasonValues(input.reason === null ? null : cloudReason(input.reason)),
       ],
     );
     if (inserted.rows[0] !== undefined) return inserted.rows[0].id;
@@ -136,15 +163,28 @@ export class AgentRunRepository {
     return (result.rowCount ?? 0) > 0;
   }
 
-  /** 只有执行中的任务接受进度；否则不改。 */
-  async progress(executor: QueryExecutor, runId: string, progress: string, events: unknown[] | undefined): Promise<boolean> {
+  /**
+   * 只有执行中的任务接受进度；否则不改。进度的 code / 参数与文字一起整体替换：
+   * 老本机不带 code 时清空，免得旧 code 与新文字对不上。
+   */
+  async progress(
+    executor: QueryExecutor,
+    runId: string,
+    input: { text: string; code: string | null; params: AgentRunTextParams | null; events: unknown[] | undefined },
+  ): Promise<boolean> {
     const result = await executor.query(
       `
         UPDATE agent_runs
-        SET progress = $2, events = COALESCE($3::jsonb, events)
+        SET progress = $2, progress_code = $3, progress_params = $4::jsonb, events = COALESCE($5::jsonb, events)
         WHERE id = $1 AND status = 'running'
       `,
-      [runId, progress, events === undefined ? null : JSON.stringify(events)],
+      [
+        runId,
+        input.text,
+        input.code,
+        input.params === null ? null : JSON.stringify(input.params),
+        input.events === undefined ? null : JSON.stringify(input.events),
+      ],
     );
     return (result.rowCount ?? 0) > 0;
   }
@@ -162,7 +202,7 @@ export class AgentRunRepository {
       `
         UPDATE agent_runs
         SET status = 'completed', summary = $2, reply_message_id = $3, events = COALESCE($4::jsonb, events),
-            reason = NULL, stop_requested = false, finished_at = now(),
+            reason = NULL, reason_code = NULL, reason_params = NULL, stop_requested = false, finished_at = now(),
             started_at = COALESCE(started_at, now())
         WHERE id = $1
       `,
@@ -173,98 +213,118 @@ export class AgentRunRepository {
   async finish(
     executor: QueryExecutor,
     runId: string,
-    input: { status: "failed" | "stopped"; reason: string; events: unknown[] | undefined },
+    input: { status: "failed" | "stopped"; reason: RunReasonValue; events: unknown[] | undefined },
   ): Promise<void> {
+    // 以所有者本机的回写为准：原因三列整体覆盖（含执行中被请求停止时云端先写的原因）。
     await executor.query(
       `
         UPDATE agent_runs
-        SET status = $2::varchar, reason = $3, events = COALESCE($4::jsonb, events),
-            stop_requested = false, finished_at = now()
+        SET status = $2::varchar, reason = $3, reason_code = $4, reason_params = $5::jsonb,
+            events = COALESCE($6::jsonb, events), stop_requested = false, finished_at = now()
         WHERE id = $1
       `,
-      [runId, input.status, input.reason, input.events === undefined ? null : JSON.stringify(input.events)],
+      [runId, input.status, ...reasonValues(input.reason), input.events === undefined ? null : JSON.stringify(input.events)],
     );
   }
 
   /** 停止：排队中直接停；执行中只标记 stop_requested，由所有者本机中断后回写。返回是否有变化。 */
-  async requestStop(executor: QueryExecutor, run: RunLockRow, reason: string): Promise<boolean> {
+  async requestStop(executor: QueryExecutor, run: RunLockRow, reason: AgentRunCloudReasonCode): Promise<boolean> {
+    const values = reasonValues(cloudReason(reason));
     if (run.status === "queued") {
       await executor.query(
-        "UPDATE agent_runs SET status = 'stopped', reason = $2, finished_at = now() WHERE id = $1",
-        [run.id, reason],
+        `
+          UPDATE agent_runs
+          SET status = 'stopped', reason = $2, reason_code = $3, reason_params = $4::jsonb, finished_at = now()
+          WHERE id = $1
+        `,
+        [run.id, ...values],
       );
       return true;
     }
     if (run.status === "running" && !run.stop_requested) {
-      await executor.query("UPDATE agent_runs SET stop_requested = true, reason = $2 WHERE id = $1", [run.id, reason]);
+      await executor.query(
+        "UPDATE agent_runs SET stop_requested = true, reason = $2, reason_code = $3, reason_params = $4::jsonb WHERE id = $1",
+        [run.id, ...values],
+      );
       return true;
     }
     return false;
   }
 
   /** 重试复用同一行：回到排队（或再次离线），清掉上一次的结果。 */
-  async requeue(executor: QueryExecutor, runId: string, status: "queued" | "offline", reason: string | null): Promise<void> {
+  async requeue(
+    executor: QueryExecutor,
+    runId: string,
+    status: "queued" | "offline",
+    reason: AgentRunCloudReasonCode | null,
+  ): Promise<void> {
     await executor.query(
       `
         UPDATE agent_runs
-        SET status = $2::varchar, reason = $3, queued_at = clock_timestamp(),
-            progress = NULL, summary = NULL, stop_requested = false, events = '[]'::jsonb,
-            reply_message_id = NULL, started_at = NULL,
+        SET status = $2::varchar, reason = $3, reason_code = $4, reason_params = $5::jsonb, queued_at = clock_timestamp(),
+            progress = NULL, progress_code = NULL, progress_params = NULL, summary = NULL, stop_requested = false,
+            events = '[]'::jsonb, reply_message_id = NULL, started_at = NULL,
             finished_at = CASE WHEN $2::varchar = 'offline' THEN now() END
         WHERE id = $1
       `,
-      [runId, status, reason],
+      [runId, status, ...reasonValues(reason === null ? null : cloudReason(reason))],
     );
   }
 
   /** 共享关闭 / 到期：排队中的停掉，执行中的请求停止。返回有变化的任务。 */
-  async stopForShare(executor: QueryExecutor, agentId: string, roomId: string, reason: string): Promise<string[]> {
+  async stopForShare(
+    executor: QueryExecutor,
+    agentId: string,
+    roomId: string,
+    reason: AgentRunCloudReasonCode,
+  ): Promise<string[]> {
     const result = await executor.query<{ id: string }>(
       `
         UPDATE agent_runs
         SET status = CASE WHEN status = 'queued' THEN 'stopped' ELSE status END,
             stop_requested = (status = 'running'),
-            reason = $3,
+            reason = $3, reason_code = $4, reason_params = $5::jsonb,
             finished_at = CASE WHEN status = 'queued' THEN now() ELSE finished_at END
         WHERE agent_id = $1 AND room_id = $2
           AND (status = 'queued' OR (status = 'running' AND stop_requested = false))
         RETURNING id
       `,
-      [agentId, roomId, reason],
+      [agentId, roomId, ...reasonValues(cloudReason(reason))],
     );
     return result.rows.map((row) => row.id);
   }
 
   /** 掉线 Agent（心跳超时）的排队任务改离线。 */
-  async offlineQueuedOfDisconnectedAgents(executor: QueryExecutor, reason: string): Promise<string[]> {
+  async offlineQueuedOfDisconnectedAgents(executor: QueryExecutor, reason: AgentRunCloudReasonCode): Promise<string[]> {
     const result = await executor.query<{ id: string }>(
       `
         UPDATE agent_runs ar
-        SET status = 'offline', reason = $1, finished_at = now()
+        SET status = 'offline', reason = $1, reason_code = $2, reason_params = $3::jsonb, finished_at = now()
         FROM agents a
         WHERE a.id = ar.agent_id
           AND ar.status = 'queued'
           AND (a.last_seen_at IS NULL OR a.last_seen_at <= now() - make_interval(secs => ${PRESENCE_WINDOW_SECONDS}))
         RETURNING ar.id
       `,
-      [reason],
+      reasonValues(cloudReason(reason)),
     );
     return result.rows.map((row) => row.id);
   }
 
   /** 执行中但所属 Agent 太久没心跳：判定本机下线，任务失败（可重试）。 */
-  async failRunningOfDisconnectedAgents(executor: QueryExecutor, reason: string): Promise<string[]> {
+  async failRunningOfDisconnectedAgents(executor: QueryExecutor, reason: AgentRunCloudReasonCode): Promise<string[]> {
     const result = await executor.query<{ id: string }>(
       `
         UPDATE agent_runs ar
-        SET status = 'failed', reason = $1, stop_requested = false, finished_at = now()
+        SET status = 'failed', reason = $1, reason_code = $2, reason_params = $3::jsonb, stop_requested = false,
+            finished_at = now()
         FROM agents a
         WHERE a.id = ar.agent_id
           AND ar.status = 'running'
           AND (a.last_seen_at IS NULL OR a.last_seen_at <= now() - make_interval(secs => ${RUNNING_STALE_SECONDS}))
         RETURNING ar.id
       `,
-      [reason],
+      reasonValues(cloudReason(reason)),
     );
     return result.rows.map((row) => row.id);
   }

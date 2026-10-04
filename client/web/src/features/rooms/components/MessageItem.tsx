@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import type { AgentRunSummaryDto, RoomMessageDto, UserSummaryDto } from "@suduo/cloud-contracts";
 import { BotIcon, ChevronRightIcon, MessageSquareReplyIcon } from "lucide-react";
 import { memo, useMemo, type ReactNode } from "react";
@@ -10,6 +11,7 @@ import { useT } from "../../../i18n/provider.js";
 import { UserAvatar } from "../../requirements/components/UserAvatar.js";
 import { agentName, mentionHighlights } from "../model.js";
 import type { PendingRoomMessage } from "../pending.js";
+import { agentsQuery } from "../queries.js";
 import { RoomFiles } from "./RoomFile.js";
 import { RunCard, RunStatusLine } from "./RunStatusLine.js";
 import { formatClock, formatDateTime, formatRelativeTime } from "../../../ui/format.js";
@@ -51,7 +53,10 @@ export const MessageItem = memo(function MessageItem({
   onOpenRun(run: AgentRunSummaryDto): void;
 }) {
   const t = useT();
-  const highlights = useMemo(() => mentionHighlights(message.mentions), [message.mentions]);
+  // @Agent 的高亮按 Agent 的所有者名与设备名拼出各语言的写法：只有 @ 了 Agent 的消息才要列表（与输入框共用缓存）。
+  const mentionsAgent = message.mentions.some((mention) => mention.kind === "agent");
+  const agents = useQuery({ ...agentsQuery, enabled: mentionsAgent }).data?.items;
+  const highlights = useMemo(() => mentionHighlights(message.mentions, agents), [message.mentions, agents]);
   if (message.authorKind === "system") {
     return (
       <div className="px-5 py-1.5 text-center text-caption text-subtle-foreground" data-testid="room-message" data-message-id={message.id} data-seq={message.seq} data-kind="system">

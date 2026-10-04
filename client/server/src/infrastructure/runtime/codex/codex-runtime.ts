@@ -11,6 +11,7 @@ import type {
   RespondToolCallInput,
   RpcConnection,
   RuntimeEventDraft,
+  RuntimeNoticePayload,
   RuntimeSecurityPolicy,
   RuntimeSkill,
   RuntimeSubscribeOptions,
@@ -397,10 +398,15 @@ export class CodexRuntime implements AgentRuntime {
           const requestThreadRef = extractThreadRef(this.runtimeId, message.params);
           if (!answered) {
             // 回了「不支持」：在时间线上说一声，免得用户不知道 Codex 的提问 / 确认被跳过了。
+            // 前端按 code + 方法名用看的人的语言渲染；message 是给旧客户端的英文兜底。
             yield {
               source: "runtime:" + this.runtimeId,
               type: "runtime.warning",
-              payload: { message: unsupportedRequestNotice(message.method) },
+              payload: {
+                code: "unsupported-request",
+                message: unsupportedRequestNotice(message.method),
+                params: { method: message.method },
+              } satisfies RuntimeNoticePayload,
               threadRef: requestThreadRef,
               turnRef: extractTurnRef(message.params),
               ts: Date.now(),
@@ -440,7 +446,8 @@ export class CodexRuntime implements AgentRuntime {
               yield {
                 source: "runtime:" + this.runtimeId,
                 type: "tool.call-cancelled",
-                payload: { callRef, reason: "Codex 已撤回这次工具调用" },
+                // 原因只记进账本（approval.orphaned），界面不显示。
+                payload: { callRef, reason: "Codex withdrew this tool call" },
                 threadRef: pending.threadRef,
                 turnRef: null,
                 ts: Date.now(),
@@ -482,9 +489,11 @@ export class CodexRuntime implements AgentRuntime {
           yield {
             source: "runtime:" + this.runtimeId,
             type: "runtime.recovery-required",
+            // 前端按 code 用看的人的语言渲染；message 是给旧客户端的英文兜底。
             payload: {
-              message: "Codex 连接已断开并自动重建，进行中的回合可能中断。",
-            },
+              code: "connection-rebuilt",
+              message: "The connection to Codex dropped and was re-established. A turn in progress may have been interrupted.",
+            } satisfies RuntimeNoticePayload,
             threadRef: this.threadRef(threadId),
             turnRef: null,
             ts: Date.now(),
@@ -558,7 +567,7 @@ export class CodexRuntime implements AgentRuntime {
       servers = objectOrEmpty(config["mcp_servers"]);
       apps = objectOrEmpty(config["apps"]);
     } catch (error) {
-      throw new Error(`读不到 Codex 配置，无法确认已关闭所有者的 MCP 工具：${error instanceof Error ? error.message : String(error)}`, {
+      throw new Error(`Couldn't read the Codex config to confirm the owner's MCP tools are turned off: ${error instanceof Error ? error.message : String(error)}`, {
         cause: error,
       });
     }
@@ -1026,7 +1035,7 @@ export function assertM1SecurityPolicy(
   policy: RuntimeSecurityPolicy,
 ): void {
   if (policy.approvalsReviewer !== "user") {
-    throw new Error("approvalsReviewer 必须为 user");
+    throw new Error("approvalsReviewer must be user");
   }
   const ask =
     policy.approvalPolicy === "on-request" &&
@@ -1045,7 +1054,7 @@ export function assertM1SecurityPolicy(
     policy.sandbox.mode === "read-only" &&
     policy.sandbox.networkAccess === true;
   if (!ask && !auto && !full && !roomAgent) {
-    throw new Error("runtime security policy 不在允许的组合内（ask / auto / full / 房间 Agent）");
+    throw new Error("runtime security policy is not an allowed combination (ask / auto / full / room agent)");
   }
 }
 
@@ -1149,15 +1158,18 @@ async function answerWithError(connection: RpcConnection, id: JsonRpcId, code: n
   }
 }
 
-/** 回了「不支持」的请求在时间线上的说明（Codex 收到后会当作拒绝 / 失败，接着往下做）。 */
+/**
+ * 回了「不支持」的请求在时间线上的说明（Codex 收到后会当作拒绝 / 失败，接着往下做）。
+ * 这里只是英文兜底：前端按 code `unsupported-request` 与方法名渲染，分支与这里一致。
+ */
 function unsupportedRequestNotice(method: string): string {
   if (method === "item/tool/requestUserInput") {
-    return "Codex 想请你回答一个问题，SuDuo 暂时不支持在这里作答，已跳过；Codex 会接着往下做。";
+    return "Codex asked you a question, but SuDuo can't answer it here yet, so it was skipped. Codex will keep going.";
   }
   if (method === "mcpServer/elicitation/request") {
-    return "Codex 想请你确认一个 MCP 工具的操作，SuDuo 暂时不支持这种确认，已替你拒绝；Codex 会换个做法继续。";
+    return "Codex asked you to confirm an MCP tool action, but SuDuo doesn't support this kind of confirmation yet, so it was declined for you. Codex will try another way.";
   }
-  return "Codex 发来一个 SuDuo 暂时不支持的请求，已跳过；Codex 会接着往下做。";
+  return "Codex sent a request SuDuo doesn't support yet, so it was skipped. Codex will keep going.";
 }
 
 interface PendingToolCall {

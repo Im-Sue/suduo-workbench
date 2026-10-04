@@ -116,7 +116,7 @@ describe("CodexRuntime 客户端自定义工具", () => {
     expect(cancelled.type).toBe("tool.call-cancelled");
     expect(cancelled.sessionHint).toBe("session-1");
     expect(cancelled.threadRef?.threadId).toBe("thread-1");
-    expect(asObject(cancelled.payload)).toEqual({ callRef, reason: expect.stringContaining("撤回") });
+    expect(asObject(cancelled.payload)).toEqual({ callRef, reason: "Codex withdrew this tool call" });
     // 原通知照常归一化（进账本）。
     const normalized = (await subscription.next()).value as RuntimeEventDraft;
     expect(normalized.type).not.toBe("tool.call-cancelled");

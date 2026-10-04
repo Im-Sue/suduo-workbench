@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type {
   RoomDto,
+  RoomFileKind,
   RoomKind,
+  RoomLastMessageDto,
   RoomMemberDto,
   RoomRequirementRefDto,
   UserSummaryDto,
 } from "@suduo/cloud-contracts";
 import { LAST_MESSAGE_PREVIEW_LENGTH } from "../../application/rooms/constants.js";
+import { roomFileKind } from "../../application/rooms/file-types.js";
 import { notFound } from "../../application/errors.js";
 import type { Database, QueryExecutor } from "../database.js";
 import { ONLINE_SINCE, agentLabel, requiredRow, userJson } from "./sql.js";
@@ -54,7 +57,8 @@ interface RoomRow {
   last_message_author_kind: "user" | "agent" | "system" | null;
   last_message_author_name: string | null;
   last_message_agent_device_name: string | null;
-  last_message_first_file_name: string | null;
+  /** 第一个附件（按位置）：文件名与内容类型（种类由内容类型定）。 */
+  last_message_first_file_json: { fileName: string; contentType: string } | null;
   last_message_file_count: number | null;
 }
 
@@ -90,7 +94,7 @@ function roomSelect(tail: string): string {
       last_message.author_kind AS last_message_author_kind,
       last_message.author_name AS last_message_author_name,
       last_message.agent_device_name AS last_message_agent_device_name,
-      last_message.first_file_name AS last_message_first_file_name,
+      last_message.first_file_json AS last_message_first_file_json,
       last_message.file_count AS last_message_file_count
     FROM rooms r
     JOIN projects p ON p.id = r.project_id
@@ -121,13 +125,13 @@ function roomSelect(tail: string): string {
         lu.display_name AS author_name,
         la.device_name AS agent_device_name,
         (
-          SELECT lf.file_name
+          SELECT json_build_object('fileName', lf.file_name, 'contentType', lf.content_type)
           FROM room_message_files lmf
           JOIN room_files lf ON lf.id = lmf.file_id
           WHERE lmf.message_id = lm.id
           ORDER BY lmf.position
           LIMIT 1
-        ) AS first_file_name,
+        ) AS first_file_json,
         (SELECT count(*)::integer FROM room_message_files lmc WHERE lmc.message_id = lm.id) AS file_count
       FROM room_messages lm
       LEFT JOIN users lu ON lu.id = lm.author_id
@@ -404,38 +408,52 @@ function mapRoom(row: RoomRow): RoomDto {
     lastMessage:
       row.last_message_seq === null || row.last_message_at === null
         ? null
-        : {
-            seq: Number(row.last_message_seq),
-            authorName: lastMessageAuthor(row),
-            preview: messagePreview(
-              row.last_message_body ?? "",
-              row.last_message_first_file_name,
-              row.last_message_file_count ?? 0,
-            ),
-            createdAt: row.last_message_at.toISOString(),
-          },
+        : mapLastMessage(row, Number(row.last_message_seq), row.last_message_at),
   };
 }
 
-function lastMessageAuthor(row: RoomRow): string {
-  if (row.last_message_author_kind === "agent") {
-    return agentLabel(row.last_message_author_name ?? "", row.last_message_agent_device_name ?? "");
-  }
-  if (row.last_message_author_kind === "user") return row.last_message_author_name ?? "";
-  return "系统";
+/**
+ * 最后一条消息（中英双语技术设计 §4.3）：结构化的作者与预览给新前端按看的人的语言渲染；
+ * authorName / preview 存英文兜底，给老客户端直接显示。
+ */
+function mapLastMessage(row: RoomRow, seq: number, createdAt: Date): RoomLastMessageDto {
+  const authorKind = row.last_message_author_kind ?? "system";
+  const authorName = row.last_message_author_name ?? "";
+  const agent = authorKind === "agent" ? { ownerName: authorName, deviceName: row.last_message_agent_device_name ?? "" } : null;
+  const text = previewText(row.last_message_body ?? "");
+  const file = row.last_message_first_file_json;
+  const firstFile = file === null ? null : { fileName: file.fileName, kind: roomFileKind(file.contentType) };
+  const fileCount = row.last_message_file_count ?? 0;
+  return {
+    seq,
+    authorName: agent !== null ? agentLabel(agent.ownerName, agent.deviceName) : authorKind === "user" ? authorName : "System",
+    preview: fallbackPreview(text, firstFile, fileCount),
+    createdAt: createdAt.toISOString(),
+    authorKind,
+    agent,
+    text,
+    firstFile,
+    fileCount,
+  };
 }
 
-/** 预览：正文压成一行截 80 字；只有附件时给「[附件] 文件名」。 */
-export function messagePreview(body: string, firstFileName: string | null, fileCount: number): string {
+/** 正文压成一行截 80 字。 */
+function previewText(body: string): string {
   const text = body.replace(/\s+/gu, " ").trim();
-  if (text !== "") {
-    const characters = Array.from(text);
-    return characters.length > LAST_MESSAGE_PREVIEW_LENGTH
-      ? `${characters.slice(0, LAST_MESSAGE_PREVIEW_LENGTH).join("")}…`
-      : text;
-  }
-  if (firstFileName !== null) {
-    return fileCount > 1 ? `[附件] ${firstFileName} 等 ${fileCount} 个` : `[附件] ${firstFileName}`;
-  }
-  return "";
+  const characters = Array.from(text);
+  return characters.length > LAST_MESSAGE_PREVIEW_LENGTH ? `${characters.slice(0, LAST_MESSAGE_PREVIEW_LENGTH).join("")}…` : text;
+}
+
+/**
+ * 英文兜底的预览：有正文给正文；只有附件时与前端英文渲染同形——“[Image]” / “[Video]” / “[File] a.pdf”，
+ * 多个附件时接 “and N more”。
+ */
+function fallbackPreview(
+  text: string,
+  firstFile: { fileName: string; kind: RoomFileKind } | null,
+  fileCount: number,
+): string {
+  if (text !== "" || firstFile === null) return text;
+  const head = firstFile.kind === "image" ? "[Image]" : firstFile.kind === "video" ? "[Video]" : `[File] ${firstFile.fileName}`;
+  return fileCount > 1 ? `${head} and ${String(fileCount - 1)} more` : head;
 }

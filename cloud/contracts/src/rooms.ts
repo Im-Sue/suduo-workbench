@@ -69,7 +69,7 @@ export interface ListRoomsResponse {
 }
 
 export interface CreateRequirementRoomRequest {
-  /** 缺省为「REQ-n 讨论」。 */
+  /** 缺省为英文兜底「REQ-n room」；前端总会传按界面语言生成的名字。 */
   name?: string;
   /** 额外拉进来的人；创建人、需求负责人、需求创建人总是在内。 */
   memberIds?: string[];
@@ -128,7 +128,10 @@ export const ROOM_FILE_MAX_BYTES = 314_572_800;
 export const ROOM_MESSAGE_AUTHOR_KINDS = ["user", "agent", "system"] as const;
 export type RoomMessageAuthorKind = (typeof ROOM_MESSAGE_AUTHOR_KINDS)[number];
 
-/** 消息里的 @：人、Agent、所有人（@ 所有人只提醒真人，不唤起 Agent）。 */
+/**
+ * 消息里的 @：人、Agent、所有人（@ 所有人只提醒真人，不唤起 Agent）。
+ * label 是发送时的兜底文字（all 为英文 everyone）；渲染与高亮按 kind，正文里 @所有人 / @everyone 都认。
+ */
 export type RoomMentionDto =
   | { kind: "user"; id: string; label: string }
   | { kind: "agent"; id: string; label: string }
@@ -218,7 +221,9 @@ export interface AgentSummaryDto {
   kind: AgentKind;
   owner: UserSummaryDto;
   deviceName: string;
-  /** 「陈思远 的 Codex · MacBook Pro」。 */
+  /**
+   * 英文兜底「陈思远's Codex · MacBook Pro」，老客户端直接显示；新前端按所有者名与设备名用自己的语言拼。
+   */
   label: string;
 }
 

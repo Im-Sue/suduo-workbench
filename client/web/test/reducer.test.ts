@@ -213,17 +213,17 @@ describe("projectEvents · per-turn 状态机", () => {
     ]);
   });
 
-  it("runtime.warning 的 thread-rebuilt 提示使用事件自带文案并弱化展示", () => {
+  it("runtime.warning 的 thread-rebuilt 提示按 code 用字典渲染（不取事件里存的文字）并弱化展示", () => {
     seqCounter = 0;
     const projection = projectEvents([
       mkEvent("runtime.warning", {
         code: "thread-rebuilt",
-        message: "此前对话内容 AI 已不记得，但记录完整保留",
+        message: "This session's earlier context couldn't be restored.",
       }),
     ]);
     expect(projection.notices).toMatchObject([
       {
-        text: "此前对话内容 AI 已不记得，但记录完整保留",
+        text: "该会话的历史执行上下文无法恢复，已自动重建线程继续。此前对话内容 AI 已不记得，但对话记录与文件改动都完整保留。",
         level: "info",
       },
     ]);

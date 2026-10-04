@@ -85,15 +85,18 @@ export function RoomComposer({
     () =>
       picker === null
         ? []
-        : buildMentionCandidates({
-            members: members.data?.items ?? [],
-            agents: agents.data?.items ?? [],
-            shares: shares.data?.items ?? [],
-            requestedAgentIds,
-            meId: me?.id ?? null,
-            query: picker.query,
-          }),
-    [picker, members.data, agents.data, shares.data, requestedAgentIds, me?.id],
+        : buildMentionCandidates(
+            {
+              members: members.data?.items ?? [],
+              agents: agents.data?.items ?? [],
+              shares: shares.data?.items ?? [],
+              requestedAgentIds,
+              meId: me?.id ?? null,
+              query: picker.query,
+            },
+            t,
+          ),
+    [picker, members.data, agents.data, shares.data, requestedAgentIds, me?.id, t],
   );
 
   // 输入框随内容长高（最多 200px）；插入 @ 后把光标放到插入内容之后。

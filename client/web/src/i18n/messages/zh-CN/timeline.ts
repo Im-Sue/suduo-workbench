@@ -72,6 +72,18 @@ export const timeline = {
   },
   notice: {
     runtimeRecovered: "运行时连接已恢复，可以继续工作",
+    /** SuDuo 写进账本的提示，按 payload.code 渲染（契约 RuntimeNoticeCode）。 */
+    threadRebuilt:
+      "该会话的历史执行上下文无法恢复，已自动重建线程继续。此前对话内容 AI 已不记得，但对话记录与文件改动都完整保留。",
+    connectionRebuilt: "Codex 连接已断开并自动重建，进行中的回合可能中断。",
+    /** Codex 发来 SuDuo 还不支持的请求（code unsupported-request），按请求方法分三种说法。 */
+    unsupportedQuestion: "Codex 想请你回答一个问题，SuDuo 暂时不支持在这里作答，已跳过；Codex 会接着往下做。",
+    unsupportedElicitation:
+      "Codex 想请你确认一个 MCP 工具的操作，SuDuo 暂时不支持这种确认，已替你拒绝；Codex 会换个做法继续。",
+    unsupportedRequest: "Codex 发来一个 SuDuo 暂时不支持的请求，已跳过；Codex 会接着往下做。",
+    /** 共享 Agent 任务的执行过程太长、中间省略了一段（code room-run-events-truncated）。 */
+    runEventsTruncated: (omitted: number) =>
+      `执行过程太长，中间省略了 ${String(omitted)} 条记录（保留了开头和结尾）。完整过程在所有者本机的房间任务会话里。`,
     skillsBudget:
       "可用 skill 较多，描述已按 Codex 的上下文预算自动缩短——每个 skill 仍可正常选用；在设置里停用不常用的 skill 可让描述更完整。",
     unknownModel:
