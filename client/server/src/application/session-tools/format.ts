@@ -1,10 +1,10 @@
-import type { RuntimeToolOutputItem } from "@suduo/client-contracts";
+import type { Locale, RuntimeToolOutputItem } from "@suduo/client-contracts";
 import {
-  REQUIREMENT_STATUS_LABELS,
   formatRequirementNumber,
   type RequirementDto,
   type UserSummaryDto,
 } from "@suduo/cloud-contracts";
+import { messagesFor } from "../../i18n/messages/index.js";
 import { ApiError } from "../api-error.js";
 
 /** 单次工具结果的文本上限：代码模式下整串都会进模型上下文，太长就让模型翻页或看文件。 */
@@ -59,8 +59,10 @@ export function requirementLabel(requirement: Pick<RequirementDto, "number" | "t
   return `${formatRequirementNumber(requirement.number)}「${requirement.title}」`;
 }
 
-export function statusLabel(status: RequirementDto["status"]): string {
-  return REQUIREMENT_STATUS_LABELS[status] ?? status;
+/** 需求状态名，按会话的语言（`locale` 必填，免得漏传时悄悄退回中文）。 */
+export function statusLabel(status: RequirementDto["status"], locale: Locale): string {
+  const labels: Readonly<Record<string, string>> = messagesFor(locale).common.requirementStatus;
+  return labels[status] ?? status;
 }
 
 export function userName(user: UserSummaryDto | null | undefined): string {

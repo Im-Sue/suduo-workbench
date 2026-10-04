@@ -249,6 +249,7 @@ function fullSession(): SessionRecord {
     purpose: "general",
     approvalMode: "full",
     kind: "normal",
+    locale: "zh-CN",
     model: null,
     reasoningEffort: null,
     createdAt: 1,

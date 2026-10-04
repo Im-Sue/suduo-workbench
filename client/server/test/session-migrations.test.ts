@@ -147,7 +147,7 @@ describe("014 会话列表元数据迁移", () => {
           sha: "a".repeat(64),
         });
 
-      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([14, 15, 16]);
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([14, 15, 16, 17]);
 
       const row = (id: string) =>
         database

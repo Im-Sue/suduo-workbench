@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
-import type { RuntimeToolSpec, SessionContextDto } from "@suduo/client-contracts";
+import type { Locale, RuntimeToolSpec, SessionContextDto } from "@suduo/client-contracts";
 import type {
   ArtifactVersionDto,
   AttachmentDto,
@@ -91,6 +91,8 @@ const ROOM_REQUIREMENT_TOOL_RULES = [
 
 /** 房间任务会话开场需要的信息（RoomAgentRunner 组装）。 */
 export interface RoomSetupInput {
+  /** 任务会话的语言（所有者的界面语言）：固定层与工具说明按它写。 */
+  locale: Locale;
   projectRoot: string;
   /** 所有者显示名（「陈思远」）。 */
   ownerName: string;
@@ -149,6 +151,7 @@ export class SessionContextService {
       // 房间任务会话（ADR-0009）：需求房间的「当前需求」用建会话时记下的版本与时刻。
       return {
         sessionId,
+        locale: session.locale,
         projectRoot: project.rootPath,
         remoteProjectId: roomTask.remoteProjectId,
         requirement:
@@ -171,6 +174,7 @@ export class SessionContextService {
     if (ref !== null) {
       return {
         sessionId,
+        locale: session.locale,
         projectRoot: project.rootPath,
         remoteProjectId: ref.remoteProjectId,
         requirement: {
@@ -187,6 +191,7 @@ export class SessionContextService {
     }
     return {
       sessionId,
+      locale: session.locale,
       projectRoot: project.rootPath,
       remoteProjectId: mapping.remoteProjectId,
       requirement: null,
@@ -262,6 +267,8 @@ export class SessionContextService {
 
   /** 需求会话的开场：需求卡 + 全部工具。远程查询失败的部分写「查不到」，不阻断开工。 */
   async requirementSetup(input: {
+    /** 会话的语言（建会话的请求的语言）：需求卡、规则与工具说明按它写。 */
+    locale: Locale;
     projectRoot: string;
     requirement: RequirementDetailDto;
     /** 重建线程时排除会话自己，找「上一次」会话。 */
@@ -270,7 +277,7 @@ export class SessionContextService {
     const card = await this.requirementCard({ ...input, personal: true });
     // 规则在前、需求证据在后，免得证据里的文字被当成规则的一部分。
     const lines = [card[0] ?? "# SuDuo 需求会话", "", ...REQUIREMENT_RULES, "", ...card.slice(1)];
-    return { developerInstructions: lines.join("\n"), dynamicTools: sessionToolSpecs("requirement") };
+    return { developerInstructions: lines.join("\n"), dynamicTools: sessionToolSpecs("requirement", input.locale) };
   }
 
   /**
@@ -294,6 +301,7 @@ export class SessionContextService {
         lines.push(
           "## 这个房间所属的需求",
           ...(await this.requirementCard({
+            locale: input.locale,
             projectRoot: input.projectRoot,
             requirement: requirement.detail,
             personal: false,
@@ -313,7 +321,7 @@ export class SessionContextService {
     }
     return {
       developerInstructions: lines.join("\n"),
-      dynamicTools: sessionToolSpecs(input.requirement === null ? "room" : "room_requirement"),
+      dynamicTools: sessionToolSpecs(input.requirement === null ? "room" : "room_requirement", input.locale),
     };
   }
 
@@ -322,6 +330,7 @@ export class SessionContextService {
    * 房间里的共享 Agent 不带（笔记是所有者私有的，ADR-0009）。
    */
   private async requirementCard(input: {
+    locale: Locale;
     projectRoot: string;
     requirement: RequirementDetailDto;
     sessionId?: string;
@@ -337,12 +346,12 @@ export class SessionContextService {
           )
         : Promise.resolve<Settled<null>>({ ok: true, value: null }),
       input.personal
-        ? settle(this.changesSincePreviousSession(requirement, input.sessionId))
+        ? settle(this.changesSincePreviousSession(requirement, input.sessionId, input.locale))
         : Promise.resolve<Settled<string | null>>({ ok: true, value: null }),
       findAgentsFiles(projectRoot),
     ]);
     const summary = requirement.summary.trim();
-    const heading = `${requirementLabel(requirement)}（${statusLabel(requirement.status)} · v${requirement.version} · 负责人 ${userName(requirement.assignee)}）`;
+    const heading = `${requirementLabel(requirement)}（${statusLabel(requirement.status, input.locale)} · v${requirement.version} · 负责人 ${userName(requirement.assignee)}）`;
     const evidence = [
       "需求说明：" +
         (summary === ""
@@ -388,7 +397,7 @@ export class SessionContextService {
   }
 
   /** 项目会话（关联了远程项目、不关联需求）的开场：项目卡 + 只读与笔记工具。 */
-  async projectSetup(input: { projectRoot: string; remoteProjectId: string }): Promise<ThreadSetup> {
+  async projectSetup(input: { locale: Locale; projectRoot: string; remoteProjectId: string }): Promise<ThreadSetup> {
     const project = await settle(this.deps.remote.getProject(input.remoteProjectId));
     const agents = await findAgentsFiles(input.projectRoot);
     const lines = [
@@ -401,7 +410,7 @@ export class SessionContextService {
       lines.push(`本项目的 AGENTS.md：${agents.join("、")}（映射目录本身没有，按需阅读）。`);
     }
     lines.push("", ...PROJECT_RULES);
-    return { developerInstructions: lines.join("\n"), dynamicTools: sessionToolSpecs("project") };
+    return { developerInstructions: lines.join("\n"), dynamicTools: sessionToolSpecs("project", input.locale) };
   }
 
   /**
@@ -430,7 +439,7 @@ export class SessionContextService {
           ...ROOM_TOOL_RULES,
           ...(roomTask.requirementId === null ? [] : ROOM_REQUIREMENT_TOOL_RULES),
         ].join("\n"),
-        dynamicTools: sessionToolSpecs(roomTask.requirementId === null ? "room" : "room_requirement"),
+        dynamicTools: sessionToolSpecs(roomTask.requirementId === null ? "room" : "room_requirement", context.locale),
       };
     }
     const ref = this.deps.refs.getBySessionId(sessionId);
@@ -441,7 +450,7 @@ export class SessionContextService {
       }
       try {
         const requirement = await this.deps.remote.getRequirement(ref.remoteRequirementId);
-        return await this.requirementSetup({ projectRoot: context.projectRoot, requirement, sessionId });
+        return await this.requirementSetup({ locale: context.locale, projectRoot: context.projectRoot, requirement, sessionId });
       } catch (error) {
         // 需求查不到也要能继续对话：给一张最小的卡，工具照挂，模型可以自己再查。
         return {
@@ -451,17 +460,18 @@ export class SessionContextService {
             "",
             ...REQUIREMENT_RULES,
           ].join("\n"),
-          dynamicTools: sessionToolSpecs("requirement"),
+          dynamicTools: sessionToolSpecs("requirement", context.locale),
         };
       }
     }
-    return this.projectSetup({ projectRoot: context.projectRoot, remoteProjectId: context.remoteProjectId });
+    return this.projectSetup({ locale: context.locale, projectRoot: context.projectRoot, remoteProjectId: context.remoteProjectId });
   }
 
   /** 同一需求上一次会话以来的变化，一行概括 + 最多几条明细；没有上一次会话时为 null。 */
   private async changesSincePreviousSession(
     requirement: RequirementDetailDto,
     excludeSessionId: string | undefined,
+    locale: Locale,
   ): Promise<string | null> {
     const previous = this.deps.refs.latestForRequirement(requirement.id, excludeSessionId);
     if (previous === null) {
@@ -495,7 +505,7 @@ export class SessionContextService {
     const recent = [...entries].reverse().slice(-CARD_CHANGES_LIMIT);
     return [
       header + `${entries.length} 处变化${entries.length > CARD_CHANGES_LIMIT ? `（列出最近 ${CARD_CHANGES_LIMIT} 处）` : ""}：`,
-      ...recent.map((entry) => `- ${formatTime(entry.createdAt)} ${userName(entry.actor)} ${truncate(describeActivity(entry), 120)}`),
+      ...recent.map((entry) => `- ${formatTime(entry.createdAt)} ${userName(entry.actor)} ${truncate(describeActivity(entry, locale), 120)}`),
     ].join("\n");
   }
 }

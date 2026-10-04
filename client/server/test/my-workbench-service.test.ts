@@ -204,6 +204,7 @@ function sessionRecord(
     purpose: "general",
     approvalMode: "ask",
     kind: "normal",
+    locale: "zh-CN",
     model: null,
     reasoningEffort: null,
     createdAt: lastActivityAt,

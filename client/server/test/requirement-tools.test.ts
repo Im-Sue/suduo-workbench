@@ -40,6 +40,7 @@ function temporaryDirectory(): string {
 function requirementCtx(projectRoot: string): ToolSessionContext {
   return {
     sessionId: "session-1",
+    locale: "zh-CN",
     projectRoot,
     remoteProjectId: "proj-1",
     requirement: { remoteRequirementId: "req-1", startVersion: 2, startedAt: STARTED_AT },
@@ -47,7 +48,7 @@ function requirementCtx(projectRoot: string): ToolSessionContext {
 }
 
 function projectCtx(projectRoot: string): ToolSessionContext {
-  return { sessionId: "session-p", projectRoot, remoteProjectId: "proj-1", requirement: null };
+  return { sessionId: "session-p", locale: "zh-CN", projectRoot, remoteProjectId: "proj-1", requirement: null };
 }
 
 function textOf(result: ToolResult): string {

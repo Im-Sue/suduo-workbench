@@ -501,14 +501,15 @@ export class RoomAgentRunner {
     if (existing !== null && this.deps.sessionRecords.getById(existing.sessionId)?.state === "active") {
       return existing;
     }
-    const { setup, requirementVersion } = await this.buildSetup(room, agent, project);
+    // 任务会话的语言 = 所有者此刻的界面语言：固定层与工具说明按它写，记进会话，重建线程时沿用。
+    const locale = this.deps.ownerLocale();
+    const { setup, requirementVersion } = await this.buildSetup(room, agent, project, locale);
     const root = thread.find((message) => message.id === run.threadRootId) ?? trigger;
     const session = await this.deps.sessions.create(
       project.id,
       { title: roomTaskTitle(room.name, root.body), purpose: "general" },
       setup,
-      // 任务会话自带标题，语言只影响默认名；S7 起任务会话按房间语言记下 locale。
-      { kind: "room_task", locale: "zh-CN" },
+      { kind: "room_task", locale },
     );
     return this.deps.roomTasks.upsert({
       agentId: agent.id,
@@ -530,6 +531,7 @@ export class RoomAgentRunner {
     room: RoomDto,
     agent: Pick<AgentDto, "owner" | "deviceName"> | null,
     project: { name: string; rootPath: string },
+    locale: Locale,
   ): Promise<{ setup: ThreadSetup; requirementVersion: number | null }> {
     let requirement: RoomSetupInput["requirement"] = null;
     let requirementVersion: number | null = null;
@@ -547,6 +549,7 @@ export class RoomAgentRunner {
         ? room.name
         : await this.deps.remote.getProject(room.projectId).then((value) => value.name, () => project.name);
     const setup = await this.deps.context.roomSetup({
+      locale,
       projectRoot: project.rootPath,
       ownerName: agent?.owner.displayName ?? "所有者",
       deviceName: agent?.deviceName ?? "本机",
@@ -571,7 +574,7 @@ export class RoomAgentRunner {
     if (room === null) {
       return null;
     }
-    const { setup } = await this.buildSetup(room, this.deps.presence.currentAgent(), project);
+    const { setup } = await this.buildSetup(room, this.deps.presence.currentAgent(), project, session?.locale ?? this.deps.ownerLocale());
     if (record.lastTriggerSeq <= 0) {
       return setup;
     }

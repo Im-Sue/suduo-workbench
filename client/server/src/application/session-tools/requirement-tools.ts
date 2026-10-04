@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
-import type { SuDuoToolConfirmationDto } from "@suduo/client-contracts";
+import type { Locale, SuDuoToolConfirmationDto } from "@suduo/client-contracts";
 import {
   formatRequirementNumber,
   parseRequirementNumberQuery,
@@ -63,6 +63,8 @@ export type RequirementToolsRemote = Pick<
 /** 一次工具调用所在会话的上下文（由本机库派生，不信任模型给的需求 ID）。 */
 export interface ToolSessionContext {
   sessionId: string;
+  /** 会话的语言（迁移 017）：工具回包按它写。 */
+  locale: Locale;
   projectRoot: string;
   remoteProjectId: string;
   /** 需求会话的需求；项目会话为 null。 */
@@ -131,7 +133,7 @@ export class RequirementTools {
         EVIDENCE_NOTE,
         "",
         `# ${requirementLabel(requirement)}`,
-        `- 状态：${statusLabel(requirement.status)}；负责人：${userName(requirement.assignee)}；当前版本：v${requirement.version}` +
+        `- 状态：${statusLabel(requirement.status, ctx.locale)}；负责人：${userName(requirement.assignee)}；当前版本：v${requirement.version}` +
           (this.isCurrent(ctx, requirement) ? `（开工时 v${ctx.requirement!.startVersion}）` : ""),
         `- 创建：${userName(requirement.createdBy)}，${formatTime(requirement.createdAt)}；最后修改：${userName(requirement.updatedBy)}，${formatTime(requirement.updatedAt)}`,
         `- 评论 ${requirement.commentCount} 条；附件 ${requirement.attachmentCount} 个（用 suduo_requirement_comments / suduo_requirement_attachments 查看）`,
@@ -142,7 +144,7 @@ export class RequirementTools {
         if (ctx.requirement!.anchorKnown === false) {
           lines.push("- 注意：开工时没拿到需求服务的变化记录分界，下面按本机开工时间判断，前后几分钟内的变化可能有出入。");
         }
-        lines.push(...(await this.changesSince(requirement.id, ctx.requirement!.startedAt)));
+        lines.push(...(await this.changesSince(requirement.id, ctx.requirement!.startedAt, ctx.locale)));
       }
       lines.push("", "## 正文");
       const summary = requirement.summary;
@@ -576,7 +578,7 @@ export class RequirementTools {
     return response.items;
   }
 
-  private async changesSince(requirementId: string, startedAt: string): Promise<string[]> {
+  private async changesSince(requirementId: string, startedAt: string, locale: Locale): Promise<string[]> {
     const since = Date.parse(startedAt);
     const entries: RequirementActivityEntryDto[] = [];
     let cursor: string | undefined;
@@ -607,7 +609,7 @@ export class RequirementTools {
       return ["- 开工以后没有变化。"];
     }
     const shown = entries.slice(0, CHANGES_LIST_LIMIT);
-    const lines = [...shown].reverse().map((entry) => `- ${formatTime(entry.createdAt)} ${userName(entry.actor)} ${truncate(describeActivity(entry), 200)}`);
+    const lines = [...shown].reverse().map((entry) => `- ${formatTime(entry.createdAt)} ${userName(entry.actor)} ${truncate(describeActivity(entry, locale), 200)}`);
     if (!complete || entries.length > shown.length) {
       lines.unshift(
         complete
@@ -716,8 +718,8 @@ function writeFailure(what: "评论" | "确认版", error: unknown): ToolResult 
   );
 }
 
-/** 活动时间线条目的一句话描述（「把状态从 A 改成 B」）。 */
-export function describeActivity(entry: RequirementActivityEntryDto): string {
+/** 活动时间线条目的一句话描述（「把状态从 A 改成 B」），按会话的语言。 */
+export function describeActivity(entry: RequirementActivityEntryDto, locale: Locale): string {
   switch (entry.action) {
     case "requirement.created":
       return "创建了需求";
@@ -737,7 +739,7 @@ export function describeActivity(entry: RequirementActivityEntryDto): string {
           case "summary":
             return "修改了正文（当前正文见上方）";
           case "status":
-            return `把状态从「${statusLabel(change.from)}」改成「${statusLabel(change.to)}」`;
+            return `把状态从「${statusLabel(change.from, locale)}」改成「${statusLabel(change.to, locale)}」`;
           case "assignee":
             return `把负责人从「${userName(change.from)}」改成「${userName(change.to)}」`;
           default:

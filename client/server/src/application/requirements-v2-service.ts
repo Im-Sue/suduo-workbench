@@ -410,7 +410,8 @@ export class RequirementsV2Service {
     });
   }
 
-  async createRequirementSession(requirementId: string) {
+  /** `locale`：会话的语言（创建请求的语言），需求卡、规则与工具说明按它写。 */
+  async createRequirementSession(requirementId: string, locale: Locale) {
     const sessionContext = this.sessionContext;
     if (!sessionContext) {
       throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.remote.requirementSessionUnavailable);
@@ -422,10 +423,12 @@ export class RequirementsV2Service {
       const auditAnchor = await sessionContext.captureAnchor(located.projectId, located.id);
       const requirement = await this.remote.getRequirement(requirementId);
       const setup = await sessionContext.requirementSetup({
+        locale,
         projectRoot: localProject.rootPath,
         requirement,
       });
       const session = await this.sessions.createFromRequirement(localProject.id, {
+        locale,
         title: requirement.title,
         remoteProjectId: requirement.projectId,
         remoteRequirementId: requirement.id,
@@ -439,13 +442,14 @@ export class RequirementsV2Service {
     });
   }
 
-  /** `locale`：没给标题时默认名用的语言（创建请求的语言）。 */
+  /** `locale`：会话的语言（创建请求的语言）：没给标题时的默认名、项目卡与工具说明按它写。 */
   async createProjectSession(remoteProjectId: string, locale: Locale) {
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
       const localProject = await this.requireValidatedLocalProject(remoteProjectId);
       const setup =
         (await this.sessionContext?.projectSetup({
+          locale,
           projectRoot: localProject.rootPath,
           remoteProjectId,
         })) ?? {};

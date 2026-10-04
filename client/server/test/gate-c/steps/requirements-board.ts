@@ -2,9 +2,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Locator, Page, Request, Response } from "playwright";
 import {
   REQUIREMENT_STATUSES,
-  REQUIREMENT_STATUS_LABELS,
   type RequirementStatus,
 } from "@suduo/cloud-contracts";
+import { messagesFor } from "../../../src/i18n/messages/index.js";
+
+// gate-c 固定按中文界面跑（技术设计 §五）：状态名取中文字典，与前端 `common.requirementStatus` 一致。
+const REQUIREMENT_STATUS_LABELS: Readonly<Record<RequirementStatus, string>> = messagesFor("zh-CN").common.requirementStatus;
 import { GATE_C_FIXTURE_COMMENT_AT, GATE_C_FIXTURE_IDS, GATE_C_FIXTURE_NUMBERS } from "../requirements-service-fixture.js";
 import { capture, completeStartSessionDialog } from "./helpers.js";
 import type { GateCStep, GateCStepContext } from "./types.js";

@@ -327,10 +327,10 @@ describe("房间工具", () => {
   });
 
   it("工具清单：房间工具说明写清只读；需求房间不含笔记与写工具", () => {
-    const room = sessionToolSpecs("room");
+    const room = sessionToolSpecs("room", "zh-CN");
     expect(room.map((spec) => spec.name)).toEqual(["suduo_room_history", "suduo_room_search", "suduo_room_file_view"]);
     for (const spec of room) expect(spec.description.startsWith("只读：")).toBe(true);
-    const names = sessionToolSpecs("room_requirement").map((spec) => spec.name);
+    const names = sessionToolSpecs("room_requirement", "zh-CN").map((spec) => spec.name);
     expect(names).not.toContain("suduo_notes_read");
     expect(names).not.toContain("suduo_notes_save");
     expect(names).not.toContain("suduo_comment_submit");

@@ -1,4 +1,4 @@
-import type { RuntimeToolSpec, SuDuoToolName } from "@suduo/client-contracts";
+import type { Locale, RuntimeToolSpec, SuDuoToolName } from "@suduo/client-contracts";
 
 /**
  * 会话工具清单（ADR-0008）。说明按 Codex「代码模式」写：工具在 exec 里以
@@ -246,7 +246,9 @@ const ROOM_REQUIREMENT_TOOLS: SuDuoToolName[] = [
  */
 export type SessionToolScope = "requirement" | "project" | "room" | "room_requirement";
 
-export function sessionToolSpecs(scope: SessionToolScope): RuntimeToolSpec[] {
+/** 工具定义按会话的语言给出（建线程时下发，之后不变）。 */
+export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): RuntimeToolSpec[] {
+  void locale;
   return sessionToolNames(scope).map((name) =>
     isRoomToolName(name) ? ROOM_SPECS[name] : SPECS[name as SuDuoToolName],
   );
