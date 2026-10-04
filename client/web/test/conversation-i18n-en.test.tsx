@@ -218,7 +218,7 @@ describe("会话区英文界面", () => {
     expect(q(node, "session-status")?.textContent).toBe("Waiting for you");
     expect(q(node, "side-requirement-entry")?.textContent).toBe("Linked requirement");
     expect(node.querySelector('[aria-label="1 runtime notice"]')).not.toBeNull();
-    expect(node.querySelector('[aria-label="Open inspector panel"]')).not.toBeNull();
+    expect(node.querySelector('[aria-label="Show inspector panel"]')).not.toBeNull();
   });
 
   it("审批坞：问题、目录、批准 / 拒绝按钮与按键说明、多个时的序号", async () => {
@@ -280,7 +280,8 @@ describe("会话区英文界面", () => {
     expect(q(node, "turn-card")?.textContent).toBe("Read 2 files · Ran 1 command · 18s");
     const change = q(node, "change-card");
     expect(change?.querySelector("header")?.textContent).toContain("Edited 1 file");
-    expect(change?.textContent).toContain("Edited");
+    // 改动标记列用 Git 的 A / M / D（术语表 §十二）。
+    expect([...(change?.querySelectorAll("span.w-8") ?? [])].map((span) => span.textContent)).toContain("M");
     expect(change?.querySelector('[title="View changes to src/app.ts in the inspector panel"]')).not.toBeNull();
     const summary = q(node, "turn-summary");
     expect(summary?.textContent).toContain("Done · Took 2 min 14s · Edited 1 file · Ran 1 command");
@@ -328,7 +329,7 @@ describe("会话区英文界面", () => {
       skills: [],
     };
     const node = await render(<UserBubble message={message} />);
-    expect(q(node, "message-attribution")?.textContent).toBe("Joined current work (Recorded in the turn that's running)");
+    expect(q(node, "message-attribution")?.textContent).toBe("Merged into current work (Recorded in the turn that's running)");
     expect(q(node, "message-interrupted-note")?.textContent).toContain("This turn was interrupted");
     expect(q(node, "attachment-chip")?.textContent).toBe("Image attachment");
   });
@@ -338,7 +339,7 @@ describe("会话区英文界面", () => {
     const node = await render(<SessionModelSwitcher session={session} provider={null} onChanged={vi.fn()} onOpenSettings={vi.fn()} onError={vi.fn()} />);
     const chip = q(node, "model-chip");
     expect(chip?.textContent).toBe("Default modelDeep");
-    expect(chip?.getAttribute("title")).toBe("Model and reasoning effort (this session, from the next turn)");
+    expect(chip?.getAttribute("title")).toBe("Model and reasoning effort (this session; takes effect from the next turn)");
     expect(prettifyModel(null)).toBe("Default model");
     expect(prettifyModel("gpt-5.6-sol")).toBe("5.6 Sol");
     expect(effortLabel(null)).toBe("Default");

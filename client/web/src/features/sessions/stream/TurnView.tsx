@@ -337,7 +337,7 @@ function FileChangeCard({
               onClick={() => onOpen?.(change.path)}
               title={onOpen === undefined ? displayPath(change.path) : text.viewInInspector(displayPath(change.path))}
             >
-              <span className="min-w-8 shrink-0 text-caption text-subtle-foreground">{text.kind[change.kind]}</span>
+              <span className="w-8 shrink-0 text-caption text-subtle-foreground">{text.kind[change.kind]}</span>
               {/* 从左边截断：长路径也能看到文件名。 */}
               <span className="min-w-0 flex-1 truncate text-left font-mono text-caption text-foreground" dir="rtl">
                 <bdi>{change.movePath === null ? displayPath(change.path) : `${displayPath(change.path)} → ${displayPath(change.movePath)}`}</bdi>

@@ -77,8 +77,8 @@ export const workbench = {
     },
   },
   approvalMode: {
-    title: "Approval mode (this session; takes effect next turn)",
-    menuLabel: "Approval mode · This session · Takes effect next turn",
+    title: "Approval mode (this session; takes effect from the next turn)",
+    menuLabel: "Approval mode · This session · Takes effect from the next turn",
     descriptions: {
       ask: "You approve every file write and command (safest)",
       auto: "Runs freely inside the project folder and asks only when going out of bounds (recommended)",
@@ -102,8 +102,8 @@ export const workbench = {
       env: "Environment",
       files: "Files",
     },
-    collapse: "Collapse inspector panel",
-    collapseTitle: "Collapse inspector panel (⌘J)",
+    collapse: "Hide inspector panel",
+    collapseTitle: "Hide inspector panel (⌘J)",
   },
   changes: {
     emptyTitle: "No changes yet",
@@ -136,7 +136,7 @@ export const workbench = {
     clean: "Clean",
     // 行标题一列只有 64px，“Version control” 会折成两行。
     versionControl: "Git",
-    noGit: "Git isn't available on this computer",
+    noGit: "Not available on this computer",
     initHint:
       "This folder isn't under version control yet. After you initialize it, SuDuo auto-saves before each turn, so you can go back if something breaks.",
     init: "Initialize version control",

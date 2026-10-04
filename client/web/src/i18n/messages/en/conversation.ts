@@ -85,15 +85,15 @@ export const conversation = {
     noticesLabel: (count: number) =>
       plural("en", count, { one: "1 runtime notice", other: `${String(count)} runtime notices` }),
     noticesTitle: "Runtime notices",
-    openInspector: "Open inspector panel",
+    openInspector: "Show inspector panel",
     closeInspector: "Hide inspector panel",
     inspector: "Inspector panel",
   },
   model: {
     defaultModel: "Default model",
     defaultEffort: "Default",
-    chipTitle: "Model and reasoning effort (this session, from the next turn)",
-    menuLabel: "This session · From the next turn",
+    chipTitle: "Model and reasoning effort (this session; takes effect from the next turn)",
+    menuLabel: "This session · Takes effect from the next turn",
     model: "Model",
     effort: "Reasoning effort",
     followDefault: "Use default",
@@ -152,7 +152,7 @@ export const conversation = {
     waiting: "Waiting for you",
     exitCode: (code: number) => `Exit code ${String(code)}`,
     unfinished: "Not finished",
-    outputTruncated: (count: number) => `…(showing only the last ${String(count)} characters)`,
+    outputTruncated: (count: number) => `…(showing only the last ${count.toLocaleString("en-US")} characters)`,
     stepStatus: {
       waiting: "Waiting for you",
       completed: "Done",
@@ -170,10 +170,11 @@ export const conversation = {
         done: (count: number) => `Edited ${files(count)}`,
       },
       viewInInspector: (path: string) => `View changes to ${path} in the inspector panel`,
+      // 标记列很窄，用 Git 的 A / M / D（术语表 §十二）。
       kind: {
-        add: "Added",
-        delete: "Deleted",
-        update: "Edited",
+        add: "A",
+        delete: "D",
+        update: "M",
       },
     },
     plan: {
@@ -216,7 +217,7 @@ export const conversation = {
   message: {
     attribution: {
       submitted: "Sent",
-      merged: "Joined current work",
+      merged: "Merged into current work",
       "new-turn": "Started a new turn",
     },
     mergedNote: "Recorded in the turn that's running",

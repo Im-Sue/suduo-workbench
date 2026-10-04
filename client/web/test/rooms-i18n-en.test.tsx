@@ -305,7 +305,7 @@ describe("讨论页：英文界面", () => {
     expect(panel?.querySelector('button[aria-label="Close thread"]')).not.toBeNull();
     const card = q(panel ?? node, "run-card");
     expect(card?.textContent).toContain("Done");
-    expect(card?.textContent).toContain("2 min 14s elapsed");
+    expect(card?.textContent).toContain("Took 2 min 14s");
     expect(q(card ?? node, "run-view-detail")?.textContent).toBe("View details");
     expect(panel?.textContent).toContain("1 reply");
     expect(input(panel ?? node).getAttribute("placeholder")).toBe("Reply in thread. @ an agent to ask a follow-up");
@@ -453,7 +453,7 @@ describe("悬浮窗口与入口：英文", () => {
     const stack = q(document, "room-launcher-stack");
     expect(stack?.getAttribute("aria-label")).toBe("Rooms in this project");
     const allRooms = stack?.querySelector('[role="option"][data-kind="all"]');
-    expect(allRooms?.getAttribute("aria-label")).toBe("All rooms…, open the Rooms page");
+    expect(allRooms?.getAttribute("aria-label")).toBe("All rooms, opens the Rooms page");
     expect(allRooms?.textContent).toContain("All rooms…");
     expect(stack?.textContent).not.toMatch(CJK);
   });

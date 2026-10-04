@@ -1,3 +1,5 @@
+import type { PausedReason } from "../../../session/queue.js";
+
 /** 会话工作台：输入框、审批档切换、检查面板（改动 / 需求 / 环境）、文件查看器、打开方式菜单、上传的本地报错。 */
 export const workbench = {
   composer: {
@@ -66,7 +68,7 @@ export const workbench = {
         send_uncertain: "这一条发没发出去还不确定",
         attribution_unconfirmed: "这一条去了哪儿还没确认",
         restored: "刷新或切回会话后，需要你确认继续",
-      },
+      } satisfies Record<PausedReason, string>,
       resume: "恢复",
       editLabel: "编辑排队的消息",
       save: "保存",

@@ -205,10 +205,10 @@ describe("英文界面：审批档切换", () => {
     const node = await render(<ApprovalModeSwitcher session={session} onChange={onChange} />);
     const trigger = q(node, "approval-mode");
     expect(trigger?.textContent).toBe("Ask when out of bounds");
-    expect(trigger?.title).toBe("Approval mode (this session; takes effect next turn)");
+    expect(trigger?.title).toBe("Approval mode (this session; takes effect from the next turn)");
 
     await openMenu(trigger);
-    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Approval mode · This session · Takes effect next turn");
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Approval mode · This session · Takes effect from the next turn");
     expect(menuItems().map((item) => item.querySelector("span > span")?.textContent)).toEqual([
       "Ask every step",
       "Ask when out of bounds",
@@ -221,6 +221,14 @@ describe("英文界面：审批档切换", () => {
     expect(dialog?.textContent).toContain("Switch to full access?");
     expect([...(dialog?.querySelectorAll("button") ?? [])].map((button) => button.textContent)).toContain("Switch to full access");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("中文下档位名与设置页一致：每步确认 / 越界时确认 / 完全访问（UI/UX 需求 §5.1）", async () => {
+    applyLocalePreference("zh-CN");
+    const node = await render(<ApprovalModeSwitcher session={session} onChange={vi.fn(async () => undefined)} />);
+    expect(q(node, "approval-mode")?.textContent).toBe("越界时确认");
+    await openMenu(q(node, "approval-mode"));
+    expect(menuItems().map((item) => item.querySelector("span > span")?.textContent)).toEqual(["每步确认", "越界时确认", "完全访问"]);
   });
 
   it("部署上限锁定时的说明", async () => {
@@ -265,8 +273,8 @@ describe("英文界面：检查面板", () => {
     expect(q(node, "side-tab-changes")?.textContent).toBe("Changes2");
     expect(q(node, "side-tab-requirement")?.textContent).toBe("Requirement");
     expect(q(node, "side-tab-env")?.textContent).toBe("Environment");
-    expect(node.querySelector("[aria-label='Collapse inspector panel']")?.getAttribute("title")).toBe(
-      "Collapse inspector panel (⌘J)",
+    expect(node.querySelector("[aria-label='Hide inspector panel']")?.getAttribute("title")).toBe(
+      "Hide inspector panel (⌘J)",
     );
     const list = q(node, "change-list");
     expect(list?.textContent).toContain("Since the session started · 2 files");
@@ -317,7 +325,7 @@ describe("英文界面：环境面板", () => {
     const node = await render(panel(false));
     expect(node.querySelector("section")?.getAttribute("aria-label")).toBe("Environment");
     expect(node.textContent).toContain("1 file");
-    expect(node.textContent).toContain("Git isn't available on this computer");
+    expect(node.textContent).toContain("Not available on this computer");
 
     apiMocks.gitStatus.mockResolvedValue({ available: true, repo: false, branch: null, dirty: 0, autoCheckpoint: false, hasRemote: false, lastError: null });
     await act(async () => root?.unmount());

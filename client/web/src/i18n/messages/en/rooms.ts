@@ -114,7 +114,7 @@ export const rooms = {
     composerPlaceholder: "Reply in thread. @ an agent to ask a follow-up",
   },
   composer: {
-    shareRequested: (owner: string, agent: string) => `Asked ${owner} to share ${agent}`,
+    shareRequested: (owner: string) => `Asked ${owner} to share their Codex`,
     archived: "This room is archived, so you can only read its history. To continue, unarchive it from More in the top right.",
     sendFailed: (message: string) => `Couldn't send: ${message}. Your message is back in the composer.`,
     retry: "Retry",
@@ -137,7 +137,7 @@ export const rooms = {
       progress: (name: string) => `Upload progress for ${name}`,
       failed: "Upload failed",
       pastedImageName: "pasted-image.png",
-      tooLarge: "File is over 300 MB and can't be uploaded",
+      tooLarge: "This file is larger than 300 MB and can't be uploaded",
     },
   },
   mention: {
@@ -189,7 +189,7 @@ export const rooms = {
     stopLabel: (agent: string) => `Stop the task for ${agent}`,
     retry: "Retry",
     retryLabel: (agent: string) => `Retry the task for ${agent}`,
-    elapsed: (duration: string) => `${duration} elapsed`,
+    elapsed: (duration: string) => `Took ${duration}`,
     viewDetail: "View details",
   },
   runDetail: {
@@ -326,7 +326,7 @@ export const rooms = {
     restoreTitle: (name: string) => `Restore “${name}”`,
     loading: "Loading rooms…",
     allRooms: "All rooms…",
-    allRoomsLabel: "All rooms…, open the Rooms page",
-    currentLabel: (label: string) => `${label}, open in the window`,
+    allRoomsLabel: "All rooms, opens the Rooms page",
+    currentLabel: (label: string) => `${label}, already open in the window`,
   },
 } satisfies Messages["rooms"];
