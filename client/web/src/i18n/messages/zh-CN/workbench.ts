@@ -68,6 +68,7 @@ export const workbench = {
         send_uncertain: "这一条发没发出去还不确定",
         attribution_unconfirmed: "这一条去了哪儿还没确认",
         restored: "刷新或切回会话后，需要你确认继续",
+        locale_switched: "切换语言时正要发下一条，需要你确认继续",
       } satisfies Record<PausedReason, string>,
       resume: "恢复",
       editLabel: "编辑排队的消息",

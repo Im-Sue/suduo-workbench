@@ -414,7 +414,7 @@ async function verifyStartSessionFromPeek(context: GateCStepContext, boardPath: 
   const peek = page.getByTestId("requirement-peek");
   await peek.getByRole("heading", { name: "看板草稿二" }).waitFor({ timeout: 20_000 });
   await peek.getByRole("button", { name: "开始会话" }).click();
-  const sessionId = await completeStartSessionDialog(page, context.projectRoot);
+  const sessionId = await completeStartSessionDialog(context);
   await page.getByTestId("conversation-stream").waitFor({ timeout: 30_000 });
   console.info(`[requirements-board] 从速览开始会话，进入 /sessions/${sessionId}`);
   await capture(context, "09-requirement-session-started.png");

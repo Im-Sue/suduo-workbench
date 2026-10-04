@@ -86,7 +86,7 @@ export function SessionStreamSample() {
         timeline={projection.timeline}
         historyLoading={false}
         now={Date.now()}
-        actions={{ onOpenChange: () => undefined, onViewChanges: () => undefined, onRetry: () => undefined }}
+        actions={{ onOpenChange: () => undefined, onViewChanges: () => undefined, onRestoreBefore: () => undefined, onRetry: () => undefined }}
         empty={null}
       />
       <div className="px-6">

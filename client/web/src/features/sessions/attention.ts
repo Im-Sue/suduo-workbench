@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { currentLocale } from "../../i18n/locale.js";
 import { messagesFor } from "../../i18n/messages/index.js";
+import { useCarried, useCarrySource } from "../../i18n/provider.js";
 import type { SessionUiStatus } from "../../ui/session-status.js";
 
 /**
@@ -33,7 +34,10 @@ export function systemNotifyEnabled(): boolean {
 
 export function useAttentionSignals(status: SessionUiStatus, sessionTitle: string | null): void {
   const previous = useRef<SessionUiStatus>(status);
-  const baseTitle = useRef<string | null>(null);
+  // 加了前缀之前的标题：后台标签页里切换语言（别的标签页改的）重建时带过去，回到页面才能去掉前缀（i18n/carry.ts）。
+  const carriedTitle = useCarried<string | null>("attention-title");
+  const baseTitle = useRef<string | null>(carriedTitle ?? null);
+  useCarrySource("attention-title", () => baseTitle.current);
 
   useEffect(() => {
     const before = previous.current;

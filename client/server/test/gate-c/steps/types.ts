@@ -1,7 +1,16 @@
 import type { BrowserContext, Page } from "playwright";
+import type { Locale } from "@suduo/client-contracts";
 import type { RequirementsServiceFixture } from "../requirements-service-fixture.js";
+import type { GateUiText } from "../ui-text.js";
+import type { UntranslatedFinding } from "../untranslated-audit.js";
 
 export interface GateCStepContext {
+  /** 这一轮按哪种界面语言验收（`SUDUO_GATE_LOCALE`，默认 zh-CN）。 */
+  locale: Locale;
+  /** 按 `locale` 从前端字典取出的界面文字；步骤定位按钮、标题、标签都用它。 */
+  ui: GateUiText;
+  /** 英文冒烟里查到漏翻的页面（untranslated-audit.ts）；整轮跑完统一判失败。 */
+  untranslated: { page: string; findings: UntranslatedFinding[] }[];
   artifactRoot: string;
   projectRoot: string;
   origin: string;

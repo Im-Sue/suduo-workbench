@@ -149,6 +149,8 @@ describe("应用外壳：英文界面", () => {
       expect(dialog?.querySelector(`section[aria-label="${group.title}"]`), group.title).not.toBeNull();
       for (const item of group.items) expect(dialog?.textContent).toContain(item.description);
     }
+    // 分组名后的适用范围放不下时整体换行，不把「Writing requirements」挤成两行（S9 走查）。
+    expect(dialog?.querySelector('section[aria-label="Writing requirements"] h3')?.className).toContain("flex-wrap");
     expect(dialog?.textContent).not.toMatch(CJK);
   });
 

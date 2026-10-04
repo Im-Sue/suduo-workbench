@@ -164,6 +164,11 @@ describe("英文界面：概览", () => {
     expect(status.textContent).toContain("7 requirements");
     expect(status.querySelector('[aria-label="In development: 2 requirements, show them"]')?.textContent).toBe("In development2");
     expect(status.querySelector('[aria-label="Draft: 1 requirement, show it"]')).not.toBeNull();
+    // 窄屏英文「In development」会换行（S9 走查）：图标左浮动让第二行从卡片左边开始，数字贴底与同行卡片对齐。
+    const tile = status.querySelector('[aria-label="In development: 2 requirements, show them"]');
+    expect(tile?.firstElementChild?.className).toContain("flow-root");
+    expect(tile?.firstElementChild?.querySelector("svg")?.getAttribute("class")).toContain("float-left");
+    expect(tile?.lastElementChild?.className).toContain("mt-auto");
 
     const trend = block(page, "Status flow");
     expect(trend.textContent).toContain("4 status changes in the last 7 days");

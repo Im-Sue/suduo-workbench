@@ -17,7 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   updateSettings: vi.fn(),
 }));
 
-/** 界面已经做完的语言。迁移期真实值只有 zh-CN；这里换成可变数组，两种情况都能测。 */
+/** 界面已经做完的语言。S9 起真实值是 zh-CN 与 en；这里换成可变数组，只有一种语言的情况也能测。 */
 const uiLocales = vi.hoisted(() => ["zh-CN", "en"] as ("zh-CN" | "en")[]);
 
 vi.mock("../src/api/client.js", () => ({ api: apiMocks }));
@@ -155,7 +155,7 @@ describe("外观 · 语言", () => {
     const { node } = await open("/settings/appearance");
     const row = node.querySelector('[data-setting-row="locale"]');
     expect(row?.textContent).toContain("语言");
-    expect(row?.textContent).toContain("切换语言会重新载入当前页面");
+    expect(row?.textContent).toContain("选「跟随系统」时，浏览器语言是中文就显示中文，其他语言显示英文。");
     const control = node.querySelector('[data-testid="settings-locale"]');
     const options = [...(control?.querySelectorAll("button") ?? [])];
     expect(options.map((option) => option.textContent)).toEqual(["跟随系统", "简体中文", "English"]);

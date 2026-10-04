@@ -16,7 +16,7 @@ import { useSessionLauncher } from "../../app/shell/SessionLauncher.js";
 import { classifyFailure } from "../../feedback/classify.js";
 import { InlineError, PageFailure } from "../../feedback/components/index.js";
 import type { Failure } from "../../feedback/types.js";
-import { useT } from "../../i18n/provider.js";
+import { useLossCheck, useT } from "../../i18n/provider.js";
 import type { Messages } from "../../i18n/messages/index.js";
 import { Markdown } from "../../ui/markdown.js";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,8 @@ function DetailBody({ projectId, requirement }: { projectId: string; requirement
   const launcher = useSessionLauncher();
   const update = useUpdateRequirement();
   const [filter, setFilter] = useState<ActivityFilter>("all");
+  // 标题、描述正在编辑或评论还没发出去时，别的标签页切了语言：等这些处理完再按新语言重建，免得丢掉。
+  useLossCheck(hasUnsavedWork);
   const me: UserSummaryDto | null =
     settings.data?.session?.user === undefined ? null : { id: settings.data.session.user.id, displayName: settings.data.session.user.displayName };
   const code = requirementCode(requirement.number);
@@ -459,6 +461,8 @@ function CommentThread({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<Failure | null>(null);
   const tooLong = draft.length > 4000;
+  // 发送中输入框已经清空，发不出去时要把正文放回来；这时重建，放回的那一步会落空、正文丢掉：别的标签页切语言时等它回来。
+  useLossCheck(comment.isPending);
 
   const send = async () => {
     const body = draft.trim();

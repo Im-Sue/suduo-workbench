@@ -434,20 +434,23 @@ function TurnFooter({
 }) {
   const t = useT();
   return (
-    <footer className="flex items-center gap-2 text-caption text-subtle-foreground" data-testid="turn-summary">
-      {turn.status === "completed" ? (
-        <CheckIcon className="size-3.5 text-success" aria-hidden="true" />
-      ) : (
-        <SquareIcon className="size-3 text-subtle-foreground" aria-hidden="true" />
-      )}
-      <span>{turnSummaryText(turn, t)}</span>
+    // 对话栏窄时（或英文较长）按钮整体换到下一行，不在按钮文字中间折行。
+    <footer className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-subtle-foreground" data-testid="turn-summary">
+      <span className="flex min-w-0 items-center gap-2">
+        {turn.status === "completed" ? (
+          <CheckIcon className="size-3.5 shrink-0 text-success" aria-hidden="true" />
+        ) : (
+          <SquareIcon className="size-3 shrink-0 text-subtle-foreground" aria-hidden="true" />
+        )}
+        <span>{turnSummaryText(turn, t)}</span>
+      </span>
       {turn.summary.filesChanged > 0 && onViewChanges !== undefined ? (
-        <button type="button" className="rounded-xs px-1 text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={onViewChanges}>
+        <button type="button" className="rounded-xs px-1 whitespace-nowrap text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={onViewChanges}>
           {t.conversation.turn.viewChanges}
         </button>
       ) : null}
       {turn.summary.filesChanged > 0 && onRestoreBefore !== undefined ? (
-        <button type="button" className="rounded-xs px-1 text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={onRestoreBefore}>
+        <button type="button" className="rounded-xs px-1 whitespace-nowrap text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={onRestoreBefore}>
           {t.conversation.turn.restoreBefore}
         </button>
       ) : null}

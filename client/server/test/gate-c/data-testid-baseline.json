@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 283,
+  "total": 285,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -426,6 +426,10 @@
       "inline-error",
       "page-failure",
       "region-error"
+    ],
+    "web/src/i18n/DeferredLocaleNotice.tsx": [
+      "locale-deferred-notice",
+      "locale-deferred-switch"
     ],
     "web/src/ui/message.tsx": [
       "global-message"

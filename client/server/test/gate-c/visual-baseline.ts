@@ -56,6 +56,33 @@ export function keyPageTargets(input: {
   ];
 }
 
+/**
+ * 英文视觉基线的页面（中英双语技术设计 §五：英文覆盖关键页的亮色 × 宽视口）：
+ * 与中文同名的 7 个关键页（便于两种语言并排对照），再加英文最容易出问题的三处——
+ * 讨论房间、设置 · 外观（语言选项在这里）、设置 · 模型服务。
+ */
+export function englishVisualTargets(input: {
+  origin: string;
+  remoteProjectId: string;
+  sessionId: string;
+  requirementNumber: number;
+  roomId: string;
+}): KeyPageTarget[] {
+  const project = input.origin + "/p/" + encodeURIComponent(input.remoteProjectId);
+  return [
+    ...keyPageTargets(input),
+    { name: "rooms", url: project + "/rooms/" + encodeURIComponent(input.roomId), ready: "room-view" },
+    { name: "settings-appearance", url: input.origin + "/settings/appearance", ready: "settings-theme" },
+    { name: "settings-model", url: input.origin + "/settings/model", ready: "settings-page" },
+  ];
+}
+
+/** 英文基线只截亮色 × 宽视口（1440×900）。 */
+export const ENGLISH_VISUAL_MATRIX = {
+  themes: ["light"],
+  viewports: [VISUAL_VIEWPORTS[0]],
+} as const satisfies { themes: readonly VisualTheme[]; viewports: readonly { width: number; height: number }[] };
+
 /** 切主题：本机偏好写 localStorage（首屏脚本读它，不闪），同时让系统配色一致、关掉动效。下一次导航生效。 */
 export async function applyTheme(page: Page, theme: VisualTheme): Promise<void> {
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });

@@ -18,7 +18,8 @@ export function ShortcutsDialog() {
         <div className="grid max-h-[66vh] grid-cols-1 gap-x-8 gap-y-5 overflow-y-auto md:grid-cols-2">
           {shortcutGroups(t).map((group) => (
             <section key={group.title} aria-label={group.title} className="flex flex-col gap-1.5">
-              <h3 className="m-0 flex items-baseline gap-2 text-small font-semibold text-foreground">
+              {/* 分组名后的适用范围放不下时整体换到下一行，不把分组名挤成两行。 */}
+              <h3 className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-small font-semibold text-foreground">
                 {group.title}
                 {group.scope === undefined ? null : <span className="text-caption font-normal text-subtle-foreground">{group.scope}</span>}
               </h3>

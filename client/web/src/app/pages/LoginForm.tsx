@@ -10,7 +10,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { queryKeys } from "../queries.js";
-import { useT } from "../../i18n/provider.js";
+import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
 
 /**
  * 登录 / 注册表单（登录页与首启向导共用）。
@@ -20,10 +20,13 @@ export function LoginForm({ onAuthenticated }: { onAuthenticated(): Promise<void
   const t = useT();
   const text = t.setup.loginForm;
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [loginName, setLoginName] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
+  // 已填的字段带过语言切换的重建（i18n/carry.ts；快照只在内存里，读回或重建结束即丢）。
+  const carried = useCarried<{ mode: "login" | "register"; loginName: string; displayName: string; password: string }>("login-form");
+  const [mode, setMode] = useState<"login" | "register">(carried?.mode ?? "login");
+  const [loginName, setLoginName] = useState(carried?.loginName ?? "");
+  const [displayName, setDisplayName] = useState(carried?.displayName ?? "");
+  const [password, setPassword] = useState(carried?.password ?? "");
+  useCarrySource("login-form", () => ({ mode, loginName, displayName, password }));
   const [error, setError] = useState<Failure | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState(false);

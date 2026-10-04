@@ -2,11 +2,19 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
-import type { Locale } from "@suduo/client-contracts";
+import type {
+  AgentRuntime,
+  ApproveResult,
+  Locale,
+  RuntimeEventDraft,
+  StartThreadResult,
+  StartTurnResult,
+} from "@suduo/client-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SettingsService } from "../src/application/settings-service.js";
-import { registerRequestLocale, resolveRequestLocale } from "../src/i18n/locale.js";
+import { registerRequestLocale, requestLocaleOf, resolveRequestLocale } from "../src/i18n/locale.js";
 import { messagesFor } from "../src/i18n/messages/index.js";
+import { createMinimalHttpContext } from "./helpers/minimal-http-context.js";
 
 const roots: string[] = [];
 
@@ -21,11 +29,53 @@ function settingsFile(): string {
 }
 
 describe("请求语言的回退链", () => {
-  it("请求头 → 已同步的语言 → Accept-Language → en", () => {
-    expect(resolveRequestLocale({ header: "zh-CN", stored: "en", acceptLanguage: "en" })).toBe("zh-CN");
-    expect(resolveRequestLocale({ header: "fr", stored: "en", acceptLanguage: "zh-CN" })).toBe("en");
-    expect(resolveRequestLocale({ header: undefined, stored: null, acceptLanguage: "zh-CN,zh;q=0.9" })).toBe("zh-CN");
-    expect(resolveRequestLocale({ header: ["en", "zh-CN"], stored: null, acceptLanguage: undefined })).toBe("en");
+  it("请求头 → 地址上的 ?locale= → 已同步的语言 → Accept-Language → en", () => {
+    expect(resolveRequestLocale({ header: "zh-CN", query: "en", stored: "en", acceptLanguage: "en" })).toBe("zh-CN");
+    expect(resolveRequestLocale({ header: undefined, query: "en", stored: "zh-CN", acceptLanguage: "zh-CN" })).toBe("en");
+    expect(resolveRequestLocale({ header: "fr", query: undefined, stored: "en", acceptLanguage: "zh-CN" })).toBe("en");
+    expect(resolveRequestLocale({ header: undefined, query: "fr", stored: "zh-CN", acceptLanguage: "en" })).toBe("zh-CN");
+    expect(resolveRequestLocale({ header: undefined, query: ["en", "zh-CN"], stored: null, acceptLanguage: "zh-CN" })).toBe("zh-CN");
+    expect(resolveRequestLocale({ header: undefined, query: undefined, stored: null, acceptLanguage: "zh-CN,zh;q=0.9" })).toBe("zh-CN");
+    expect(resolveRequestLocale({ header: ["en", "zh-CN"], query: undefined, stored: null, acceptLanguage: undefined })).toBe("en");
+  });
+
+  it("EventSource 带不了头：认地址上的 ?locale=，但只管这一个请求、不记下来", async () => {
+    const settings = new SettingsService(settingsFile(), {});
+    const server = Fastify();
+    registerRequestLocale(server, settings);
+    server.get("/stream", async (request) => ({ locale: request.locale }));
+    const probe = async (url: string, headers: Record<string, string> = {}) =>
+      (await server.inject({ method: "GET", url, headers })).json() as { locale: Locale };
+
+    expect(await probe("/stream", { "x-suduo-locale": "zh-CN" })).toEqual({ locale: "zh-CN" });
+    expect(settings.locale()).toBe("zh-CN");
+    // 切到英文后事件流先于普通请求重连：按地址上的语言出文字。
+    expect(await probe("/stream?locale=en")).toEqual({ locale: "en" });
+    expect(await probe("/stream?after=12&locale=en", { "accept-language": "zh-CN" })).toEqual({ locale: "en" });
+    // 不记：后台任务与没带语言的请求仍用请求头记下的语言。
+    expect(settings.locale()).toBe("zh-CN");
+    expect(await probe("/stream")).toEqual({ locale: "zh-CN" });
+    // 请求头优先；非法值与重复参数不认。
+    expect(await probe("/stream?locale=en", { "x-suduo-locale": "zh-CN" })).toEqual({ locale: "zh-CN" });
+    expect(await probe("/stream?locale=fr")).toEqual({ locale: "zh-CN" });
+    expect(await probe("/stream?locale=en&locale=zh-CN")).toEqual({ locale: "zh-CN" });
+    await server.close();
+  });
+
+  it("早于 request.locale 的错误处理（requestLocaleOf）同样认 ?locale=", async () => {
+    const settings = new SettingsService(settingsFile(), {});
+    const server = Fastify();
+    server.addHook("onRequest", async (request) => {
+      if (request.url.startsWith("/blocked")) throw new Error("blocked");
+    });
+    registerRequestLocale(server, settings);
+    server.setErrorHandler((_error, request, reply) => {
+      void reply.code(403).send({ locale: requestLocaleOf(request, settings) });
+    });
+    server.get("/blocked", async () => ({ ok: true }));
+    const response = await server.inject({ method: "GET", url: "/blocked?locale=en", headers: { "accept-language": "zh-CN" } });
+    expect(response.json()).toEqual({ locale: "en" });
+    await server.close();
   });
 
   it("挂在每个请求上，并记住请求头带来的语言", async () => {
@@ -45,6 +95,44 @@ describe("请求语言的回退链", () => {
     expect(await probe({ "accept-language": "en-US" })).toEqual({ locale: "zh-CN" });
     expect(await probe({ "x-suduo-locale": "fr" })).toEqual({ locale: "zh-CN" });
     await server.close();
+  });
+});
+
+class IdleRuntime implements AgentRuntime {
+  readonly runtimeId = "codex-local";
+  readonly runtimeKind = "codex";
+  async startThread(): Promise<StartThreadResult> {
+    throw new Error("not used");
+  }
+  async startTurn(): Promise<StartTurnResult> {
+    throw new Error("not used");
+  }
+  async approve(): Promise<ApproveResult> {
+    return { acknowledged: true };
+  }
+  async interrupt(): Promise<void> {
+    return undefined;
+  }
+  async *subscribe(): AsyncIterable<RuntimeEventDraft> {
+    yield* [];
+  }
+}
+
+describe("事件流的 ?locale= 走到真实的 HTTP 服务", () => {
+  it("会话事件流打不开时的报错按地址上的语言；夹具记下的中文不被改掉", async () => {
+    const context = createMinimalHttpContext(new IdleRuntime());
+    try {
+      const open = async (url: string) =>
+        (await context.server.inject({ method: "GET", url, headers: { host: "127.0.0.1:8787" } })).json() as {
+          error: { code: string; message: string };
+        };
+      expect((await open("/api/v1/sessions/missing/events?after=0&locale=en")).error).toEqual(
+        expect.objectContaining({ code: "NOT_FOUND", message: messagesFor("en").session.notFound }),
+      );
+      expect((await open("/api/v1/sessions/missing/events?after=0")).error.message).toBe(messagesFor("zh-CN").session.notFound);
+    } finally {
+      await context.close();
+    }
   });
 });
 

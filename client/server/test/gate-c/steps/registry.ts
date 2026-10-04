@@ -1,3 +1,4 @@
+import type { Locale } from "@suduo/client-contracts";
 import { a11yAuditStep } from "./a11y-audit.js";
 import { assistantApprovalStep } from "./assistant-approval.js";
 import { assistantAttachmentStep } from "./assistant-attachment.js";
@@ -16,6 +17,14 @@ import { visualCloseoutStep } from "./visual-closeout.js";
 import { finalInterruptStep } from "./final-interrupt.js";
 import { interruptAndReopenStep } from "./interrupt-and-reopen.js";
 import { supervisorRecoveryStep } from "./supervisor-recovery.js";
+import {
+  englishMyWorkStep,
+  englishRequirementsStep,
+  englishRoomsStep,
+  englishSessionTurnStep,
+  englishSettingsStep,
+} from "./english-smoke.js";
+import { englishVisualStep } from "./english-visual.js";
 import { defineGateCSteps, type GateCStep } from "./types.js";
 import { v2UserPathStep } from "./v2-user-path.js";
 
@@ -82,6 +91,43 @@ export const gateCStepPrerequisites: Readonly<Record<string, readonly string[]>>
     "extension-seam": [],
   });
 
+/**
+ * 英文冒烟（中英双语技术设计 §五，`SUDUO_GATE_LOCALE=en`）：登录与第一次开工复用 `v2-user-path`，
+ * 其后是我的工作、需求（看板 / 列表 / 速览 / 详情 / 从需求开工 / 概览）、会话一轮、房间、设置，
+ * 最后采英文视觉基线。不设 `GATE_C_STEPS` 时跑这一整组；中文全量不受影响。
+ */
+export const gateCEnglishSteps = defineGateCSteps(
+  v2UserPathStep,
+  englishMyWorkStep,
+  englishRequirementsStep,
+  englishSessionTurnStep,
+  englishRoomsStep,
+  englishSettingsStep,
+  englishVisualStep,
+);
+
+/** 英文冒烟的前置：都只依赖 `v2-user-path` 建立的登录、项目、目录关联与会话（各步自己导航）。 */
+export const gateCEnglishStepPrerequisites: Readonly<Record<string, readonly string[]>> =
+  Object.freeze({
+    "v2-user-path": [],
+    "en-my-work": ["v2-user-path"],
+    "en-requirements": ["v2-user-path"],
+    "en-session-turn": ["v2-user-path"],
+    "en-rooms": ["v2-user-path"],
+    "en-settings": ["v2-user-path"],
+    "en-visual": ["v2-user-path"],
+  });
+
+/** 按验收语言选步骤组：中文是全量（改动前的 19 步），其他语言是冒烟。 */
+export function gateCStepsFor(locale: Locale): {
+  steps: readonly GateCStep[];
+  prerequisites: Readonly<Record<string, readonly string[]>>;
+} {
+  return locale === "zh-CN"
+    ? { steps: gateCSteps, prerequisites: gateCStepPrerequisites }
+    : { steps: gateCEnglishSteps, prerequisites: gateCEnglishStepPrerequisites };
+}
+
 export interface GateCStepSelection {
   /** 按 registry 数组序排好的待执行步骤。 */
   steps: readonly GateCStep[];
@@ -91,19 +137,22 @@ export interface GateCStepSelection {
   requested: readonly string[];
 }
 
-function assertPrerequisiteCoverage(steps: readonly GateCStep[]): void {
+function assertPrerequisiteCoverage(
+  steps: readonly GateCStep[],
+  prerequisitesOf: Readonly<Record<string, readonly string[]>>,
+): void {
   const ids = new Set(steps.map((step) => step.id));
   const missing = steps
     .map((step) => step.id)
-    .filter((id) => gateCStepPrerequisites[id] === undefined);
+    .filter((id) => prerequisitesOf[id] === undefined);
   if (missing.length > 0) {
     throw new Error(
-      `gateCStepPrerequisites 缺少步骤登记：${missing.join(", ")}（registry 增删步骤时同步这张表）`,
+      `步骤前置表缺少步骤登记：${missing.join(", ")}（registry 增删步骤时同步对应的前置表）`,
     );
   }
-  for (const [id, prerequisites] of Object.entries(gateCStepPrerequisites)) {
+  for (const [id, prerequisites] of Object.entries(prerequisitesOf)) {
     if (!ids.has(id)) {
-      throw new Error(`gateCStepPrerequisites 登记了不存在的步骤：${id}`);
+      throw new Error(`步骤前置表登记了不存在的步骤：${id}`);
     }
     const unknown = prerequisites.filter((item) => !ids.has(item));
     if (unknown.length > 0) {
@@ -116,12 +165,14 @@ function assertPrerequisiteCoverage(steps: readonly GateCStep[]): void {
  * 解析 `GATE_C_STEPS`（逗号分隔）为「前置闭包 + registry 数组序」的执行序列。
  *
  * 不设该变量时返回全量、`subset=false`，行为与改动前完全一致。
+ * `prerequisitesOf` 缺省是中文全量的前置表；英文冒烟传 `gateCEnglishStepPrerequisites`（见 `gateCStepsFor`）。
  */
 export function resolveGateCStepSelection(
   steps: readonly GateCStep[],
   raw: string | undefined,
+  prerequisitesOf: Readonly<Record<string, readonly string[]>> = gateCStepPrerequisites,
 ): GateCStepSelection {
-  assertPrerequisiteCoverage(steps);
+  assertPrerequisiteCoverage(steps, prerequisitesOf);
   const requested = (raw ?? "")
     .split(",")
     .map((item) => item.trim())
@@ -142,7 +193,7 @@ export function resolveGateCStepSelection(
       return;
     }
     selected.add(id);
-    for (const prerequisite of gateCStepPrerequisites[id] ?? []) {
+    for (const prerequisite of prerequisitesOf[id] ?? []) {
       expand(prerequisite);
     }
   };

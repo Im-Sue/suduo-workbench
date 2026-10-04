@@ -50,6 +50,8 @@ Options:
 - `--port 4100`: the port the service listens on (default 4100).
 - `--mirror cn`: build with mirrors in mainland China (see [Mirrors](#mirrors)).
 
+The script's messages are in English, or in Chinese when the server's locale is Chinese (see [Script language](#script-language)).
+
 The script:
 
 1. checks Docker, Compose and the port;
@@ -58,7 +60,7 @@ The script:
 4. waits until `/v2/health` reports ready, then prints the address.
 
 ```text
-  ✓ SuDuo cloud is ready (version x.y.z, database schema 011_rooms_and_shared_agents.sql)
+  ✓ SuDuo cloud is ready (version x.y.z, database schema 013_agent_run_text_codes.sql)
 
   Address: http://10.0.0.12:4100
   Next: enter this address in the SuDuo client settings. Anyone can then register and start.
@@ -145,6 +147,19 @@ All commands run in the `cloud/` directory.
 | `sudo ./scripts/suduo-cloud.sh upgrade` | Back up, then upgrade to the checked-out version (see below) |
 | `sudo ./scripts/suduo-cloud.sh uninstall` | Remove containers and the image; data and `server/.env` stay |
 | `sudo ./scripts/suduo-cloud.sh uninstall --purge` | Also delete all data. Asks you to type `purge`. Cannot be undone |
+
+### Script language
+
+`suduo-cloud.sh` prints its messages in Chinese when the system locale is Chinese and in English otherwise. It reads `LC_ALL`, `LC_MESSAGES` and `LANG`, and the first one that is set decides; when none is set, it uses English. Ubuntu servers often default to `C.UTF-8`, which gives English.
+
+To choose a language, set `SUDUO_LOCALE` to `en` or `zh-CN`. `sudo` does not pass `SUDUO_LOCALE` on to the script, so put it after `sudo`:
+
+```bash
+sudo SUDUO_LOCALE=zh-CN ./scripts/suduo-cloud.sh status   # Chinese
+sudo SUDUO_LOCALE=en ./scripts/suduo-cloud.sh status      # English
+```
+
+Setting it before `sudo` (`SUDUO_LOCALE=en sudo …`) or with `export` has no effect. `sudo` does keep `LANG` and `LC_*` by default, so if your own shell has a Chinese locale (SSH often forwards it from your computer), the script follows it.
 
 ### Upgrade
 

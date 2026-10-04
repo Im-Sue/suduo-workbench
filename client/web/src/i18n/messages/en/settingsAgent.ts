@@ -266,7 +266,17 @@ export const settingsAgent = {
     },
     locale: {
       title: "Language",
-      description: "Switching languages reloads the current page. Unsaved changes may be lost.",
+      description: "“Follow system” shows Chinese if your browser language is Chinese, and English otherwise.",
+      confirm: {
+        title: "Switch language?",
+        body: "SuDuo reloads the interface in the new language. Open dialogs and unsaved edits on this page will be lost. Message drafts and queued messages are kept.",
+        action: "Switch language",
+      },
+      otherTab: {
+        message: (language: string) =>
+          `Another tab changed the language to ${language}. This tab will switch once its open dialogs, unsaved edits, and messages being sent are done.`,
+        switchNow: "Switch now",
+      },
     },
   },
 } satisfies Messages["settingsAgent"];

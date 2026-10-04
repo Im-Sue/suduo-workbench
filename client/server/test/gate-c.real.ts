@@ -13,15 +13,17 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CODEX_VERSION } from "@suduo/client-contracts";
+import { CODEX_VERSION, type Locale } from "@suduo/client-contracts";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { openBetterSqlite3Database } from "../src/infrastructure/db/better-sqlite3-database.js";
 import { runMigrations } from "../src/infrastructure/db/migration-runner.js";
 import { ApprovalRepository } from "../src/infrastructure/db/repositories/approval-repository.js";
 import { EventRepository } from "../src/infrastructure/db/repositories/event-repository.js";
 import { startRequirementsServiceFixture } from "./gate-c/requirements-service-fixture.js";
-import { gateCSteps, resolveGateCStepSelection } from "./gate-c/steps/registry.js";
+import { gateCStepsFor, resolveGateCStepSelection } from "./gate-c/steps/registry.js";
 import { runGateCSteps, type GateCStepContext } from "./gate-c/steps/types.js";
+import { browserLocaleOf, gateLocaleFromEnv, loadGateUiText } from "./gate-c/ui-text.js";
+import { untranslatedSummary } from "./gate-c/untranslated-audit.js";
 
 const serverRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workspaceRoot = resolve(serverRoot, "..");
@@ -61,16 +63,30 @@ if (!codexHome) {
 }
 
 /**
+ * 验收语言（中英双语技术设计 §五）：不设 `SUDUO_GATE_LOCALE` 时按中文跑全量，行为与改动前一致；
+ * `SUDUO_GATE_LOCALE=en` 跑英文冒烟（另一组步骤，见 registry 的 gateCEnglishSteps）。
+ * 界面文字从前端字典取，载入放在装服务之前：字典缺键要立刻失败。
+ */
+const gateLocale = gateLocaleFromEnv(process.env["SUDUO_GATE_LOCALE"]);
+const gateRun = gateCStepsFor(gateLocale);
+const ui = await loadGateUiText(gateLocale);
+
+/**
  * 分片回归入口（PR1）：`GATE_C_STEPS=final-interrupt,assistant-approval` 只跑点名的
  * 步骤及其前置闭包。不设该变量时是全量，行为与改动前完全一致。
  * 解析放在装服务、开浏览器之前——名字写错要立刻失败，别先花一轮真实模型调用。
  */
-const selection = resolveGateCStepSelection(gateCSteps, process.env["GATE_C_STEPS"]);
-if (selection.subset) {
+const selection = resolveGateCStepSelection(
+  gateRun.steps,
+  process.env["GATE_C_STEPS"],
+  gateRun.prerequisites,
+);
+if (selection.subset || gateLocale !== "zh-CN") {
   process.stdout.write(
     JSON.stringify({
       gate: "C",
-      mode: "subset",
+      locale: gateLocale,
+      mode: selection.subset ? "subset" : "full",
       requested: selection.requested,
       plan: selection.steps.map((step) => step.id),
     }) + "\n",
@@ -80,7 +96,7 @@ if (selection.subset) {
 await cleanupOldService();
 rmSync(artifactRoot, { recursive: true, force: true });
 mkdirSync(projectRoot, { recursive: true });
-prepareProject();
+prepareProject(gateLocale);
 const port = await availablePort();
 const origin = "http://127.0.0.1:" + String(port);
 const emptyCodexHome = resolve(artifactRoot, "empty-codex-home");
@@ -178,11 +194,25 @@ try {
     viewport: { width: 1440, height: 900 },
     colorScheme: "dark",
     // 默认按中文验收（中英双语技术设计 §五）：浏览器语言决定「跟随系统」时的界面语言。
-    locale: "zh-CN",
+    locale: browserLocaleOf(gateLocale),
   });
+  if (gateLocale !== "zh-CN") {
+    // 英文冒烟同时固定本机的界面语言偏好（设置 › 外观 › 语言），不只靠「跟随系统」：两条路都要是英文。
+    // 每次导航前写入，整轮（含另开的窗口）都是这个偏好。键名同前端 i18n/locale.ts 的 LOCALE_STORAGE_KEY。
+    await context.addInitScript((value) => {
+      try {
+        window.localStorage.setItem("suduo.locale", value);
+      } catch {
+        // 存不了时只剩浏览器语言这一条路，步骤里的英文断言会暴露出来。
+      }
+    }, gateLocale);
+  }
   await context.tracing.start({ screenshots: true, snapshots: true });
   const page = await context.newPage();
   const gateContext: GateCStepContext = {
+    locale: gateLocale,
+    ui,
+    untranslated: [],
     codexBin,
     artifactRoot,
     projectRoot,
@@ -277,6 +307,16 @@ try {
       lastSeq = seqs.at(-1) ?? 0;
       approvalCount = new ApprovalRepository(database).listBySession(ledgerSessionId).length;
     }
+    // 英文冒烟里建的会话都应记下英文（中英双语 S7：交给 Codex 的文字按会话语言），由建会话请求的语言头决定。
+    if (gateLocale !== "zh-CN") {
+      const sessions = database.prepare("select id, locale from sessions").all<{ id: string; locale: string }>();
+      const wrong = sessions.filter((row) => row.locale !== gateLocale);
+      if (sessions.length === 0 || wrong.length > 0) {
+        throw new Error(
+          `英文冒烟建的会话应都记为 ${gateLocale}：共 ${String(sessions.length)} 个，不符的有 ${JSON.stringify(wrong)}`,
+        );
+      }
+    }
   } finally {
     database.close();
   }
@@ -295,11 +335,16 @@ try {
   );
   writeFileSync(resolve(artifactRoot, "uninstall.log"), uninstall.stdout + uninstall.stderr);
 
+  // 英文冒烟：各页面的漏翻检查跑完一起判（中文验收时恒为空）。放在最后，trace、日志与账本检查都已留下。
+  const untranslated = untranslatedSummary(gateContext.untranslated);
+  if (untranslated !== null) throw new Error(untranslated);
+
   writeFileSync(
     resultPath,
     JSON.stringify(
       {
         status: "PASS",
+        locale: gateLocale,
         codexHome,
         route: {
           remoteProjectId: gateContext.remoteProjectId,
@@ -362,6 +407,7 @@ try {
     JSON.stringify({
       gate: "C",
       status: "passed",
+      locale: gateLocale,
       mode: selection.subset ? "subset" : "full",
       steps: [...gateContext.completedSteps],
       resultPath,
@@ -374,7 +420,7 @@ try {
   await cleanupOldService();
 }
 
-function prepareProject(): void {
+function prepareProject(locale: Locale): void {
   mkdirSync(resolve(projectRoot, "materials"), { recursive: true });
   writeFileSync(
     resolve(projectRoot, "materials", "brief.md"),
@@ -389,26 +435,52 @@ function prepareProject(): void {
   );
   const skillDirectory = resolve(projectRoot, ".codex", "skills", "gate-c");
   mkdirSync(skillDirectory, { recursive: true });
-  writeFileSync(
-    resolve(skillDirectory, "SKILL.md"),
-    [
-      "---",
-      "name: gate-c-workflow",
-      "description: Gate C 浏览器端到端文件审批验证 skill",
-      "---",
-      "",
-      "# Gate C workflow",
-      "",
-      "- 当用户要求 accept 阶段时，必须实际执行 shell 命令：",
-      "  `printf '# Gate C Accepted\\n\\nCreated by the gate-c skill.\\n' > GATE_C_ACCEPT.md`",
-      "- 当用户要求 decline 阶段时，必须实际执行 shell 命令：",
-      "  `printf 'must not exist' > GATE_C_DECLINE.md`",
-      "- 当用户要求 wait 阶段时，必须实际执行 shell 命令：",
-      "  `printf 'started' > GATE_C_WAIT_STARTED && sleep 45`",
-      "- 不要改用纯文本回答绕过命令；命令完成或被拒后再简短说明。",
-      "",
-    ].join("\n"),
-  );
+  writeFileSync(resolve(skillDirectory, "SKILL.md"), locale === "zh-CN" ? chineseSkill() : englishSkill());
+}
+
+/** 中文全量用的 skill（与改动前逐字相同）。 */
+function chineseSkill(): string {
+  return [
+    "---",
+    "name: gate-c-workflow",
+    "description: Gate C 浏览器端到端文件审批验证 skill",
+    "---",
+    "",
+    "# Gate C workflow",
+    "",
+    "- 当用户要求 accept 阶段时，必须实际执行 shell 命令：",
+    "  `printf '# Gate C Accepted\\n\\nCreated by the gate-c skill.\\n' > GATE_C_ACCEPT.md`",
+    "- 当用户要求 decline 阶段时，必须实际执行 shell 命令：",
+    "  `printf 'must not exist' > GATE_C_DECLINE.md`",
+    "- 当用户要求 wait 阶段时，必须实际执行 shell 命令：",
+    "  `printf 'started' > GATE_C_WAIT_STARTED && sleep 45`",
+    "- 不要改用纯文本回答绕过命令；命令完成或被拒后再简短说明。",
+    "",
+  ].join("\n");
+}
+
+/**
+ * 英文冒烟用的 skill：同名、同样三条命令，说明写成英文。skill 是用户写的内容，
+ * 用英文是为了让 Codex 也用英文作答（截图与漏翻检查更接近英文用户看到的样子）。
+ */
+function englishSkill(): string {
+  return [
+    "---",
+    "name: gate-c-workflow",
+    "description: Gate C end-to-end browser approval workflow skill",
+    "---",
+    "",
+    "# Gate C workflow",
+    "",
+    "- When the user asks for the accept stage, you must actually run this shell command:",
+    "  `printf '# Gate C Accepted\\n\\nCreated by the gate-c skill.\\n' > GATE_C_ACCEPT.md`",
+    "- When the user asks for the decline stage, you must actually run this shell command:",
+    "  `printf 'must not exist' > GATE_C_DECLINE.md`",
+    "- When the user asks for the wait stage, you must actually run this shell command:",
+    "  `printf 'started' > GATE_C_WAIT_STARTED && sleep 45`",
+    "- Do not answer in plain text to avoid running the command; after the command finishes or is declined, reply briefly in English.",
+    "",
+  ].join("\n");
 }
 
 async function waitForHttpReady(baseUrl: string, timeoutMs: number): Promise<void> {

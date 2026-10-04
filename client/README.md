@@ -26,7 +26,7 @@ pnpm install
 pnpm start
 ```
 
-Use the same release as your team's server. SuDuo shows a hint in **Settings → About (关于)** when the versions differ. The interface is in Chinese for now, so menu names below include the current Chinese label.
+Use the same release as your team's server. SuDuo shows a hint in **Settings → About** when the versions differ.
 
 `pnpm start` checks your environment, builds SuDuo the first time (about 1–2 minutes), starts the local service on `http://127.0.0.1:8787` and opens your browser. If SuDuo is already running, it just opens the browser. Press `Ctrl+C` to stop it.
 
@@ -41,15 +41,31 @@ Use the same release as your team's server. SuDuo shows a hint in **Settings →
 SuDuo runs the Codex CLI version pinned in `client/` with your own Codex configuration in `~/.codex`, the same directory your own Codex CLI uses. Either:
 
 - sign in from the `client/` directory: `pnpm exec codex login`; or
-- configure a model service in SuDuo under **Settings → Model service (模型服务)**: SuDuo passes the base URL and API key to Codex, which saves them in `~/.codex`. This changes the configuration your own Codex CLI uses too, and can replace an existing ChatGPT sign-in.
+- configure a model service in SuDuo under **Settings → Model service**: SuDuo passes the base URL and API key to Codex, which saves them in `~/.codex`. This changes the configuration your own Codex CLI uses too, and can replace an existing ChatGPT sign-in.
 
 SuDuo itself does not keep a copy of your key, and sends nothing to SuDuo's authors.
 
 ## Connect to your team
 
-1. **Settings → Requirements service (需求服务)**: enter your team's server address, then register or sign in.
+1. **Settings → Requirements service**: enter your team's server address, then register or sign in.
 2. For each project, choose the folder on your computer where its code lives.
 3. Open a requirement and start a session.
+
+## Language
+
+**Interface.** SuDuo follows your system language by default (as your browser reports it). To pick English or Simplified Chinese yourself, go to **Settings → Appearance → Language**. The choice is saved in this browser.
+
+**Terminal output.** `pnpm start`, `pnpm run doctor` and the local service's startup errors follow the system locale: Chinese when it is Chinese, English otherwise. SuDuo reads `LC_ALL`, `LC_MESSAGES` and `LANG`, and the first one that is set decides; on Windows, where these are usually not set, it uses the Windows region settings. To choose a language, set `SUDUO_LOCALE` to `zh-CN` or `en`:
+
+```bash
+SUDUO_LOCALE=en pnpm start                # macOS
+```
+
+```powershell
+$env:SUDUO_LOCALE = "en"; pnpm start      # Windows PowerShell (applies to this window)
+```
+
+`SUDUO_LOCALE` only changes terminal output; the interface keeps its own setting. The diagnostics page at `http://127.0.0.1:8787/doctor` uses the language you last used in the interface; add `?lang=en` or `?lang=zh-CN` to choose.
 
 ## Updating
 
@@ -78,10 +94,10 @@ Set `SUDUO_DATA_DIR` to use another data directory, and `SUDUO_CODEX_HOME` (or `
 
 | Problem | What to do |
 |---|---|
-| Something is wrong and you don't know what | `pnpm run doctor` in `client/`, or **Settings → Diagnostics (诊断)**, or open `http://127.0.0.1:8787/doctor` |
+| Something is wrong and you don't know what | `pnpm run doctor` in `client/`, or **Settings → Diagnostics**, or open `http://127.0.0.1:8787/doctor` |
 | `pnpm install` fails on `better-sqlite3` | It downloads a prebuilt binary; behind a firewall it falls back to compiling. Install build tools: `xcode-select --install` on macOS, or Visual Studio Build Tools with "Desktop development with C++" on Windows. Then run `pnpm install` again |
 | Downloads from npm are slow or fail (for example in mainland China) | `pnpm config set registry https://registry.npmmirror.com`, then `pnpm install` |
-| You are behind a company proxy | Set `HTTPS_PROXY` for `pnpm install`. For Codex, set the proxy in **Settings → Network proxy (网络代理)** |
+| You are behind a company proxy | Set `HTTPS_PROXY` for `pnpm install`. For Codex, set the proxy in **Settings → Network proxy** |
 | Port 8787 is in use | `pnpm start --port 18787` |
 | Codex keeps warning about `preferred_auth_method` | Delete that line from `~/.codex/config.toml`; current Codex versions do not use it |
 

@@ -2,7 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { TimelineEntry, TimelineNotice } from "../../../event-projection/timeline.js";
-import { useT } from "../../../i18n/provider.js";
+import { useCarried, useCarrySource, useT } from "../../../i18n/provider.js";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { TurnView, type TurnViewActions } from "./TurnView.js";
@@ -34,7 +34,15 @@ export function ConversationStream({
   const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const atBottom = useRef(true);
+  // 读到一半往上翻着时切换语言（别的标签页改的）：重建后回到原来的位置，不跳到底部（i18n/carry.ts）。
+  const carriedScroll = useCarried<{ atBottom: boolean; top: number }>("conversation-scroll");
+  const atBottom = useRef(carriedScroll?.atBottom ?? true);
+  useCarrySource("conversation-scroll", () => ({ atBottom: atBottom.current, top: scrollRef.current?.scrollTop ?? 0 }));
+  useLayoutEffect(() => {
+    if (carriedScroll === undefined || carriedScroll.atBottom || scrollRef.current === null) return;
+    scrollRef.current.scrollTop = carriedScroll.top;
+    // 只在挂载时回到原位；之后照常由滚动决定贴不贴底。
+  }, []);
   const [showPill, setShowPill] = useState(false);
   const virtual = timeline.length > VIRTUALIZE_AFTER;
 

@@ -1,9 +1,11 @@
 import type { LocalePreference } from "@suduo/client-contracts";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RadioGroup, RadioTile } from "@/components/ui/radio-group";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { applyLocalePreference, UI_LOCALES } from "../../../i18n/locale.js";
-import { useLocalePreference, useT } from "../../../i18n/provider.js";
+import { ConfirmDialog } from "../../../feedback/components/index.js";
+import { switchWouldLoseWork } from "../../../i18n/carry.js";
+import { applyLocalePreference, resolveUiLocale, UI_LOCALES } from "../../../i18n/locale.js";
+import { useCarried, useCarrySource, useLocalePreference, useT } from "../../../i18n/provider.js";
 import { applyDensityPreference, loadDensityPreference, type DensityPreference } from "../../../ui/density.js";
 import { applyThemePreference, useThemePreference, type ThemePreference } from "../../../ui/theme.js";
 import { rowDescId, rowLabelId, SaveStatus, SettingsRow, SettingsSection, useSaveIndicator } from "../components/kit.js";
@@ -19,6 +21,35 @@ export function AppearanceSection() {
     ...UI_LOCALES,
     ...(localePreference !== "system" && !UI_LOCALES.includes(localePreference) ? [localePreference] : []),
   ];
+  /** 切换会丢东西时先问：记下选了哪一项，确认后再切。 */
+  const [confirmLocale, setConfirmLocale] = useState<LocalePreference | null>(null);
+  /**
+   * 切换后整棵界面重建，焦点会落回页面开头：从这里切的（点选、键盘、确认框），重建后把焦点放回语言控件当前选中的一项。
+   * 有的浏览器点按钮不给它焦点，所以切之前显式记一笔；焦点本来就在控件里时也算。
+   */
+  const localeControl = useRef<HTMLDivElement>(null);
+  const switchingHere = useRef(false);
+  const refocusLocale = useCarried<boolean>("settings-locale-focus") === true;
+  useCarrySource(
+    "settings-locale-focus",
+    () => switchingHere.current || (localeControl.current?.contains(document.activeElement) ?? false),
+  );
+  useEffect(() => {
+    if (refocusLocale) localeControl.current?.querySelector<HTMLElement>('[data-state="on"]')?.focus();
+  }, [refocusLocale]);
+  const switchTo = (next: LocalePreference) => {
+    switchingHere.current = true;
+    applyLocalePreference(next);
+    switchingHere.current = false;
+  };
+  const chooseLocale = (next: LocalePreference) => {
+    // 界面语言不变（如系统是中文时在「跟随系统」与「简体中文」之间换）就不会重建，不用问。
+    if (resolveUiLocale(next) !== resolveUiLocale(localePreference) && switchWouldLoseWork()) {
+      setConfirmLocale(next);
+      return;
+    }
+    switchTo(next);
+  };
   const [density, setDensity] = useState<DensityPreference>(() => loadDensityPreference());
   const [themeSaved, trackTheme] = useSaveIndicator();
   const [densitySaved, trackDensity] = useSaveIndicator();
@@ -97,23 +128,36 @@ export function AppearanceSection() {
       </SettingsRow>
 
       {/*
-        语言：可选的固定语言只有一种时（迁移期 UI_LOCALES 只有中文）不显示这一行；
-        但手动固定过一种还没做完的语言（如开发时把 suduo.locale 设成 en）时要显示，让人能从界面切回来。
-        切换后 LocaleBoundary 按新语言重建整棵界面，所以说明里提醒未保存的内容可能丢失。
+        语言：「跟随系统」加上 UI_LOCALES 里做完的语言（S9 起中英两种都在）。可选的固定语言只有一种时不显示这一行；
+        手动固定过一种还没做完的语言（如开发时把 suduo.locale 设成别的）时也要显示，让人能从界面切回来。
+        切换后 LocaleBoundary 按新语言重建整棵界面：草稿与排队的消息会带过去（i18n/carry.ts），
+        带不过去的（打开的对话框、没保存的编辑）先确认。设置搜索的索引里有这一行（sections.ts）。
       */}
       {localeChoices.length > 2 ? (
         <SettingsRow anchor="locale" title={text.locale.title} description={text.locale.description}>
-          <div>
+          <div ref={localeControl}>
             <SegmentedControl
               aria-labelledby={rowLabelId("locale")}
               data-testid="settings-locale"
               value={localePreference}
               options={localeChoices.map((value) => ({ value, label: t.common.localeOption[value] }))}
-              onValueChange={(next) => applyLocalePreference(next)}
+              onValueChange={chooseLocale}
             />
           </div>
         </SettingsRow>
       ) : null}
+      <ConfirmDialog
+        open={confirmLocale !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmLocale(null);
+        }}
+        title={text.locale.confirm.title}
+        description={text.locale.confirm.body}
+        confirmLabel={text.locale.confirm.action}
+        onConfirm={() => {
+          if (confirmLocale !== null) switchTo(confirmLocale);
+        }}
+      />
     </SettingsSection>
   );
 }

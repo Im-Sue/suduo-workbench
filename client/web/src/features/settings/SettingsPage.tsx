@@ -14,7 +14,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { settingsQuery } from "../../app/queries.js";
-import { useT } from "../../i18n/provider.js";
+import { useCarried, useCarrySource, useLossCheck, useT } from "../../i18n/provider.js";
 import { configWarningOf, useCodexStatus } from "./codex-status.js";
 import { SettingsFrameContext, type SettingsFrameValue } from "./components/frame.js";
 import { useNotifyState } from "./notify-preference.js";
@@ -59,6 +59,8 @@ export function SettingsPage({ section }: { section: SettingsSectionId }) {
     setDirtyVersion((version) => version + 1);
   }, []);
   const frame = useMemo<SettingsFrameValue>(() => ({ saveBarHost: host, markDirty }), [host, markDirty]);
+  // 还没保存的更改带不过语言切换的重建：设置里切换语言先确认，别的标签页切换时等这里存了或放弃了再切。
+  useLossCheck(() => dirty.current.size > 0);
 
   const blocker = useBlocker({
     // 登录失效或换了需求服务时由外壳带去登录页，这一跳不能被拦下。
@@ -72,7 +74,18 @@ export function SettingsPage({ section }: { section: SettingsSectionId }) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const hash = useRouterState({ select: (state) => state.location.hash });
+  // 语言切换重建后回到重建前看的位置：不回顶部，也不再把搜索跳过来的那一行闪一次（i18n/carry.ts）。
+  // 只认重建时所在的分组与锚点；之后换了分组或锚点就照常处理。
+  const carriedScroll = useCarried<{ section: SettingsSectionId; hash: string; top: number }>("settings-scroll");
+  useCarrySource("settings-scroll", () => ({ section, hash, top: scrollRef.current?.scrollTop ?? 0 }));
+  const restoreScroll = useRef(carriedScroll);
   useEffect(() => {
+    const restore = restoreScroll.current;
+    if (restore !== undefined && restore.section === section && restore.hash === hash) {
+      if (scrollRef.current !== null) scrollRef.current.scrollTop = restore.top;
+      return;
+    }
+    restoreScroll.current = undefined;
     if (hash === "") {
       scrollRef.current?.scrollTo?.({ top: 0 });
       return;
@@ -231,7 +244,10 @@ function SettingsNav({ section }: { section: SettingsSectionId }) {
   const text = t.settings.nav;
   const navigate = useNavigate();
   const alerts = useSectionAlerts();
-  const [query, setQuery] = useState("");
+  // 搜索框里的字带过语言切换的重建（i18n/carry.ts）：搜「语言」找到这一行、切换后搜索结果还在。
+  const carriedQuery = useCarried<string>("settings-search");
+  const [query, setQuery] = useState(carriedQuery ?? "");
+  useCarrySource("settings-search", () => query);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const results = useMemo(() => searchSettings(query, t), [query, t]);

@@ -52,15 +52,21 @@ sudo ./scripts/suduo-cloud.sh install
 - `--port 4100`：服务监听的端口（默认 4100）。
 - `--mirror cn`：使用国内镜像源构建（见[镜像源](#镜像源)）。
 
+**脚本的提示语言跟随服务器的系统语言。** Ubuntu 服务器默认的语言环境常是 `C.UTF-8`，这时提示是英文。想看中文提示，在 `sudo` 后面加上 `SUDUO_LOCALE=zh-CN`（见[脚本的提示语言](#脚本的提示语言)）：
+
+```bash
+sudo SUDUO_LOCALE=zh-CN ./scripts/suduo-cloud.sh install
+```
+
 脚本会：
 
 1. 检查 Docker、Compose 和端口；
 2. 生成 `server/.env`，数据库密码和签名密钥都是随机值。**请妥善保管这个文件。** 文件已存在时原样沿用，绝不覆盖；
 3. 从源码构建镜像，启动 PostgreSQL 和服务。首次构建约 3–8 分钟；
-4. 等 `/v2/health` 报告就绪后，打印访问地址。
+4. 等 `/v2/health` 报告就绪后，打印访问地址。下面是中文提示时的样子；提示是英文时，内容相同，以 `✓ SuDuo cloud is ready` 开头。
 
 ```text
-  ✓ SuDuo 云端已就绪（版本 x.y.z，数据库 schema 011_rooms_and_shared_agents.sql）
+  ✓ SuDuo 云端已就绪（版本 x.y.z，数据库 schema 013_agent_run_text_codes.sql）
 
   访问地址：http://10.0.0.12:4100
   下一步：在 SuDuo 客户端的设置里填上这个地址，第一个注册的人即可开始使用。
@@ -147,6 +153,19 @@ services:
 | `sudo ./scripts/suduo-cloud.sh upgrade` | 先备份，再升级到当前检出的版本（见下文） |
 | `sudo ./scripts/suduo-cloud.sh uninstall` | 删除容器和镜像，数据与 `server/.env` 保留 |
 | `sudo ./scripts/suduo-cloud.sh uninstall --purge` | 连同全部数据一起删除。需要输入 `purge` 确认，无法撤销 |
+
+### 脚本的提示语言
+
+`suduo-cloud.sh` 的提示跟随系统语言：系统是中文时显示中文，其他情况显示英文。脚本依次看 `LC_ALL`、`LC_MESSAGES`、`LANG`，以第一个设了值的为准；都没设时用英文。**Ubuntu 服务器默认的语言环境常是 `C.UTF-8`，即使你平时用中文，在这种服务器上看到的也是英文提示**，本文里的中文输出示例在这种服务器上同样会以英文显示。
+
+要指定语言，把 `SUDUO_LOCALE` 设为 `zh-CN` 或 `en`。`sudo` 不会把 `SUDUO_LOCALE` 传给脚本，所以要写在 `sudo` 后面，每条命令都一样：
+
+```bash
+sudo SUDUO_LOCALE=zh-CN ./scripts/suduo-cloud.sh status
+sudo SUDUO_LOCALE=zh-CN ./scripts/suduo-cloud.sh backup
+```
+
+写在 `sudo` 前面（`SUDUO_LOCALE=zh-CN sudo …`）或先 `export SUDUO_LOCALE=zh-CN` 再执行 `sudo`，都不起作用。`sudo` 默认会保留 `LANG` 和 `LC_*`，所以你自己的 shell 本来就是中文环境时（用 SSH 登录时常会把本机的语言环境带过去），不加也会显示中文。
 
 ### 升级
 

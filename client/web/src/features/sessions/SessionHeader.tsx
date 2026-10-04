@@ -2,7 +2,7 @@ import type { SessionDto } from "@suduo/client-contracts";
 import { FileTextIcon, FolderGit2Icon, InfoIcon, PanelRightIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
-import { useT } from "../../i18n/provider.js";
+import { useLossCheck, useT } from "../../i18n/provider.js";
 import { sessionStatusLabel, type SessionUiStatus } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -40,6 +40,8 @@ export function SessionHeader({
   const text = t.conversation.header;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
+  // 正在改名时别的标签页切了语言：等改完再按新语言重建，免得改到一半的标题丢掉。
+  useLossCheck(editing);
   const commit = () => {
     setEditing(false);
     const title = draft.trim();

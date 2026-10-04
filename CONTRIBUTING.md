@@ -55,6 +55,22 @@ pnpm typecheck && pnpm build && pnpm lint && pnpm test
 
 In `client/`, also run `pnpm protocol:diff` when you touch the Codex integration. The end-to-end gates (`pnpm gate:a`, `gate:b`, `gate:c`) drive a real Codex CLI and need a `CODEX_HOME` with a working model configuration. `gate:c` needs Linux with systemd; on macOS, `sh scripts/gate-c-vm.sh` runs it in a Lima VM.
 
+## Interface text and languages
+
+SuDuo ships in Simplified Chinese and English. Everything SuDuo itself shows to users exists in both languages.
+
+- **Put text in the dictionaries, not in code.** Every piece of user-facing text, including `aria-label`, placeholders, empty states and error messages, goes into a dictionary:
+  - web interface: `client/web/src/i18n/messages/zh-CN/<area>.ts` and `client/web/src/i18n/messages/en/<area>.ts`
+  - local service (errors, diagnostics, text given to Codex, terminal output): `client/server/src/i18n/messages/zh-CN/` and `client/server/src/i18n/messages/en/`
+  - scripts that run before the build (`pnpm start`, `install:m1`, `uninstall:m1`): `client/scripts/i18n/messages/zh-CN.mjs` and `client/scripts/i18n/messages/en.mjs`
+- **The Chinese dictionary is the template.** The English one must have the same entries with the same parameters (`satisfies`), so a missing, extra or mismatched entry fails `pnpm typecheck`; for the script messages, a test checks the same. `pnpm lint` rejects Chinese text written directly in source code.
+- **The cloud server writes English only.** Its error messages are English and carry an error code; the client shows its own text for each code. System text that is stored or seen by other people (such as the comment SuDuo writes when a confirmed version is published without a note, or a shared agent's status) is saved as a code with parameters and shown in each reader's language.
+- **Do not translate what people write.** Requirements, comments, room messages, file names, names and Codex's answers are shown as written. Only text that SuDuo generates follows the interface language.
+- **Text for Codex follows the session.** Instructions, tool descriptions and tool replies use the language the session was created in, not the current interface language.
+- **English style.** Use the glossary and writing rules in §12 of the [bilingual technical design](docs/03_开发计划/产品中英双语-技术设计.md) (in Chinese, with the English term for each entry): sentence case, short and direct, and `plural()` for counts. Add new terms to the glossary before using them.
+- **Tests** run in Chinese by default (`client/web/test/setup-dom.ts`). Switch to English explicitly in English test cases, for example with `applyLocalePreference("en")`.
+- **Not translated:** messages that only go to the logs (write them in English, outside the dictionaries), developer-only scripts (`dev-local.sh`, `dev-postgres.sh`, `gate-c-vm.sh`) and the unreleased Windows installer.
+
 ## Running the client on Linux (development)
 
 Linux is not a supported client platform for users, but development and the gate-c end-to-end check run there. `pnpm start` works as on macOS. To install the client as a systemd user service (this is what gate-c uses):
@@ -75,7 +91,7 @@ sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /e
 sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
 ```
 
-`pnpm run doctor` checks the sandbox and explains what to do when it fails. The Windows installer is not released yet; see [client/scripts/dist-win/README.md](client/scripts/dist-win/README.md) (in Chinese).
+`pnpm run doctor` checks the sandbox and explains what to do when it fails. Terminal output follows the system locale; many Linux systems and CI runners default to `C.UTF-8`, which gives English. Set `SUDUO_LOCALE=zh-CN` or `SUDUO_LOCALE=en` to choose. The Windows installer is not released yet; see [client/scripts/dist-win/README.md](client/scripts/dist-win/README.md) (in Chinese).
 
 ## Design principles
 

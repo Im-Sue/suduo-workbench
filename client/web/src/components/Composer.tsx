@@ -15,7 +15,7 @@ import type { SessionUiStatus } from "../ui/session-status.js";
 import type { ContextUsage } from "../event-projection/timeline.js";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { useT } from "../i18n/provider.js";
+import { useCarried, useCarrySource, useLossCheck, useT } from "../i18n/provider.js";
 import {
   buildMessageContent,
   type PausedReason,
@@ -89,6 +89,12 @@ interface FileIndexCache {
 
 const PALETTE_LIMIT = 8;
 
+/** 切换语言时带过重建的草稿（i18n/carry.ts）：输入框里的字与已传好的图片。 */
+interface ComposerCarry {
+  text: string;
+  attachments: DraftAttachment[];
+}
+
 export function Composer(props: {
   disabled: boolean;
   projectId: string;
@@ -119,14 +125,19 @@ export function Composer(props: {
 }) {
   const t = useT();
   const copy = t.workbench.composer;
-  const [text, setText] = useState("");
-  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+  const carryKey = `composer:${props.sessionId}`;
+  const carried = useCarried<ComposerCarry>(carryKey);
+  const [text, setText] = useState(carried?.text ?? "");
+  const [attachments, setAttachments] = useState<DraftAttachment[]>(carried?.attachments ?? []);
+  useCarrySource(carryKey, (): ComposerCarry => ({ text, attachments }));
   const [dragActive, setDragActive] = useState(false);
   const dragDepth = useRef(0);
   /** 发送按钮自己的 0ms 忙碌态；不影响 textarea 与其它按钮。 */
   const [sending, setSending] = useState(false);
   /** 图片上传自己的动作态；不影响 textarea 与发送。 */
   const [uploading, setUploading] = useState(false);
+  // 发送或上传的请求还没回来时重建，结果会落空（发出去的字留在框里、传好的图丢掉）：别的标签页切语言时等它回来。
+  useLossCheck(sending || uploading);
   /**
    * 在途发送回调的会话归属守卫：切会话后回调不得作用于新会话的草稿。
    * 用 ref 而不是闭包里的 props，闭包拿到的是发起那一刻的旧值。
@@ -545,7 +556,7 @@ export function Composer(props: {
         void uploadFiles([...event.dataTransfer.files]);
       }}
     >
-      {props.queue !== undefined && <QueuePanel queue={props.queue} onTake={takeFromQueue} />}
+      {props.queue !== undefined && <QueuePanel sessionId={props.sessionId} queue={props.queue} onTake={takeFromQueue} />}
       <RunStatusLine runState={props.runState} />
       <div
         className={cn(
@@ -773,10 +784,14 @@ function isActiveRun(status: SessionUiStatus): boolean {
  * 输入框上方的队列面板（PR5）：列出排队项，可编辑 / 删除 / 取回；暂停时说清理由并给「恢复」。
  * 只承诺当前标签页，标题里直说。
  */
-function QueuePanel({ queue, onTake }: { queue: ComposerQueue; onTake(id: string): void }) {
+function QueuePanel({ sessionId, queue, onTake }: { sessionId: string; queue: ComposerQueue; onTake(id: string): void }) {
   const t = useT();
   const copy = t.workbench.composer.queuePanel;
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  // 正在改的那一项：切换语言时带过重建（i18n/carry.ts）。
+  const carryKey = `queue-edit:${sessionId}`;
+  const carried = useCarried<{ id: string; text: string } | null>(carryKey);
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(carried ?? null);
+  useCarrySource(carryKey, () => editing);
   if (queue.items.length === 0 && queue.status !== "paused") {
     return null;
   }

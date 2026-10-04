@@ -27,7 +27,7 @@ import { projectsQuery, queryKeys, settingsQuery } from "../queries.js";
 import { summarizeDoctor, type SummaryStatus } from "./doctor-summary.js";
 import { recordEnvironmentPending, recordMappingPending } from "./setup-pending.js";
 import { LoginForm } from "./LoginForm.js";
-import { useT } from "../../i18n/provider.js";
+import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
 
 /**
  * 首启向导（需求 §4.2）：连接服务 → 登录 → 环境检查 → 关联项目代码 → 完成。
@@ -124,7 +124,10 @@ function ServiceStep({ initial, onDone }: { initial: string; onDone(loggedIn: bo
   const t = useT();
   const text = t.setup.wizard.service;
   const queryClient = useQueryClient();
-  const [url, setUrl] = useState(initial);
+  // 填了一半的地址带过语言切换的重建（i18n/carry.ts）。
+  const carriedUrl = useCarried<string>("setup-service-url");
+  const [url, setUrl] = useState(carriedUrl ?? initial);
+  useCarrySource("setup-service-url", () => url);
   const [test, setTest] = useState<{ state: "idle" | "testing" | "ok" | "fail"; message?: string }>({ state: "idle" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Failure | null>(null);
@@ -324,9 +327,12 @@ function ProjectStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
   const queryClient = useQueryClient();
   const projects = useQuery(projectsQuery);
   const active = (projects.data ?? []).filter((project) => !project.isArchived);
-  const [projectId, setProjectId] = useState<string>("");
-  const [path, setPath] = useState("");
-  const [newName, setNewName] = useState("");
+  // 选好的项目、填了一半的目录与新项目名带过语言切换的重建（i18n/carry.ts）。
+  const carried = useCarried<{ projectId: string; path: string; newName: string }>("setup-project");
+  const [projectId, setProjectId] = useState<string>(carried?.projectId ?? "");
+  const [path, setPath] = useState(carried?.path ?? "");
+  const [newName, setNewName] = useState(carried?.newName ?? "");
+  useCarrySource("setup-project", () => ({ projectId, path, newName }));
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<Failure | null>(null);

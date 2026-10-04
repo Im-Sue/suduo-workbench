@@ -25,7 +25,7 @@ A self-hosted requirements workspace for teams that build with the Codex CLI.
 
 ![A requirement in SuDuo: the description, discussion and activity on the left; status, the local code folder and local sessions on the right; "Start session" at the top](.github/assets/screenshot-requirement.png)
 
-<p align="center"><sub>The interface is in Chinese today. An English interface is in progress.</sub></p>
+<p align="center"><sub>The screenshots show the Chinese interface. SuDuo is also available in English; see <a href="#language">Language</a>.</sub></p>
 
 ## What is SuDuo
 
@@ -75,7 +75,7 @@ SuDuo (速舵) is where a development team keeps its requirements and discussion
 - Git checkpoints: an optional checkpoint before every turn, and one-click restore
 - Skills, `@` file references and a message queue in the composer
 - File paths in answers open a preview at the right line, or open in VS Code
-- Light and dark themes, keyboard shortcuts and a command palette
+- English and Simplified Chinese interface, light and dark themes, keyboard shortcuts and a command palette
 
 **Self-hosting**
 
@@ -132,11 +132,18 @@ pnpm start
 
 The [client guide](client/README.md) covers Codex setup in detail, updating, where your data is kept, and troubleshooting.
 
+## Language
+
+SuDuo's interface is available in English and Simplified Chinese. It follows your system language by default (as your browser reports it); to change it, go to **Settings → Appearance → Language**. Each person chooses their own language.
+
+- **Only SuDuo's own text changes language.** Menus, messages, errors and the records SuDuo adds to activity feeds and rooms appear in each person's own language. What people write (requirements, comments, room messages, file names) and Codex's answers are shown exactly as written, never translated.
+- **Codex.** The instructions and tool descriptions SuDuo gives Codex are in the language the session was started in, and stay that way if you switch the interface later. Codex replies in the language of the conversation: ask in Chinese and it answers in Chinese, even when the interface is in English.
+- **Command line.** `pnpm start`, `pnpm run doctor` and the server script follow the system locale. Set `SUDUO_LOCALE=zh-CN` or `SUDUO_LOCALE=en` to choose. Ubuntu servers often default to `C.UTF-8`, which gives English. See the [client guide](client/README.md#language) and the [deployment guide](cloud/DEPLOYMENT.md#script-language).
+
 ## Status
 
 SuDuo is in early access. Version 0.7.0 is the first public release.
 
-- The interface is in Chinese. An English interface is in progress.
 - There is no installer yet. The client runs from source.
 - The server has no administrator or invitation system yet: anyone who can reach it can register. Keep it on a private network.
 - Tested on macOS (Apple silicon) and on Ubuntu 22.04 / 24.04 servers. Windows and Intel Macs are supported but have had less testing.

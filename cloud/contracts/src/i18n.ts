@@ -31,7 +31,7 @@ export function localeFromTag(tag: string | null | undefined): Locale | null {
 
 /**
  * 偏好 → 实际语言。固定语言直接用；跟随系统时按语言标签判断。
- * `available` 是界面已经能用的语言：迁移期英文界面还没做完时只放 zh-CN，跟随系统就不会落到英文。
+ * `available` 是界面已经能用的语言（前端的 `UI_LOCALES`）：跟随系统只会落到这里面的语言，取不到时用第一项。
  */
 export function resolveLocale(
   preference: LocalePreference,

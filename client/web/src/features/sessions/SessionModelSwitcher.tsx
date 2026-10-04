@@ -130,15 +130,18 @@ export function SessionModelSwitcher({
 
   return (
     <DropdownMenu modal={false} onOpenChange={load}>
+      {/* 输入框底栏放不下时模型名截断（推理强度与图标保持完整），完整内容在菜单里。 */}
       <DropdownMenuTrigger
-        className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 data-[state=open]:bg-muted"
+        className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-sm px-2 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 data-[state=open]:bg-muted [&>svg]:shrink-0"
         data-testid="model-chip"
         disabled={saving}
         title={text.chipTitle}
       >
         {saving ? <Spinner size="sm" /> : <CpuIcon className="size-3.5" aria-hidden="true" />}
-        {sessionModel === null ? (defaultModel === null ? text.defaultModel : prettifyModel(defaultModel, t)) : prettifyModel(sessionModel, t)}
-        {sessionEffort !== null ? <span className="text-subtle-foreground">{effortLabel(sessionEffort, t)}</span> : null}
+        <span className="truncate">
+          {sessionModel === null ? (defaultModel === null ? text.defaultModel : prettifyModel(defaultModel, t)) : prettifyModel(sessionModel, t)}
+        </span>
+        {sessionEffort !== null ? <span className="shrink-0 whitespace-nowrap text-subtle-foreground">{effortLabel(sessionEffort, t)}</span> : null}
         <ChevronDownIcon className="size-3 opacity-70" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-64" data-testid="model-menu">

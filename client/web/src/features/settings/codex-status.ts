@@ -1,6 +1,8 @@
+import type { Locale } from "@suduo/client-contracts";
 import { useSyncExternalStore } from "react";
 import { api } from "../../api/client.js";
 import { localizeNotice } from "../../event-projection/shared.js";
+import { currentLocale } from "../../i18n/locale.js";
 
 /**
  * Codex 的全局通知（无会话归属，例如配置提醒）经本机服务的推送流到达。
@@ -22,6 +24,8 @@ const INITIAL: CodexStatusSnapshot = { stream: "connecting", entries: [] };
 
 let snapshot: CodexStatusSnapshot = INITIAL;
 let source: EventSource | null = null;
+/** 这条连接建立时的界面语言（地址上带着它，见 api.codexStatusUrl）。 */
+let sourceLocale: Locale | null = null;
 const listeners = new Set<() => void>();
 
 function emit(next: CodexStatusSnapshot): void {
@@ -30,7 +34,14 @@ function emit(next: CodexStatusSnapshot): void {
 }
 
 function connect(): void {
+  // 语言切换后整棵界面重建，订阅者先全部退订（连接随之关闭）再重新订阅；万一顺序不是这样，
+  // 新订阅进来时发现连接还是旧语言建的，也换一条按新语言的。
+  if (source !== null && sourceLocale !== currentLocale()) {
+    source.close();
+    source = null;
+  }
   if (source !== null || typeof EventSource === "undefined") return;
+  sourceLocale = currentLocale();
   source = new EventSource(api.codexStatusUrl());
   source.addEventListener("status", (event) => {
     try {

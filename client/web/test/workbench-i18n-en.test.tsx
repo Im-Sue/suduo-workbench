@@ -206,6 +206,9 @@ describe("英文界面：审批档切换", () => {
     const trigger = q(node, "approval-mode");
     expect(trigger?.textContent).toBe("Ask when out of bounds");
     expect(trigger?.title).toBe("Approval mode (this session; takes effect from the next turn)");
+    // 输入框底栏放不下时（运行中多了排队与停止）档名截断，而不是把发送按钮挤出去（S9 走查）。
+    expect(trigger?.className).toContain("min-w-0");
+    expect(trigger?.querySelector("span.truncate")?.textContent).toBe("Ask when out of bounds");
 
     await openMenu(trigger);
     expect(document.querySelector('[role="menu"]')?.textContent).toContain("Approval mode · This session · Takes effect from the next turn");
@@ -273,6 +276,19 @@ describe("英文界面：检查面板", () => {
     expect(q(node, "side-tab-changes")?.textContent).toBe("Changes2");
     expect(q(node, "side-tab-requirement")?.textContent).toBe("Requirement");
     expect(q(node, "side-tab-env")?.textContent).toBe("Environment");
+    // 面板最窄 320px 时英文标签放不下默认间距（S9 走查）：间隔可收缩，只有两个长标签可截断。
+    const tablist = node.querySelector('[role="tablist"]');
+    expect(tablist?.className).toContain("min-w-0");
+    expect([...(tablist?.children ?? [])].map((child) => child.getAttribute("role") ?? child.getAttribute("aria-hidden"))).toEqual([
+      "tab",
+      "true",
+      "tab",
+      "true",
+      "tab",
+    ]);
+    expect(q(node, "side-tab-changes")?.className).toContain("shrink-0");
+    expect(q(node, "side-tab-requirement")?.querySelector("span.truncate")?.textContent).toBe("Requirement");
+    expect(q(node, "side-tab-env")?.querySelector("span.truncate")?.textContent).toBe("Environment");
     expect(node.querySelector("[aria-label='Hide inspector panel']")?.getAttribute("title")).toBe(
       "Hide inspector panel (⌘J)",
     );
@@ -381,7 +397,7 @@ describe("英文界面：需求标签", () => {
       <RequirementMaterials context={{ status: "ready", value: context }} onRetryContext={() => undefined} onNavigate={() => undefined} />,
     );
     expect(q(node, "requirement-material-version")?.textContent).toBe(
-      "Version 2 when work started, now version 4 · Changed since work started",
+      "Started on version 2, now version 4 · Changed since work started",
     );
     expect(q(node, "requirement-material-open")?.textContent).toBe("Open requirement page");
     expect(node.querySelector("#rm-attachments")?.textContent).toBe("Attachments0");

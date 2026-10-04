@@ -137,6 +137,7 @@ export interface SettingsSearchItem {
 export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
   { section: "appearance", anchor: "theme", key: "theme" },
   { section: "appearance", anchor: "density", key: "density" },
+  { section: "appearance", anchor: "locale", key: "locale" },
   { section: "notifications", anchor: "system-notify", key: "systemNotify" },
   { section: "account", anchor: "current-user", key: "currentUser" },
   { section: "account", anchor: "logout", key: "logout" },
