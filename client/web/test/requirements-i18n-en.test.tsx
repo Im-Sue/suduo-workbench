@@ -210,14 +210,22 @@ describe("英文界面：需求看板与列表", () => {
     );
     const list = node.querySelector('[data-testid="requirements-list"]');
     expect(list?.getAttribute("aria-label")).toBe("Requirements list");
-    expect(Array.from(list?.firstElementChild?.children ?? []).map((cell) => cell.textContent)).toEqual([
+    // 计数列的表头是图标（S9 走查：112px 放不下英文表头）；读屏读隐藏的文字，悬停看 title。
+    const cells = Array.from(list?.firstElementChild?.children ?? []);
+    expect(cells.map((cell) => cell.querySelector(".sr-only")?.textContent ?? cell.textContent)).toEqual([
       "ID",
       "Title",
       "Assignee",
       "Materials · Comments · Sessions",
       "Updated",
     ]);
+    const counts = cells[3];
+    expect(counts?.getAttribute("title")).toBe("Materials · Comments · Sessions");
+    expect(counts?.querySelector('[aria-hidden="true"]')?.querySelectorAll("svg")).toHaveLength(3);
+    // 「Yesterday 10:35」与「2025年12月27日」都要一行放下：更新列 96px。
+    expect(cells[4]?.className).toContain("w-24");
     expect(node.querySelector('[data-testid="requirement-row"]')?.textContent).toContain("Unassigned");
+    expect(node.querySelector('[data-testid="requirement-row"] time')?.className).toContain("w-24");
     expect(node.textContent).not.toMatch(CJK);
   });
 });

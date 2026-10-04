@@ -318,6 +318,10 @@ describe("讨论页：英文界面", () => {
     const textarea = input(node);
     expect(textarea.getAttribute("placeholder")).toBe("Message “Checkout”. @ a teammate or a shared agent");
     expect(composer?.textContent).toContain("Enter to send · Shift+Enter for a new line");
+    // 话题面板里的输入框较窄：按键提示放不下时省略，悬停看全文（S9 走查）。
+    const hint = [...(composer?.querySelectorAll("span") ?? [])].find((span) => span.textContent === "Enter to send · Shift+Enter for a new line");
+    expect(hint?.className).toContain("truncate");
+    expect(hint?.getAttribute("title")).toBe("Enter to send · Shift+Enter for a new line");
     expect(q(node, "room-attach")?.textContent).toBe("Attach");
     expect(q(node, "room-send")?.getAttribute("aria-label")).toBe("Send");
 

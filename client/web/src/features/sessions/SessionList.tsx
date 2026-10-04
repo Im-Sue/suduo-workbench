@@ -2,7 +2,7 @@ import type { SessionListItemDto } from "@suduo/client-contracts";
 import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import { ArchiveIcon, HashIcon, MessageCircleIcon, MessagesSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { useT } from "../../i18n/provider.js";
+import { useLossCheck, useT } from "../../i18n/provider.js";
 import { formatRelativeTime } from "../../ui/format.js";
 import type { SessionLiveRunState } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,8 @@ export function SessionList({
   const t = useT();
   const text = t.conversation.list;
   const [renaming, setRenaming] = useState<string | null>(null);
+  // 正在改名时别的标签页切了语言：等改完再按新语言重建，免得改到一半的名字丢掉。
+  useLossCheck(renaming !== null);
   const statuses = new Map(items.map((item) => [item.id, rowStatus(item, live)]));
   const visible = items.filter((item) => matchesFilter(statuses.get(item.id) ?? "idle", filter) && matchesSearch(item, keyword));
   const groups = groupByDay(visible, t);

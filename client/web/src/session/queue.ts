@@ -38,7 +38,9 @@ export type PausedReason =
   | "send_rejected"
   | "send_uncertain"
   | "attribution_unconfirmed"
-  | "restored";
+  | "restored"
+  /** 切换语言重建会话页时正要出队还没出：重建后不自动发，等人确认继续（app/SessionRuntime.tsx 的 carriedQueue）。 */
+  | "locale_switched";
 
 export interface QueueInflight {
   item: QueueItem;

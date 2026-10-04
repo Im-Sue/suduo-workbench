@@ -12,7 +12,7 @@ import type { LinkedRequirement } from "../../components/RequirementMaterials.js
 import { classifyFailure } from "../../feedback/classify.js";
 import { ConfirmDialog, RegionError } from "../../feedback/components/index.js";
 import { reportFailure } from "../../feedback/report.js";
-import { useT } from "../../i18n/provider.js";
+import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
 import { requirementKeys } from "../requirements/keys.js";
 import type { SessionLiveRunState } from "../../ui/session-status.js";
@@ -50,7 +50,10 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
     if (activeId === null) void navigate({ to: "/sessions", search: nextSearch, replace: true });
     else void navigate({ to: "/sessions/$sessionId", params: { sessionId: activeId }, search: nextSearch, replace: true });
   };
-  const [keyword, setKeyword] = useState("");
+  // 会话列表的搜索词带过语言切换的重建（i18n/carry.ts）。
+  const carriedKeyword = useCarried<string>("session-list-keyword");
+  const [keyword, setKeyword] = useState(carriedKeyword ?? "");
+  useCarrySource("session-list-keyword", () => keyword);
   const [pendingDelete, setPendingDelete] = useState<SessionListItemDto | null>(null);
   const activeId = session?.id ?? null;
 

@@ -52,14 +52,15 @@ export function ApprovalModeSwitcher(props: {
           <button
             type="button"
             className={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted",
+              // 输入框底栏放不下时（运行中多了排队、停止，或对话栏很窄）档名截断，完整名字在菜单里。
+              "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-sm px-2 text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted [&>svg]:shrink-0",
               props.session.approvalMode === "full" ? "text-warning" : "text-muted-foreground hover:text-foreground",
             )}
             data-testid="approval-mode"
             title={text.title}
           >
             {switching ? <Spinner size="sm" /> : <ShieldIcon className="size-3.5" aria-hidden="true" />}
-            {modes[props.session.approvalMode].label}
+            <span className="truncate">{modes[props.session.approvalMode].label}</span>
             <ChevronDownIcon className="size-3 opacity-70" aria-hidden="true" />
           </button>
         </DropdownMenuTrigger>

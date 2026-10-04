@@ -48,16 +48,31 @@ export function ChangesPanel(props: {
     <aside className="flex h-full min-h-0 flex-col" aria-label={t.workbench.inspector.label}>
       <Tabs value={tab} onValueChange={(value) => setTab(value as SidePanelTab)} className="flex min-h-0 flex-1 flex-col gap-0">
         <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border pr-2 pl-3">
-          <TabsList className="h-full border-0">
-            <TabsTrigger value="changes" data-testid="side-tab-changes">
+          {/*
+            面板最窄 320px：英文四个标签放不下默认间距。标签之间用可收缩的间隔代替固定 gap（宽度够时仍是 20px），
+            间隔收到最小后，只让「需求」「环境」两个长标签截断，短标签与收起按钮始终完整。
+          */}
+          <TabsList className="h-full min-w-0 gap-0 border-0">
+            <TabsTrigger value="changes" data-testid="side-tab-changes" className="shrink-0">
               {t.workbench.inspector.tabs.changes}{props.changes.length > 0 ? <span className="ml-1 text-subtle-foreground">{props.changes.length}</span> : null}
             </TabsTrigger>
             {props.requirementPanel === undefined ? null : (
-              <TabsTrigger value="requirement" data-testid="side-tab-requirement">{t.workbench.inspector.tabs.requirement}</TabsTrigger>
+              <>
+                <TabGap />
+                <TabsTrigger value="requirement" data-testid="side-tab-requirement" className="min-w-0">
+                  <span className="truncate">{t.workbench.inspector.tabs.requirement}</span>
+                </TabsTrigger>
+              </>
             )}
-            <TabsTrigger value="env" data-testid="side-tab-env">{t.workbench.inspector.tabs.env}</TabsTrigger>
+            <TabGap />
+            <TabsTrigger value="env" data-testid="side-tab-env" className="min-w-0">
+              <span className="truncate">{t.workbench.inspector.tabs.env}</span>
+            </TabsTrigger>
             {props.fileTree === undefined ? null : (
-              <TabsTrigger value="files" data-testid="side-tab-files">{t.workbench.inspector.tabs.files}</TabsTrigger>
+              <>
+                <TabGap />
+                <TabsTrigger value="files" data-testid="side-tab-files" className="shrink-0">{t.workbench.inspector.tabs.files}</TabsTrigger>
+              </>
             )}
           </TabsList>
           <div className="flex-1" />
@@ -93,6 +108,11 @@ export function ChangesPanel(props: {
       </Tabs>
     </aside>
   );
+}
+
+/** 标签之间的间隔：默认 20px（原 gap-5），空间不够时几乎由它独自收缩，最小 4px。 */
+function TabGap() {
+  return <span aria-hidden="true" className="w-5 min-w-1 [flex-shrink:100000]" />;
 }
 
 function ChangeList({

@@ -1,5 +1,5 @@
 import { LOCALE_HEADER } from "@suduo/client-contracts";
-import { currentLocale } from "../i18n/locale.js";
+import { currentLocale, withLocaleParam } from "../i18n/locale.js";
 import { messagesFor } from "../i18n/messages/index.js";
 import { markRequestNetworkFailure, markRequestReachedServer } from "./connectivity.js";
 import type {
@@ -413,7 +413,8 @@ export const api = {
       { method: "DELETE" },
     ),
 
-  requirementsEventsUrl: () => "/api/v2/events",
+  /** 需求与房间的推送流（EventSource 带不了请求头，界面语言放在地址上；每次重连都按当时的语言重新拼）。 */
+  requirementsEventsUrl: () => withLocaleParam("/api/v2/events"),
 
   listRequirementsMappings: () =>
     request<{ items: RequirementsWorkspaceMappingDto[] }>("/api/v2/project-mappings"),
@@ -694,8 +695,8 @@ export const api = {
 
   codexModels: () => request<CodexModelsResponse>("/api/v1/codex/models"),
 
-  /** pr3 建的全局状态投影 SSE；pr10 的顶部状态条订阅它。 */
-  codexStatusUrl: () => "/api/v1/codex/status",
+  /** pr3 建的全局状态投影 SSE；pr10 的顶部状态条订阅它。EventSource 带不了请求头，界面语言放在地址上。 */
+  codexStatusUrl: () => withLocaleParam("/api/v1/codex/status"),
 
   // ── pr11 的 MCP 后端；pr12 界面只消费这些，不在前端自建替代实现（R3）。
   listMcpServers: () =>

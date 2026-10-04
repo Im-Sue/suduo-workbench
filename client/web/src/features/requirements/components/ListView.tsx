@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { type RequirementListItemDto } from "@suduo/client-contracts";
 import { type RequirementStatus } from "@suduo/cloud-contracts";
-import { ChevronRightIcon, PlusIcon } from "lucide-react";
+import { ChevronRightIcon, MessageSquareIcon, PaperclipIcon, PlusIcon, TerminalIcon, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
@@ -58,10 +58,18 @@ export function ListView({
         <span className="w-[72px] shrink-0">{t.requirements.list.header.number}</span>
         <span className="min-w-0 flex-1">{t.requirements.list.header.title}</span>
         <span className="w-28 shrink-0">{t.requirements.list.header.assignee}</span>
-        <span className="w-28 shrink-0 truncate" title={t.requirements.list.header.counts}>
-          {t.requirements.list.header.counts}
+        {/* 与卡片同一套图标；等宽字体下每个图标占一个字符宽，正好对在下面「0 · 4 · 1」的数字上。文字给读屏与悬停。 */}
+        <span className="w-28 shrink-0 font-mono whitespace-pre" title={t.requirements.list.header.counts}>
+          <span className="sr-only">{t.requirements.list.header.counts}</span>
+          <span aria-hidden="true">
+            <CountIcon icon={PaperclipIcon} />
+            {" · "}
+            <CountIcon icon={MessageSquareIcon} />
+            {" · "}
+            <CountIcon icon={TerminalIcon} />
+          </span>
         </span>
-        <span className="w-20 shrink-0 text-right">{t.requirements.list.header.updated}</span>
+        <span className="w-24 shrink-0 text-right">{t.requirements.list.header.updated}</span>
       </div>
       {statuses.map((status) => (
         <ListGroup
@@ -229,13 +237,22 @@ function ListRow({
         {requirement.attachmentCount} · {requirement.commentCount} · {requirement.localSessionCount}
       </span>
       <time
-        className="w-20 shrink-0 text-right text-caption text-subtle-foreground"
+        className="w-24 shrink-0 truncate text-right text-caption text-subtle-foreground"
         dateTime={requirement.updatedAt}
         title={formatDateTime(requirement.updatedAt)}
       >
         {formatRelativeTime(requirement.updatedAt)}
       </time>
     </button>
+  );
+}
+
+/** 计数表头里的图标：占一个等宽字符的位置，图标本身居中溢出。 */
+function CountIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="inline-flex w-[1ch] justify-center align-[-2px]">
+      <Icon className="size-3 shrink-0" />
+    </span>
   );
 }
 

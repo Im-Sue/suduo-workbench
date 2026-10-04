@@ -45,6 +45,7 @@ export const settings = {
   search: {
     theme: { title: "Theme", keywords: "appearance light dark system mode color" },
     density: { title: "Density", keywords: "interface density compact comfortable spacing line height font size" },
+    locale: { title: "Language", keywords: "interface display language locale English Chinese follow system switch" },
     systemNotify: { title: "System notifications", keywords: "notify alerts done failed waiting for you desktop" },
     currentUser: { title: "Current account", keywords: "account sign in login user identity profile" },
     logout: { title: "Sign out", keywords: "log out logout sign off" },

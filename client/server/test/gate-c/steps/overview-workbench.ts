@@ -30,10 +30,7 @@ export const overviewWorkbenchStep: GateCStep = {
       .getByTestId("requirement-detail")
       .getByRole("button", { name: "开始会话" })
       .click();
-    const requirementSessionId = await completeStartSessionDialog(
-      context.page,
-      context.projectRoot,
-    );
+    const requirementSessionId = await completeStartSessionDialog(context);
     await context.page.getByTestId("conversation-stream").waitFor({ timeout: 30_000 });
     context.requirementsFixture.changeRequirement(GATE_C_FIXTURE_IDS.reqDraft1, {
       title: "发生材料漂移的需求",

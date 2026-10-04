@@ -2,6 +2,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { RequirementsEventDto } from "@suduo/cloud-contracts";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "../../api/client.js";
+import { useLocale } from "../../i18n/provider.js";
 import { parseRequirementsEvent } from "../../components/requirements-v2/requirements-events.js";
 import { queryKeys } from "../../app/queries.js";
 import { ROOM_RESYNC_SSE_EVENT_NAME } from "@suduo/client-contracts";
@@ -61,6 +62,9 @@ export function invalidateForEvent(queryClient: QueryClient, event: Requirements
 
 export function RequirementsRealtimeProvider({ enabled, children }: { enabled: boolean; children: ReactNode }) {
   const queryClient = useQueryClient();
+  // EventSource 带不了请求头，界面语言在地址上（api.requirementsEventsUrl）：语言变了就按新语言重连。
+  // 语言切换时外壳本来就会整棵重建，这里不依赖这一点。
+  const locale = useLocale();
   const [state, setState] = useState<RealtimeState>("connecting");
   useEffect(() => {
     setRealtimeLive(state === "live");
@@ -126,7 +130,7 @@ export function RequirementsRealtimeProvider({ enabled, children }: { enabled: b
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       source?.close();
     };
-  }, [enabled, queryClient]);
+  }, [enabled, queryClient, locale]);
 
   return <RealtimeContext.Provider value={state}>{children}</RealtimeContext.Provider>;
 }

@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { BACKFILL_OMITTED_EVENT_TYPES } from "@suduo/client-contracts";
 import type {
@@ -28,7 +29,7 @@ import {
   subscribeInflight,
   type WorkspaceChange,
 } from "../api/client.js";
-import { projectEvents } from "../event-projection/reducer.js";
+import { projectEvents, type ConversationProjection } from "../event-projection/reducer.js";
 import {
   loadEventCache,
   loadEventCacheStart,
@@ -36,9 +37,10 @@ import {
 } from "../event-projection/cache.js";
 import { formatClock, messageOf } from "../ui/format.js";
 import { checkpointLabel } from "../ui/checkpoint-label.js";
-import { currentLocale } from "../i18n/locale.js";
+import { afterLocaleRebuild, isLocaleRebuilding } from "../i18n/carry.js";
+import { currentLocale, withLocaleParam } from "../i18n/locale.js";
 import { messagesFor } from "../i18n/messages/index.js";
-import { useT } from "../i18n/provider.js";
+import { useCarried, useCarrySource, useLossCheck, useT } from "../i18n/provider.js";
 import { ChevronRightIcon, FileIcon as FileLucideIcon, FolderIcon as FolderLucideIcon, LockIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Group as PanelGroup, Panel, Separator as PanelSeparator, useDefaultLayout } from "react-resizable-panels";
@@ -73,6 +75,7 @@ import {
   resolveStopIntent,
   stepText,
   type StoppingState,
+  type TimingState,
 } from "../session/run-state.js";
 import { sessionUiStatus, type SessionLiveRunState } from "../ui/session-status.js";
 import {
@@ -92,6 +95,7 @@ import {
   saveQueue,
   takeItem as takeQueueItem,
   updateItem as updateQueueItem,
+  type QueueState,
 } from "../session/queue.js";
 import { SessionModelSwitcher } from "../features/sessions/SessionModelSwitcher.js";
 import { ChangesPanel } from "../components/ChangesPanel.js";
@@ -149,6 +153,43 @@ interface RuntimeError {
 }
 
 /**
+ * 切换语言时整页按新语言重建（i18n/carry.ts），这些状态带过去，重建后接着用：
+ * 排队的消息（含已发出、等结果的那一条，不暂停、不丢）、已收到的事件（接着从最后一条往后收，
+ * 第一帧就和重建前一样，不会误以为没有回合在跑而提前出队）、会话与待审批（状态不经过「空闲」，
+ * 后台标签页不会重复提醒「等你确认」）、选中的 skill、计时、停止中、检查面板标签、打开的文件或 diff。
+ */
+interface SessionRuntimeCarry {
+  session: SessionDto | null;
+  approvals: ApprovalDto[];
+  queue: QueueState;
+  events: EventEnvelope<string, JsonValue>[];
+  skillPath: string;
+  timing: TimingState;
+  stopping: StoppingState | null;
+  sideTab: SidePanelTab;
+  /** 只带文件预览与 diff（内容是文件本身）；说明类的抽屉文字按旧语言生成，不带。 */
+  drawer: DrawerState | null;
+}
+
+/**
+ * 读回快照里的队列。正常情况下别的标签页切语言时会等出队与发送告一段落再切（见下面的 useLossCheck），
+ * 这里是兜底，拿不准的一律停下等人（queue.ts「不确定就停」），绝不重发：
+ * - 那一条已出队、发送结果没等到：按「结果不确定」放回待核对并暂停；
+ * - 正要出队还没出：重建后不自动发，暂停等人继续（重建前那一份在重建期间不出队，见出队 effect）。
+ */
+function carriedQueue(carried: SessionRuntimeCarry): QueueState {
+  const queue = carried.queue;
+  if (queue.inflight !== null && queue.inflight.acceptedAt === null) return onSendUncertain(queue);
+  if (canDispatch(queue, projectEvents(carried.events))) return pauseQueue(queue, "locale_switched");
+  return queue;
+}
+
+/** 正在出队、发送请求还没回来，或马上就要出队：这时重建，结果可能落空或发两次。 */
+function queueBusy(queue: QueueState, projection: ConversationProjection): boolean {
+  return canDispatch(queue, projection) || (queue.inflight !== null && queue.inflight.acceptedAt === null);
+}
+
+/**
  * 供 Requirements V2 内嵌的纯会话画布。
  *
  * 它只接收已经创建好的本地项目和会话，不负责旧工作台的项目、需求或远程同步入口。
@@ -169,17 +210,23 @@ export function SessionRuntime(props: {
 }) {
   const t = useT();
   const text = t.conversation.runtime;
-  const [session, setSession] = useState<SessionDto | null>(null);
-  const [events, setEvents] = useState<EventEnvelope<string, JsonValue>[]>([]);
+  const carryKey = `session-runtime:${props.sessionId}`;
+  const carried = useCarried<SessionRuntimeCarry>(carryKey);
+  /** 读回快照时的会话：只有同一个会话才沿用快照，不在挂载时清掉（见下面加载会话的 effect）。 */
+  const carriedSessionId = useRef(carried === undefined ? null : props.sessionId);
+  const [session, setSession] = useState<SessionDto | null>(carried?.session ?? null);
+  const [events, setEvents] = useState<EventEnvelope<string, JsonValue>[]>(() => carried?.events ?? []);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [approvals, setApprovals] = useState<ApprovalDto[]>([]);
+  const [approvals, setApprovals] = useState<ApprovalDto[]>(carried?.approvals ?? []);
   const [skills, setSkills] = useState<SkillDto[]>([]);
-  const [skillPath, setSkillPath] = useState("");
+  const [skillPath, setSkillPath] = useState(carried?.skillPath ?? "");
   const [files, setFiles] = useState<Record<string, FileEntryDto[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
   const [changes, setChanges] = useState<WorkspaceChange[]>([]);
   const [changeStats, setChangeStats] = useState({ additions: 0, deletions: 0 });
-  const [drawer, setDrawer] = useState<DrawerState | null>(null);
+  const [drawer, setDrawer] = useState<DrawerState | null>(() =>
+    carried?.drawer?.mode === "preview" || carried?.drawer?.mode === "diff" ? carried.drawer : null,
+  );
   /** 检查面板开合偏好持久化；宽于 1280px 与对话并排、可拖宽度，更窄时浮在对话上方（需求 §4.5）。 */
   const [sideOpen, setSideOpen] = usePersistentState("suduo.session.sideOpen", true);
   const sideBySide = useMediaQuery(INSPECTOR_SIDE_BY_SIDE_QUERY);
@@ -253,16 +300,30 @@ export function SessionRuntime(props: {
    * PR3 运行态：计时锚点只认 stream.live 之后实时到达的 turn.started；停止是本地中间态，
    * 收到目标回合任一终态才收口。两者都是本页内存态，随 key=sessionId 重挂自然清空。
    */
-  const [timing, setTiming] = useState(INITIAL_TIMING);
-  const [stopping, setStopping] = useState<StoppingState | null>(null);
+  // 事件流会重连并重新回放：回放边界作废，已建的锚点保留（同 onStreamReset）。
+  const [timing, setTiming] = useState(() => (carried === undefined ? INITIAL_TIMING : onStreamReset(carried.timing)));
+  const [stopping, setStopping] = useState<StoppingState | null>(carried?.stopping ?? null);
   const [stopMismatch, setStopMismatch] = useState<{ endedTurnId: string; runningTurnId: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   /**
    * PR5 队列：宿主在这里（key=sessionId 重挂即卸载），按 sessionId 从 sessionStorage 重建——
    * 切回必为 paused、不清空。出队单飞：beginDispatch 置 inflight 挡住重入，请求在 effect 体内发。
    */
-  const [queue, setQueue] = useState(() => loadQueue(props.sessionId));
+  const [queue, setQueueState] = useState(() => (carried === undefined ? loadQueue(props.sessionId) : carriedQueue(carried)));
+  /**
+   * 队列的最新值，含已经排上、还没提交渲染的更新（出队、发送结果）。语言切换拍快照、判断要不要等，
+   * 都看它而不是上一次渲染的值。队列的更新一律经 setQueue（算出新值记下再交给 React，次序与原来相同）。
+   */
+  const queueLatest = useRef(queue);
+  const setQueue = useCallback((update: SetStateAction<QueueState>) => {
+    queueLatest.current = typeof update === "function" ? update(queueLatest.current) : update;
+    setQueueState(queueLatest.current);
+  }, []);
   const dispatchingRef = useRef(false);
+  /** 在途的停止请求数：请求失败时要解除「停止中」，重建会让这个回调落空。 */
+  const interruptingRef = useRef(0);
+  /** 重建期间暂不出队、等重建结束再看一次（见出队 effect）。 */
+  const [dispatchRetry, setDispatchRetry] = useState(0);
   const requestsActive =
     useSyncExternalStore(subscribeInflight, getInflightCount) > 0;
 
@@ -284,6 +345,10 @@ export function SessionRuntime(props: {
   const projection = useMemo(() => projectEvents(events), [events]);
   const projectionRef = useRef(projection);
   projectionRef.current = projection;
+  // 出队与发送正告一段落之前、停止请求还没回来时，重建会让结果落空或发两次：别的标签页切语言时等这些过去再切。
+  useLossCheck(
+    () => dispatchingRef.current || interruptingRef.current > 0 || queueBusy(queueLatest.current, projectionRef.current),
+  );
   const running = projection.runningTurnIds.length;
   const contextRequirement = context.status === "ready" ? context.value.requirement : null;
   // 会话头的需求入口：优先用外壳给的（标题随列表更新），没有时用会话上下文兜底。
@@ -292,7 +357,23 @@ export function SessionRuntime(props: {
     (contextRequirement === null
       ? null
       : { id: contextRequirement.remoteRequirementId, number: contextRequirement.number, title: contextRequirement.title });
-  const [sideTab, setSideTab] = useState<SidePanelTab>("changes");
+  const [sideTab, setSideTab] = useState<SidePanelTab>(carried?.sideTab ?? "changes");
+  useCarrySource(
+    carryKey,
+    (): SessionRuntimeCarry => ({
+      session,
+      approvals,
+      queue: queueLatest.current,
+      events,
+      skillPath,
+      timing,
+      // 停止请求还在路上（强制切换时）：它失败时解除「停止中」的那一步会落空，新的一份就一直显示「停止中」。
+      // 这时不带，新的一份照常显示停止按钮（再点一次服务端按幂等处理）；队列的「你点了停止」暂停照样带过去。
+      stopping: interruptingRef.current > 0 ? null : stopping,
+      sideTab,
+      drawer,
+    }),
+  );
   const lastTurnOutcome = lastTurnOutcomeOf(projection);
   const pendingApprovals = approvals.length;
   // 顶栏徽章与状态行走同一个判定（技术设计 §四.5：删掉本地那份不看 lastTurnOutcome 的实现）。
@@ -357,6 +438,11 @@ export function SessionRuntime(props: {
     if (!shouldDispatch || dispatchingRef.current) {
       return;
     }
+    // 正在按新语言重建：这一份马上要被换掉，不在这时出队，免得新旧两份各发一次（新的那份读回快照时已暂停，
+    // 见 carriedQueue）。万一没换掉（语言来回切、最后没变），重建结束后再看一次。
+    if (isLocaleRebuilding()) {
+      return afterLocaleRebuild(() => setDispatchRetry((count) => count + 1));
+    }
     const next = beginDispatch(queue, projection.lastSeq);
     if (next.inflight === null) {
       return;
@@ -364,8 +450,8 @@ export function SessionRuntime(props: {
     dispatchingRef.current = true;
     setQueue(next);
     void sendQueued(next.inflight.item);
-    // 依赖只认「可以出队」这个布尔：queue / projection 的其它变化不该重跑出队。
-  }, [shouldDispatch]);
+    // 依赖只认「可以出队」这个布尔：queue / projection 的其它变化不该重跑出队（dispatchRetry 只在上面重建期间等过时才变）。
+  }, [shouldDispatch, dispatchRetry]);
 
   const stopTurn = useCallback((targetTurnId: string) => {
     const intent = resolveStopIntent(targetTurnId, projectionRef.current);
@@ -383,21 +469,30 @@ export function SessionRuntime(props: {
     setStopping({ turnId: intent.turnId });
     // 队列从点击这一刻起暂停（不等完成事件），避免终态先到而自动发下一条。
     setQueue((current) => pauseQueue(current, "user_stop"));
-    void api.interrupt(props.sessionId, { turnId: intent.turnId }).catch((cause: unknown) => {
-      // 请求本身失败：解除中间态并如实报错，绝不无限等终态。目标已非活跃（F5/F6）服务端按幂等返回，不会走到这里。
-      setStopping((current) => (current?.turnId === intent.turnId ? null : current));
-      reportError(cause, "action");
-    });
+    interruptingRef.current += 1;
+    void api
+      .interrupt(props.sessionId, { turnId: intent.turnId })
+      .catch((cause: unknown) => {
+        // 请求本身失败：解除中间态并如实报错，绝不无限等终态。目标已非活跃（F5/F6）服务端按幂等返回，不会走到这里。
+        setStopping((current) => (current?.turnId === intent.turnId ? null : current));
+        reportError(cause, "action");
+      })
+      .finally(() => {
+        interruptingRef.current -= 1;
+      });
   }, [props.sessionId, reportError]);
 
   useEffect(() => {
     let cancelled = false;
-    setSession(null);
     setError(null);
-    setDrawer(null);
-    setSkillPath("");
-    setTiming(INITIAL_TIMING);
-    setStopping(null);
+    // 语言切换重建后，同一个会话的这几项刚从快照读回，不清（会话照样重取，拿到后替换）。
+    if (carriedSessionId.current !== props.sessionId) {
+      setDrawer(null);
+      setSession(null);
+      setSkillPath("");
+      setTiming(INITIAL_TIMING);
+      setStopping(null);
+    }
     setStopMismatch(null);
 
     void api
@@ -493,8 +588,9 @@ export function SessionRuntime(props: {
     };
     refreshFiles();
 
+    // EventSource 带不了请求头：界面语言放在地址上（语言切换后整页重建，按新语言重连）。
     const watcher = new EventSource(
-      `/api/v1/projects/${encodeURIComponent(props.projectId)}/files/watch`,
+      withLocaleParam(`/api/v1/projects/${encodeURIComponent(props.projectId)}/files/watch`),
     );
     const refresh = () => {
       refreshFiles();
@@ -510,10 +606,14 @@ export function SessionRuntime(props: {
   }, [props.projectId, props.sessionId]);
 
   useEffect(() => {
-    setApprovals([]);
+    if (carriedSessionId.current !== props.sessionId) setApprovals([]);
     setChanges([]);
     setEvents([]);
-    const cached = loadEventCache(props.sessionId);
+    // 语言切换重建：从重建前收到的事件接着来（本地缓存晚 300ms 才写，可能缺最后几条）。
+    const cached =
+      carriedSessionId.current === props.sessionId && carried !== undefined && carried.events.length > 0
+        ? carried.events
+        : loadEventCache(props.sessionId);
     const cachedStart = cached.at(0)?.seq ?? loadEventCacheStart(props.sessionId) ?? 0;
     setEvents(cached);
     setHistoryLoading(cachedStart > 1);
@@ -585,7 +685,7 @@ export function SessionRuntime(props: {
         return;
       }
       source = new EventSource(
-        `/api/v1/sessions/${encodeURIComponent(props.sessionId)}/events?after=${String(streamAfter)}`,
+        withLocaleParam(`/api/v1/sessions/${encodeURIComponent(props.sessionId)}/events?after=${String(streamAfter)}`),
       );
       for (const type of EVENT_TYPES) {
         source.addEventListener(type, accept);
@@ -906,6 +1006,7 @@ export function SessionRuntime(props: {
               <MarkdownLinkContext.Provider value={markdownLinks}>
                 <ConversationStream
                   key={props.sessionId}
+                  scrollCarryKey={`conversation-scroll:session:${props.sessionId}`}
                   timeline={streamTimeline}
                   historyLoading={historyLoading}
                   now={now}

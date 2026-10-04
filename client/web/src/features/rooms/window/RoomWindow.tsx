@@ -47,11 +47,24 @@ import { currentViewport, useViewport } from "./use-viewport.js";
  * - 打开且没收起时算「正在看」（R4），收起后内容原样保留、不显示；
  * - 窄于 640 不显示（R6；打开入口改为直接进讨论页，见 store.ts）。
  */
+/** 挂着的 RoomWindow 数（外壳上只挂一个）。 */
+let mountedWindows = 0;
+
 export function RoomWindow() {
   const state = useRoomWindowState();
   const narrow = useMediaQuery(NARROW_VIEWPORT_QUERY);
   // 外壳卸载（退出登录、登录过期、进初始化页）时关掉：下一个登录的人不该看到上一个人开着的房间。
-  useEffect(() => () => closeRoomWindow(), []);
+  // 切换语言按新语言重建整棵界面、开发模式 StrictMode 的二次执行，都是同一轮里先卸后挂，那不是离开：
+  // 等这一轮跑完（微任务）还没有窗口挂着才关，窗口（含话题面板、草稿）原样留着。
+  useEffect(() => {
+    mountedWindows += 1;
+    return () => {
+      mountedWindows -= 1;
+      queueMicrotask(() => {
+        if (mountedWindows === 0) closeRoomWindow();
+      });
+    };
+  }, []);
   if (state === null || narrow) return null;
   return <RoomWindowFrame state={state} />;
 }

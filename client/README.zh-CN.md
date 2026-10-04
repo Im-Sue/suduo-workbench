@@ -53,6 +53,22 @@ SuDuo 自己不保存密钥副本，也不会把任何东西发给 SuDuo 的作�
 2. 为每个项目选择它的代码在你电脑上的目录。
 3. 打开一条需求，开始会话。
 
+## 语言
+
+**界面**：默认跟随系统语言（以浏览器的语言设置为准）。要固定用简体中文或英文，在 **设置 → 外观 → 语言** 里切换，选择保存在当前浏览器里。
+
+**终端输出**：`pnpm start`、`pnpm run doctor` 和本机服务的启动报错跟随系统语言：系统是中文时显示中文，其他情况显示英文。SuDuo 依次看 `LC_ALL`、`LC_MESSAGES`、`LANG`，以第一个设了值的为准；Windows 上通常没有这些变量，这时看 Windows 的区域设置。要指定语言，把 `SUDUO_LOCALE` 设为 `zh-CN` 或 `en`：
+
+```bash
+SUDUO_LOCALE=zh-CN pnpm start                # macOS
+```
+
+```powershell
+$env:SUDUO_LOCALE = "zh-CN"; pnpm start      # Windows PowerShell（对当前窗口生效）
+```
+
+`SUDUO_LOCALE` 只影响终端输出，界面语言以设置为准。`http://127.0.0.1:8787/doctor` 自检页用你最近在界面里用的语言，可以在地址后加 `?lang=zh-CN` 或 `?lang=en` 指定。
+
 ## 更新
 
 先停掉 SuDuo（在运行 `pnpm start` 的窗口按 `Ctrl+C`；Windows 上 SuDuo 还占用着文件时 `pnpm install` 会失败），然后在 `client/` 目录下：

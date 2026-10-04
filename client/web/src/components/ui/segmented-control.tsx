@@ -44,7 +44,8 @@ function SegmentedControl<T extends string>({
           value={option.value}
           disabled={option.disabled}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-[5px] px-2.5 font-medium text-muted-foreground",
+            // 文字不换行（固定高度里换行会叠在一起）；放不下时选项一起收窄、文字居中，先吃掉两侧留白，最窄时裁掉两端。
+            "inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-[5px] px-2.5 font-medium whitespace-nowrap text-muted-foreground",
             "transition-[background-color,color,box-shadow] duration-(--dur-fast) outline-none hover:text-foreground",
             "focus-visible:ring-2 focus-visible:ring-ring",
             "data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-raised",

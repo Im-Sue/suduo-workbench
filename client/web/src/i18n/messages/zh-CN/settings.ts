@@ -50,6 +50,7 @@ export const settings = {
   search: {
     theme: { title: "主题", keywords: "外观 浅色 亮色 深色 暗色 跟随系统 dark light theme" },
     density: { title: "界面密度", keywords: "紧凑 舒适 行高 字号 density" },
+    locale: { title: "语言", keywords: "界面语言 显示语言 切换语言 中文 简体中文 英文 English 跟随系统 language locale" },
     systemNotify: { title: "系统通知", keywords: "通知 提醒 完成 失败 等你确认 桌面 notification" },
     currentUser: { title: "当前账号", keywords: "账号 登录 用户 身份" },
     logout: { title: "退出登录", keywords: "登出 注销 logout" },

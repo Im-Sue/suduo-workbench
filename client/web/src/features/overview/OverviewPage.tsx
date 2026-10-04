@@ -151,11 +151,16 @@ export function OverviewPage({ projectId }: { projectId: string }) {
                   aria-label={text.status.tile(requirementStatusLabel(status, t), statusCounts?.[status] ?? 0)}
                   onClick={() => openStatus(status)}
                 >
-                  <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
-                    <StatusIcon status={status} aria-hidden="true" />
+                  {/*
+                    图标左浮动（mt-0.5 让它与 18px 行高里居中的位置一致）：状态名一行放得下时与原来的横排相同；
+                    放不下时（英文窄屏的 In development）第二行从卡片左边开始，长单词不会顶出卡片。
+                  */}
+                  <span className="flow-root text-caption text-muted-foreground">
+                    <StatusIcon status={status} aria-hidden="true" className="float-left mt-0.5 mr-1.5" />
                     {requirementStatusLabel(status, t)}
                   </span>
-                  <span className={cn("text-page font-semibold tabular-nums", (statusCounts?.[status] ?? 0) === 0 ? "text-subtle-foreground" : "text-foreground")}>
+                  {/* 状态名较长换成两行时（英文窄屏的 In development），数字仍贴底，与同一行其它卡片对齐。 */}
+                  <span className={cn("mt-auto text-page font-semibold tabular-nums", (statusCounts?.[status] ?? 0) === 0 ? "text-subtle-foreground" : "text-foreground")}>
                     {statusCounts?.[status] ?? 0}
                   </span>
                 </button>

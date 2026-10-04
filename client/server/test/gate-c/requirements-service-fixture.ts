@@ -18,6 +18,9 @@ import {
   type CommentDto,
   type CurrentUserDto,
   type ListArtifactVersionsResponse,
+  type ListAgentShareRequestsResponse,
+  type ListAgentSharesResponse,
+  type ListAgentsResponse,
   type ListAttachmentsResponse,
   type ListAuditResponse,
   type ListCommentsResponse,
@@ -25,6 +28,9 @@ import {
   type ListRequirementActivityResponse,
   type ListRequirementsByIdsResponse,
   type ListRequirementsResponse,
+  type ListRoomMembersResponse,
+  type ListRoomMessagesResponse,
+  type ListRoomsResponse,
   type ListUsersResponse,
   type ProjectDto,
   type ProjectStatsResponse,
@@ -35,6 +41,10 @@ import {
   type RequirementStatus,
   type RequirementsEventDto,
   type RequirementsEventType,
+  type RoomDto,
+  type RoomMentionDto,
+  type RoomMessageDto,
+  type RoomViewerStateDto,
   type UserSummaryDto,
 } from "@suduo/cloud-contracts";
 
@@ -60,6 +70,10 @@ export const GATE_C_FIXTURE_IDS = {
   userMe: "10000000-0000-4000-8000-000000000014",
   /** 另一位成员：负责人筛选与「别人刚改了它」的主语。 */
   userTeammate: "10000000-0000-4000-8000-000000000015",
+  /** 项目默认讨论房间（英文冒烟在这里发消息）。 */
+  projectRoom: "10000000-0000-4000-8000-000000000016",
+  /** 房间里预置的一条同事消息。 */
+  roomWelcomeMessage: "10000000-0000-4000-8000-000000000017",
 } as const;
 
 /** 需求编号：与远程服务一致，项目内按创建顺序从 1 编号。 */
@@ -102,6 +116,14 @@ const MATERIALS_AT = "2026-08-23T00:00:00.000Z";
 /** 夹具里唯一一条评论（普通评论）的时间：详情页显示出它后，已读位置应记到这里。 */
 export const GATE_C_FIXTURE_COMMENT_AT = MATERIALS_AT;
 
+const PUBLISH_MATERIAL_NAME = "发布材料.txt";
+const DELETABLE_MATERIAL_NAME = "待删除材料.txt";
+const ORDINARY_COMMENT_BODY = "这是一条普通评论，应继续按普通评论显示。";
+const ROOM_WELCOME_BODY = "欢迎来到项目讨论：这条消息是 Gate C 夹具预置的。";
+const ROOM_WELCOME_AT = "2026-08-23T08:00:00.000Z";
+/** 房间消息里 @ 所有人的兜底文字（与远程服务一致，英文）。 */
+const MENTION_ALL_LABEL = "everyone";
+
 export interface RequirementsServiceFixture {
   origin: string;
   projectId: string;
@@ -113,6 +135,8 @@ export interface RequirementsServiceFixture {
   restoreRequirement(id: string): void;
   /** 当前账号在这条需求上记下的已读位置（详情页显示出评论后经 BFF 写入）；没记过为 undefined。 */
   readMarkOf(requirementId: string): string | undefined;
+  /** 项目讨论房间里所有消息的正文（按序号）：验证界面发出的消息经 BFF 到了远程。 */
+  roomMessageBodies(): string[];
   close(): Promise<void>;
 }
 
@@ -185,6 +209,21 @@ function initialRequirements(): Map<string, FixtureRequirement> {
   ]);
 }
 
+/**
+ * 夹具里的人写内容与演示数据：项目名、人名、需求标题、材料名、评论、讨论消息。
+ * 只有系统生成的文字随界面语言变，这些原样显示（中英双语需求的用户原则）；
+ * 英文冒烟检查「英文界面里有没有漏翻的中文」时，把它们当成允许出现的中文。
+ */
+export const GATE_C_FIXTURE_HUMAN_TEXTS: readonly string[] = [
+  project.name,
+  ...users.map((user) => user.displayName),
+  ...[...initialRequirements().values()].map((requirement) => requirement.title),
+  PUBLISH_MATERIAL_NAME,
+  DELETABLE_MATERIAL_NAME,
+  ORDINARY_COMMENT_BODY,
+  ROOM_WELCOME_BODY,
+];
+
 export async function startRequirementsServiceFixture(): Promise<RequirementsServiceFixture> {
   const eventClients = new Set<ServerResponse>();
   const requirements = initialRequirements();
@@ -196,7 +235,7 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       {
         id: GATE_C_FIXTURE_IDS.attachment1,
         requirementId: targetRequirementId,
-        fileName: "发布材料.txt",
+        fileName: PUBLISH_MATERIAL_NAME,
         contentType: "text/plain",
         sizeBytes: 18,
         sha256: "a".repeat(64),
@@ -209,7 +248,7 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       {
         id: GATE_C_FIXTURE_IDS.attachment2,
         requirementId: targetRequirementId,
-        fileName: "待删除材料.txt",
+        fileName: DELETABLE_MATERIAL_NAME,
         contentType: "text/plain",
         sizeBytes: 16,
         sha256: "b".repeat(64),
@@ -224,7 +263,7 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       id: GATE_C_FIXTURE_IDS.commentOrdinary,
       requirementId: targetRequirementId,
       artifactVersionId: null,
-      body: "这是一条普通评论，应继续按普通评论显示。",
+      body: ORDINARY_COMMENT_BODY,
       author: me,
       createdAt: MATERIALS_AT,
     },
@@ -290,6 +329,68 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
   let eventSequence = 0;
   let remoteFailure = false;
   const readMarks = new Map<string, string>();
+
+  // ---------- 讨论房间：只有项目默认房间，够看消息流、发消息（英文冒烟） ----------
+  const roomId = GATE_C_FIXTURE_IDS.projectRoom;
+  const roomMessages: RoomMessageDto[] = [
+    {
+      id: GATE_C_FIXTURE_IDS.roomWelcomeMessage,
+      roomId,
+      seq: 1,
+      clientId: null,
+      authorKind: "user",
+      author: teammate,
+      agent: null,
+      body: ROOM_WELCOME_BODY,
+      mentions: [],
+      threadRootId: null,
+      files: [],
+      thread: null,
+      runs: [],
+      createdAt: ROOM_WELCOME_AT,
+    },
+  ];
+  // 预置消息已读：侧栏「讨论」不带未读数，中文全量的页面与改动前一致。
+  let roomLastReadSeq = 1;
+  const roomLastSeq = (): number => roomMessages.reduce((max, message) => Math.max(max, message.seq), 0);
+  const roomViewer = (): RoomViewerStateDto => ({
+    joined: true,
+    lastReadSeq: roomLastReadSeq,
+    unreadCount: roomMessages.filter(
+      (message) => message.seq > roomLastReadSeq && message.author?.id !== me.id,
+    ).length,
+    mentionCount: 0,
+  });
+  const projectRoom = (): RoomDto => {
+    const last = roomMessages.at(-1);
+    return {
+      id: roomId,
+      projectId: project.id,
+      kind: "project_default",
+      name: project.name,
+      requirement: null,
+      lastSeq: roomLastSeq(),
+      archivedAt: null,
+      createdBy: null,
+      createdAt: CREATED_AT,
+      memberCount: users.length,
+      viewer: roomViewer(),
+      lastMessage:
+        last === undefined
+          ? null
+          : {
+              seq: last.seq,
+              authorName: last.author?.displayName ?? "",
+              preview: last.body,
+              createdAt: last.createdAt,
+              authorKind: last.authorKind,
+              agent: null,
+              text: last.body,
+              firstFile: null,
+              fileCount: 0,
+            },
+    };
+  };
 
   const listAttachments = (requirementId: string): AttachmentDto[] =>
     [...attachments.values()].filter((attachment) => attachment.requirementId === requirementId);
@@ -676,6 +777,24 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       applyChange(found, me, patch);
       return json<RequirementDto>(response, 200, toDto(found));
     }
+    if (request.method === "GET" && url.pathname === `/v2/projects/${project.id}/rooms`) {
+      return json<ListRoomsResponse>(response, 200, { items: [projectRoom()] });
+    }
+    const requirementRoomsMatch = /^\/v2\/requirements\/([^/]+)\/rooms$/u.exec(url.pathname);
+    if (request.method === "GET" && requirementRoomsMatch?.[1]) {
+      // 需求下没有讨论（建需求讨论不在 gate-c 范围内）。
+      if (!requirements.has(decodeURIComponent(requirementRoomsMatch[1]))) return notFound(response);
+      return json<ListRoomsResponse>(response, 200, { items: [] });
+    }
+    const roomMatch = /^\/v2\/rooms\/([^/]+)(\/[a-z/-]+)?$/u.exec(url.pathname);
+    if (roomMatch?.[1]) {
+      if (decodeURIComponent(roomMatch[1]) !== roomId) return notFound(response);
+      return handleRoom(request, response, url, roomMatch[2] ?? "");
+    }
+    if (request.method === "GET" && url.pathname === "/v2/agents") {
+      // 没有登记的 Agent：本机服务的登记 / 心跳仍落到 404，与改动前一致。
+      return json<ListAgentsResponse>(response, 200, { items: [] });
+    }
     if (request.method === "GET" && url.pathname === "/v2/events") {
       response.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
@@ -689,6 +808,165 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
     }
     notFound(response);
   });
+
+  /** 项目默认房间的子资源：详情、成员、已读、消息（列表 / 发送 / 搜索）、共享（空）。 */
+  async function handleRoom(
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+    resource: string,
+  ): Promise<void> {
+    const route = `${request.method ?? "GET"} ${resource}`;
+    if (route === "GET ") return json<RoomDto>(response, 200, projectRoom());
+    if (route === "GET /members" || route === "POST /members") {
+      // 项目默认房间所有人都在（加入是空操作）。
+      return json<ListRoomMembersResponse>(response, 200, {
+        items: users.map((user) => ({ user, joinedAt: null, online: user.id === me.id })),
+      });
+    }
+    if (route === "POST /read") {
+      const body = await requestJson(request) as { upToSeq?: unknown };
+      if (typeof body.upToSeq !== "number" || !Number.isSafeInteger(body.upToSeq) || body.upToSeq < 0) {
+        return validationError(response);
+      }
+      // 与远程服务一致：只会前进，回退按位置不变处理。
+      roomLastReadSeq = Math.max(roomLastReadSeq, Math.min(body.upToSeq, roomLastSeq()));
+      return json<RoomViewerStateDto>(response, 200, roomViewer());
+    }
+    if (route === "GET /messages") return listRoomMessages(url, response);
+    if (route === "POST /messages") return sendRoomMessage(request, response);
+    if (route === "GET /messages/search") {
+      const query = url.searchParams.get("q")?.trim().toLowerCase();
+      const limit = queryInteger(url, "limit");
+      const before = queryInteger(url, "before");
+      if (!query || limit === null || before === null) return validationError(response);
+      const matched = roomMessages.filter((message) => message.body.toLowerCase().includes(query));
+      return json<ListRoomMessagesResponse>(
+        response,
+        200,
+        roomMessagePage(matched, { before, limit: Math.min(limit ?? 20, 50) }),
+      );
+    }
+    if (route === "GET /shares") return json<ListAgentSharesResponse>(response, 200, { items: [] });
+    if (route === "GET /share-requests") {
+      return json<ListAgentShareRequestsResponse>(response, 200, { items: [] });
+    }
+    notFound(response);
+  }
+
+  /** 主消息流只列顶层消息；带 threadRootId 时列话题（根 + 回复）。按序号正序。 */
+  function listRoomMessages(url: URL, response: ServerResponse): void {
+    const after = queryInteger(url, "after");
+    const before = queryInteger(url, "before");
+    const limit = queryInteger(url, "limit");
+    if (after === null || before === null || limit === null) return validationError(response);
+    const rootId = url.searchParams.get("threadRootId");
+    const scope = roomMessages.filter((message) =>
+      rootId === null ? message.threadRootId === null : message.id === rootId || message.threadRootId === rootId,
+    );
+    json<ListRoomMessagesResponse>(
+      response,
+      200,
+      roomMessagePage(scope, { after, before, limit: Math.min(Math.max(limit ?? 50, 1), 200) }),
+    );
+  }
+
+  function roomMessagePage(
+    scope: readonly RoomMessageDto[],
+    range: { after?: number | undefined; before?: number | undefined; limit: number },
+  ): ListRoomMessagesResponse {
+    const sorted = scope.toSorted((left, right) => left.seq - right.seq);
+    if (range.after !== undefined) {
+      const after = range.after;
+      const newer = sorted.filter((message) => message.seq > after);
+      return {
+        items: newer.slice(0, range.limit),
+        hasMoreBefore: sorted.some((message) => message.seq <= after),
+        hasMoreAfter: newer.length > range.limit,
+        lastSeq: roomLastSeq(),
+      };
+    }
+    const before = range.before;
+    const older = before === undefined ? sorted : sorted.filter((message) => message.seq < before);
+    return {
+      items: older.slice(-range.limit),
+      hasMoreBefore: older.length > range.limit,
+      hasMoreAfter: false,
+      lastSeq: roomLastSeq(),
+    };
+  }
+
+  async function sendRoomMessage(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const body = await requestJson(request) as {
+      clientId?: unknown;
+      body?: unknown;
+      mentions?: unknown;
+      threadRootId?: unknown;
+      fileIds?: unknown;
+    };
+    if (typeof body.clientId !== "string" || body.clientId === "" || typeof body.body !== "string" || body.body.trim() === "") {
+      return validationError(response);
+    }
+    // 夹具不存房间文件：带文件的消息不在 gate-c 范围内。
+    if (body.fileIds !== undefined && (!Array.isArray(body.fileIds) || body.fileIds.length > 0)) {
+      return validationError(response);
+    }
+    const threadRootId = body.threadRootId ?? null;
+    const root = threadRootId === null
+      ? null
+      : roomMessages.find((message) => message.id === threadRootId && message.threadRootId === null);
+    if (root === undefined) return validationError(response);
+    // 网络重试带同一个 clientId：返回已有那条（ADR-0004 合并，不拒绝）。
+    const existing = roomMessages.find((message) => message.clientId === body.clientId);
+    if (existing !== undefined) return json<RoomMessageDto>(response, 200, existing);
+    const mentions = roomMentions(body.mentions);
+    if (mentions === null) return validationError(response);
+    const message: RoomMessageDto = {
+      id: fixtureUuid(700 + roomMessages.length),
+      roomId,
+      seq: roomLastSeq() + 1,
+      clientId: body.clientId,
+      authorKind: "user",
+      author: me,
+      agent: null,
+      body: body.body,
+      mentions,
+      threadRootId: root === null ? null : root.id,
+      files: [],
+      thread: null,
+      runs: [],
+      createdAt: new Date().toISOString(),
+    };
+    roomMessages.push(message);
+    if (root !== null) {
+      root.thread = {
+        replyCount: (root.thread?.replyCount ?? 0) + 1,
+        lastReplyAt: message.createdAt,
+        lastRepliers: [me],
+      };
+    }
+    // 自己发的消息不算未读。
+    roomLastReadSeq = message.seq;
+    json<RoomMessageDto>(response, 201, message);
+  }
+
+  /** @ 人与 @ 所有人；夹具没有 Agent，@ Agent 按参数不合法处理。 */
+  function roomMentions(raw: unknown): RoomMentionDto[] | null {
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw)) return null;
+    const mentions: RoomMentionDto[] = [];
+    for (const item of raw as unknown[]) {
+      const mention = item as { kind?: unknown; id?: unknown };
+      if (mention.kind === "all") {
+        mentions.push({ kind: "all", id: null, label: MENTION_ALL_LABEL });
+        continue;
+      }
+      const user = mention.kind === "user" ? users.find((candidate) => candidate.id === mention.id) : undefined;
+      if (user === undefined) return null;
+      mentions.push({ kind: "user", id: user.id, label: user.displayName });
+    }
+    return mentions;
+  }
 
   /** 列表：状态、搜索（标题 / 描述，形如编号时同时按编号）、负责人，按更新时间倒序。 */
   function listRequirements(url: URL, response: ServerResponse): void {
@@ -807,28 +1085,38 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       requirements.set(id, { ...snapshot });
     },
     readMarkOf: (requirementId) => readMarks.get(requirementId),
+    roomMessageBodies: () => roomMessages.toSorted((left, right) => left.seq - right.seq).map((message) => message.body),
     close: () => closeServer(server, eventClients),
   };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
+/** 非负整数查询参数：没带为 undefined，写错为 null。 */
+function queryInteger(url: URL, name: string): number | undefined | null {
+  const raw = url.searchParams.get(name);
+  if (raw === null) return undefined;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 && String(value) === raw ? value : null;
+}
+
 function isRequirementStatus(value: unknown): value is RequirementStatus {
   return typeof value === "string" && (REQUIREMENT_STATUSES as readonly string[]).includes(value);
 }
 
+// 报错正文与远程服务一致用英文（中英双语 S5 起云端报错是英文）：英文冒烟里原样透出的报错不该带中文。
 function remoteUnavailable(response: ServerResponse): void {
   json(response, 503, {
-    error: { code: "REMOTE_UNAVAILABLE", message: "Gate C 远程读模型已按测试开关断开" },
+    error: { code: "REMOTE_UNAVAILABLE", message: "Gate C fixture: the remote read model is switched off by the test" },
   });
 }
 
 function notFound(response: ServerResponse): void {
-  json(response, 404, { error: { code: "NOT_FOUND", message: "Gate C 夹具中不存在该资源" } });
+  json(response, 404, { error: { code: "NOT_FOUND", message: "Gate C fixture: resource not found" } });
 }
 
 function validationError(response: ServerResponse): void {
-  json(response, 400, { error: { code: "VALIDATION_ERROR", message: "Gate C 夹具参数不合法" } });
+  json(response, 400, { error: { code: "VALIDATION_ERROR", message: "Gate C fixture: invalid parameters" } });
 }
 
 /** 类型参数让每个成功响应都按契约 DTO 编译期校验。 */

@@ -16,11 +16,27 @@
       "data-density",
       localStorage.getItem("suduo.density") === "compact" ? "compact" : "comfortable",
     );
-    // 固定了语言才提前写 lang；「跟随系统」要看界面已支持哪些语言，由 src/i18n/locale.ts 在启动时决定。
-    var lang = localStorage.getItem("suduo.locale");
-    if (lang === "zh-CN" || lang === "en") root.setAttribute("lang", lang);
   } catch {
     root.setAttribute("data-theme", "light");
     root.setAttribute("data-density", "comfortable");
   }
+  // 界面语言：与 src/i18n/locale.ts 的 resolveUiLocale 一致——固定了就用；「跟随系统」（或没选过、读不到存储）时
+  // 浏览器语言以 zh 开头用中文，其他用英文，取不到浏览器语言时用中文。单独 try：主题那段出错也照样写 lang。
+  // src/i18n/locale.ts 启动时会再写一次。
+  var lang;
+  try {
+    lang = localStorage.getItem("suduo.locale");
+  } catch {
+    lang = null;
+  }
+  if (lang !== "zh-CN" && lang !== "en") {
+    var tag;
+    try {
+      tag = String(navigator.language || "").trim().toLowerCase();
+    } catch {
+      tag = "";
+    }
+    lang = tag === "" || tag === "zh" || tag.indexOf("zh-") === 0 || tag.indexOf("zh_") === 0 ? "zh-CN" : "en";
+  }
+  root.setAttribute("lang", lang);
 })();

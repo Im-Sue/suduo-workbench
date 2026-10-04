@@ -38,17 +38,19 @@ export async function pasteTinyPng(page: Page): Promise<void> {
  * 对话框按情况分步：检查 →（这条需求已有会话）选「新开一个会话」→（项目还没关联本机
  * 代码目录）手动输入 `projectRoot`，等到「可以读写」再「使用这个目录」→ 准备 → 进入会话。
  * 哪一步出现取决于前序步骤建立的状态，所以这里按页面实际状态推进，而不是写死顺序。
+ * 文字按这一轮的界面语言从前端字典取（`context.ui`），中英两种验收共用。
  */
 export async function completeStartSessionDialog(
-  page: Page,
-  projectRoot: string,
+  context: Pick<GateCStepContext, "page" | "projectRoot" | "ui">,
   timeoutMs = 180_000,
 ): Promise<string> {
+  const page = context.page;
+  const text = context.ui.startSession;
   const dialog = page.getByTestId("start-session-dialog");
   await dialog.waitFor({ timeout: 20_000 });
-  const directoryTitle = dialog.getByRole("heading", { name: "选择本机代码目录" });
-  const startNew = dialog.getByRole("button", { name: "新开一个会话" });
-  const failed = dialog.getByText("没能开始会话", { exact: false });
+  const directoryTitle = dialog.getByRole("heading", { name: text.directoryTitle });
+  const startNew = dialog.getByRole("button", { name: text.createNew });
+  const failed = dialog.getByText(text.failed, { exact: false });
   const deadline = Date.now() + timeoutMs;
   let directoryDone = false;
   let choseNew = false;
@@ -60,11 +62,17 @@ export async function completeStartSessionDialog(
     }
     if (!directoryDone && (await directoryTitle.isVisible().catch(() => false))) {
       directoryDone = true;
-      await dialog.getByRole("button", { name: "手动输入路径" }).click();
-      await dialog.getByLabel("代码目录的绝对路径").fill(projectRoot);
+      await dialog.getByRole("button", { name: text.manual }).click();
+      await dialog.getByLabel(text.manualLabel).fill(context.projectRoot);
       // 即时检查通过后「使用这个目录」才可用；gate-c 的项目目录不是 Git 仓库，文案是「可以读写，但不是 Git 仓库…」。
-      await dialog.getByText("可以读写", { exact: false }).waitFor({ timeout: 20_000 });
-      await dialog.getByRole("button", { name: "使用这个目录" }).click();
+      // 两种可读写结论（不是 / 是 Git 仓库，后者带分支时以它开头）任一出现即可，与只认「可以读写」等价。
+      const [notGitRepo, gitRepo] = text.readable;
+      await dialog
+        .getByText(notGitRepo, { exact: false })
+        .or(dialog.getByText(gitRepo, { exact: false }))
+        .first()
+        .waitFor({ timeout: 20_000 });
+      await dialog.getByRole("button", { name: text.useDirectory }).click();
       continue;
     }
     if (!choseNew && (await startNew.isVisible().catch(() => false))) {
@@ -77,11 +85,11 @@ export async function completeStartSessionDialog(
   throw new Error("开始会话对话框未在限定时间内进入会话页");
 }
 
-/** 从主导航进入某个分区（侧栏收起时链接只剩 aria-label，同名定位两种形态都成立）。 */
-export async function openSection(
-  page: Page,
-  label: "我的工作" | "需求" | "会话" | "概览" | "设置",
-): Promise<void> {
+/**
+ * 从主导航进入某个分区（侧栏收起时链接只剩 aria-label，同名定位两种形态都成立）。
+ * `label` 是这一轮界面语言下的分区名（`context.ui.nav.*`）。
+ */
+export async function openSection(page: Page, label: string): Promise<void> {
   await page.getByTestId("app-nav").getByRole("link", { name: label, exact: true }).click();
 }
 

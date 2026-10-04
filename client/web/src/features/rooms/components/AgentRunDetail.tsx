@@ -73,6 +73,7 @@ export function AgentRunDetail({ runId, onBack }: { runId: string; onBack(): voi
       ) : null}
       {data === undefined ? null : (
         <ConversationStream
+          scrollCarryKey={`conversation-scroll:run:${runId}`}
           timeline={projection.timeline}
           historyLoading={false}
           now={now}

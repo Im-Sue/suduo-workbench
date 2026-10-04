@@ -11,7 +11,7 @@ export const conversation = {
     title: "Sessions",
     create: "New",
     searchLabel: "Search sessions",
-    searchPlaceholder: "Search titles, requirement IDs, or content",
+    searchPlaceholder: "Search titles, IDs, or content",
     clearSearch: "Clear search",
     filtersLabel: "Filter sessions",
     filters: {

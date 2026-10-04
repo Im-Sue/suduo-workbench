@@ -11,6 +11,9 @@ export const workbench = {
     },
     /** 拖入、粘贴了图片以外的文件。 */
     imagesOnly: "目前仅支持拖入/粘贴图片；其他文件请用 @ 引用项目内路径。",
+    /** 切换语言时这条消息正在发送、结果没等到（重建后输入框里还留着它）。 */
+    maybeSent: "切换语言时这条消息正在发送，可能已经发出。请先在对话里核对，再决定要不要重发。",
+    maybeSentDismiss: "知道了",
     dropImages: "松开以把图片加入本条消息",
     /** 「/」与「@」触发的选择面板。 */
     palette: {
@@ -68,6 +71,7 @@ export const workbench = {
         send_uncertain: "这一条发没发出去还不确定",
         attribution_unconfirmed: "这一条去了哪儿还没确认",
         restored: "刷新或切回会话后，需要你确认继续",
+        locale_switched: "切换语言时正要发下一条，需要你确认继续",
       } satisfies Record<PausedReason, string>,
       resume: "恢复",
       editLabel: "编辑排队的消息",

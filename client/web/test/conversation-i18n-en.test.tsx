@@ -170,13 +170,18 @@ describe("会话区英文界面", () => {
     );
     expect(node.querySelector("h2")?.textContent).toBe("Sessions");
     expect(q(node, "new-session")?.textContent).toBe("New");
-    expect(q(node, "session-search")?.getAttribute("placeholder")).toBe("Search titles, requirement IDs, or content");
+    expect(q(node, "session-search")?.getAttribute("placeholder")).toBe("Search titles, IDs, or content");
     expect(node.querySelector("nav")?.getAttribute("aria-label")).toBe("Session list");
     const filters = node.querySelector('[aria-label="Filter sessions"]')?.textContent;
     expect(filters).toContain("All");
     expect(filters).toContain("Running 1");
     expect(filters).toContain("Needs me");
     expect(filters).toContain("Room tasks");
+    // 筛选条放不下时（英文、带计数）选项不换行，一起收窄留白（S9 走查）。
+    for (const option of node.querySelectorAll('[aria-label="Filter sessions"] > *')) {
+      expect(option.className).toContain("whitespace-nowrap");
+      expect(option.className).toContain("min-w-0");
+    }
     expect([...node.querySelectorAll("h3")].map((heading) => heading.textContent)).toEqual(["Today", "Yesterday", "Earlier"]);
     const rows = [...node.querySelectorAll('[data-testid="session-row"]')].map((row) => row.textContent ?? "");
     expect(rows[0]).toContain("You: Add tests");
@@ -287,6 +292,11 @@ describe("会话区英文界面", () => {
     expect(summary?.textContent).toContain("Done · Took 2 min 14s · Edited 1 file · Ran 1 command");
     expect(summary?.textContent).toContain("View changes");
     expect(summary?.textContent).toContain("Restore to before this turn");
+    // 对话栏窄时两个操作整体换到下一行，不在按钮文字中间折行（S9 走查）。
+    expect(summary?.className).toContain("flex-wrap");
+    const actions = [...(summary?.querySelectorAll("button") ?? [])];
+    expect(actions.map((button) => button.textContent)).toEqual(["View changes", "Restore to before this turn"]);
+    for (const button of actions) expect(button.className).toContain("whitespace-nowrap");
   });
 
   it("回合视图：失败卡、等你确认与计划", async () => {
@@ -339,6 +349,9 @@ describe("会话区英文界面", () => {
     const node = await render(<SessionModelSwitcher session={session} provider={null} onChanged={vi.fn()} onOpenSettings={vi.fn()} onError={vi.fn()} />);
     const chip = q(node, "model-chip");
     expect(chip?.textContent).toBe("Default modelDeep");
+    // 输入框底栏放不下时模型名截断，推理强度保持完整（S9 走查）。
+    expect(chip?.className).toContain("min-w-0");
+    expect(chip?.querySelector("span.truncate")?.textContent).toBe("Default model");
     expect(chip?.getAttribute("title")).toBe("Model and reasoning effort (this session; takes effect from the next turn)");
     expect(prettifyModel(null)).toBe("Default model");
     expect(prettifyModel("gpt-5.6-sol")).toBe("5.6 Sol");

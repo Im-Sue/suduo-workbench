@@ -47,7 +47,7 @@ import type { RequirementListFilters } from "./keys.js";
 import { findCachedItem, usersQuery, useRequirementIdByRef, useUpdateRequirement, type ColumnState } from "./queries.js";
 import { useRequirementsRealtimeState } from "./realtime.js";
 import { requirementStatusLabel } from "../../ui/requirement-status.js";
-import { useT } from "../../i18n/provider.js";
+import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
 
 /**
  * 需求页（原型 Main）：看板 / 列表 + 右侧速览。筛选、视图、速览都记在 URL 里，可分享、可回退。
@@ -160,7 +160,10 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
   };
 
   // ---------- 搜索（输入防抖后写入 URL） ----------
-  const [query, setQuery] = useState(search.q ?? "");
+  // 还没写进地址的搜索词（防抖 250ms）带过语言切换的重建；写进地址的本来就在（i18n/carry.ts）。
+  const carriedQuery = useCarried<string>(`requirements-query:${projectId}`);
+  const [query, setQuery] = useState(carriedQuery ?? search.q ?? "");
+  useCarrySource(`requirements-query:${projectId}`, () => query);
   const [composing, setComposing] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   // 自己写进 URL 的值回流时不覆盖输入框：否则写入瞬间继续敲的字、词间空格会被吞掉。

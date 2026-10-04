@@ -388,7 +388,10 @@ export function RoomComposer({
           >
             @
           </button>
-          <span className="ml-1 hidden text-caption text-subtle-foreground sm:inline">{text.keyHint}</span>
+          {/* 话题面板里的输入框较窄：提示放不下时省略，不换成两行。 */}
+          <span className="ml-1 hidden min-w-0 truncate text-caption text-subtle-foreground sm:inline" title={text.keyHint}>
+            {text.keyHint}
+          </span>
           <div className="flex-1" />
           <button
             type="button"

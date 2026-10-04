@@ -21,6 +21,7 @@ labels: bug
 - Node:
 - Codex CLI:
 - OS / 操作系统:
+- Interface language / 界面语言: English or 简体中文
 
 ## Logs or screenshots / 日志或截图
 

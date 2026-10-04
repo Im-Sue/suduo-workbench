@@ -16,6 +16,9 @@
 #   sh scripts/gate-c-vm.sh sync          把当前工作区（含未提交改动）同步进虚拟机，装依赖、构建、装 Playwright Chromium
 #   sh scripts/gate-c-vm.sh gate-c [步骤] 在虚拟机里跑官方 gate-c；步骤同 GATE_C_STEPS（逗号分隔，缺省全量）；
 #                                         产物拷回 client/artifacts/gate-c-vm/
+#                                         宿主机上设了下面两个变量时原样带进虚拟机（只认字母、数字、. _ -）：
+#                                           SUDUO_GATE_LOCALE=en   跑英文冒烟（缺省按中文跑全量）
+#                                           SUDUO_VISUAL_LABEL=…   视觉基线这一组的名字（缺省 current）
 #   sh scripts/gate-c-vm.sh start|stop|shell|status|delete
 set -eu
 
@@ -205,12 +208,28 @@ copy_model_catalog() {
   vm_sh "set -e; mkdir -p \"\$(dirname \"\$HOME/gate-c-codex-home/${catalog}\")\"; cat > \"\$HOME/gate-c-codex-home/${catalog}\"" < "$1/$catalog"
 }
 
+# 宿主机上设了的 gate-c 变量带进虚拟机（拼成 export 的参数）；值只认安全字符，免得拼进命令时出岔子。
+gate_c_env() {
+  for name in SUDUO_GATE_LOCALE SUDUO_VISUAL_LABEL; do
+    value=$(printenv "$name" || true)
+    [ -n "$value" ] || continue
+    case "$value" in
+      *[!A-Za-z0-9._-]*)
+        echo "${name} 只能含字母、数字、. _ -：${value}" >&2
+        exit 1
+        ;;
+    esac
+    printf " %s='%s'" "$name" "$value"
+  done
+}
+
 drop_key() {
   vm_sh 'rm -rf "$XDG_RUNTIME_DIR/suduo-gate-c"' >/dev/null 2>&1 || true
 }
 
 run_gate_c() {
   steps="${1:-}"
+  extra_env=$(gate_c_env)
   # 要在 Ubuntu 24.04 的默认限制下验证（与普通用户机器一致），不能是被放开过的状态。
   if [ "$(vm_sh 'cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null')" != "1" ]; then
     echo "虚拟机里 kernel.apparmor_restrict_unprivileged_userns 不是默认的 1；先 sh scripts/gate-c-vm.sh stop && sh scripts/gate-c-vm.sh start 让 provision 恢复" >&2
@@ -231,7 +250,7 @@ run_gate_c() {
   fi
   status=0
   vm_sh "set -e; cd ~/suduo/client; eval \"\$(mise env -s bash)\"
-    export CODEX_HOME=\"\$HOME/gate-c-codex-home\" GATE_C_STEPS='${steps}'
+    export CODEX_HOME=\"\$HOME/gate-c-codex-home\" GATE_C_STEPS='${steps}'${extra_env}
     pnpm gate:c" || status=$?
   home=$(vm_sh 'printf %s "$HOME"') || home=""
   rm -rf "$ROOT/artifacts/gate-c-vm"
