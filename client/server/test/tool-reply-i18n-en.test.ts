@@ -17,7 +17,7 @@ import type { ArtifactVersionDetailDto } from "@suduo/cloud-contracts";
 import { ApiError } from "../src/application/api-error.js";
 import { ApprovalService } from "../src/application/approval-service.js";
 import { EventLedger } from "../src/application/event-ledger.js";
-import type { ToolResult } from "../src/application/session-tools/format.js";
+import { TOOL_TEXT_LIMIT, limitToolResult, textResult, toolFormat, type ToolResult } from "../src/application/session-tools/format.js";
 import { RequirementTools, describeActivity, type ToolSessionContext } from "../src/application/session-tools/requirement-tools.js";
 import { SessionContextService } from "../src/application/session-tools/session-context.js";
 import { SessionToolService } from "../src/application/session-tools/session-tool-service.js";
@@ -606,6 +606,25 @@ function serviceSetup(options: { withSessions: boolean }) {
   };
   return { service, approvalService, approvals, runtime, remote, call, responseOf, pendingApprovalOf };
 }
+
+describe("超长回包的截断说明按会话语言", () => {
+  it("中文会话「…（以下省略）」，英文会话「… (truncated)」；不超长的原样", () => {
+    const long = "长".repeat(TOOL_TEXT_LIMIT + 10);
+    const zh = limitToolResult(textResult(long), toolFormat("zh-CN")).contentItems[0];
+    const en = limitToolResult(textResult(long), toolFormat("en")).contentItems[0];
+    expect(zh).toEqual({ type: "inputText", text: "长".repeat(TOOL_TEXT_LIMIT) + "\n…（以下省略）" });
+    expect(en).toEqual({ type: "inputText", text: "长".repeat(TOOL_TEXT_LIMIT) + "\n… (truncated)" });
+    expect(limitToolResult(textResult("短"), toolFormat("en")).contentItems[0]).toEqual({ type: "inputText", text: "短" });
+  });
+
+  it("经调度回包时截断：英文会话超长的评论页以英文截断说明结尾", async () => {
+    const { call, responseOf, remote } = serviceSetup({ withSessions: true });
+    remote.comments.set("req-1", Array.from({ length: 20 }, (_, index) => commentFixture(index + 1, { body: "评".repeat(1_500) })));
+    const response = await responseOf(call("suduo_requirement_comments", {}));
+    expect(response.length).toBe(TOOL_TEXT_LIMIT + "\n… (truncated)".length);
+    expect(response.endsWith("\n… (truncated)")).toBe(true);
+  });
+});
 
 describe("英文会话：工具调度", () => {
   it("只读工具按会话语言回包；未知工具英文", async () => {

@@ -10,7 +10,7 @@ export const toolSpec = {
     "Look up a SuDuo requirement: number, title, status, assignee, version, and full description. For the current requirement, it also gives the version when work started and the changes since then (who, when, and what changed).",
   requirementComments: {
     description:
-      "View the requirement's comments (author, time, body; release notes of confirmed versions are marked), up to 20 per call. The cursor for the next page is given at both the start and the end of the result.",
+      "View the requirement's comments (author, time, body; publish notes for confirmed versions are marked), up to 20 per call. The cursor for the next page is given at both the start and the end of the result.",
     cursor: "The cursor given at the end of the previous page's result. Omit it for the first page.",
   },
   requirementAttachments:
@@ -53,7 +53,7 @@ export const toolSpec = {
       "Returns a string: published (with the version number), declined by the user, or not published, with the reason.",
     paths: "Paths of the project files to publish.",
     attachmentIds: "IDs of the requirement's existing attachments.",
-    note: "Release note (optional).",
+    note: "Publish note (optional).",
   },
 
   roomLimit: "Number of messages. Default 20, max 50.",

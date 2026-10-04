@@ -15,7 +15,7 @@ import type { SessionThreadRecord, SessionThreadRepository } from "../../infrast
 import type { ToolConfirmationHandler } from "../approval-service.js";
 import type { EventLedger } from "../event-ledger.js";
 import { isWriteTool } from "./catalog.js";
-import { failure, toolFormat, type ToolResult } from "./format.js";
+import { failure, limitToolResult, toolFormat, type ToolResult } from "./format.js";
 import type { RequirementTools, ToolSessionContext } from "./requirement-tools.js";
 import type { RoomTools } from "./room-tools.js";
 import type { SessionContextService } from "./session-context.js";
@@ -112,6 +112,7 @@ export class SessionToolService implements ToolConfirmationHandler {
             );
     }
     const binding = this.deps.threads.getById(approval.sessionThreadId);
+    result = limitToolResult(result, toolFormat(locale));
     const delivered = binding
       ? await this.deliver(binding.threadRef.runtimeId, approval.runtimeApprovalRef, result)
       : { delivered: false };
@@ -317,7 +318,8 @@ export class SessionToolService implements ToolConfirmationHandler {
     if (!event.threadRef) {
       return;
     }
-    const outcome = await this.deliver(event.threadRef.runtimeId, callRef, result);
+    const limited = limitToolResult(result, toolFormat(this.safeLocaleOf(() => this.sessionOf(event).sessionId)));
+    const outcome = await this.deliver(event.threadRef.runtimeId, callRef, limited);
     if (!outcome.delivered) {
       this.log({ event: "suduo.tool.respond_dropped", reason: "call no longer valid (connection replaced or withdrawn by Codex)" });
     }

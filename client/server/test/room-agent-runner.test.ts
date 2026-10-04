@@ -927,7 +927,9 @@ describe("RoomAgentRunner", () => {
   });
 
   it("所有者界面语言为英文：任务会话记下英文，固定层、回合输入与线程重建的框架文字是英文，房间消息与人名原样", async () => {
-    const context = setup({ ownerLocale: "en" });
+    // 所有者的界面语言之后会切到中文：已有的任务会话仍按建会话时记下的英文（需求 R6）。
+    const owner: { ownerLocale: Locale } = { ownerLocale: "en" };
+    const context = setup(owner);
     context.remote.messages = [
       message(3, { author: DEV, body: "收货信息还没展示" }),
       message(4, { body: "@陈思远的Codex 订单详情现在能拿到收货信息吗？" }),
@@ -951,6 +953,7 @@ describe("RoomAgentRunner", () => {
     context.completeTurn(record.sessionId, "turn-1", "第一次的回答");
     await until(() => context.runner.status().activeRun === null, "idle");
     context.remote.messages.push(message(5, { threadRootId: "m-4", authorKind: "agent", agent: AGENT, author: DEV, body: "第一次的回答" }));
+    owner.ownerLocale = "zh-CN";
     const rebuilt = await context.runner.rebuildSetup(context.roomTasks.get("agent-1", "room-1", "m-4")!);
     expect(rebuilt?.developerInstructions).toContain("# SuDuo room\n");
     expect(rebuilt?.developerInstructions).toContain("# Earlier discussion in this thread (Codex thread rebuilt)");

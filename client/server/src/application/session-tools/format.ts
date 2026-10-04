@@ -16,11 +16,18 @@ export interface ToolResult {
   contentItems: RuntimeToolOutputItem[];
 }
 
-/** 工具结果的文字；超过上限时截断（截断说明与语言无关）。 */
+/** 工具结果的文字。超过 `TOOL_TEXT_LIMIT` 的部分在回包时按会话语言截断（`limitToolResult`）。 */
 export function textResult(text: string, success = true): ToolResult {
+  return { success, contentItems: [{ type: "inputText", text }] };
+}
+
+/** 回包前按会话语言截断超长的文字（「…（以下省略）」/「… (truncated)」）。所有工具结果都经过这里。 */
+export function limitToolResult(result: ToolResult, f: ToolFormat): ToolResult {
   return {
-    success,
-    contentItems: [{ type: "inputText", text: text.length > TOOL_TEXT_LIMIT ? text.slice(0, TOOL_TEXT_LIMIT) + "\n…" : text }],
+    ...result,
+    contentItems: result.contentItems.map((item) =>
+      item.type === "inputText" ? { ...item, text: f.truncate(item.text, TOOL_TEXT_LIMIT) } : item,
+    ),
   };
 }
 
