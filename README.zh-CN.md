@@ -7,7 +7,7 @@
 
 # 速舵 SuDuo
 
-**需求在团队，代码留在本机。**
+**速度交给 AI，方向由团队掌舵。**
 
 给用 Codex CLI 开发的团队准备的、可以自己部署的需求协作工作台。
 
@@ -17,7 +17,7 @@
 [![Client: macOS | Windows](https://img.shields.io/badge/client-macOS%20%7C%20Windows-12A594)](client/README.zh-CN.md)
 [![Server: Linux + Docker](https://img.shields.io/badge/server-Linux%20%2B%20Docker-12A594)](cloud/DEPLOYMENT.zh-CN.md)
 
-[快速开始](#快速开始) · [工作方式](#工作方式) · [商业使用](COMMERCIAL.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [English](README.md)
+[官网](https://suduo.dev/) · [快速开始](#快速开始) · [工作方式](#工作方式) · [商业使用](COMMERCIAL.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [English](README.md)
 
 </div>
 
