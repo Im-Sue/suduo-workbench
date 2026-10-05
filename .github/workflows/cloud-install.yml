@@ -3,6 +3,8 @@ name: Cloud install
 # Installs the cloud with scripts/suduo-cloud.sh on fresh x86_64 Ubuntu runners and walks the full lifecycle:
 # install → seed data → backup → upgrade → purge → reinstall → restore → verify the data byte for byte,
 # then restore onto an instance that has other data and check that the other data is gone.
+# A second job upgrades from the previous release tag to this commit the way the deployment guide says:
+# install the old tag, seed data, check out the new commit in the same directory, upgrade, verify.
 on:
   pull_request:
     paths: ["cloud/**", ".github/workflows/cloud-install.yml"]
@@ -85,6 +87,70 @@ jobs:
 
       - name: Status
         run: sudo ./scripts/suduo-cloud.sh status
+
+      - name: Logs
+        if: failure()
+        run: sudo $COMPOSE logs --no-color --tail 300
+
+  upgrade-from-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: cloud
+    env:
+      COMPOSE: docker compose --env-file server/.env -f server/compose.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Find the previous release
+        id: previous
+        run: |
+          head="$(git rev-parse HEAD)"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          # 最新的、不指向这个提交的 v* 标签（在发布标签上跑时取再上一个）。
+          for tag in $(git tag --list 'v*' --sort=-v:refname); do
+            if [ "$(git rev-list -n 1 "$tag")" != "$head" ]; then
+              echo "tag=$tag" >> "$GITHUB_OUTPUT"
+              echo "Previous release: $tag"
+              exit 0
+            fi
+          done
+          echo "No earlier release tag" >&2
+          exit 1
+
+      - name: Install the previous release
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
+        run: |
+          git checkout --quiet "$PREVIOUS"
+          sudo ./scripts/suduo-cloud.sh install
+
+      - name: Seed data
+        run: sudo $COMPOSE exec -T requirements-service node --input-type=module - seed < scripts/smoke.mjs > "$RUNNER_TEMP/smoke.json"
+
+      - name: Check out this commit and upgrade
+        env:
+          HEAD_SHA: ${{ steps.previous.outputs.head }}
+        run: |
+          git checkout --quiet "$HEAD_SHA"
+          sudo ./scripts/suduo-cloud.sh upgrade --backup-to "$RUNNER_TEMP/upgrade-backups"
+
+      - name: Verify data, version and schema
+        run: |
+          sudo $COMPOSE exec -T -e SMOKE_STATE="$(cat "$RUNNER_TEMP/smoke.json")" requirements-service node --input-type=module - verify < scripts/smoke.mjs
+          health="$(curl -fsS --noproxy '*' http://127.0.0.1:4100/v2/health)"
+          echo "$health"
+          expected_version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n 1)"
+          # 迁移的版本号就是文件名；通配符按字典序展开，最后一个就是最新的。
+          expected_schema=""
+          for file in server/migrations/[0-9][0-9][0-9]_*.sql; do expected_schema="$(basename "$file")"; done
+          echo "$health" | grep -q "\"version\":\"$expected_version\"" || { echo "version is not $expected_version" >&2; exit 1; }
+          echo "$health" | grep -q "\"schemaVersion\":\"$expected_schema\"" || { echo "schema is not $expected_schema" >&2; exit 1; }
+          sudo find "$RUNNER_TEMP/upgrade-backups" -mindepth 2 -maxdepth 2 -name manifest.txt | grep -q .
 
       - name: Logs
         if: failure()
