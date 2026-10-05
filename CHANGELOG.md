@@ -2,7 +2,7 @@
 
 [中文](CHANGELOG.zh-CN.md)
 
-## 0.8.0 — 2026-10-04
+## 0.8.0 — 2026-10-05
 
 Adds an English interface. SuDuo's own text (the interface, what it tells Codex, command-line output) now comes in English and Chinese; what people write and Codex's answers are never translated.
 
