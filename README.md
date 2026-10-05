@@ -23,9 +23,9 @@ A self-hosted requirements workspace for teams that build with the Codex CLI.
 
 <br>
 
-![A requirement in SuDuo: the description, discussion and activity on the left; status, the local code folder and local sessions on the right; "Start session" at the top](.github/assets/screenshot-requirement.png)
+![A requirement in SuDuo: the description, discussion and activity on the left; status, the local code folder and local sessions on the right; "Start session" at the top](.github/assets/screenshot-requirement-en.png)
 
-<p align="center"><sub>The screenshots show the Chinese interface. SuDuo is also available in English; see <a href="#language">Language</a>.</sub></p>
+<p align="center"><sub>SuDuo is available in English and Simplified Chinese; see <a href="#language">Language</a>.</sub></p>
 
 ## What is SuDuo
 
@@ -86,8 +86,8 @@ SuDuo (速舵) is where a development team keeps its requirements and discussion
 
 <table>
   <tr>
-    <td width="50%"><img src=".github/assets/screenshot-board.png" alt="Requirements board with a column for each status"></td>
-    <td width="50%"><img src=".github/assets/screenshot-discussion.png" alt="Project discussion room with messages from four teammates"></td>
+    <td width="50%"><img src=".github/assets/screenshot-board-en.png" alt="Requirements board with a column for each status"></td>
+    <td width="50%"><img src=".github/assets/screenshot-discussion-en.png" alt="Project room with messages from four teammates"></td>
   </tr>
   <tr>
     <td align="center"><sub>Requirements board</sub></td>
