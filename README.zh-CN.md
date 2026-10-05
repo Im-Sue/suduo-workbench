@@ -17,7 +17,7 @@
 [![Client: macOS | Windows](https://img.shields.io/badge/client-macOS%20%7C%20Windows-12A594)](client/README.zh-CN.md)
 [![Server: Linux + Docker](https://img.shields.io/badge/server-Linux%20%2B%20Docker-12A594)](cloud/DEPLOYMENT.zh-CN.md)
 
-[快速开始](#快速开始) · [工作方式](#工作方式) · [商业使用](COMMERCIAL.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [English](README.md)
+[官网](https://suduo.dev/) · [快速开始](#快速开始) · [工作方式](#工作方式) · [商业使用](COMMERCIAL.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [English](README.md)
 
 </div>
 
