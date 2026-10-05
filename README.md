@@ -7,7 +7,7 @@
 
 # SuDuo
 
-**Requirements live with your team. Code stays on your machine.**
+**AI sets the pace. Your team sets the course.**
 
 A self-hosted requirements workspace for teams that build with the Codex CLI.
 
