@@ -2,7 +2,9 @@
 
 [中文](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## 0.8.0 — 2026-10-05
+
+Adds an English interface. SuDuo's own text (the interface, what it tells Codex, command-line output) now comes in English and Chinese; what people write and Codex's answers are never translated.
 
 ### Added
 
@@ -23,6 +25,17 @@
 - A publish note that happens to read exactly like the automatic "published version" comment is now shown as a note in the activity feed.
 - Git checkpoints that SuDuo writes now end with a `SuDuo-Checkpoint:` line, so SuDuo recognises them whatever language their title is in. Older checkpoints are still recognised.
 - Cloud: comments that SuDuo writes when a confirmed version is published without a note are now stored as a type with parameters (database migration 012), so every client can show them in its own language.
+
+### Upgrading
+
+- Upgrade the cloud first, then each client. Settings → About shows a hint while the two versions differ.
+- Cloud: `git fetch --tags && git checkout v0.8.0`, then `sudo ./scripts/suduo-cloud.sh upgrade`. It backs up first; database migrations 012 and 013 run when the service starts. See [cloud/DEPLOYMENT.md](cloud/DEPLOYMENT.md).
+- Client: `git fetch --tags && git checkout v0.8.0`, `pnpm install`, then `pnpm start`. It rebuilds, and local database migration 017 runs when the local service starts.
+
+### Known limitations
+
+- There is no installer yet; run the client from source.
+- The cloud has no administrator or invitation system: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
 
 ## 0.7.0 — 2026-10-02
 

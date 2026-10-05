@@ -140,10 +140,10 @@ Codex 配置细节、更新、数据位置和常见问题见[客户端指南](cl
 
 ## 当前状态
 
-速舵处于早期版本，0.7.0 是第一个公开版本。
+速舵处于早期版本，最新版本是 0.8.0，新增了英文界面。
 
 - 还没有安装包，客户端从源码运行。
-- 服务器暂时没有管理员和邀请机制：能访问到它的人都能注册，请放在内网里。
+- 服务器暂时没有管理员和邀请机制：能访问到它的人都能注册。请只在内网或 VPN 内开放，或放在带访问控制的反向代理后面。
 - 在 macOS（Apple 芯片）和 Ubuntu 22.04 / 24.04 服务器上测试过；Windows 和 Intel Mac 也支持，但测试得少一些。
 
 版本变化见[更新日志](CHANGELOG.zh-CN.md)和 [Releases](https://github.com/Im-Sue/suduo-workbench/releases)。
@@ -170,7 +170,7 @@ Codex 配置细节、更新、数据位置和常见问题见[客户端指南](cl
 <summary><b>需要另外安装 Codex 吗？</b></summary>
 <br>
 
-不需要。`pnpm install` 会安装这个 SuDuo 版本测试过的 Codex CLI（SuDuo 0.7.0 对应 0.159.2）。它和你可能已经装好的 Codex CLI 共用 `~/.codex`。
+不需要。`pnpm install` 会安装这个 SuDuo 版本测试过的 Codex CLI（SuDuo 0.8.0 对应 0.159.2）。它和你可能已经装好的 Codex CLI 共用 `~/.codex`。
 
 </details>
 
