@@ -142,10 +142,10 @@ SuDuo's interface is available in English and Simplified Chinese. It follows you
 
 ## Status
 
-SuDuo is in early access. Version 0.7.0 is the first public release.
+SuDuo is in early access. The latest release is 0.8.0, which adds the English interface.
 
 - There is no installer yet. The client runs from source.
-- The server has no administrator or invitation system yet: anyone who can reach it can register. Keep it on a private network.
+- The server has no administrator or invitation system yet: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
 - Tested on macOS (Apple silicon) and on Ubuntu 22.04 / 24.04 servers. Windows and Intel Macs are supported but have had less testing.
 
 See the [changelog](CHANGELOG.md) and [releases](https://github.com/Im-Sue/suduo-workbench/releases).
@@ -172,7 +172,7 @@ No. Codex keeps its own configuration in `~/.codex` and talks to your model prov
 <summary><b>Do I need to install Codex separately?</b></summary>
 <br>
 
-No. `pnpm install` installs the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.7.0). It uses the same `~/.codex` as a Codex CLI you may already have.
+No. `pnpm install` installs the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.8.0). It uses the same `~/.codex` as a Codex CLI you may already have.
 
 </details>
 
