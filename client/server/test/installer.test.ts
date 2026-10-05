@@ -129,7 +129,9 @@ describe("Windows 安装器（放文件 + 按需启动器形态）", () => {
     expect(index).toContain("<title>SuDuo</title>");
     expect(index).toContain('href="/favicon.svg"');
     expect(favicon).toContain("<svg");
-    expect(favicon).toContain("Z");
+    // 品牌主图标「接力 S」（靛蓝底），带可读的标题。
+    expect(favicon).toContain("<title>SuDuo</title>");
+    expect(favicon).toContain('fill="#3451D1"');
   });
 
   it("安装日志逐条带时间戳并保留 UTF-8/GBK 双视图", () => {
