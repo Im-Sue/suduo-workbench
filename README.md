@@ -156,15 +156,15 @@ See the [changelog](CHANGELOG.md) and [releases](https://github.com/Im-Sue/suduo
 <summary><b>Does my code go to the server?</b></summary>
 <br>
 
-No. Codex runs on your computer, in your folder. The server only receives what you post there yourself: requirements, comments, messages and the files you attach. If you share your agent into a room, its answers are posted in that room and can quote code.
+No. Codex runs on your computer, in your folder. The server only receives what you post there yourself: requirements, comments, messages, the files you attach and the confirmed versions you publish (which can include files from your project folder). If you share your agent into a room, its answers and what it did are posted in that room and can include code.
 
 </details>
 
 <details>
-<summary><b>Does SuDuo see my model credentials or requests?</b></summary>
+<summary><b>Can SuDuo's authors or the team server see my model credentials or requests?</b></summary>
 <br>
 
-No. Codex keeps its own configuration in `~/.codex` and talks to your model provider directly. If you set a model service in SuDuo's settings, SuDuo passes it to Codex and keeps no copy. Nothing is sent to SuDuo's authors.
+No. Codex keeps its own configuration in `~/.codex` and talks to your model provider directly. If you set a model service in SuDuo's settings, SuDuo on your computer passes it to Codex and keeps no copy. This changes `~/.codex`, so a Codex CLI you run yourself uses it too. Nothing is sent to SuDuo's authors, and credentials never go to the team server.
 
 </details>
 
