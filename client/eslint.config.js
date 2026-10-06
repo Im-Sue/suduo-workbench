@@ -62,6 +62,7 @@ export default tseslint.config(
       ".cache/**",
       ".build/**",
       "dist-installer/**",
+      "dist-desktop/**",
       "codex-protocol/generated/**",
       // 把 client/ 当代码目录跑会话时产生的本机运行时目录。
       ".suduo/**",

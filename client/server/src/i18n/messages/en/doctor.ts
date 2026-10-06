@@ -10,6 +10,8 @@ export const doctor = {
     pinned: (actual: string) => `${actual} (pinned)`,
     mismatch: (expected: string, actual: string | null) =>
       actual === null ? `Needs ${expected}; not available` : `Needs ${expected}; found ${actual}`,
+    supported: (actual, minimum) => `${actual} (needs ${minimum.split(".")[0] ?? minimum}.x, ${minimum} or later)`,
+    belowMinimum: (minimum, actual) => `Needs ${minimum.split(".")[0] ?? minimum}.x, ${minimum} or later; found ${actual}`,
   },
   command: {
     windowsOk: (expected: string, output: string) =>

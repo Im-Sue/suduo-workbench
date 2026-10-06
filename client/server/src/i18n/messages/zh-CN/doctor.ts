@@ -10,6 +10,10 @@ export const doctor = {
   version: {
     pinned: (actual: string) => `${actual}（已锁定）`,
     mismatch: (expected: string, actual: string | null) => `需要 ${expected}，当前为 ${actual ?? "不可用"}`,
+    /** Node.js 只要求同一大版本、不低于最低版本（与 package.json 的 engines 一致）。 */
+    supported: (actual: string, minimum: string) => `${actual}（要求 ${minimum.split(".")[0] ?? minimum}.x、不低于 ${minimum}）`,
+    belowMinimum: (minimum: string, actual: string) =>
+      `需要 ${minimum.split(".")[0] ?? minimum}.x、不低于 ${minimum}，当前为 ${actual}`,
   },
   /** Windows 上只确认命令能跑（输出编码不可靠，不比对版本）。 */
   command: {

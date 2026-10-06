@@ -17,6 +17,7 @@
     "@suduo/client-contracts": "workspace:*"
   },
   "devDependencies": {
-    "electron": "44.5.1"
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
   }
 }

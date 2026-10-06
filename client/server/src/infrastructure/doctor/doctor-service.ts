@@ -87,7 +87,7 @@ export async function runDoctor(
 ): Promise<DoctorResult> {
   const t = messagesFor(locale);
   const checks: DoctorCheck[] = [];
-  checkVersion(checks, t, SUDUO_DOCTOR_CHECK_IDS.node, "Node.js", process.version.slice(1), "24.10.0");
+  checkNodeVersion(checks, t, process.version.slice(1), "24.10.0");
   if (options.checkPnpm ?? !options.installed) {
     checkCommandVersion(checks, t, SUDUO_DOCTOR_CHECK_IDS.pnpm, "pnpm", ["--version"], "10.25.0");
   }
@@ -132,6 +132,25 @@ export function formatDoctorText(result: DoctorResult): string {
 }
 
 /** actual 为 null：命令不可用。 */
+/**
+ * Node.js：同一大版本、不低于最低版本即可（与 package.json 的 engines、pnpm start 一致）。
+ * 桌面应用捆绑的是 24 的较新补丁版本，源码运行的使用者也常装最新的 24.x，不要求逐字等于开发环境锁定的版本。
+ */
+export function checkNodeVersion(checks: DoctorCheck[], t: ServerMessages, actual: string, minimum: string): void {
+  const parse = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10));
+  const [major, minor = 0, patch = 0] = parse(actual);
+  const [wantMajor, wantMinor = 0, wantPatch = 0] = parse(minimum);
+  const ok =
+    major === wantMajor &&
+    (minor > wantMinor || (minor === wantMinor && patch >= wantPatch));
+  checks.push({
+    id: SUDUO_DOCTOR_CHECK_IDS.node,
+    name: "Node.js",
+    status: ok ? "pass" : "fail",
+    message: ok ? t.doctor.version.supported(actual, minimum) : t.doctor.version.belowMinimum(minimum, actual),
+  });
+}
+
 function checkVersion(
   checks: DoctorCheck[],
   t: ServerMessages,

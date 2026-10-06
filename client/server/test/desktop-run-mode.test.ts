@@ -15,6 +15,8 @@ import { runMigrations } from "../src/infrastructure/db/migration-runner.js";
 import { EventRepository } from "../src/infrastructure/db/repositories/event-repository.js";
 import { ProjectRepository } from "../src/infrastructure/db/repositories/project-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
+import { messagesFor } from "../src/i18n/messages/index.js";
+import { checkNodeVersion } from "../src/infrastructure/doctor/doctor-service.js";
 import { runtimeEnvironment } from "../src/server-application.js";
 import { createMinimalHttpContext } from "./helpers/minimal-http-context.js";
 
@@ -180,5 +182,27 @@ describe("交给 Codex 的环境", () => {
     expect(Object.keys(env).filter((key) => /^suduo_/i.test(key))).toEqual(["SUDUO_LOCALE"]);
     expect(env["PATH"]).toBe("/usr/bin");
     expect(env["CODEX_HOME"]).toBe("/home/u/.codex");
+  });
+});
+
+describe("自检里的 Node.js 版本", () => {
+  const run = (actual: string) => {
+    const checks: Parameters<typeof checkNodeVersion>[0] = [];
+    checkNodeVersion(checks, messagesFor("zh-CN"), actual, "24.10.0");
+    return checks[0];
+  };
+
+  it("同一大版本、不低于最低版本即通过（桌面应用捆绑的 24.21.0、源码运行常见的新补丁版本）", () => {
+    expect(run("24.10.0")?.status).toBe("pass");
+    expect(run("24.21.0")?.status).toBe("pass");
+    expect(run("24.10.3")?.status).toBe("pass");
+    expect(run("24.21.0")?.message).toBe("24.21.0（要求 24.x、不低于 24.10.0）");
+  });
+
+  it("低于最低版本或换了大版本都不通过", () => {
+    expect(run("24.9.1")?.status).toBe("fail");
+    expect(run("22.20.0")?.status).toBe("fail");
+    expect(run("25.0.0")?.status).toBe("fail");
+    expect(run("24.9.1")?.message).toBe("需要 24.x、不低于 24.10.0，当前为 24.9.1");
   });
 });

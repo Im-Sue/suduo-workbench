@@ -21,7 +21,7 @@ pnpm desktop:dev    # 首次运行会下载 Electron 二进制（约 130 MB）
 
 | | 开发态 | 安装版 |
 |---|---|---|
-| 本机服务 | `client/server/dist/main.js` | 安装包里的 `resources/app/server/dist/main.mjs` |
+| 本机服务 | `client/server/dist/main.js` | 安装包里的 `resources/suduo/server/dist/main.mjs` |
 | Node | 运行 `pnpm desktop:dev` 的那个 | 安装包自带的官方 Node |
 | Codex | `client/node_modules` 里锁定版本的二进制 | 安装包自带的锁定版本 |
 | 外壳数据 | `…/SuDuo Desktop Dev/`（Mac 在 `~/Library/Application Support/` 下） | `…/SuDuo Desktop/` |
