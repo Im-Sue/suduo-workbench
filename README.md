@@ -17,7 +17,7 @@ A self-hosted requirements workspace for teams that build with the Codex CLI.
 [![Client: macOS | Windows](https://img.shields.io/badge/client-macOS%20%7C%20Windows-12A594)](client/README.md)
 [![Server: Linux + Docker](https://img.shields.io/badge/server-Linux%20%2B%20Docker-12A594)](cloud/DEPLOYMENT.md)
 
-[Website](https://suduo.dev/en/) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Commercial use](COMMERCIAL.md) · [Changelog](CHANGELOG.md) · [中文](README.zh-CN.md)
+[Website](https://suduo.dev/) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Commercial use](COMMERCIAL.md) · [Changelog](CHANGELOG.md) · [中文](README.zh-CN.md)
 
 </div>
 
