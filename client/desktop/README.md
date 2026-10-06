@@ -32,6 +32,14 @@ pnpm desktop:dev    # 首次运行会下载 Electron 二进制（约 130 MB）
 - `SUDUO_CODEX_HOME`：Codex 配置目录，默认 `~/.codex`。测试时建议指向临时目录，不要动自己的配置。
 - `SUDUO_DESKTOP_DEVTOOLS=1`：安装版的「显示」菜单里也出现开发者工具。
 
+改了外壳之后，可以跑一遍端到端检查（会在屏幕上开关几次窗口，要求 8790–8799 空闲）：
+
+```bash
+node desktop/scripts/verify-dev.mjs
+```
+
+它覆盖启动、关窗常驻、单实例、崩溃重启、退出确认、上次留下的服务、端口被占和失败页。
+
 网络慢时可以设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。Electron 默认缓存在 `~/Library/Caches/electron`；要放到别处，设置 `electron_config_cache`。
 
 ## 目录
@@ -42,7 +50,7 @@ src/preload/   preload（sandbox）：启动页拿到 window.suDuoStartup，本�
 src/startup/   启动页与失败页（静态页面，文字由主进程按语言填好）
 src/shared/    主进程、preload、启动页共用的 IPC 约定
 src/i18n/      外壳自己的中英文字（菜单、托盘、提示框、启动页）
-scripts/       build.mjs（esbuild）、dev.mjs、icons.mjs（从品牌标志渲染托盘与窗口图标）
+scripts/       build.mjs（esbuild）、dev.mjs、icons.mjs（从品牌标志渲染托盘与窗口图标）、verify-dev.mjs（端到端检查）
 assets/        图标（icons.mjs 的产物，提交在仓库里）
 ```
 
