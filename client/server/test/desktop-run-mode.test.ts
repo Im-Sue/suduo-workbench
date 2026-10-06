@@ -15,6 +15,7 @@ import { runMigrations } from "../src/infrastructure/db/migration-runner.js";
 import { EventRepository } from "../src/infrastructure/db/repositories/event-repository.js";
 import { ProjectRepository } from "../src/infrastructure/db/repositories/project-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
+import { runtimeEnvironment } from "../src/server-application.js";
 import { createMinimalHttpContext } from "./helpers/minimal-http-context.js";
 
 /**
@@ -97,7 +98,7 @@ describe("GET /api/v1/system/activity", () => {
   });
 });
 
-describe("EventRepository.countRunningSessionsSince", () => {
+describe("EventRepository.countRunningSessionsAfter", () => {
   function createLedger() {
     const database = openBetterSqlite3Database(":memory:");
     runMigrations(database);
@@ -106,13 +107,7 @@ describe("EventRepository.countRunningSessionsSince", () => {
     const events = new EventRepository(database);
     let ordinal = 0;
     const session = () => sessions.create({ projectId: project.id, title: "s", state: "active" }).id;
-    const append = (
-      sessionId: string,
-      type: string,
-      turn: { threadId: string; turnId: string },
-      createdAt: number,
-      payload: JsonValue = {},
-    ) => {
+    const append = (sessionId: string, type: string, turn: { threadId: string; turnId: string }, payload: JsonValue = {}) => {
       ordinal += 1;
       events.append({
         sessionId,
@@ -123,7 +118,6 @@ describe("EventRepository.countRunningSessionsSince", () => {
         turnRef: turn,
         ts: ordinal,
         dedupeKey: "c:" + String(ordinal),
-        createdAt,
       });
     };
     return { database, events, session, append };
@@ -131,40 +125,60 @@ describe("EventRepository.countRunningSessionsSince", () => {
 
   it("只数本次启动以来开始、至今没结束的回合所在的会话；同一会话多个回合只算一次", () => {
     const { database, events, session, append } = createLedger();
-    const since = 1_000;
+    // 上次异常退出时没写完的回合：停在 turn.started，但在启动序号之前，不能算。
+    const stale = session();
+    append(stale, "turn.started", { threadId: "t6", turnId: "u6" });
+    const startupSeq = events.lastSeq();
+    expect(startupSeq).toBeGreaterThan(0);
+
     const running = session();
-    append(running, "turn.started", { threadId: "t1", turnId: "u1" }, since + 1);
-    append(running, "turn.started", { threadId: "t2", turnId: "u2" }, since + 2);
+    append(running, "turn.started", { threadId: "t1", turnId: "u1" });
+    append(running, "turn.started", { threadId: "t2", turnId: "u2" });
 
     const finished = session();
-    append(finished, "turn.started", { threadId: "t3", turnId: "u3" }, since + 3);
-    append(finished, "turn.completed", { threadId: "t3", turnId: "u3" }, since + 4);
+    append(finished, "turn.started", { threadId: "t3", turnId: "u3" });
+    append(finished, "turn.completed", { threadId: "t3", turnId: "u3" });
 
     const interrupted = session();
-    append(interrupted, "turn.started", { threadId: "t4", turnId: "u4" }, since + 5);
-    append(interrupted, "turn.interrupted", { threadId: "t4", turnId: "u4" }, since + 6);
+    append(interrupted, "turn.started", { threadId: "t4", turnId: "u4" });
+    append(interrupted, "turn.interrupted", { threadId: "t4", turnId: "u4" });
 
     const failed = session();
-    append(failed, "turn.started", { threadId: "t5", turnId: "u5" }, since + 7);
-    append(failed, "turn.start-failed", { threadId: "t5", turnId: "u5" }, since + 8);
+    append(failed, "turn.started", { threadId: "t5", turnId: "u5" });
+    append(failed, "turn.start-failed", { threadId: "t5", turnId: "u5" });
 
-    // 上次异常退出时没写完的回合：停在 turn.started，但不是本次启动以来的，不能算。
-    const stale = session();
-    append(stale, "turn.started", { threadId: "t6", turnId: "u6" }, since - 1);
-
-    expect(events.countRunningSessionsSince(since)).toBe(1);
+    expect(events.countRunningSessionsAfter(startupSeq)).toBe(1);
     database.close();
   });
 
-  it("同一回合重新开始后又结束，按最后一条判断", () => {
+  it("同一回合结束后按最后一条判断；空账本的启动序号为 0", () => {
     const { database, events, session, append } = createLedger();
+    expect(events.lastSeq()).toBe(0);
     const id = session();
-    const turn = { threadId: "t1", turnId: "u1" };
-    append(id, "turn.started", turn, 10);
-    append(id, "turn.completed", turn, 11);
-    expect(events.countRunningSessionsSince(0)).toBe(0);
-    append(id, "turn.started", { threadId: "t1", turnId: "u2" }, 12);
-    expect(events.countRunningSessionsSince(0)).toBe(1);
+    append(id, "turn.started", { threadId: "t1", turnId: "u1" });
+    append(id, "turn.completed", { threadId: "t1", turnId: "u1" });
+    expect(events.countRunningSessionsAfter(0)).toBe(0);
+    append(id, "turn.started", { threadId: "t1", turnId: "u2" });
+    expect(events.countRunningSessionsAfter(0)).toBe(1);
     database.close();
+  });
+});
+
+describe("交给 Codex 的环境", () => {
+  it("本机服务自己的 SUDUO_* 不漏给 Codex 和它在项目里执行的命令，只留命令行语言", () => {
+    const env = runtimeEnvironment("/home/u/.codex", {
+      PATH: "/usr/bin",
+      SUDUO_PORT: "8790",
+      SUDUO_DATA_DIR: "/d",
+      SUDUO_RUN_MODE: "desktop",
+      SUDUO_INSTANCE_ID: "i",
+      SUDUO_PID_FILE: "/d/suduo.pid",
+      SUDUO_CODEX_BIN: "/r/codex",
+      SUDUO_LOCALE: "en",
+      suduo_lowercase: "x",
+    });
+    expect(Object.keys(env).filter((key) => /^suduo_/i.test(key))).toEqual(["SUDUO_LOCALE"]);
+    expect(env["PATH"]).toBe("/usr/bin");
+    expect(env["CODEX_HOME"]).toBe("/home/u/.codex");
   });
 });

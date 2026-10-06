@@ -25,9 +25,18 @@ export const zhCN = {
     },
     exitCode: (code: number) => `退出码 ${String(code)}`,
     exitSignal: (signal: string) => `信号 ${signal}`,
+    orphan: {
+      title: "上次的 SuDuo 还在后台运行",
+      message: (count: number) =>
+        `上次 SuDuo 没有正常退出，它的本机服务还在后台运行，其中有 ${String(count)} 个会话正在进行。停掉它会中断这些会话。`,
+      waiting: (count: number) => `正在等这 ${String(count)} 个会话结束，结束后自动启动。也可以现在就停掉它。`,
+      stop: "停掉并重新启动",
+      wait: "等会话结束再启动",
+    },
   },
   tray: {
     tooltip: "SuDuo",
+    tooltipFailed: "SuDuo 没能启动，打开窗口查看原因",
     open: "打开 SuDuo",
     openInBrowser: "在浏览器中打开",
     quit: "退出 SuDuo",

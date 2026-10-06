@@ -13,12 +13,11 @@ if (window.location.protocol === "file:") {
       ipcRenderer.on(IPC.startupView, (_event, view: StartupView) => listener(view));
       ipcRenderer.send(IPC.startupReady);
     },
-    retry: () => ipcRenderer.send(IPC.startupRetry),
-    openLogs: () => ipcRenderer.send(IPC.startupOpenLogs),
-    runDoctor: () => ipcRenderer.send(IPC.startupRunDoctor),
+    act: (action) => ipcRenderer.send(IPC.startupAction, action),
   };
   contextBridge.exposeInMainWorld("suDuoStartup", startup);
-} else {
+} else if (!window.location.pathname.startsWith("/api/")) {
+  // 本机服务的接口响应（例如原样返回的项目 .html 文件）不给桥；主进程同样会拒绝（main/navigation.ts isAppPageUrl）。
   const desktop: SuDuoDesktopBridge = {
     info: () => ipcRenderer.invoke(IPC.info),
     setLocale: (locale) => ipcRenderer.send(IPC.setLocale, locale),

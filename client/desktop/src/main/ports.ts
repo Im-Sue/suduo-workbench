@@ -68,3 +68,13 @@ export function canBind(port: number): Promise<boolean> {
     });
   });
 }
+
+/** 进程是否还在（只用来判断；EPERM 表示进程在、只是不属于当前用户）。 */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}

@@ -6,7 +6,7 @@ import { chooseDesktopLocale, desktopMessages, parseStoredLocale } from "../src/
 import { en } from "../src/i18n/en.js";
 import { zhCN } from "../src/i18n/zh-CN.js";
 import { buildServerEnvironment } from "../src/main/environment.js";
-import { isAllowedPermission, isAppUrl, isExternalOpenable, isStartupUrl } from "../src/main/navigation.js";
+import { isAllowedPermission, isAppPageUrl, isAppUrl, isExternalOpenable, isStartupUrl } from "../src/main/navigation.js";
 import { codexTargetTriple, resolveDesktopPaths, type DesktopPathsInput } from "../src/main/paths.js";
 import { PREFERRED_PORT, candidatePorts, choosePort, isOwnServer, type PortState } from "../src/main/ports.js";
 import { defaultPreferences, loadPreferences, savePreferences } from "../src/main/preferences.js";
@@ -143,13 +143,13 @@ describe("偏好 desktop.json", () => {
   it("没有文件按默认，实例标识每次生成都不同", () => {
     const dir = tempDir();
     const loaded = loadPreferences(join(dir, "desktop.json"));
-    expect(loaded).toMatchObject({ schemaVersion: 1, port: null, openAtLogin: false, autoCheckUpdates: true, closeHintShown: false, window: null });
+    expect(loaded).toMatchObject({ schemaVersion: 1, port: null, serverPid: null, openAtLogin: false, autoCheckUpdates: true, closeHintShown: false, window: null });
     expect(loaded.instanceId).not.toBe(defaultPreferences().instanceId);
   });
 
   it("保存再读回来一致", () => {
     const file = join(tempDir(), "nested", "desktop.json");
-    const preferences = { ...defaultPreferences(), port: 8791, closeHintShown: true, window: { x: 10, y: 20, width: 1200, height: 800, maximized: true } };
+    const preferences = { ...defaultPreferences(), port: 8791, serverPid: 4242, closeHintShown: true, window: { x: 10, y: 20, width: 1200, height: 800, maximized: true } };
     savePreferences(file, preferences);
     expect(loadPreferences(file)).toEqual(preferences);
   });
@@ -165,9 +165,9 @@ describe("偏好 desktop.json", () => {
 
   it("逐项校验：认不出的项用默认，其余保留", () => {
     const file = join(tempDir(), "desktop.json");
-    writeFileSync(file, JSON.stringify({ instanceId: "keep-me", port: 70000, openAtLogin: "yes", closeHintShown: true, window: { x: 1, y: 2, width: 50, height: 50 } }));
+    writeFileSync(file, JSON.stringify({ instanceId: "keep-me", port: 70000, serverPid: -1, openAtLogin: "yes", closeHintShown: true, window: { x: 1, y: 2, width: 50, height: 50 } }));
     const loaded = loadPreferences(file);
-    expect(loaded).toMatchObject({ instanceId: "keep-me", port: null, openAtLogin: false, closeHintShown: true, window: null });
+    expect(loaded).toMatchObject({ instanceId: "keep-me", port: null, serverPid: null, openAtLogin: false, closeHintShown: true, window: null });
   });
 });
 
@@ -178,10 +178,15 @@ describe("登录 shell 环境", () => {
     expect(parseShellEnvironment(output, marker)).toEqual({ PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/Users/u", EQ: "a=b" });
   });
 
-  it("标记不成对或中间为空时返回 null", () => {
+  it("标记不成对、中间为空或没有 PATH（例如 env 不认 -0）时返回 null", () => {
     expect(parseShellEnvironment("no markers here", "__M__")).toBeNull();
     expect(parseShellEnvironment("__M__PATH=/usr/bin", "__M__")).toBeNull();
     expect(parseShellEnvironment("__M____M__", "__M__")).toBeNull();
+    expect(parseShellEnvironment("__M__HOME=/Users/u\0__M__", "__M__")).toBeNull();
+  });
+
+  it("只看第一对标记：输出还没读完时也能先解析", () => {
+    expect(parseShellEnvironment("x__M__PATH=/usr/bin\0__M__ trailing __M__", "__M__")).toEqual({ PATH: "/usr/bin" });
   });
 
   it("用登录交互 shell 跑 env -0", () => {
@@ -306,9 +311,23 @@ describe("导航与权限", () => {
   });
 
   it("启动页按文件路径认，忽略查询串与锚点", () => {
-    expect(isStartupUrl(startup + "?a=1#b", startup)).toBe(true);
-    expect(isStartupUrl("file:///etc/passwd", startup)).toBe(false);
-    expect(isStartupUrl("http://127.0.0.1:8790/dist/startup/startup.html", startup)).toBe(false);
+    expect(isStartupUrl(startup + "?a=1#b", startup, "darwin")).toBe(true);
+    expect(isStartupUrl("file:///etc/passwd", startup, "darwin")).toBe(false);
+    expect(isStartupUrl("http://127.0.0.1:8790/dist/startup/startup.html", startup, "darwin")).toBe(false);
+  });
+
+  it("Windows：盘符大小写与转义不同也认得出；带主机名的 file 地址不算", () => {
+    const node = "file:///c:/Users/Jo%20Smith/AppData/Local/Programs/SuDuo/resources/app.asar/dist/startup/startup.html";
+    const chromium = "file:///C:/Users/Jo Smith/AppData/Local/Programs/SuDuo/resources/app.asar/dist/startup/startup.html";
+    expect(isStartupUrl(chromium, node, "win32")).toBe(true);
+    expect(isStartupUrl(chromium, node, "darwin")).toBe(false);
+    expect(isStartupUrl("file://server/c:/Users/Jo%20Smith/AppData/Local/Programs/SuDuo/resources/app.asar/dist/startup/startup.html", node, "win32")).toBe(false);
+  });
+
+  it("能用桥的只是本机服务的页面，接口响应（例如原样返回的项目 .html）不算", () => {
+    expect(isAppPageUrl("http://127.0.0.1:8790/sessions", base)).toBe(true);
+    expect(isAppPageUrl("http://127.0.0.1:8790/api/v1/projects/p/files/raw?path=a.html", base)).toBe(false);
+    expect(isAppPageUrl("http://127.0.0.1:8787/sessions", base)).toBe(false);
   });
 
   it("只把网页与邮件交给系统打开", () => {

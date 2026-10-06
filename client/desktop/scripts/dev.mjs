@@ -40,6 +40,7 @@ const child = spawn(electron, [root, ...process.argv.slice(2)], { stdio: "inheri
 child.on("exit", (code, signal) => {
   process.exitCode = code ?? (signal ? 1 : 0);
 });
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => child.kill(signal));
-}
+// Ctrl+C in the terminal already reaches Electron (same process group) and makes it quit through its normal flow;
+// forwarding it again could kill Electron mid-quit. Only forward SIGTERM, and keep waiting for Electron to exit.
+process.on("SIGINT", () => undefined);
+process.on("SIGTERM", () => child.kill("SIGTERM"));

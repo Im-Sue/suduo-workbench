@@ -205,11 +205,17 @@ export class EventRepository {
       .map((turn) => turn.ref);
   }
 
+  /** 当前最大的事件序号（没有事件时为 0）。本机服务启动时记下，之后据此只看本次启动以来的事件。 */
+  lastSeq(): number {
+    const row = this.database.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events").get<{ seq: number }>();
+    return row?.seq ?? 0;
+  }
+
   /**
-   * since 之后开始、至今还没结束的回合分布在几个会话里（含房间任务会话）。只看本次启动以来的事件：
-   * 上次异常退出时没写完的回合会一直停在 turn.started，不能算成「正在进行」。
+   * 序号大于 afterSeq（本次启动以来）的事件里，开始了、至今还没结束的回合分布在几个会话里（含房间任务会话）。
+   * 上次异常退出时没写完的回合会一直停在 turn.started，不能算成「正在进行」。按序号而不是时间：走主键范围扫描，也不受系统时间回拨影响。
    */
-  countRunningSessionsSince(since: number): number {
+  countRunningSessionsAfter(afterSeq: number): number {
     const row = this.database
       .prepare(
         [
@@ -217,12 +223,12 @@ export class EventRepository {
           "SELECT session_id, type, ROW_NUMBER() OVER (",
           "PARTITION BY session_id, json_extract(thread_ref_json, '$.threadId'), turn_ref ORDER BY seq DESC",
           ") AS rn FROM events",
-          "WHERE turn_ref IS NOT NULL AND thread_ref_json IS NOT NULL AND created_at >= @since",
+          "WHERE seq > @afterSeq AND turn_ref IS NOT NULL AND thread_ref_json IS NOT NULL",
           "AND type IN ('turn.started', 'turn.completed', 'turn.interrupted', 'turn.start-failed')",
           ") WHERE rn = 1 AND type = 'turn.started'",
         ].join(" "),
       )
-      .get<{ count: number }>({ since });
+      .get<{ count: number }>({ afterSeq });
     return row?.count ?? 0;
   }
 

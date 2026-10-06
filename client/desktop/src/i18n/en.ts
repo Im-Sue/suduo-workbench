@@ -23,9 +23,19 @@ export const en: DesktopMessages = {
     },
     exitCode: (code) => `exit code ${String(code)}`,
     exitSignal: (signal) => `signal ${signal}`,
+    orphan: {
+      title: "SuDuo from last time is still running",
+      message: (count) =>
+        `SuDuo didn't quit properly last time, and its local service is still running in the background with ${count === 1 ? "1 session" : `${String(count)} sessions`} in progress. Stopping it interrupts ${count === 1 ? "that session" : "them"}.`,
+      waiting: (count) =>
+        `Waiting for ${count === 1 ? "1 session" : `${String(count)} sessions`} to finish; SuDuo starts automatically afterwards. You can also stop it now.`,
+      stop: "Stop it and restart",
+      wait: "Wait for sessions to finish",
+    },
   },
   tray: {
     tooltip: "SuDuo",
+    tooltipFailed: "SuDuo couldn't start. Open the window to see why.",
     open: "Open SuDuo",
     openInBrowser: "Open in browser",
     quit: "Quit SuDuo",

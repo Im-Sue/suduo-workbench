@@ -5,6 +5,8 @@ export const en = {
   start: {
     alreadyRunning: (url) => `SuDuo is already running: ${url}`,
     portInUse: (port) => `Port ${port} is used by another program. Choose another port: pnpm start --port <port>`,
+    portUsedByDesktop: (port) =>
+      `Port ${port} is used by the SuDuo desktop app (it has its own data folder, so it is left alone). Choose another port: pnpm start --port <port>`,
     unknownOption: (arg) => `Unknown option: ${arg} (see pnpm start --help)`,
     invalidPort: "The port must be an integer between 1 and 65535.",
     help: [

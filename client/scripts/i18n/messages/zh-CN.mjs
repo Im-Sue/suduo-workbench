@@ -7,6 +7,8 @@ export const zhCN = {
   start: {
     alreadyRunning: (url) => `SuDuo 已在运行：${url}`,
     portInUse: (port) => `端口 ${port} 被其他程序占用。换一个端口：pnpm start --port <端口>`,
+    portUsedByDesktop: (port) =>
+      `端口 ${port} 正被 SuDuo 桌面版使用（它有自己的数据目录，这里不接管它）。换一个端口：pnpm start --port <端口>`,
     unknownOption: (arg) => `不认识的参数：${arg}（pnpm start --help 查看用法）`,
     invalidPort: "端口必须是 1–65535 之间的整数。",
     help: [

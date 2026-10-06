@@ -9,6 +9,11 @@ export interface DesktopPreferences {
   instanceId: string;
   /** 上次用的端口；没有时从首选端口开始找。 */
   port: number | null;
+  /**
+   * 正在运行的本机服务的 pid；正常退出后清空。外壳异常退出后它可能还活着：下次启动时据此多等它一会儿，
+   * 免得把正在跑迁移、或一时没回应的上次留下的服务误判成「没有」（只用来判断，不拿它结束进程）。
+   */
+  serverPid: number | null;
   openAtLogin: boolean;
   autoCheckUpdates: boolean;
   closeHintShown: boolean;
@@ -28,6 +33,7 @@ export function defaultPreferences(): DesktopPreferences {
     schemaVersion: 1,
     instanceId: randomUUID(),
     port: null,
+    serverPid: null,
     openAtLogin: false,
     autoCheckUpdates: true,
     closeHintShown: false,
@@ -66,6 +72,7 @@ export function loadPreferences(file: string, now = Date.now()): DesktopPreferen
     schemaVersion: 1,
     instanceId: typeof value["instanceId"] === "string" && value["instanceId"] !== "" ? value["instanceId"] : defaults.instanceId,
     port: isPort(value["port"]) ? value["port"] : null,
+    serverPid: typeof value["serverPid"] === "number" && Number.isInteger(value["serverPid"]) && value["serverPid"] > 0 ? value["serverPid"] : null,
     openAtLogin: typeof value["openAtLogin"] === "boolean" ? value["openAtLogin"] : defaults.openAtLogin,
     autoCheckUpdates: typeof value["autoCheckUpdates"] === "boolean" ? value["autoCheckUpdates"] : defaults.autoCheckUpdates,
     closeHintShown: typeof value["closeHintShown"] === "boolean" ? value["closeHintShown"] : defaults.closeHintShown,

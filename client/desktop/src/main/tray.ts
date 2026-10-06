@@ -23,8 +23,9 @@ export class SuDuoTray {
     }
   }
 
-  update(t: DesktopMessages): void {
-    this.tray.setToolTip(t.tray.tooltip);
+  /** failed：本机服务没能启动，提示文字换成说明（图标不变，Mac 的模板图没法着色）。 */
+  update(t: DesktopMessages, failed = false): void {
+    this.tray.setToolTip(failed ? t.tray.tooltipFailed : t.tray.tooltip);
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: t.tray.open, click: () => this.actions.showWindow() },

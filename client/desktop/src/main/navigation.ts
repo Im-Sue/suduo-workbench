@@ -13,12 +13,34 @@ export function isAppUrl(url: string, baseUrl: string | null): boolean {
   }
 }
 
-/** 外壳自带的启动页（含查询串与锚点）。 */
-export function isStartupUrl(url: string, startupPageUrl: string): boolean {
+/**
+ * 可以使用桥（IPC）的本机服务页面：同源，且不是 /api/ 下的接口响应。
+ * 接口里有原样返回项目文件的（例如 /api/v1/projects/:id/files/raw 会以 text/html 返回项目里的 .html），
+ * 窗口万一导航过去，那个页面不能拿到桥。
+ */
+export function isAppPageUrl(url: string, baseUrl: string | null): boolean {
+  if (!isAppUrl(url, baseUrl)) return false;
+  try {
+    return !new URL(url).pathname.startsWith("/api/");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 外壳自带的启动页（忽略查询串与锚点）。按解码后的路径比较：Chromium 会把 Windows 盘符规范成大写、转义方式也可能与
+ * Node 的 pathToFileURL 不同，所以 Windows 上不分大小写；必须是本机文件（host 为空，排除 file://server/share 这类地址）。
+ */
+export function isStartupUrl(url: string, startupPageUrl: string, platform: NodeJS.Platform = process.platform): boolean {
   try {
     const target = new URL(url);
     const startup = new URL(startupPageUrl);
-    return target.protocol === "file:" && target.pathname === startup.pathname;
+    if (target.protocol !== "file:" || target.host !== "" || startup.host !== "") return false;
+    const normalize = (pathname: string) => {
+      const decoded = decodeURIComponent(pathname).replace(/\\/g, "/");
+      return platform === "win32" ? decoded.toLowerCase() : decoded;
+    };
+    return normalize(target.pathname) === normalize(startup.pathname);
   } catch {
     return false;
   }

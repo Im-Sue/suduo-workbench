@@ -21,15 +21,15 @@ import {
 } from "electron";
 import { CODEX_VERSION, type SuDuoDesktopInfo } from "@suduo/client-contracts";
 import { chooseDesktopLocale, desktopMessages, parseStoredLocale, type DesktopLocale, type DesktopMessages } from "../i18n/index.js";
-import { IPC, type StartupView } from "../shared/ipc.js";
+import { IPC, STARTUP_ACTIONS, type StartupActionId, type StartupView } from "../shared/ipc.js";
 import { buildServerEnvironment } from "./environment.js";
 import { createLogger } from "./logger.js";
 import { applyApplicationMenu, popupContextMenu, type MenuActions } from "./menus.js";
-import { isAllowedPermission, isAppUrl, isExternalOpenable, isStartupUrl } from "./navigation.js";
+import { isAllowedPermission, isAppPageUrl, isAppUrl, isExternalOpenable, isStartupUrl } from "./navigation.js";
 import { resolveDesktopPaths } from "./paths.js";
-import { LAST_CANDIDATE_PORT, PREFERRED_PORT, choosePort, inspectPort } from "./ports.js";
+import { LAST_CANDIDATE_PORT, PREFERRED_PORT, choosePort, inspectPort, isProcessAlive } from "./ports.js";
 import { loadPreferences, savePreferences, type DesktopPreferences, type WindowBounds } from "./preferences.js";
-import { ServerProcess, nextRestartDelay, stopOrphan, type StartFailure } from "./server-process.js";
+import { ServerProcess, nextRestartDelay, runningSessionsAt, stopOrphan, type StartFailure } from "./server-process.js";
 import { loadShellEnvironment, needsShellEnvironment } from "./shell-env.js";
 import { SuDuoTray } from "./tray.js";
 
@@ -52,14 +52,19 @@ const paths = resolveDesktopPaths({
 app.setPath("userData", paths.shellDataDir);
 if (process.platform === "win32") app.setAppUserModelId("dev.suduo.desktop");
 
+/** 上次外壳异常退出留下的服务可能正在跑迁移、一时不回应：记下的 pid 还活着时，最多等它这么久。 */
+const ORPHAN_SETTLE_MS = 10_000;
+const ORPHAN_POLL_MS = 5_000;
+
 type ViewState =
   | { kind: "progress"; step: "starting" | "readingEnvironment" | "stopping" }
-  | { kind: "failed"; reason: FailureReason };
+  | { kind: "failed"; reason: FailureReason }
+  | { kind: "orphanBusy"; port: number; running: number; waiting: boolean };
 
 type FailureReason =
   | { kind: "portsBusy" }
   | { kind: "orphanNotStopped"; port: number }
-  | { kind: "start"; failure: StartFailure }
+  | { kind: "start"; failure: Exclude<StartFailure, { kind: "stopped" }> }
   | { kind: "crashedRepeatedly" };
 
 type QuitState = "running" | "confirming" | "stopping" | "done";
@@ -77,12 +82,18 @@ class DesktopController {
   private shellEnv: Record<string, string> | null | undefined = undefined;
   private baseUrl: string | null = null;
   private view: ViewState = { kind: "progress", step: "starting" };
-  private booting = false;
+  private bootPromise: Promise<void> | null = null;
   private readonly restartHistory: number[] = [];
   private quitState: QuitState = "running";
+  /** 确认退出的对话框开着时服务崩了：使用者取消退出后补一次重启。 */
+  private restartAfterCancel = false;
   private systemShutdown = false;
+  /** 使用者对「上次留下的服务里还有会话」的选择：stop 停掉它；wait 等会话结束（轮询中）。 */
+  private orphanDecision: "stop" | "wait" | null = null;
   private doctor: { running: boolean; output: string } = { running: false, output: "" };
   private boundsTimer: NodeJS.Timeout | null = null;
+  /** 启动页正在载入：载入完它会自己要视图（startupReady），这期间不要再发起载入，免得一次次互相打断。 */
+  private startupLoading = false;
 
   private readonly menuActions: MenuActions = {
     showWindow: () => this.showWindow(),
@@ -103,13 +114,13 @@ class DesktopController {
     this.tray = new SuDuoTray(paths.assetsDir, this.menuActions);
     this.refreshChrome();
     this.window = this.createWindow();
-    void this.boot();
+    this.boot();
   }
 
   showWindow(): void {
     if (this.window === null || this.window.isDestroyed()) {
       this.window = this.createWindow();
-      if (this.baseUrl !== null) void this.window.loadURL(this.baseUrl);
+      if (this.baseUrl !== null) void this.loadApp(this.baseUrl);
     }
     if (this.window.isMinimized()) this.window.restore();
     this.window.show();
@@ -119,10 +130,24 @@ class DesktopController {
 
   // ---------- 启动本机服务 ----------
 
-  private async boot(): Promise<void> {
-    if (this.booting || this.quitState !== "running") return;
-    this.booting = true;
+  /** 同一时间只跑一个；退出流程会等它收尾。 */
+  private boot(): Promise<void> {
+    if (this.bootPromise !== null || this.quitState !== "running") return this.bootPromise ?? Promise.resolve();
+    this.bootPromise = this.runBoot().finally(() => {
+      this.bootPromise = null;
+    });
+    return this.bootPromise;
+  }
+
+  private async runBoot(): Promise<void> {
+    const quitting = () => this.quitState !== "running";
     try {
+      // 手里还握着服务（例如页面没载入成功后点了重试）：先按「自己要求的停止」停掉，不会被当成崩溃。
+      if (this.server !== null) {
+        const previous = this.server;
+        this.server = null;
+        await previous.stop();
+      }
       this.setBaseUrl(null);
       this.doctor = { running: false, output: "" };
       if (this.shellEnv === undefined) {
@@ -135,32 +160,85 @@ class DesktopController {
           this.shellEnv = null;
         }
       }
+      if (quitting()) return;
       this.showStartup({ kind: "progress", step: "starting" });
+      await this.settleRememberedServer();
+      if (quitting()) return;
       const choice = await choosePort({
         remembered: this.prefs.port,
         inspect: (port) => inspectPort(port, this.prefs.instanceId),
       });
+      if (quitting()) return;
       if (choice === null) {
         this.fail({ kind: "portsBusy" });
         return;
       }
       if (choice.orphan) {
-        this.log(`stopping a local service left over on port ${String(choice.port)}`);
-        if (!(await stopOrphan(choice.port))) {
-          this.fail({ kind: "orphanNotStopped", port: choice.port });
-          return;
-        }
+        const proceed = await this.handleOrphan(choice.port);
+        if (!proceed || quitting()) return;
       }
       await this.startServer(choice.port);
     } catch (error) {
       this.log(`boot failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-      this.fail({ kind: "start", failure: { kind: "spawn", message: error instanceof Error ? error.message : String(error) } });
-    } finally {
-      this.booting = false;
+      if (!quitting()) {
+        this.fail({ kind: "start", failure: { kind: "spawn", message: error instanceof Error ? error.message : String(error) } });
+      }
+    }
+  }
+
+  /** 记下的服务 pid 还活着、记住的端口却一时认不出它时，给它一点时间（只判断，不结束它）。 */
+  private async settleRememberedServer(): Promise<void> {
+    const { serverPid, port } = this.prefs;
+    if (serverPid === null || port === null || !isProcessAlive(serverPid)) return;
+    const deadline = Date.now() + ORPHAN_SETTLE_MS;
+    while (Date.now() < deadline && this.quitState === "running") {
+      const state = await inspectPort(port, this.prefs.instanceId);
+      if (state !== "busy" || !isProcessAlive(serverPid)) return;
+      await delay(500);
+    }
+  }
+
+  /**
+   * 上次外壳异常退出留下的服务：里面没有进行中的会话就直接停掉；有的话先告诉使用者、给选项（ADR-0004：告知并给选项，
+   * 不替人决定中断会话）。返回 true 表示已经停掉、可以继续启动。
+   */
+  private async handleOrphan(port: number): Promise<boolean> {
+    if (this.orphanDecision !== "stop") {
+      const running = await runningSessionsAt(`http://127.0.0.1:${String(port)}/`);
+      if (running > 0) {
+        if (this.orphanDecision === "wait") {
+          this.showStartup({ kind: "orphanBusy", port, running, waiting: true });
+          void this.pollOrphan(port);
+        } else {
+          this.showStartup({ kind: "orphanBusy", port, running, waiting: false });
+        }
+        return false;
+      }
+    }
+    this.orphanDecision = null;
+    this.log(`stopping a local service left over on port ${String(port)}`);
+    if (await stopOrphan(port)) return true;
+    this.fail({ kind: "orphanNotStopped", port });
+    return false;
+  }
+
+  /** 「等会话结束再启动」：隔一会儿看一次，没有进行中的会话了就接着启动；使用者也可以随时改选「停掉」。 */
+  private async pollOrphan(port: number): Promise<void> {
+    while (this.quitState === "running" && this.orphanDecision === "wait" && this.view.kind === "orphanBusy") {
+      await delay(ORPHAN_POLL_MS);
+      if (this.orphanDecision !== "wait" || this.view.kind !== "orphanBusy") return;
+      const running = await runningSessionsAt(`http://127.0.0.1:${String(port)}/`);
+      if (running === 0) {
+        this.orphanDecision = "stop";
+        void this.boot();
+        return;
+      }
+      this.showStartup({ kind: "orphanBusy", port, running, waiting: true });
     }
   }
 
   private async startServer(port: number): Promise<void> {
+    if (this.quitState !== "running") return;
     mkdirSync(paths.dataDir, { recursive: true });
     const server = new ServerProcess({
       nodeBinary: paths.nodeBinary,
@@ -172,21 +250,43 @@ class DesktopController {
       logFile: paths.serverLog,
       log: this.log,
     });
-    server.onUnexpectedExit((detail) => void this.handleCrash(detail));
+    // 只处理当前这个服务的意外退出：被替换掉的旧服务迟到的退出事件不能把新服务的引用抹掉。
+    server.onUnexpectedExit((detail) => {
+      if (this.server === server) void this.handleCrash(detail);
+    });
     this.server = server;
     const result = await server.start();
     if (!result.ok) {
-      this.server = null;
-      this.fail({ kind: "start", failure: result.failure });
+      if (this.server === server) this.server = null;
+      if (result.failure.kind !== "stopped" && this.quitState === "running") {
+        this.fail({ kind: "start", failure: result.failure });
+      }
       return;
     }
-    if (this.quitState !== "running") return;
-    if (this.prefs.port !== port) {
-      this.prefs = { ...this.prefs, port };
-      this.savePrefs();
-    }
+    // 正在退出：服务交给退出流程去停（它会在 boot 收尾后再停一次手里的服务）。
+    if (this.quitState !== "running" || this.server !== server) return;
+    this.prefs = { ...this.prefs, port, serverPid: server.pid };
+    this.savePrefs();
     this.setBaseUrl(server.baseUrl);
-    await this.window?.loadURL(server.baseUrl);
+    await this.loadApp(server.baseUrl);
+  }
+
+  /** 页面载入失败不等于服务没起来：被新的导航打断（ERR_ABORTED）不用管，其余记日志、稍后再试一次。 */
+  private async loadApp(url: string): Promise<void> {
+    const window = this.window;
+    if (window === null || window.isDestroyed()) return;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await window.loadURL(url);
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/ERR_ABORTED/.test(message)) return;
+        this.log(`loading ${url} failed: ${message}`);
+        await delay(1_000);
+        if (window.isDestroyed() || this.baseUrl !== url) return;
+      }
+    }
   }
 
   private serverEnvironment(port: number): Record<string, string> {
@@ -203,10 +303,14 @@ class DesktopController {
   }
 
   private async handleCrash(detail: { code: number | null; signal: string | null }): Promise<void> {
-    if (this.quitState !== "running") return;
     this.log(`local service exited unexpectedly (code ${String(detail.code)}, signal ${String(detail.signal)})`);
     this.server = null;
     this.setBaseUrl(null);
+    if (this.quitState === "confirming") {
+      this.restartAfterCancel = true;
+      return;
+    }
+    if (this.quitState !== "running") return;
     const now = Date.now();
     const wait = nextRestartDelay(this.restartHistory, now);
     if (wait === null) {
@@ -229,14 +333,28 @@ class DesktopController {
 
   private showStartup(view: ViewState): void {
     this.view = view;
+    this.tray?.update(this.t(), view.kind === "failed");
     const window = this.window;
     if (window === null || window.isDestroyed()) return;
+    if (this.startupLoading) return;
     if (isStartupUrl(window.webContents.getURL(), this.startupUrl)) {
       window.webContents.send(IPC.startupView, this.renderView());
     } else {
-      // 页面载入后会发 startupReady，届时再发视图。
-      void window.loadFile(paths.startupPage);
+      this.loadStartupPage(window);
     }
+  }
+
+  /** 载入启动页；载入完成后页面发 startupReady，届时再发视图。 */
+  private loadStartupPage(window: BrowserWindow): void {
+    this.startupLoading = true;
+    window
+      .loadFile(paths.startupPage)
+      .catch((error: unknown) => {
+        this.log(`loading the startup page failed: ${error instanceof Error ? error.message : String(error)}`);
+      })
+      .finally(() => {
+        this.startupLoading = false;
+      });
   }
 
   private pushView(): void {
@@ -246,18 +364,37 @@ class DesktopController {
   private renderView(): StartupView {
     const locale = this.locale();
     const t = desktopMessages(locale).startup;
-    if (this.view.kind === "progress") {
-      const message = { starting: t.starting, readingEnvironment: t.readingEnvironment, stopping: t.stopping }[this.view.step];
+    const view = this.view;
+    if (view.kind === "progress") {
+      const message = { starting: t.starting, readingEnvironment: t.readingEnvironment, stopping: t.stopping }[view.step];
       return { locale, kind: "progress", title: t.title, message };
+    }
+    if (view.kind === "orphanBusy") {
+      return {
+        locale,
+        kind: "question",
+        title: t.orphan.title,
+        message: view.waiting ? t.orphan.waiting(view.running) : t.orphan.message(view.running),
+        actions: view.waiting
+          ? [{ id: "stopOrphan", label: t.orphan.stop }]
+          : [
+              { id: "stopOrphan", label: t.orphan.stop },
+              { id: "waitOrphan", label: t.orphan.wait, primary: true },
+            ],
+      };
     }
     return {
       locale,
       kind: "failed",
       title: t.failedTitle,
-      message: this.failureMessage(this.view.reason, desktopMessages(locale)),
+      message: this.failureMessage(view.reason, desktopMessages(locale)),
       logHint: t.logHint(paths.serverLog),
-      actions: { retry: t.retry, openLogs: t.openLogs, runDoctor: t.runDoctor },
-      doctor: { running: this.doctor.running, label: t.doctorRunning, output: this.doctor.output },
+      actions: [
+        { id: "retry", label: t.retry, primary: true },
+        { id: "openLogs", label: t.openLogs },
+        { id: "runDoctor", label: this.doctor.running ? t.doctorRunning : t.runDoctor, disabled: this.doctor.running },
+      ],
+      doctorOutput: this.doctor.output,
     };
   }
 
@@ -280,6 +417,35 @@ class DesktopController {
     }
   }
 
+  private handleStartupAction(action: StartupActionId): void {
+    switch (action) {
+      case "retry":
+        if (this.view.kind !== "failed") return;
+        this.restartHistory.length = 0;
+        void this.boot();
+        return;
+      case "openLogs":
+        mkdirSync(paths.logDir, { recursive: true });
+        void shell.openPath(paths.logDir);
+        return;
+      case "runDoctor":
+        if (this.view.kind === "failed") void this.runDoctor();
+        return;
+      case "stopOrphan":
+        if (this.view.kind !== "orphanBusy") return;
+        this.orphanDecision = "stop";
+        this.showStartup({ kind: "progress", step: "starting" });
+        void this.boot();
+        return;
+      case "waitOrphan":
+        if (this.view.kind !== "orphanBusy") return;
+        this.orphanDecision = "wait";
+        this.showStartup({ ...this.view, waiting: true });
+        void this.pollOrphan(this.view.port);
+        return;
+    }
+  }
+
   private async runDoctor(): Promise<void> {
     if (this.doctor.running) return;
     this.doctor = { running: true, output: "" };
@@ -288,6 +454,12 @@ class DesktopController {
     const env = { ...this.serverEnvironment(port), SUDUO_LOCALE: this.locale() };
     const output = await new Promise<string>((resolveOutput) => {
       let text = "";
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolveOutput(text);
+      };
       const append = (chunk: Buffer) => {
         if (text.length < 64 * 1024) text += chunk.toString("utf8");
       };
@@ -297,19 +469,29 @@ class DesktopController {
           env,
           windowsHide: true,
         });
-        const timer = setTimeout(() => child.kill(), 90_000);
+        const timer = setTimeout(() => {
+          child.kill();
+          finish();
+        }, 90_000);
         child.stdout.on("data", append);
         child.stderr.on("data", append);
         child.once("error", (error) => {
           clearTimeout(timer);
-          resolveOutput(text + error.message);
+          text += error.message;
+          finish();
         });
         child.once("close", () => {
           clearTimeout(timer);
-          resolveOutput(text);
+          finish();
+        });
+        // 自检拉起的孙进程可能还占着输出管道，'close' 迟迟不来：进程退出后稍等就收尾。
+        child.once("exit", () => {
+          clearTimeout(timer);
+          setTimeout(finish, 300);
         });
       } catch (error) {
-        resolveOutput(error instanceof Error ? error.message : String(error));
+        text = error instanceof Error ? error.message : String(error);
+        finish();
       }
     });
     this.doctor = { running: false, output: output.trim() };
@@ -360,31 +542,37 @@ class DesktopController {
       if (isAppUrl(url, this.baseUrl) || isExternalOpenable(url)) void shell.openExternal(url);
       return { action: "deny" };
     });
-    contents.on("will-navigate", (event, url) => {
+    const guardNavigation = (event: Electron.Event, url: string) => {
       if (isAppUrl(url, this.baseUrl) || isStartupUrl(url, this.startupUrl)) return;
       event.preventDefault();
       if (isExternalOpenable(url)) void shell.openExternal(url);
-    });
+    };
+    contents.on("will-navigate", guardNavigation);
+    // 服务端跳转同样不能把窗口带到外部地址。
+    contents.on("will-redirect", guardNavigation);
     contents.on("context-menu", (_event, params) => popupContextMenu(window, params, this.t()));
     contents.on("render-process-gone", (_event, details) => {
       this.log(`renderer gone: ${details.reason}`);
       if (details.reason !== "clean-exit" && !window.isDestroyed()) contents.reload();
     });
-    void window.loadFile(paths.startupPage);
+    this.loadStartupPage(window);
     return window;
   }
 
+  /** 首次关窗时提示一次「仍在后台运行」；通知真弹出来了才记下，没弹出来（例如系统关了通知）下次再试。 */
   private hintRunningInBackground(): void {
-    if (this.prefs.closeHintShown) return;
-    this.prefs = { ...this.prefs, closeHintShown: true };
-    this.savePrefs();
-    if (!Notification.isSupported()) return;
+    if (this.prefs.closeHintShown || !Notification.isSupported()) return;
     const t = this.t().backgroundHint;
-    new Notification({
+    const notification = new Notification({
       title: t.title,
       body: t.body(process.platform === "darwin" ? t.whereMac : t.whereWindows),
       silent: true,
-    }).show();
+    });
+    notification.once("show", () => {
+      this.prefs = { ...this.prefs, closeHintShown: true };
+      this.savePrefs();
+    });
+    notification.show();
   }
 
   private scheduleBoundsSave(): void {
@@ -423,39 +611,56 @@ class DesktopController {
   private async requestQuit(): Promise<void> {
     if (this.quitState !== "running") return;
     this.quitState = "confirming";
-    const running = this.server !== null && !this.systemShutdown ? await this.server.runningSessions() : 0;
-    if (running > 0) {
-      this.showWindow();
-      const t = this.t().quitConfirm;
-      const options: MessageBoxOptions = {
-        type: "warning",
-        buttons: [t.quit, t.cancel],
-        defaultId: 1,
-        cancelId: 1,
-        message: t.message(running),
-        detail: t.detail,
-      };
-      const window = this.window;
-      const { response } = window === null || window.isDestroyed()
-        ? await dialog.showMessageBox(options)
-        : await dialog.showMessageBox(window, options);
-      if (response !== 0) {
+    try {
+      const running = this.server !== null && !this.systemShutdown ? await this.server.runningSessions() : 0;
+      if (running > 0 && !(await this.confirmQuit(running))) {
         this.quitState = "running";
+        if (this.restartAfterCancel) {
+          this.restartAfterCancel = false;
+          void this.boot();
+        }
         return;
       }
+      this.quitState = "stopping";
+      this.saveBounds();
+      if (this.window !== null && !this.window.isDestroyed() && this.window.isVisible()) {
+        this.showStartup({ kind: "progress", step: "stopping" });
+      }
+      this.log("quitting: stopping the local service");
+      // 先停手里的服务（启动途中也能停），再等正在进行的启动收尾；启动若在这期间又拉起了服务，再停一次。
+      await this.server?.stop();
+      await this.bootPromise;
+      await this.server?.stop();
+      this.server = null;
+      this.prefs = { ...this.prefs, serverPid: null };
+      this.savePrefs();
+    } catch (error) {
+      this.log(`quit flow failed, quitting anyway: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+    } finally {
+      if (this.quitState !== "running") {
+        this.quitState = "done";
+        this.tray?.destroy();
+        this.tray = null;
+        app.quit();
+      }
     }
-    this.quitState = "stopping";
-    this.saveBounds();
-    if (this.window !== null && !this.window.isDestroyed() && this.window.isVisible()) {
-      this.showStartup({ kind: "progress", step: "stopping" });
-    }
-    this.log("quitting: stopping the local service");
-    await this.server?.stop();
-    this.server = null;
-    this.quitState = "done";
-    this.tray?.destroy();
-    this.tray = null;
-    app.quit();
+  }
+
+  private async confirmQuit(running: number): Promise<boolean> {
+    this.showWindow();
+    const t = this.t().quitConfirm;
+    const options: MessageBoxOptions = {
+      type: "warning",
+      buttons: [t.quit, t.cancel],
+      defaultId: 1,
+      cancelId: 1,
+      message: t.message(running),
+      detail: t.detail,
+    };
+    const window = this.window;
+    const { response } =
+      window === null || window.isDestroyed() ? await dialog.showMessageBox(options) : await dialog.showMessageBox(window, options);
+    return response === 0;
   }
 
   // ---------- 网页权限与 IPC ----------
@@ -463,7 +668,7 @@ class DesktopController {
   private installSessionPolicy(): void {
     const ses = session.defaultSession;
     ses.setPermissionRequestHandler((_contents, permission, callback, details) => {
-      callback(isAllowedPermission(permission) && isAppUrl(details.requestingUrl, this.baseUrl));
+      callback(isAllowedPermission(permission) && isAppPageUrl(details.requestingUrl, this.baseUrl));
     });
     ses.setPermissionCheckHandler((_contents, permission, requestingOrigin) => {
       return isAllowedPermission(permission) && isAppUrl(requestingOrigin, this.baseUrl);
@@ -471,7 +676,7 @@ class DesktopController {
   }
 
   private installIpc(): void {
-    const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) => isAppUrl(senderUrl(event), this.baseUrl);
+    const fromApp = (event: IpcMainEvent | IpcMainInvokeEvent) => isAppPageUrl(senderUrl(event), this.baseUrl);
     const fromStartup = (event: IpcMainEvent | IpcMainInvokeEvent) => isStartupUrl(senderUrl(event), this.startupUrl);
     ipcMain.handle(IPC.info, (event): SuDuoDesktopInfo => {
       if (!fromApp(event)) throw new Error("untrusted sender");
@@ -493,19 +698,9 @@ class DesktopController {
     ipcMain.on(IPC.startupReady, (event) => {
       if (fromStartup(event)) event.sender.send(IPC.startupView, this.renderView());
     });
-    ipcMain.on(IPC.startupRetry, (event) => {
-      if (fromStartup(event) && this.view.kind === "failed") {
-        this.restartHistory.length = 0;
-        void this.boot();
-      }
-    });
-    ipcMain.on(IPC.startupOpenLogs, (event) => {
-      if (!fromStartup(event)) return;
-      mkdirSync(paths.logDir, { recursive: true });
-      void shell.openPath(paths.logDir);
-    });
-    ipcMain.on(IPC.startupRunDoctor, (event) => {
-      if (fromStartup(event)) void this.runDoctor();
+    ipcMain.on(IPC.startupAction, (event, action: unknown) => {
+      if (!fromStartup(event) || !(STARTUP_ACTIONS as readonly unknown[]).includes(action)) return;
+      this.handleStartupAction(action as StartupActionId);
     });
   }
 
@@ -531,9 +726,9 @@ class DesktopController {
   private refreshChrome(): void {
     const t = this.t();
     applyApplicationMenu(t, this.menuActions);
-    this.tray?.update(t);
+    this.tray?.update(t, this.view.kind === "failed");
     if (this.window !== null && !this.window.isDestroyed() && isStartupUrl(this.window.webContents.getURL(), this.startupUrl)) {
-      this.pushView();
+      this.window.webContents.send(IPC.startupView, this.renderView());
     }
     app.setAboutPanelOptions({ applicationName: "SuDuo", applicationVersion: this.version(), copyright: "PolyForm Noncommercial 1.0.0" });
   }
@@ -557,8 +752,9 @@ class DesktopController {
   }
 }
 
+/** 发送方所在框架的地址；拿不到（框架已销毁）时返回空串，不回退到整个页面的地址，交给调用方当成不可信。 */
 function senderUrl(event: IpcMainEvent | IpcMainInvokeEvent): string {
-  return event.senderFrame?.url ?? event.sender.getURL();
+  return event.senderFrame?.url ?? "";
 }
 
 function readText(file: string): string | null {
