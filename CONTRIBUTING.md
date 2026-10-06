@@ -8,7 +8,7 @@ Thanks for your interest in SuDuo. Issues and pull requests are welcome in Engli
 
 - **Bugs**: open an issue with steps to reproduce, what you expected, and what happened. Include versions (SuDuo, Node, Codex CLI, OS).
 - **Features and larger changes**: open an issue first so we can agree on the approach before you write code. Requirements and design decisions are kept in [`docs/`](docs/) (written in Chinese): requirements in `docs/02_需求设计/`, technical designs in `docs/03_开发计划/`, decisions (ADRs) in `docs/06_决策记录/`.
-- **Security issues**: do not open a public issue. Email im.suyejian@gmail.com.
+- **Security issues**: do not open a public issue. Email security@suduo.dev.
 
 ## Contributor License Agreement
 

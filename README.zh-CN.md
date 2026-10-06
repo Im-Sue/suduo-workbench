@@ -198,7 +198,7 @@ Linux 不是正式支持的客户端平台，但开发和测试时可以在 Linu
 |---|---|
 | 个人：学习、研究、没有商业用途预期的业余项目 | 免费，不用登记 |
 | 学校、公共研究机构、公益组织、政府机构 | 免费，不用登记 |
-| 公司和其他营利组织，包括只在内部使用 | 直接开始用，**30 天内**发邮件到 im.suyejian@gmail.com 登记，目前免费 |
+| 公司和其他营利组织，包括只在内部使用 | 直接开始用，**30 天内**发邮件到 license@suduo.dev 登记，目前免费 |
 
 什么算商业使用、登记邮件写什么，见 [COMMERCIAL.zh-CN.md](COMMERCIAL.zh-CN.md)。参与贡献需要同意[贡献者许可协议](CLA.zh-CN.md)。第三方依赖的许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
@@ -206,8 +206,8 @@ Linux 不是正式支持的客户端平台，但开发和测试时可以在 Linu
 
 - **问题反馈与提问**：[GitHub Issues](https://github.com/Im-Sue/suduo-workbench/issues)
 - **参与贡献**：[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)
-- **安全问题**：请发邮件到 im.suyejian@gmail.com，不要公开提 issue
-- **商用登记**：im.suyejian@gmail.com
+- **安全问题**：请发邮件到 security@suduo.dev，不要公开提 issue
+- **商用登记**：license@suduo.dev
 
 Codex 与 OpenAI 是 OpenAI 的商标，SuDuo 与 OpenAI 没有隶属或背书关系，见 [TRADEMARKS.zh-CN.md](TRADEMARKS.zh-CN.md)。
 

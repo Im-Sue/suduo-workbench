@@ -35,7 +35,7 @@ SuDuo 不做任何检查、计数或拦截，登记与否软件都一样能用�
 
 ## 怎么登记
 
-发邮件到 **im.suyejian@gmail.com**，标题写 `SuDuo 商用登记`，内容包括：
+发邮件到 **license@suduo.dev**，标题写 `SuDuo 商用登记`，内容包括：
 
 1. 单位全称及所在国家 / 地区（会使用 SuDuo 的每个法律实体都请列出）
 2. 联系人姓名与邮箱
@@ -53,4 +53,4 @@ SuDuo 不做任何检查、计数或拦截，登记与否软件都一样能用�
 
 ## 有问题？
 
-发邮件到 im.suyejian@gmail.com。本页内容如与 [LICENSE](LICENSE) 冲突，以 LICENSE 为准；上面授予的补充许可除外。
+发邮件到 license@suduo.dev。本页内容如与 [LICENSE](LICENSE) 冲突，以 LICENSE 为准；上面授予的补充许可除外。
