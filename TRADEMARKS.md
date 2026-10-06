@@ -16,7 +16,7 @@ The names **SuDuo** and **速舵**, and the SuDuo logo (the two-part "relay S"),
 - Using SuDuo / 速舵 or the logo in the name or branding of your own product, company, domain or service.
 - Anything that could make people think your product or service is official, or endorsed by the SuDuo project.
 
-Contact: im.suyejian@gmail.com
+Contact: license@suduo.dev
 
 ## Third-party marks
 

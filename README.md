@@ -200,7 +200,7 @@ SuDuo is **source-available, not open source**. It is licensed under the [PolyFo
 |---|---|
 | Individuals: personal study, research, hobby projects with no anticipated commercial application | Free, no registration |
 | Schools, public research organizations, charities and government institutions | Free, no registration |
-| Companies and other for-profit organizations, including internal-only use | Start right away and **register within 30 days** by emailing im.suyejian@gmail.com. Registration is currently free |
+| Companies and other for-profit organizations, including internal-only use | Start right away and **register within 30 days** by emailing license@suduo.dev. Registration is currently free |
 
 [COMMERCIAL.md](COMMERCIAL.md) explains what counts as commercial use and what to include in the email. Contributions require agreeing to the [Contributor License Agreement](CLA.md). Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
@@ -208,8 +208,8 @@ SuDuo is **source-available, not open source**. It is licensed under the [PolyFo
 
 - **Bugs and questions**: [GitHub Issues](https://github.com/Im-Sue/suduo-workbench/issues)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
-- **Security issues**: email im.suyejian@gmail.com rather than opening a public issue
-- **Commercial registration**: im.suyejian@gmail.com
+- **Security issues**: email security@suduo.dev rather than opening a public issue
+- **Commercial registration**: license@suduo.dev
 
 Codex and OpenAI are trademarks of OpenAI. SuDuo is not affiliated with or endorsed by OpenAI. See [TRADEMARKS.md](TRADEMARKS.md).
 

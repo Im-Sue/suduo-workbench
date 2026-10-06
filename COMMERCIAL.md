@@ -33,7 +33,7 @@ SuDuo never checks, counts or blocks anything. The software works the same with 
 
 ## How to register
 
-Send an email to **im.suyejian@gmail.com** with the subject `SuDuo commercial registration` and include:
+Send an email to **license@suduo.dev** with the subject `SuDuo commercial registration` and include:
 
 1. Organization legal name and country / region (list each legal entity that will use SuDuo)
 2. Contact name and email
@@ -51,4 +51,4 @@ Registration is **currently free**. If fees are introduced later, licenses that 
 
 ## Questions
 
-Email im.suyejian@gmail.com. If anything on this page conflicts with [LICENSE](LICENSE), LICENSE prevails, except for the additional permission granted above.
+Email license@suduo.dev. If anything on this page conflicts with [LICENSE](LICENSE), LICENSE prevails, except for the additional permission granted above.
