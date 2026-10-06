@@ -59,6 +59,9 @@ async function main() {
   if (health === "foreign") {
     fail(t.portInUse(options.port));
   }
+  if (health === "desktop") {
+    fail(t.portUsedByDesktop(options.port));
+  }
 
   buildIfNeeded(options.rebuild);
   await startServer(options, baseUrl);
@@ -386,7 +389,9 @@ async function probeHealth(baseUrl) {
     const response = await fetch(baseUrl + "healthz", { signal: AbortSignal.timeout(1_000) });
     if (!response.ok) return "foreign";
     const body = await response.json().catch(() => null);
-    return body && body.product === "suduo" && body.status === "ok" ? "ok" : "foreign";
+    if (!body || body.product !== "suduo" || body.status !== "ok") return "foreign";
+    // 桌面应用拉起的服务（runMode=desktop）用它自己的数据目录，不接管它；没有 runMode 的旧版本按源码运行算。
+    return (body.runMode ?? "source") === "source" ? "ok" : "desktop";
   } catch {
     return "down";
   }

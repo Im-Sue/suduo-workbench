@@ -37,6 +37,7 @@ const I18N_SCOPE = [
   "server/src/**/*.ts",
   "contracts/src/**/*.ts",
   "scripts/**/*.{ts,mjs}",
+  "desktop/src/**/*.ts",
 ];
 // 字典本身、开发用的设计系统页不受约束；Windows 安装器与启动器暂缓，不在双语范围内（技术设计 §一「不覆盖」）。
 const I18N_EXEMPT = [
@@ -44,6 +45,8 @@ const I18N_EXEMPT = [
   "server/src/i18n/messages/**",
   // `pnpm start` 等启动脚本在构建之前就要跑，用不了本机服务的字典，自带一份（S8）。
   "scripts/i18n/messages/**",
+  // 桌面外壳自己的文字（菜单、托盘、启动页）放在它的字典里。
+  "desktop/src/i18n/**",
   "web/src/dev/**",
   "scripts/dist-win/**",
 ];

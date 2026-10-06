@@ -1,0 +1,167 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #16181d;
+  --muted: #5d6472;
+  --border: #e3e6eb;
+  --surface: #f5f6f8;
+  --accent: #3451d1;
+  --accent-fg: #ffffff;
+  --danger: #c43d3d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111215;
+    --fg: #e8eaee;
+    --muted: #9aa1ad;
+    --border: #2b2e35;
+    --surface: #1a1c21;
+    --accent: #6f86ff;
+    --accent-fg: #0b0d12;
+    --danger: #ff7a7a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(560px, 100%);
+  text-align: center;
+}
+
+.mark {
+  width: 56px;
+  height: 56px;
+}
+
+h1 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#message {
+  margin: 0;
+  color: var(--muted);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+[data-kind="failed"] #message,
+[data-kind="question"] #message {
+  color: var(--fg);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.log {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+button {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.doctor {
+  width: 100%;
+  max-height: 260px;
+  margin: 4px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  text-align: left;
+  white-space: pre-wrap;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+[data-kind="progress"] .actions,
+[data-kind="failed"] .spinner,
+[data-kind="question"] .spinner,
+.log:empty,
+.actions:empty,
+.doctor:empty {
+  display: none;
+}

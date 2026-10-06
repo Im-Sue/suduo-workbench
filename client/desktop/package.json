@@ -1,0 +1,22 @@
+{
+  "name": "@suduo/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "description": "SuDuo desktop shell (Electron): starts the local service and shows it in its own window.",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "dev": "node scripts/dev.mjs",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@suduo/client-contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "44.5.1"
+  }
+}

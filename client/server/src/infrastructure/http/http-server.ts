@@ -12,7 +12,9 @@ import Fastify, {
 } from "fastify";
 import {
   isLocale,
+  type HealthzResponse,
   type Locale,
+  type SuDuoRunMode,
 } from "@suduo/client-contracts";
 import type {
   CreateProjectRequest,
@@ -101,6 +103,10 @@ import {
   type LocalDirectoryRouteDependencies,
 } from "./routes/local-directory-routes.js";
 import { registerSessionListRoutes } from "./routes/session-list-routes.js";
+import {
+  registerSystemActivityRoutes,
+  type SystemActivityRouteDependencies,
+} from "./routes/system-activity-routes.js";
 import { registerRoomsRoutes, type RoomsRouteDependencies } from "./routes/rooms-routes.js";
 import type { SessionListService } from "../../application/session-list-service.js";
 import { registerRequestLocale, requestLocaleOf } from "../../i18n/locale.js";
@@ -110,7 +116,8 @@ export interface HttpServerDependencies
     ModelProviderRouteDependencies,
     ProxySettingsRouteDependencies,
     McpRouteDependencies,
-    LocalDirectoryRouteDependencies {
+    LocalDirectoryRouteDependencies,
+    SystemActivityRouteDependencies {
   requestGuard: LoopbackGuard;
   idempotency: IdempotencyService;
   projects: ProjectService;
@@ -155,6 +162,9 @@ export interface HttpServerDependencies
   logger?: boolean;
   activity?: { touch(): void; retainStream(): () => void };
   requestShutdown?(reason: string): void;
+  /** 运行形态与桌面外壳分配的实例标识，随 /healthz 带出（客户端桌面应用技术设计 决策 8）。 */
+  runMode?: SuDuoRunMode;
+  instanceId?: string;
 }
 
 interface OperationResult {
@@ -205,14 +215,17 @@ export function buildHttpServer(
     );
   });
 
-  server.get("/healthz", async (_request, reply) =>
-    reply.header("Cache-Control", "no-store").send({
+  server.get("/healthz", async (_request, reply) => {
+    const body: HealthzResponse = {
       product: "suduo",
       status: "ok",
       pid: process.pid,
       uptimeMs: Math.round(process.uptime() * 1_000),
-    }),
-  );
+      runMode: dependencies.runMode ?? "source",
+      ...(dependencies.instanceId === undefined ? {} : { instanceId: dependencies.instanceId }),
+    };
+    return reply.header("Cache-Control", "no-store").send(body);
+  });
 
   server.post("/api/v1/admin/shutdown", async (_request, reply) => {
     if (!dependencies.requestShutdown) {
@@ -229,6 +242,7 @@ export function buildHttpServer(
   registerRequirementsV2Routes(server, dependencies);
   registerRequirementsSettingsRoutes(server, dependencies);
   registerLocalDirectoryRoutes(server, dependencies);
+  registerSystemActivityRoutes(server, dependencies);
   registerCodexStatusRoutes(server, dependencies);
   registerModelProviderRoutes(server, dependencies);
   registerCodexConfigFileRoutes(server, dependencies);

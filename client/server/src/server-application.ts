@@ -7,6 +7,7 @@ import {
   DEFAULT_CODEX_RUNTIME_ID,
   SUDUO_DEFAULTS,
   type CodexTransportFactory,
+  type SuDuoRunMode,
 } from "@suduo/client-contracts";
 import { ApprovalService } from "./application/approval-service.js";
 import { EventBroker } from "./application/event-broker.js";
@@ -100,6 +101,9 @@ export interface SuDuoApplicationOptions {
   webRoot?: string;
   port?: number;
   installed?: boolean;
+  /** 运行形态与桌面外壳分配的实例标识，随 /healthz 带出。 */
+  runMode?: SuDuoRunMode;
+  instanceId?: string;
   idleExitMs?: number;
   onExitRequested?(reason: string): void;
 }
@@ -121,6 +125,8 @@ export function createSuDuoApplication(
   const sessions = new SessionRepository(database);
   const threads = new SessionThreadRepository(database);
   const events = new EventRepository(database);
+  // 本次启动之前的最后一个事件序号：退出前确认只看这之后开始的回合。
+  const startupSeq = events.lastSeq();
   const approvals = new ApprovalRepository(database);
   const idempotencyRecords = new IdempotencyRepository(database);
   const workspaceMappings = new WorkspaceMappingRepository(database);
@@ -495,6 +501,9 @@ export function createSuDuoApplication(
       agentState: () => presence.state(),
     },
     remoteEvents,
+    systemActivity: { runningSessions: () => events.countRunningSessionsAfter(startupSeq) },
+    ...(options.runMode === undefined ? {} : { runMode: options.runMode }),
+    ...(options.instanceId === undefined ? {} : { instanceId: options.instanceId }),
     localDirectories: new LocalDirectoryService({
       recentRoots: () => mappedWorkspaceRoots(workspaceMappings, projects),
     }),
@@ -553,10 +562,19 @@ export function createSuDuoApplication(
   };
 }
 
-function runtimeEnvironment(codexHome: string | undefined): Record<string, string> {
+/**
+ * 交给 Codex 的环境：Codex 在使用者项目里执行的命令都继承它。本机服务自己的 SUDUO_*（端口、数据目录、运行形态、
+ * pid 文件……）不能漏进去：否则在 Codex 会话里跑 `pnpm start` 或联调脚本，会探测到、甚至打开本机服务正在用的数据。
+ * 只留命令行语言 SUDUO_LOCALE（客户端桌面应用 D0 独立审查第 1 条）。
+ */
+export function runtimeEnvironment(
+  codexHome: string | undefined,
+  source: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
   const env = Object.fromEntries(
-    Object.entries(process.env).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined,
+    Object.entries(source).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && (!/^SUDUO_/i.test(entry[0]) || entry[0].toUpperCase() === "SUDUO_LOCALE"),
     ),
   );
   if (codexHome) {
