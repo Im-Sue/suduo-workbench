@@ -85,6 +85,7 @@ export function MaterialsPreview({ requirementId }: { requirementId: string }) {
   const text = useT().requirementDetail.materials;
   const { attachments, newest } = useMaterials(requirementId);
   const latest = newest[0];
+  const [preview, setPreview] = useState<FilePreview | null>(null);
   return (
     <section className="flex flex-col gap-2" aria-labelledby={`peek-materials-${requirementId}`}>
       <div className="flex items-center gap-2">
@@ -102,11 +103,18 @@ export function MaterialsPreview({ requirementId }: { requirementId: string }) {
         <p className="m-0 text-caption text-subtle-foreground">{text.empty}</p>
       ) : null}
       {attachments.data?.items.slice(0, 5).map((attachment) => (
-        <FileRow key={attachment.id} name={attachment.fileName} size={attachment.sizeBytes} downloadUrl={api.requirementAttachmentDownloadUrl(attachment.id)} />
+        <FileRow
+          key={attachment.id}
+          name={attachment.fileName}
+          size={attachment.sizeBytes}
+          downloadUrl={api.requirementAttachmentDownloadUrl(attachment.id)}
+          onPreview={setPreview}
+        />
       ))}
       {attachments.data !== undefined && attachments.data.items.length > 5 ? (
         <p className="m-0 text-caption text-subtle-foreground">{text.more(attachments.data.items.length - 5)}</p>
       ) : null}
+      <ImagePreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </section>
   );
 }
@@ -124,7 +132,7 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<RequirementsAttachmentDto | null>(null);
-  const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
+  const [preview, setPreview] = useState<FilePreview | null>(null);
   const existingCount = attachments.data?.items.length ?? 0;
 
   const upload = (files: readonly File[]) => {
@@ -335,16 +343,29 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
           onPublished={(version) => setViewingId(version.id)}
         />
       ) : null}
-      <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent size="lg" className="max-w-[min(1100px,calc(100vw-32px))]">
-          <DialogHeader>
-            <DialogTitle className="truncate">{preview?.name}</DialogTitle>
-            <DialogDescription className="sr-only">{text.imagePreview}</DialogDescription>
-          </DialogHeader>
-          {preview === null ? null : <ImagePreview key={preview.url} name={preview.name} url={preview.url} />}
-        </DialogContent>
-      </Dialog>
+      <ImagePreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </section>
+  );
+}
+
+interface FilePreview {
+  name: string;
+  url: string;
+}
+
+/** 图片附件的大图预览（详情页「材料」与需求抽屉共用）。 */
+function ImagePreviewDialog({ preview, onClose }: { preview: FilePreview | null; onClose(): void }) {
+  const text = useT().requirementDetail.materials;
+  return (
+    <Dialog open={preview !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent size="lg" className="max-w-[min(1100px,calc(100vw-32px))]">
+        <DialogHeader>
+          <DialogTitle className="truncate">{preview?.name}</DialogTitle>
+          <DialogDescription className="sr-only">{text.imagePreview}</DialogDescription>
+        </DialogHeader>
+        {preview === null ? null : <ImagePreview key={preview.url} name={preview.name} url={preview.url} />}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -423,16 +444,29 @@ function FileRow({
   size: number;
   meta?: string;
   downloadUrl: string;
-  onPreview?(preview: { name: string; url: string }): void;
+  onPreview?(preview: FilePreview): void;
   extra?: ReactNode;
 }) {
   const text = useT().requirementDetail.materials;
   const kind = previewKind(name);
   const Icon = fileIconFor(name);
+  // 能预览的文件，点文件名本身也能预览（图片在当前页放大，PDF 等在新标签页打开），不只靠右边的小眼睛。
+  const nameClass = "min-w-0 flex-1 truncate text-left text-small";
+  const nameLinkClass = cn(nameClass, "cursor-pointer rounded-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring");
   return (
     <div className="group/file flex h-9 items-center gap-2.5 rounded-sm border border-border px-2.5 hover:bg-muted">
       <Icon className="size-4 shrink-0 text-subtle-foreground" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-small" title={name}>{name}</span>
+      {onPreview === undefined || kind === null ? (
+        <span className={nameClass} title={name}>{name}</span>
+      ) : kind === "image" ? (
+        <button type="button" className={nameLinkClass} title={name} onClick={() => onPreview({ name, url: inlineUrl(downloadUrl) })}>
+          {name}
+        </button>
+      ) : (
+        <a href={inlineUrl(downloadUrl)} target="_blank" rel="noreferrer" className={nameLinkClass} title={name}>
+          {name}
+        </a>
+      )}
       {meta === undefined ? null : <span className="hidden shrink-0 text-caption text-subtle-foreground sm:inline">{meta}</span>}
       <span className="shrink-0 text-caption text-subtle-foreground">{formatBytes(size)}</span>
       {onPreview === undefined || kind === null ? null : kind === "image" ? (
