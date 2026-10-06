@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
+    <title>SuDuo</title>
+    <link rel="stylesheet" href="./startup.css" />
+  </head>
+  <body>
+    <main class="panel" data-kind="progress">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="14.5" fill="#3451D1" />
+        <g transform="translate(6.4 6.4) scale(0.8)">
+          <path d="M39.6 15.4A10.5 10.5 0 1 0 27 31" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" />
+          <path d="M37 33A10.5 10.5 0 1 1 24.4 48.6" fill="none" stroke="#3FD4B8" stroke-width="10" stroke-linecap="round" />
+        </g>
+      </svg>
+      <h1 id="title"></h1>
+      <p id="message" role="status" aria-live="polite"></p>
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="log" class="log"></p>
+      <div class="actions">
+        <button id="retry" type="button" class="primary"></button>
+        <button id="open-logs" type="button"></button>
+        <button id="run-doctor" type="button"></button>
+      </div>
+      <pre id="doctor" class="doctor"></pre>
+    </main>
+    <script src="./startup.js"></script>
+  </body>
+</html>

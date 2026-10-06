@@ -205,6 +205,27 @@ export class EventRepository {
       .map((turn) => turn.ref);
   }
 
+  /**
+   * since 之后开始、至今还没结束的回合分布在几个会话里（含房间任务会话）。只看本次启动以来的事件：
+   * 上次异常退出时没写完的回合会一直停在 turn.started，不能算成「正在进行」。
+   */
+  countRunningSessionsSince(since: number): number {
+    const row = this.database
+      .prepare(
+        [
+          "SELECT COUNT(DISTINCT session_id) AS count FROM (",
+          "SELECT session_id, type, ROW_NUMBER() OVER (",
+          "PARTITION BY session_id, json_extract(thread_ref_json, '$.threadId'), turn_ref ORDER BY seq DESC",
+          ") AS rn FROM events",
+          "WHERE turn_ref IS NOT NULL AND thread_ref_json IS NOT NULL AND created_at >= @since",
+          "AND type IN ('turn.started', 'turn.completed', 'turn.interrupted', 'turn.start-failed')",
+          ") WHERE rn = 1 AND type = 'turn.started'",
+        ].join(" "),
+      )
+      .get<{ count: number }>({ since });
+    return row?.count ?? 0;
+  }
+
   listRunStatusEventsForSessions(
     sessionIds: readonly string[],
   ): SessionRunStatusEvent[] {

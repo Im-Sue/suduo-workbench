@@ -17,12 +17,16 @@
       "fast-uri@>=3.0.0 <3.1.5": "3.1.5",
       "fast-uri@>=4.0.0 <4.1.2": "4.1.2",
       "find-my-way@<=9.6.0": "9.7.0"
-    }
+    },
+    "ignoredBuiltDependencies": [
+      "electron"
+    ]
   },
   "scripts": {
     "build": "pnpm run build:contracts && pnpm --recursive --if-present run build",
     "build:contracts": "tsc -b contracts",
     "start": "node scripts/start.mjs",
+    "desktop:dev": "pnpm --filter @suduo/desktop run dev",
     "typecheck": "pnpm run build:contracts && pnpm --recursive --if-present run typecheck",
     "lint": "eslint . --max-warnings=0",
     "test": "pnpm run build:contracts && pnpm --recursive --if-present run test",

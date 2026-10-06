@@ -7,6 +7,7 @@ import {
   DEFAULT_CODEX_RUNTIME_ID,
   SUDUO_DEFAULTS,
   type CodexTransportFactory,
+  type SuDuoRunMode,
 } from "@suduo/client-contracts";
 import { ApprovalService } from "./application/approval-service.js";
 import { EventBroker } from "./application/event-broker.js";
@@ -100,6 +101,9 @@ export interface SuDuoApplicationOptions {
   webRoot?: string;
   port?: number;
   installed?: boolean;
+  /** 运行形态与桌面外壳分配的实例标识，随 /healthz 带出。 */
+  runMode?: SuDuoRunMode;
+  instanceId?: string;
   idleExitMs?: number;
   onExitRequested?(reason: string): void;
 }
@@ -114,6 +118,7 @@ export interface SuDuoApplication {
 export function createSuDuoApplication(
   options: SuDuoApplicationOptions,
 ): SuDuoApplication {
+  const startedAt = Date.now();
   const database = openBetterSqlite3Database(options.databasePath);
   runMigrations(database);
 
@@ -495,6 +500,9 @@ export function createSuDuoApplication(
       agentState: () => presence.state(),
     },
     remoteEvents,
+    systemActivity: { runningSessions: () => events.countRunningSessionsSince(startedAt) },
+    ...(options.runMode === undefined ? {} : { runMode: options.runMode }),
+    ...(options.instanceId === undefined ? {} : { instanceId: options.instanceId }),
     localDirectories: new LocalDirectoryService({
       recentRoots: () => mappedWorkspaceRoots(workspaceMappings, projects),
     }),

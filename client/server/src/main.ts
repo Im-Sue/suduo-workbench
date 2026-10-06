@@ -3,6 +3,7 @@ import {
   M1_RUNTIME_SECURITY_POLICY,
   SUDUO_DEFAULTS,
   cliLocale,
+  parseRunMode,
 } from "@suduo/client-contracts";
 import {
   existsSync,
@@ -35,11 +36,17 @@ if (isMainModule()) {
 
 async function startFromEnvironment(): Promise<void> {
   applyRuntimeConfigFromArgs(process.argv.slice(2));
+  const runMode = parseRunMode(process.env["SUDUO_RUN_MODE"]);
+  const instanceId = process.env["SUDUO_INSTANCE_ID"] || undefined;
   // 本机服务会在多处启动 Codex（app-server、沙箱探测、诊断、MCP / 模型服务检查），都继承本进程的环境；
   // 在入口一次性把自己所用 node 的目录补进 PATH，继承来的其余目录原样保留。
-  const withNode = withNodeOnPath(definedEnvironment());
-  for (const key of Object.keys(withNode)) {
-    if (/^path$/i.test(key)) process.env[key] = withNode[key];
+  // 桌面应用例外：它直接运行 Codex 的二进制，用不着 PATH 里的 node；而它的 node 是安装包自带的，
+  // 补进 PATH 会让使用者项目里执行的 node 变成 SuDuo 自带的那个（客户端桌面应用技术设计 §4.4）。
+  if (runMode !== "desktop") {
+    const withNode = withNodeOnPath(definedEnvironment());
+    for (const key of Object.keys(withNode)) {
+      if (/^path$/i.test(key)) process.env[key] = withNode[key];
+    }
   }
   const host = process.env["SUDUO_HOST"] ?? SUDUO_DEFAULTS.host;
   if (host !== "127.0.0.1") {
@@ -156,7 +163,9 @@ async function startFromEnvironment(): Promise<void> {
     fsForcePolling: process.env["SUDUO_FS_FORCE_POLLING"] === "true",
     logger: process.env["SUDUO_LOG_LEVEL"] !== "silent",
     port,
-    installed: process.argv.includes("--runtime-config"),
+    installed: process.argv.includes("--runtime-config") || runMode === "desktop",
+    runMode,
+    ...(instanceId === undefined ? {} : { instanceId }),
     idleExitMs,
     onExitRequested: requestExit,
     onBackgroundError: (error) => {
