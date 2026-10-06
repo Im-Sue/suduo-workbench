@@ -52,7 +52,7 @@ export function builderConfig({ arch, appDir, resources }) {
     mac: {
       target: [{ target: "dmg", arch: [arch] }],
       category: "public.app-category.developer-tools",
-      icon: join(desktopRoot, "build", "icon-mac.png"),
+      icon: join(desktopRoot, "build", "icon.icns"),
       minimumSystemVersion: "13.5",
       // Unsigned trial: ad-hoc signature only. Hardened runtime needs a real identity, so it stays off.
       identity: "-",
@@ -74,7 +74,7 @@ export function builderConfig({ arch, appDir, resources }) {
     },
     win: {
       target: [{ target: "nsis", arch: [arch] }],
-      icon: join(desktopRoot, "build", "icon.png"),
+      icon: join(desktopRoot, "build", "icon.ico"),
       requestedExecutionLevel: "asInvoker",
     },
     nsis: {
