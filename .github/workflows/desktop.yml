@@ -49,6 +49,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Package
+        env:
+          # electron-builder skips signing on pull request builds unless told otherwise. The macOS signature is ad hoc
+          # (no secrets), and an unsigned app is what the disk image check below must catch, so sign every build.
+          CSC_FOR_PULL_REQUEST: "true"
         run: node desktop/scripts/dist.mjs --target ${{ matrix.target }} --skip-build
 
       - name: Smoke test the app (macOS)

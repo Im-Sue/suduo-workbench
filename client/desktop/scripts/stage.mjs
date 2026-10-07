@@ -11,13 +11,14 @@ import { spawnSync } from "node:child_process";
 import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { CODEX_VERSION, targetFor } from "./assets.mjs";
 import { clientRoot, ensureAssets } from "./fetch-assets.mjs";
 
 const desktopRoot = join(clientRoot, "desktop");
 const repoRoot = resolve(clientRoot, "..");
+const require = createRequire(join(desktopRoot, "package.json"));
 
 export async function stage(platform, arch, { offline = false } = {}) {
   const target = targetFor(platform, arch);
@@ -41,7 +42,7 @@ export async function stage(platform, arch, { offline = false } = {}) {
   await stageService(join(resources, "suduo"), assets.betterSqlite3, target);
   stageNode(join(resources, "node"), assets.node, work, target);
   stageCodex(join(resources, "codex"), assets.codex, work, target);
-  stageLicenses(join(resources, "licenses"));
+  await stageLicenses(join(resources, "licenses"), work, target);
   rmSync(work, { recursive: true, force: true });
   return { stageDir, appDir, resources, version: clientVersion() };
 }
@@ -151,11 +152,23 @@ function stageCodex(codexDir, archive, work, target) {
   }
 }
 
-function stageLicenses(licenseDir) {
+async function stageLicenses(licenseDir, work, target) {
   mkdirSync(licenseDir, { recursive: true });
   for (const file of ["LICENSE", "LICENSE.zh-CN.md", "THIRD_PARTY_NOTICES.md", "COMMERCIAL.md", "COMMERCIAL.zh-CN.md"]) {
     if (existsSync(join(repoRoot, file))) cpSync(join(repoRoot, file), join(licenseDir, file));
   }
+  // Electron's licence and Chromium's third-party licences ship next to Electron.app in Electron's macOS archive,
+  // outside the app, so electron-builder never copies them in. Take them from the same official archive.
+  const electronRequire = createRequire(require.resolve("electron/package.json"));
+  const electronVersion = JSON.parse(readFileSync(require.resolve("electron/package.json"), "utf8")).version;
+  const { downloadArtifact } = await import(pathToFileURL(electronRequire.resolve("@electron/get")).href);
+  const archive = await downloadArtifact({ version: electronVersion, artifactName: "electron", platform: target.platform, arch: target.arch });
+  const extractDir = join(work, "electron-licenses");
+  mkdirSync(extractDir, { recursive: true });
+  extract(archive, extractDir, ["LICENSE", "LICENSES.chromium.html"]);
+  mkdirSync(join(licenseDir, "electron"), { recursive: true });
+  cpSync(join(extractDir, "LICENSE"), join(licenseDir, "electron", "LICENSE"));
+  cpSync(join(extractDir, "LICENSES.chromium.html"), join(licenseDir, "electron", "LICENSES.chromium.html"));
 }
 
 function packageRoot(requireFrom, name) {
@@ -198,10 +211,12 @@ function assertBinary(path, target, label) {
  * Extracts a .tar.gz / .tgz / .zip archive. On Windows uses the system's bsdtar (System32\tar.exe), which reads zip too;
  * the GNU tar that Git for Windows puts on PATH takes "C:\…" for a remote host.
  */
-function extract(archive, destination) {
+function extract(archive, destination, members = []) {
   const tar = process.platform === "win32" ? join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe") : "tar";
-  const args = archive.endsWith(".zip") && process.platform !== "win32" ? null : ["-xf", archive, "-C", destination];
-  const result = args === null ? spawnSync("unzip", ["-q", "-o", archive, "-d", destination], { stdio: "inherit" }) : spawnSync(tar, args, { stdio: "inherit" });
+  const result =
+    archive.endsWith(".zip") && process.platform !== "win32"
+      ? spawnSync("unzip", ["-q", "-o", archive, ...members, "-d", destination], { stdio: "inherit" })
+      : spawnSync(tar, ["-xf", archive, "-C", destination, ...members], { stdio: "inherit" });
   if (result.status !== 0) throw new Error(`Extracting ${archive} failed`);
 }
 
