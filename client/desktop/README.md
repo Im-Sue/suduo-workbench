@@ -21,7 +21,7 @@ pnpm desktop:dev    # 首次运行会下载 Electron 二进制（约 130 MB）
 
 | | 开发态 | 安装版 |
 |---|---|---|
-| 本机服务 | `client/server/dist/main.js` | 安装包里的 `resources/app/server/dist/main.mjs` |
+| 本机服务 | `client/server/dist/main.js` | 安装包里的 `resources/suduo/server/dist/main.mjs` |
 | Node | 运行 `pnpm desktop:dev` 的那个 | 安装包自带的官方 Node |
 | Codex | `client/node_modules` 里锁定版本的二进制 | 安装包自带的锁定版本 |
 | 外壳数据 | `…/SuDuo Desktop Dev/`（Mac 在 `~/Library/Application Support/` 下） | `…/SuDuo Desktop/` |
@@ -41,6 +41,19 @@ node desktop/scripts/verify-dev.mjs
 它覆盖启动、关窗常驻、单实例、崩溃重启、退出确认、上次留下的服务、端口被占和失败页。
 
 网络慢时可以设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。Electron 默认缓存在 `~/Library/Caches/electron`；要放到别处，设置 `electron_config_cache`。
+
+## 打安装包
+
+在 `client/` 下执行：
+
+```bash
+pnpm dist:desktop                        # 本机平台；--target darwin-arm64|darwin-x64|win32-x64 指定目标
+pnpm dist:desktop:smoke                  # 对刚打好的包跑冒烟
+```
+
+产物在 `client/dist-desktop/`，下载的 Node、Codex、SQLite 模块缓存在 `client/.cache/desktop/`。正式发布用的包由 `.github/workflows/desktop.yml` 在三种构建机上各自构建。
+
+本机要经代理上网时，同时设置 `HTTPS_PROXY` 和 `NODE_USE_ENV_PROXY=1`。暂存步骤会用 Node 自带的 fetch 去 Electron 的发布页取许可文件（Electron 的许可与 Chromium 的第三方许可清单），不设后者它不走代理。
 
 ## 目录
 

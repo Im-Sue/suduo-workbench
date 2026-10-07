@@ -27,6 +27,8 @@
     "build:contracts": "tsc -b contracts",
     "start": "node scripts/start.mjs",
     "desktop:dev": "pnpm --filter @suduo/desktop run dev",
+    "dist:desktop": "node desktop/scripts/dist.mjs",
+    "dist:desktop:smoke": "node desktop/scripts/smoke.mjs",
     "typecheck": "pnpm run build:contracts && pnpm --recursive --if-present run typecheck",
     "lint": "eslint . --max-warnings=0",
     "test": "pnpm run build:contracts && pnpm --recursive --if-present run test",

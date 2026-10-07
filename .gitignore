@@ -4,6 +4,7 @@ coverage/
 .cache/
 .build/
 dist-installer/
+dist-desktop/
 .env
 *.tsbuildinfo
 client/codex-protocol/generated/

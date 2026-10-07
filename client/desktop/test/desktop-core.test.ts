@@ -88,7 +88,7 @@ describe("路径", () => {
     expect(paths.preferencesFile).toBe("/Users/u/Library/Application Support/SuDuo Desktop/desktop.json");
     expect(paths.storedLocaleFile).toBe("/Users/u/Library/Application Support/SuDuo Desktop/data/settings.locale.json");
     expect(paths.nodeBinary).toBe("/Applications/SuDuo.app/Contents/Resources/node/node");
-    expect(paths.serverMain).toBe("/Applications/SuDuo.app/Contents/Resources/app/server/dist/main.mjs");
+    expect(paths.serverMain).toBe("/Applications/SuDuo.app/Contents/Resources/suduo/server/dist/main.mjs");
     expect(paths.codexBin).toBe("/Applications/SuDuo.app/Contents/Resources/codex/aarch64-apple-darwin/bin/codex");
     expect(paths.serverCwd).toBe(paths.dataDir);
     expect(paths.clientRoot).toBeNull();

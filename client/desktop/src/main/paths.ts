@@ -73,10 +73,11 @@ export function resolveDesktopPaths(input: DesktopPathsInput): DesktopPaths {
     return {
       ...common,
       nodeBinary,
-      serverMain: path.join(resources, "app", "server", "dist", "main.mjs"),
+      // 不叫 resources/app：那是 Electron 自己找应用代码的位置。
+      serverMain: path.join(resources, "suduo", "server", "dist", "main.mjs"),
       doctor: {
         command: nodeBinary,
-        args: [path.join(resources, "app", "server", "dist", "doctor.mjs"), "--installed", "--allow-port-in-use"],
+        args: [path.join(resources, "suduo", "server", "dist", "doctor.mjs"), "--installed", "--allow-port-in-use"],
       },
       codexBin: triple === null ? null : path.join(resources, "codex", triple, "bin", "codex" + exe),
       clientRoot: null,

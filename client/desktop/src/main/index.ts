@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -19,7 +19,7 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions,
 } from "electron";
-import { CODEX_VERSION, type SuDuoDesktopInfo } from "@suduo/client-contracts";
+import { CODEX_VERSION, SUDUO_DOCTOR_CHECK_IDS, type DoctorResultDto, type SuDuoDesktopInfo } from "@suduo/client-contracts";
 import { chooseDesktopLocale, desktopMessages, parseStoredLocale, type DesktopLocale, type DesktopMessages } from "../i18n/index.js";
 import { IPC, STARTUP_ACTIONS, type StartupActionId, type StartupView } from "../shared/ipc.js";
 import { buildServerEnvironment } from "./environment.js";
@@ -27,7 +27,7 @@ import { createLogger } from "./logger.js";
 import { applyApplicationMenu, popupContextMenu, type MenuActions } from "./menus.js";
 import { isAllowedPermission, isAppPageUrl, isAppUrl, isExternalOpenable, isStartupUrl } from "./navigation.js";
 import { resolveDesktopPaths } from "./paths.js";
-import { LAST_CANDIDATE_PORT, PREFERRED_PORT, choosePort, inspectPort, isProcessAlive } from "./ports.js";
+import { LAST_CANDIDATE_PORT, PREFERRED_PORT, choosePort, fetchHealth, inspectPort, isOwnServer, isProcessAlive } from "./ports.js";
 import { loadPreferences, savePreferences, type DesktopPreferences, type WindowBounds } from "./preferences.js";
 import { ServerProcess, nextRestartDelay, runningSessionsAt, stopOrphan, type StartFailure } from "./server-process.js";
 import { loadShellEnvironment, needsShellEnvironment } from "./shell-env.js";
@@ -55,6 +55,21 @@ if (process.platform === "win32") app.setAppUserModelId("dev.suduo.desktop");
 /** 上次外壳异常退出留下的服务可能正在跑迁移、一时不回应：记下的 pid 还活着时，最多等它这么久。 */
 const ORPHAN_SETTLE_MS = 10_000;
 const ORPHAN_POLL_MS = 5_000;
+/** 冒烟模式（安装包构建后的自检，scripts/smoke.mjs）：整个过程最长这么久。 */
+const SMOKE_TIMEOUT_MS = 180_000;
+
+/** 命令行参数的值（`--name value`）。 */
+function argumentValue(name: string): string | null {
+  const index = process.argv.indexOf(name);
+  const value = index >= 0 ? process.argv[index + 1] : undefined;
+  return value === undefined || value.startsWith("--") ? null : value;
+}
+
+interface SmokeReport {
+  ok: boolean;
+  checks?: Array<{ name: string; ok: boolean; detail: string }>;
+  failure?: unknown;
+}
 
 type ViewState =
   | { kind: "progress"; step: "starting" | "readingEnvironment" | "stopping" }
@@ -87,7 +102,11 @@ class DesktopController {
   private quitState: QuitState = "running";
   /** 确认退出的对话框开着时服务崩了：使用者取消退出后补一次重启。 */
   private restartAfterCancel = false;
-  private systemShutdown = false;
+  /** 系统关机 / 注销、安装器要求退出（--quit）、冒烟结束：退出时不弹确认框。 */
+  private skipQuitConfirm = false;
+  private exitCode = 0;
+  private readonly smokeReport = argumentValue("--smoke-report");
+  private smokeFinished = false;
   /** 使用者对「上次留下的服务里还有会话」的选择：stop 停掉它；wait 等会话结束（轮询中）。 */
   private orphanDecision: "stop" | "wait" | null = null;
   private doctor: { running: boolean; output: string } = { running: false, output: "" };
@@ -114,7 +133,16 @@ class DesktopController {
     this.tray = new SuDuoTray(paths.assetsDir, this.menuActions);
     this.refreshChrome();
     this.window = this.createWindow();
+    if (this.smokeReport !== null) {
+      setTimeout(() => void this.finishSmoke({ ok: false, failure: "timeout" }), SMOKE_TIMEOUT_MS).unref();
+    }
     this.boot();
+  }
+
+  /** 安装器（覆盖安装、卸载前）请正在运行的 SuDuo 退出：不弹确认框，照常停掉本机服务。 */
+  quitWithoutConfirm(): void {
+    this.skipQuitConfirm = true;
+    void this.requestQuit();
   }
 
   showWindow(): void {
@@ -269,6 +297,52 @@ class DesktopController {
     this.savePrefs();
     this.setBaseUrl(server.baseUrl);
     await this.loadApp(server.baseUrl);
+    if (this.smokeReport !== null) void this.runSmoke(server.baseUrl);
+  }
+
+  /** 冒烟：窗口载入了本机服务页面、健康检查是自己的服务、自检里 Node / SQLite / Codex 三项通过。 */
+  private async runSmoke(baseUrl: string): Promise<void> {
+    const checks: NonNullable<SmokeReport["checks"]> = [];
+    const title = this.window?.webContents.getTitle() ?? "";
+    checks.push({ name: "window", ok: /SuDuo/.test(title), detail: title });
+    const health = await fetchHealth(baseUrl, 5_000);
+    checks.push({
+      name: "healthz",
+      ok: health.up && isOwnServer(health.body, this.prefs.instanceId),
+      detail: health.up ? JSON.stringify(health.body) : "down",
+    });
+    try {
+      const response = await fetch(new URL("api/v1/doctor", baseUrl), { signal: AbortSignal.timeout(120_000) });
+      const doctor = (await response.json()) as DoctorResultDto;
+      for (const id of [SUDUO_DOCTOR_CHECK_IDS.node, SUDUO_DOCTOR_CHECK_IDS.sqlite, SUDUO_DOCTOR_CHECK_IDS.codexCli]) {
+        const check = doctor.checks.find((item) => item.id === id);
+        checks.push({ name: id, ok: check?.status === "pass", detail: check?.message ?? "missing" });
+      }
+    } catch (error) {
+      checks.push({ name: "doctor", ok: false, detail: error instanceof Error ? error.message : String(error) });
+    }
+    await this.finishSmoke({ ok: checks.every((check) => check.ok), checks });
+  }
+
+  private async finishSmoke(report: SmokeReport): Promise<void> {
+    if (this.smokeReport === null || this.smokeFinished) return;
+    this.smokeFinished = true;
+    const body = {
+      ...report,
+      version: this.version(),
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged,
+      dataDir: paths.dataDir,
+      codexBin: paths.codexBin,
+    };
+    try {
+      writeFileSync(this.smokeReport, JSON.stringify(body, null, 2) + "\n");
+    } catch (error) {
+      this.log(`could not write the smoke report: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    this.exitCode = report.ok ? 0 : 1;
+    this.quitWithoutConfirm();
   }
 
   /** 页面载入失败不等于服务没起来：被新的导航打断（ERR_ABORTED）不用管，其余记日志、稍后再试一次。 */
@@ -277,7 +351,9 @@ class DesktopController {
     if (window === null || window.isDestroyed()) return;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
+        this.log(`loading ${url}`);
         await window.loadURL(url);
+        this.log(`loaded ${url}`);
         return;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -327,6 +403,7 @@ class DesktopController {
   private fail(reason: FailureReason): void {
     this.log(`startup failed: ${JSON.stringify(reason)}`);
     this.showStartup({ kind: "failed", reason });
+    if (this.smokeReport !== null) void this.finishSmoke({ ok: false, failure: reason });
   }
 
   // ---------- 启动页 ----------
@@ -347,6 +424,7 @@ class DesktopController {
   /** 载入启动页；载入完成后页面发 startupReady，届时再发视图。 */
   private loadStartupPage(window: BrowserWindow): void {
     this.startupLoading = true;
+    this.log("loading the startup page");
     window
       .loadFile(paths.startupPage)
       .catch((error: unknown) => {
@@ -533,7 +611,7 @@ class DesktopController {
     window.on("move", () => this.scheduleBoundsSave());
     window.on("session-end", () => {
       // Windows 注销 / 关机：拦不住，尽量把服务停干净。
-      this.systemShutdown = true;
+      this.skipQuitConfirm = true;
       void this.server?.stop();
     });
     const contents = window.webContents;
@@ -603,7 +681,7 @@ class DesktopController {
     powerMonitor.on("shutdown", (event?: Electron.Event) => {
       // Mac 关机 / 重启：请系统稍等，尽快停掉服务后退出，不弹确认框。
       event?.preventDefault();
-      this.systemShutdown = true;
+      this.skipQuitConfirm = true;
       void this.requestQuit();
     });
   }
@@ -612,7 +690,7 @@ class DesktopController {
     if (this.quitState !== "running") return;
     this.quitState = "confirming";
     try {
-      const running = this.server !== null && !this.systemShutdown ? await this.server.runningSessions() : 0;
+      const running = this.server !== null && !this.skipQuitConfirm ? await this.server.runningSessions() : 0;
       if (running > 0 && !(await this.confirmQuit(running))) {
         this.quitState = "running";
         if (this.restartAfterCancel) {
@@ -641,7 +719,8 @@ class DesktopController {
         this.quitState = "done";
         this.tray?.destroy();
         this.tray = null;
-        app.quit();
+        if (this.exitCode !== 0) app.exit(this.exitCode);
+        else app.quit();
       }
     }
   }
@@ -776,8 +855,14 @@ function visibleBounds(bounds: WindowBounds | null): WindowBounds | null {
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
+} else if (process.argv.includes("--quit")) {
+  // 安装器请正在运行的 SuDuo 退出（build/installer.nsh），可它并没有在运行：什么也不启动。
+  app.quit();
 } else {
   const controller = new DesktopController();
-  app.on("second-instance", () => controller.showWindow());
+  app.on("second-instance", (_event, argv) => {
+    if (argv.includes("--quit")) controller.quitWithoutConfirm();
+    else controller.showWindow();
+  });
   void app.whenReady().then(() => controller.start());
 }
