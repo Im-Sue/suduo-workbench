@@ -157,6 +157,9 @@ async function stageLicenses(licenseDir, work, target) {
   for (const file of ["LICENSE", "LICENSE.zh-CN.md", "THIRD_PARTY_NOTICES.md", "COMMERCIAL.md", "COMMERCIAL.zh-CN.md"]) {
     if (existsSync(join(repoRoot, file))) cpSync(join(repoRoot, file), join(licenseDir, file));
   }
+  // Licences kept in the repo for bundled parts that don't ship their own: the Codex npm package has no LICENSE or
+  // NOTICE, so desktop/licenses/codex holds the ones from openai/codex at the pinned tag (rust-v<CODEX_VERSION>).
+  cpSync(join(desktopRoot, "licenses"), licenseDir, { recursive: true });
   // Electron's licence and Chromium's third-party licences ship next to Electron.app in Electron's macOS archive,
   // outside the app, so electron-builder never copies them in. Take them from the same official archive.
   const electronRequire = createRequire(require.resolve("electron/package.json"));

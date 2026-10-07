@@ -98,7 +98,7 @@
 | | 需要 |
 |---|---|
 | 团队服务器 | Ubuntu 22.04 / 24.04（其他 Linux 尽力支持），2 核 CPU、4 GB 内存，Docker 与 Compose，git |
-| 每个人的电脑 | macOS 13.5+（Apple 芯片或 Intel）或 Windows 10 / 11（x64）；Node.js 24 LTS（24.10+）、pnpm 10.25、git |
+| 每个人的电脑 | macOS 13.5+（Apple 芯片或 Intel）或 Windows 10 / 11（x64）。桌面应用不需要再装别的；从源码运行需要 Node.js 24 LTS（24.10+）、pnpm 10.25、git |
 | 模型 | Codex 的 ChatGPT 登录，或 OpenAI / 兼容服务的 API Key |
 
 **1. 部署服务器**（每个团队一次，在服务器上执行）：
@@ -113,7 +113,10 @@ sudo ./scripts/suduo-cloud.sh install --mirror cn   # 在国内用镜像源；�
 
 服务器就绪后脚本会打印访问地址。脚本的提示跟随服务器的系统语言（Ubuntu 服务器默认常是英文）；想看中文提示，写成 `sudo SUDUO_LOCALE=zh-CN ./scripts/suduo-cloud.sh install --mirror cn`。升级、备份和 HTTPS 见[部署指南](cloud/DEPLOYMENT.zh-CN.md)。
 
-**2. 运行客户端**（每个人在自己电脑上执行；终端和 PowerShell 用同样的命令）：
+**2. 安装客户端**（每个人在自己电脑上）。两种方式任选：
+
+- **桌面应用（试用版）**：从[最新版本](https://github.com/Im-Sue/suduo-workbench/releases/latest)下载安装包：Apple 芯片的 Mac 用 `…-mac-arm64.dmg`，Intel 的 Mac 用 `…-mac-x64.dmg`，Windows 用 `SuDuo-Setup-…-x64.exe`。它还没有签名，第一次打开时要放行一次：macOS 在 **系统设置 → 隐私与安全性** 里点「仍要打开」；Windows 点「更多信息 → 仍要运行」。细节见[客户端指南](client/README.zh-CN.md#桌面应用试用版)。
+- **从源码运行**（终端和 PowerShell 用同样的命令）：
 
 ```bash
 git clone https://github.com/Im-Sue/suduo-workbench.git
@@ -124,7 +127,7 @@ pnpm install
 pnpm start
 ```
 
-`pnpm start` 会检查环境，首次运行时构建（约 1–2 分钟），在 `http://127.0.0.1:8787` 启动并打开浏览器。
+`pnpm start` 会检查环境，首次运行时构建（约 1–2 分钟），在 `http://127.0.0.1:8787` 启动并打开浏览器。请和服务器用同一个版本。
 
 **3. 连接。** 用 `pnpm exec codex login` 登录 Codex，或在 SuDuo 的 **设置 → 模型服务** 里配置模型服务。然后在 **设置 → 需求服务** 里填入服务器地址并注册，为项目选择代码目录，打开一条需求，开始会话。
 
@@ -140,9 +143,9 @@ Codex 配置细节、更新、数据位置和常见问题见[客户端指南](cl
 
 ## 当前状态
 
-速舵处于早期版本，最新版本是 0.8.0，新增了英文界面。
+速舵处于早期版本，最新版本是 0.9.0，以试用版的形式新增了 macOS 与 Windows 桌面应用。
 
-- 还没有安装包，客户端从源码运行。
+- 桌面应用还没有签名，也不会自动更新，新版本需要到 Releases 页面下载。从源码运行照常可用。
 - 服务器暂时没有管理员和邀请机制：能访问到它的人都能注册。请只在内网或 VPN 内开放，或放在带访问控制的反向代理后面。
 - 在 macOS（Apple 芯片）和 Ubuntu 22.04 / 24.04 服务器上测试过；Windows 和 Intel Mac 也支持，但测试得少一些。
 
@@ -170,7 +173,7 @@ Codex 配置细节、更新、数据位置和常见问题见[客户端指南](cl
 <summary><b>需要另外安装 Codex 吗？</b></summary>
 <br>
 
-不需要。`pnpm install` 会安装这个 SuDuo 版本测试过的 Codex CLI（SuDuo 0.8.0 对应 0.159.2）。它和你可能已经装好的 Codex CLI 共用 `~/.codex`。
+不需要。桌面应用自带这个 SuDuo 版本测试过的 Codex CLI（SuDuo 0.9.0 对应 0.159.2），从源码运行时 `pnpm install` 也会装同一个版本。两种方式都和你可能已经装好的 Codex CLI 共用 `~/.codex`。
 
 </details>
 

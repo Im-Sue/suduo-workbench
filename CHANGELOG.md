@@ -2,6 +2,46 @@
 
 [中文](CHANGELOG.zh-CN.md)
 
+## 0.9.0 — 2026-10-07
+
+Adds a desktop app for macOS and Windows, as a trial. Download it from this release and open it; you don't need Node.js, pnpm or git. Running from source still works.
+
+### Added
+
+- Desktop app (trial) for macOS 13.5+ (Apple silicon and Intel) and Windows 10 / 11 (x64). The installers are attached to this release; see the [client guide](client/README.md#desktop-app-trial).
+  - It includes the local service, the Codex CLI version SuDuo is tested with (0.159.2) and Node.js. It uses your `~/.codex`, so an existing Codex sign-in or model setup works as it is.
+  - Closing the window keeps SuDuo running in the menu bar (macOS) or the notification area (Windows), so sessions keep going and Agents you share in rooms keep responding. Quit from that icon or with ⌘Q; if sessions are in progress, SuDuo asks first.
+  - If the local service stops unexpectedly, SuDuo restarts it. If it can't start, the window says why, shows where the log is and offers to run diagnostics.
+  - Opened from Finder on macOS, it reads your login shell's environment, so commands Codex runs in your project find the same tools as in your terminal.
+  - It keeps its own data (`~/Library/Application Support/SuDuo Desktop` on macOS, `%LOCALAPPDATA%\SuDuo Desktop` on Windows) and listens on port 8790, so it can run next to a source run.
+
+### Changed
+
+- Diagnostics accept any Node.js 24 from 24.10.0 on, matching what SuDuo requires. Before, any version other than 24.10.0 was reported as a failure.
+- `pnpm start` says when its port is used by the SuDuo desktop app and leaves it alone.
+- Commands that Codex runs no longer inherit the local service's own `SUDUO_*` settings (only `SUDUO_LOCALE` is passed on), so running SuDuo's scripts inside a Codex session doesn't pick up the running service's port or data folder.
+
+### Fixed
+
+- Image attachments in the requirement side panel couldn't be opened. They now open in a preview, and PDFs and other previewable files open in a new tab. Clicking a file's name works as well as the preview button, here and on the requirement page.
+
+### Upgrading
+
+- No database changes, on the server or on your computer.
+- Cloud: `git fetch --tags && git checkout v0.9.0`, then `sudo ./scripts/suduo-cloud.sh upgrade`. The cloud has no functional changes in this release; upgrading keeps the version hint in Settings → About quiet.
+- Client from source: `git fetch --tags && git checkout v0.9.0`, `pnpm install`, then `pnpm start`.
+- Desktop app: install it from this release. It starts with its own data: connect to your team's server, sign in and choose your project folders again. Requirements and rooms are on the server, so they're all there; sessions from a source run stay in the source run.
+
+### Known limitations
+
+- The desktop app isn't signed yet.
+  - macOS: the first time you open each version, macOS says it can't verify the developer. Click **Done**, then **Open Anyway** under **System Settings → Privacy & Security**.
+  - Windows: SmartScreen may say “Windows protected your PC”; click **More info**, then **Run anyway**. Some antivirus programs may flag it.
+- The desktop app doesn't update itself yet. Download the new version: on macOS quit SuDuo from the menu bar and replace it in Applications; on Windows run the new installer.
+- The Intel Mac and Windows packages were built and tested automatically on GitHub's machines but haven't been tested on real hardware yet.
+- There's no ChatGPT sign-in inside the app yet: use an existing Codex sign-in, an API key under Settings → Model service, or sign in with the bundled Codex from a terminal (see the client guide).
+- The cloud has no administrator or invitation system: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
+
 ## 0.8.0 — 2026-10-05
 
 Adds an English interface. SuDuo's own text (the interface, what it tells Codex, command-line output) now comes in English and Chinese; what people write and Codex's answers are never translated.
