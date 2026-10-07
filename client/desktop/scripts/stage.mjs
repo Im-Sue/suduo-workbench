@@ -8,7 +8,7 @@
 //   resources/licenses/        SuDuo licence, third-party notices, licences of the bundled runtimes
 // Expects `pnpm build` to have run in client/ (dist.mjs does that).
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,7 +115,7 @@ async function stageService(suDuoDir, betterSqlite3Archive, target) {
     if (existsSync(join(betterSource, file))) cpSync(join(betterSource, file), join(betterTarget, file));
   }
   // The prebuild for the bundled Node's ABI and the target platform (not the one installed for this machine).
-  run("tar", ["-xzf", betterSqlite3Archive, "-C", betterTarget]);
+  extract(betterSqlite3Archive, betterTarget);
   const addon = join(betterTarget, "build", "Release", "better_sqlite3.node");
   assertBinary(addon, target, "better_sqlite3.node");
   const betterRequire = createRequire(join(betterSource, "package.json"));
@@ -126,11 +126,10 @@ async function stageService(suDuoDir, betterSqlite3Archive, target) {
 
 function stageNode(nodeDir, archive, work, target) {
   mkdirSync(nodeDir, { recursive: true });
-  const extract = join(work, "node");
-  mkdirSync(extract, { recursive: true });
-  if (archive.endsWith(".zip")) run("unzip", ["-q", "-o", archive, "-d", extract]);
-  else run("tar", ["-xzf", archive, "-C", extract]);
-  const root = join(extract, readdirSync(extract).find((name) => name.startsWith("node-v")) ?? "");
+  const extractDir = join(work, "node");
+  mkdirSync(extractDir, { recursive: true });
+  extract(archive, extractDir);
+  const root = join(extractDir, readdirSync(extractDir).find((name) => name.startsWith("node-v")) ?? "");
   const binary = target.platform === "win32" ? join(root, "node.exe") : join(root, "bin", "node");
   const destination = join(nodeDir, target.platform === "win32" ? "node.exe" : "node");
   cpSync(binary, destination);
@@ -139,16 +138,16 @@ function stageNode(nodeDir, archive, work, target) {
 }
 
 function stageCodex(codexDir, archive, work, target) {
-  const extract = join(work, "codex");
-  mkdirSync(extract, { recursive: true });
-  run("tar", ["-xzf", archive, "-C", extract]);
-  const vendor = join(extract, "package", "vendor", target.codexTriple);
+  const extractDir = join(work, "codex");
+  mkdirSync(extractDir, { recursive: true });
+  extract(archive, extractDir);
+  const vendor = join(extractDir, "package", "vendor", target.codexTriple);
   if (!existsSync(vendor)) throw new Error(`Codex package has no vendor/${target.codexTriple}`);
   cpSync(vendor, join(codexDir, target.codexTriple), { recursive: true });
   const binary = join(codexDir, target.codexTriple, "bin", target.platform === "win32" ? "codex.exe" : "codex");
   assertBinary(binary, target, "codex");
   for (const file of ["LICENSE", "NOTICE", "README.md"]) {
-    if (existsSync(join(extract, "package", file))) cpSync(join(extract, "package", file), join(codexDir, file));
+    if (existsSync(join(extractDir, "package", file))) cpSync(join(extractDir, "package", file), join(codexDir, file));
   }
 }
 
@@ -167,25 +166,43 @@ function copyPackage(requireFrom, name, destination) {
   cpSync(packageRoot(requireFrom, name), destination, { recursive: true, dereference: true });
 }
 
-/** The staged binaries must be for the target, not for the machine running the build. */
+/**
+ * The staged binaries must be for the target, not for the machine running the build. Reads the executable header
+ * directly (no `file` command, which Windows doesn't have): 64-bit Mach-O and its CPU type, or a PE image and its machine.
+ */
 function assertBinary(path, target, label) {
-  const description = runCapture("file", ["-b", path]);
-  const ok =
-    target.platform === "win32"
-      ? /PE32\+/.test(description) && /x86-64/.test(description)
-      : /Mach-O/.test(description) && (target.arch === "arm64" ? /arm64/.test(description) : /x86_64/.test(description));
-  if (!ok) throw new Error(`${label} is not a ${target.platform}-${target.arch} binary: ${description}`);
+  const header = Buffer.alloc(4096);
+  const fd = openSync(path, "r");
+  try {
+    readSync(fd, header, 0, header.length, 0);
+  } finally {
+    closeSync(fd);
+  }
+  let found = "unknown format";
+  if (header.readUInt32LE(0) === 0xfeedfacf) {
+    const cpu = header.readUInt32LE(4);
+    found = cpu === 0x0100000c ? "darwin-arm64" : cpu === 0x01000007 ? "darwin-x64" : `darwin cpu 0x${cpu.toString(16)}`;
+  } else if (header.toString("latin1", 0, 2) === "MZ") {
+    const pe = header.readUInt32LE(0x3c);
+    if (pe + 6 <= header.length && header.toString("latin1", pe, pe + 4) === "PE\0\0") {
+      const machine = header.readUInt16LE(pe + 4);
+      found = machine === 0x8664 ? "win32-x64" : machine === 0xaa64 ? "win32-arm64" : `win32 machine 0x${machine.toString(16)}`;
+    }
+  }
+  if (found !== `${target.platform}-${target.arch}`) {
+    throw new Error(`${label} is not a ${target.platform}-${target.arch} binary (found ${found}): ${path}`);
+  }
 }
 
-function run(command, args) {
-  const result = spawnSync(command, args, { stdio: "inherit" });
-  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
-}
-
-function runCapture(command, args) {
-  const result = spawnSync(command, args, { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr}`);
-  return result.stdout.trim();
+/**
+ * Extracts a .tar.gz / .tgz / .zip archive. On Windows uses the system's bsdtar (System32\tar.exe), which reads zip too;
+ * the GNU tar that Git for Windows puts on PATH takes "C:\…" for a remote host.
+ */
+function extract(archive, destination) {
+  const tar = process.platform === "win32" ? join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe") : "tar";
+  const args = archive.endsWith(".zip") && process.platform !== "win32" ? null : ["-xf", archive, "-C", destination];
+  const result = args === null ? spawnSync("unzip", ["-q", "-o", archive, "-d", destination], { stdio: "inherit" }) : spawnSync(tar, args, { stdio: "inherit" });
+  if (result.status !== 0) throw new Error(`Extracting ${archive} failed`);
 }
 
 function option(name) {
