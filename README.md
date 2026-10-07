@@ -100,7 +100,7 @@ SuDuo (速舵) is where a development team keeps its requirements and discussion
 | | You need |
 |---|---|
 | Team server | Ubuntu 22.04 / 24.04 (other Linux: best effort), 2 CPU cores, 4 GB RAM, Docker with Compose, git |
-| Each computer | macOS 13.5+ (Apple silicon or Intel) or Windows 10 / 11 (x64); Node.js 24 LTS (24.10+), pnpm 10.25, git |
+| Each computer | macOS 13.5+ (Apple silicon or Intel) or Windows 10 / 11 (x64). The desktop app needs nothing else; running from source needs Node.js 24 LTS (24.10+), pnpm 10.25 and git |
 | Model | A ChatGPT sign-in for Codex, or an API key for OpenAI or a compatible service |
 
 **1. Deploy the server** (once per team, on the server):
@@ -115,7 +115,10 @@ sudo ./scripts/suduo-cloud.sh install               # add --mirror cn in mainlan
 
 The script prints the address when the server is ready. The [deployment guide](cloud/DEPLOYMENT.md) covers upgrades, backups and HTTPS.
 
-**2. Run the client** (each person, on their own computer; the same commands work in Terminal and PowerShell):
+**2. Install the client** (each person, on their own computer). Either:
+
+- **Desktop app (trial):** download the installer from the [latest release](https://github.com/Im-Sue/suduo-workbench/releases/latest): `…-mac-arm64.dmg` for Apple silicon, `…-mac-x64.dmg` for Intel Macs, `SuDuo-Setup-…-x64.exe` for Windows. It isn't signed yet, so the first time you open it you allow it once: on macOS click **Open Anyway** under **System Settings → Privacy & Security**; on Windows click **More info → Run anyway**. The [client guide](client/README.md#desktop-app-trial) has the details.
+- **From source** (the same commands work in Terminal and PowerShell):
 
 ```bash
 git clone https://github.com/Im-Sue/suduo-workbench.git
@@ -126,7 +129,7 @@ pnpm install
 pnpm start
 ```
 
-`pnpm start` checks your environment, builds SuDuo the first time (about 1–2 minutes), starts it on `http://127.0.0.1:8787` and opens your browser.
+`pnpm start` checks your environment, builds SuDuo the first time (about 1–2 minutes), starts it on `http://127.0.0.1:8787` and opens your browser. Use the same release as your server.
 
 **3. Connect.** Sign in to Codex with `pnpm exec codex login`, or set your model service in SuDuo under **Settings → Model service**. Then enter the server address under **Settings → Requirements service**, register, choose the folder for your project, open a requirement and start a session.
 
@@ -142,9 +145,9 @@ SuDuo's interface is available in English and Simplified Chinese. It follows you
 
 ## Status
 
-SuDuo is in early access. The latest release is 0.8.0, which adds the English interface.
+SuDuo is in early access. The latest release is 0.9.0, which adds the desktop app for macOS and Windows as a trial.
 
-- There is no installer yet. The client runs from source.
+- The desktop app isn't signed yet and doesn't update itself; download each new version from the releases page. Running from source still works.
 - The server has no administrator or invitation system yet: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
 - Tested on macOS (Apple silicon) and on Ubuntu 22.04 / 24.04 servers. Windows and Intel Macs are supported but have had less testing.
 
@@ -172,7 +175,7 @@ No. Codex keeps its own configuration in `~/.codex` and talks to your model prov
 <summary><b>Do I need to install Codex separately?</b></summary>
 <br>
 
-No. `pnpm install` installs the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.8.0). It uses the same `~/.codex` as a Codex CLI you may already have.
+No. The desktop app includes the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.9.0), and `pnpm install` installs the same version when you run from source. Either way it uses the same `~/.codex` as a Codex CLI you may already have.
 
 </details>
 

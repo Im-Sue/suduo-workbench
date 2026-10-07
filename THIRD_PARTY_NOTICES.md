@@ -1,10 +1,23 @@
 # Third-party notices
 
-SuDuo is distributed as source code. The packages below are not included in this repository; pnpm downloads them when you run `pnpm install`. This list shows the runtime (production) dependencies of each workspace and their licenses, generated with `pnpm licenses list --prod`. Each package's full license text is in its own folder under `node_modules` after installation.
+SuDuo is distributed as source code and, from 0.9.0, as desktop installers for macOS and Windows. The packages below are not included in this repository; pnpm downloads them when you run `pnpm install`. This list shows the runtime (production) dependencies of each workspace and their licenses, generated with `pnpm licenses list --prod`. Each package's full license text is in its own folder under `node_modules` after installation.
 
 Development tools are not listed. Among them is the Codex CLI (`@openai/codex`, Apache-2.0), which `client/` installs as a pinned development dependency and runs on your machine.
 
-The list was generated on macOS (Apple silicon), so a few platform-specific packages (for example `lightningcss-darwin-arm64`) differ on other systems. If you build the Windows installer (`client/scripts/dist-win`), it bundles Node.js, the Codex CLI and the better-sqlite3 native addon; include their licenses when you distribute it.
+The list was generated on macOS (Apple silicon), so a few platform-specific packages (for example `lightningcss-darwin-arm64`) differ on other systems.
+
+## Desktop app
+
+The desktop installers include the runtime packages of `client/` listed below (bundled into the local service and the web interface), and also:
+
+| Component | Version | License | License text in the app |
+|---|---|---|---|
+| Electron, including Chromium | 44.5.1 | MIT; Chromium and its components under their own licenses | `licenses/electron/LICENSE`, `licenses/electron/LICENSES.chromium.html` |
+| Node.js | 24.21.0 | MIT; its bundled components under their own licenses | `node/LICENSE` |
+| Codex CLI (`@openai/codex`) | 0.159.2 | Apache-2.0 | `licenses/codex/LICENSE`, `licenses/codex/NOTICE` |
+| better-sqlite3, including SQLite | 12.11.1 | MIT; SQLite is in the public domain | `suduo/node_modules/better-sqlite3/LICENSE` |
+
+The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resources` on macOS, `resources` in the install folder on Windows. SuDuo's own license and these notices are in `licenses/` there as well.
 
 ## client/ (frontend and local backend)
 

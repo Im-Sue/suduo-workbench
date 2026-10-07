@@ -4,9 +4,37 @@
 
 > 本页为中文版。若与英文版 [README.md](README.md) 有出入，以英文版为准。
 
-SuDuo 客户端运行在每个人自己的电脑上：一个只监听 `127.0.0.1` 的本机服务和它提供的网页界面，加上 Codex CLI。目前还没有安装包，需要从源码运行。本页介绍安装、更新、数据位置和常见问题。
+SuDuo 客户端运行在每个人自己的电脑上：一个只监听 `127.0.0.1` 的本机服务和它提供的网页界面，加上 Codex CLI。可以安装[桌面应用](#桌面应用试用版)（0.9.0 起，试用版），也可以[从源码运行](#系统要求)。本页介绍这两种方式，以及更新、数据位置和常见问题。
 
 团队还需要一台 SuDuo 服务器，见[部署指南](../cloud/DEPLOYMENT.zh-CN.md)。
+
+## 桌面应用（试用版）
+
+桌面应用自带客户端需要的一切，不用装 Node.js、pnpm 和 git。它是试用版：还没有签名，也不会自动更新。
+
+1. 从[最新版本](https://github.com/Im-Sue/suduo-workbench/releases/latest)下载适合你电脑的安装包。同一页的 `SHA256SUMS.txt` 列出了校验值。
+
+   | 电脑 | 文件 |
+   |---|---|
+   | macOS 13.5 及以上，Apple 芯片 | `SuDuo-<版本>-mac-arm64.dmg` |
+   | macOS 13.5 及以上，Intel | `SuDuo-<版本>-mac-x64.dmg` |
+   | Windows 10 / 11（x64） | `SuDuo-Setup-<版本>-x64.exe` |
+
+2. 安装。
+   - **macOS**：打开 `.dmg`，把 SuDuo 拖进「应用程序」。第一次打开时，macOS 会提示无法验证开发者：点「完成」，打开「系统设置 → 隐私与安全性」，在 SuDuo 旁点「仍要打开」，输入密码后点「打开」。每个新版本都要这样放行一次。
+   - **Windows**：运行安装程序。SmartScreen 提示「Windows 已保护你的电脑」时，点「更多信息」，再点「仍要运行」。只为你自己安装，不需要管理员权限，会在开始菜单和桌面创建快捷方式。
+3. SuDuo 会打开自己的窗口，带你连接团队的服务器、配置 Codex、关联项目目录。
+
+需要知道的几点：
+
+- **关掉窗口不等于退出。** SuDuo 会留在菜单栏（macOS）或任务栏通知区域（Windows）继续运行，进行中的会话不会中断，房间里共享的 Agent 也会继续响应。从这个图标退出，或在 macOS 上按 ⌘Q。有进行中的会话时，SuDuo 会先问你。
+- **Codex。** 应用自带 SuDuo 测试过的 Codex CLI 版本，使用你的 `~/.codex`，已经登录过的 Codex 或配置好的模型服务可以直接用。否则在「设置 → 模型服务」里填 API Key，或在终端里用自带的 Codex 登录 ChatGPT：
+  - macOS（Apple 芯片）：`"/Applications/SuDuo.app/Contents/Resources/codex/aarch64-apple-darwin/bin/codex" login`（Intel 把路径里的 `aarch64-apple-darwin` 换成 `x86_64-apple-darwin`）
+  - Windows：在 PowerShell 里运行 `& "$env:LOCALAPPDATA\Programs\suduo-desktop\resources\codex\x86_64-pc-windows-msvc\bin\codex.exe" login`
+- **数据位置**：macOS 在 `~/Library/Application Support/SuDuo Desktop`，Windows 在 `%LOCALAPPDATA%\SuDuo Desktop`。它和源码运行的数据分开；应用监听 8790 端口（源码运行是 8787），两者可以同时用。需求和房间都在团队的服务器上；源码运行里的会话仍留在源码运行那边。
+- **更新**：下载新版本。macOS 上先从菜单栏退出 SuDuo，再替换「应用程序」里的 SuDuo；Windows 上直接运行新的安装程序。数据会保留。
+- **卸载**：macOS 上退出 SuDuo，把它从「应用程序」移到废纸篓；上面的数据目录会留着，需要时自己删除。Windows 上在「设置 → 应用 → SuDuo → 卸载」，卸载时会问是否同时删除本机数据（默认保留）。
+- SuDuo 起不来时，窗口里会说明原因和日志位置（数据目录下的 `logs`），并提供「运行自检」按钮。
 
 ## 系统要求
 
@@ -75,7 +103,7 @@ $env:SUDUO_LOCALE = "zh-CN"; pnpm start      # Windows PowerShell（对当前窗
 
 ```bash
 git fetch --tags
-git checkout v0.8.0     # 团队使用的版本
+git checkout v0.9.0     # 团队使用的版本
 pnpm install
 pnpm start              # 会自动重新构建
 ```
