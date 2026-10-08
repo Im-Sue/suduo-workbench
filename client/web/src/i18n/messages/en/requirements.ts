@@ -27,6 +27,15 @@ export const requirements = {
     mine: "Me",
     someone: "Selected member",
     anyAssignee: "Any assignee",
+    priority: "Priority",
+    priorityValue: (labels: readonly string[]) => `Priority: ${labels.join(", ")}`,
+    anyPriority: "Any priority",
+  },
+  sort: {
+    label: "Sort by",
+    value: (label: string) => `Sort: ${label}`,
+    priority: "Priority",
+    updated: "Last updated",
   },
   noResult: {
     filteredTitle: "No matching requirements",
@@ -65,13 +74,15 @@ export const requirements = {
     header: {
       number: "ID",
       title: "Title",
+      priority: "Priority",
       assignee: "Assignee",
-      counts: "Materials · Comments · Sessions",
+      counts: "Attachments · Comments · Sessions",
       updated: "Updated",
     },
   },
   card: {
-    description: (status: string, assignee: string) => `${status} · Assignee: ${assignee} · Press 1–7 to change status`,
+    description: (status: string, assignee: string, priority: string | null = null) =>
+      `${status}${priority === null ? "" : ` · Priority: ${priority}`} · Assignee: ${assignee} · Press 1–7 to change status`,
     attachments: (count: number) =>
       plural("en", count, { one: "1 attachment", other: `${String(count)} attachments` }),
     comments: (count: number) => plural("en", count, { one: "1 comment", other: `${String(count)} comments` }),
@@ -91,6 +102,9 @@ export const requirements = {
   statusMenu: {
     triggerLabel: (label: string, pending: boolean) => `Status: ${label}${pending ? ", saving" : ", click to change"}`,
   },
+  priorityMenu: {
+    triggerLabel: (label: string, pending: boolean) => `Priority: ${label}${pending ? ", saving" : ", click to change"}`,
+  },
   create: {
     title: "New requirement",
     description: "Only the title is required. You can add the rest later.",
@@ -101,8 +115,8 @@ export const requirements = {
     titleRequired: "Add a title so everyone can recognize it on the board",
     summaryLabel: "Description",
     summaryPlaceholder: "Add background, goals, or acceptance criteria. Markdown is supported. You can also write this later.",
-    addMaterials: "Add materials",
-    pendingFiles: "Materials to upload",
+    addMaterials: "Add attachments",
+    pendingFiles: "Attachments to upload",
     removeFile: (name: string) => `Remove ${name}`,
     rejectedItem: (name: string, reason: string) => `${name}: ${reason}`,
     rejected: (items: readonly string[], total: number) =>
@@ -131,6 +145,7 @@ export const requirements = {
     loadFailed: (message: string) => `Couldn't open this requirement: ${message}`,
     field: {
       assignee: "Assignee",
+      priority: "Priority",
       created: "Created",
       updated: "Updated",
     },

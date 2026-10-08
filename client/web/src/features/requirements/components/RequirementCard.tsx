@@ -1,16 +1,19 @@
 import { type RequirementListItemDto } from "@suduo/client-contracts";
 import { MessageSquareIcon, PaperclipIcon, TerminalIcon } from "lucide-react";
 import { useId, type ComponentProps } from "react";
+import { PriorityIcon } from "@/components/ui/priority-icon";
 import { cn } from "@/lib/utils";
 import { requirementCode, summaryPreview } from "../format.js";
 import { useRecentlyChanged } from "../highlight.js";
 import { UserAvatar } from "./UserAvatar.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
+import { requirementPriorityLabel } from "../../../ui/requirement-priority.js";
 import { requirementStatusLabel } from "../../../ui/requirement-status.js";
 import { useT } from "../../../i18n/provider.js";
 
 /**
- * 看板卡片（原型 Main · 看板）：编号、负责人、标题（两行）、描述（一行）、材料 / 评论 / 本机会话计数与更新时间。
+ * 看板卡片（原型 Main · 看板）：优先级、编号、负责人、标题（两行）、描述（一行）、材料 / 评论 / 本机会话计数与更新时间。
+ * 无优先级（或旧版需求服务不给）时不显示优先级图标。
  * 整张卡是一个按钮：点击或 Enter 打开速览；选中时强调描边；他人刚改过时底色闪一下。
  */
 export function RequirementCard({
@@ -56,9 +59,18 @@ export function RequirementCard({
       {...props}
     >
       <span id={descriptionId} className="sr-only">
-        {t.requirements.card.description(requirementStatusLabel(requirement.status, t), assigneeName)}
+        {t.requirements.card.description(
+          requirementStatusLabel(requirement.status, t),
+          assigneeName,
+          requirement.priority == null ? null : requirementPriorityLabel(requirement.priority, t),
+        )}
       </span>
       <span className="flex w-full items-center gap-2">
+        {requirement.priority == null ? null : (
+          <span className="inline-flex" title={requirementPriorityLabel(requirement.priority, t)}>
+            <PriorityIcon priority={requirement.priority} aria-hidden="true" data-testid="requirement-card-priority" />
+          </span>
+        )}
         <span className="font-mono text-caption text-subtle-foreground">{code}</span>
         <span className="ml-auto" title={assigneeName}>
           <UserAvatar user={requirement.assignee} />

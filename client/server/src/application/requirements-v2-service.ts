@@ -8,7 +8,6 @@ import type {
   RequirementLocalFields,
 } from "@suduo/client-contracts";
 import type {
-  ArtifactVersionDetailDto,
   AuthSessionDto,
   CreateCommentRequest,
   CreateProjectRequest,
@@ -16,13 +15,14 @@ import type {
   ListAuditQuery,
   ListRequirementActivityResponse,
   ListUsersResponse,
-  PublishArtifactVersionRequest,
   LoginRequest,
   RegisterRequest,
   RequirementDto,
+  RequirementPriority,
   UpdateProjectRequest,
   UpdateRequirementRequest,
 } from "@suduo/cloud-contracts";
+import { REQUIREMENT_COMMENT_MAX_FILES, REQUIREMENT_PRIORITIES } from "@suduo/cloud-contracts";
 import type { Locale } from "@suduo/client-contracts";
 import { ApiError } from "./api-error.js";
 import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
@@ -182,6 +182,7 @@ export class RequirementsV2Service {
     validateNonBlank(input.title, (t) => t.remote.validation.fields.requirementTitle, 200);
     if (input.summary !== undefined) validateSummary(input.summary);
     if (input.assigneeId !== undefined) validateAssigneeId(input.assigneeId);
+    if (input.priority !== undefined) validatePriority(input.priority);
     return this.withLocalSessionCount(await this.remote.createRequirement(projectId, input));
   }
 
@@ -205,11 +206,13 @@ export class RequirementsV2Service {
     if (input.title !== undefined) validateNonBlank(input.title, (t) => t.remote.validation.fields.requirementTitle, 200);
     if (input.summary !== undefined) validateSummary(input.summary);
     if (input.assigneeId !== undefined) validateAssigneeId(input.assigneeId);
+    if (input.priority !== undefined) validatePriority(input.priority);
     if (
       input.title === undefined &&
       input.summary === undefined &&
       input.status === undefined &&
-      input.assigneeId === undefined
+      input.assigneeId === undefined &&
+      input.priority === undefined
     ) {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.patchEmpty);
     }
@@ -237,9 +240,43 @@ export class RequirementsV2Service {
     return this.remote.listComments(requirementId, query);
   }
 
+  /** 正文与文件至少有一样（只带文件时正文可省略或为空）；文件至多 REQUIREMENT_COMMENT_MAX_FILES 个。 */
   createComment(requirementId: string, input: CreateCommentRequest) {
-    validateNonBlank(input.body, (t) => t.remote.validation.fields.commentBody, 4_000);
-    return this.remote.createComment(requirementId, input);
+    const fileIds: unknown = input.fileIds;
+    if (
+      fileIds !== undefined &&
+      (!Array.isArray(fileIds) ||
+        fileIds.length > REQUIREMENT_COMMENT_MAX_FILES ||
+        fileIds.some((id) => typeof id !== "string" || id.trim() === ""))
+    ) {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.commentFilesInvalid);
+    }
+    const files = (fileIds ?? []) as string[];
+    if (files.length === 0) {
+      validateNonBlank(input.body, (t) => t.remote.validation.fields.commentBody, 4_000);
+    } else if (input.body !== undefined && (typeof input.body !== "string" || input.body.length > 4_000)) {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.commentFilesInvalid);
+    }
+    return this.remote.createComment(requirementId, {
+      ...(input.body === undefined ? {} : { body: input.body }),
+      ...(files.length === 0 ? {} : { fileIds: files }),
+    });
+  }
+
+  uploadCommentFile(input: Parameters<RequirementsRemoteClient["uploadCommentFile"]>[0]) {
+    return this.remote.uploadCommentFile(input);
+  }
+
+  downloadCommentFile(fileId: string, options: Parameters<RequirementsRemoteClient["downloadCommentFile"]>[1]) {
+    return this.remote.downloadCommentFile(fileId, options);
+  }
+
+  getCommentFile(fileId: string) {
+    return this.remote.getCommentFile(fileId);
+  }
+
+  saveCommentFileAsAttachment(fileId: string) {
+    return this.remote.saveCommentFileAsAttachment(fileId);
   }
 
 
@@ -254,22 +291,6 @@ export class RequirementsV2Service {
 
   listArtifactVersions(requirementId: string) {
     return this.remote.listArtifactVersions(requirementId);
-  }
-
-  publishArtifactVersion(
-    requirementId: string,
-    input: PublishArtifactVersionRequest,
-  ): Promise<ArtifactVersionDetailDto> {
-    if (
-      typeof input.operationKey !== "string" ||
-      input.operationKey.length < 1 ||
-      input.operationKey.length > 200 ||
-      !Array.isArray(input.attachmentIds) ||
-      input.attachmentIds.length < 1
-    ) {
-      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.publishInvalid);
-    }
-    return this.remote.publishArtifactVersion(requirementId, input);
   }
 
   getArtifactVersion(versionId: string) {
@@ -649,6 +670,13 @@ function validateSummary(value: unknown): asserts value is string {
 function validateAssigneeId(value: unknown): asserts value is string | null {
   if (value !== null && (typeof value !== "string" || value.trim() === "" || value.length > 64)) {
     throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.assigneeInvalid);
+  }
+}
+
+/** 优先级：四档之一或 null（清空）。 */
+function validatePriority(value: unknown): asserts value is RequirementPriority | null {
+  if (value !== null && !(REQUIREMENT_PRIORITIES as readonly unknown[]).includes(value)) {
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.remote.validation.priorityInvalid);
   }
 }
 

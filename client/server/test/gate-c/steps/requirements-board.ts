@@ -27,8 +27,8 @@ import type { GateCStep, GateCStepContext } from "./types.js";
  *    卡片只出现在真实列 in_testing，既不回弹原列也不停在拖拽目标列。
  * 6. 键盘：聚焦卡片按 1–7 直接改状态。
  * 7. 速览：点卡片打开、URL 带 `?peek=<编号>`、Esc 关闭。
- * 8. 详情：旧 `/requirements/<uuid>` 链接换成编号地址；跨窗口发布确认版经 SSE 到达主窗口；
- *    删除附件经确认对话框后该行消失。
+ * 8. 详情：旧 `/requirements/<uuid>` 链接换成编号地址；附件区没有发布入口，历史确认版只读可展开；
+ *    另一窗口发的评论经 SSE 到达主窗口；删除附件经确认对话框后该行消失。
  * 9. 从速览「开始会话」进入 `/sessions/<id>`（gate-c 环境有真实 Codex）。
  */
 export const requirementsBoardStep: GateCStep = {
@@ -89,7 +89,7 @@ export const requirementsBoardStep: GateCStep = {
     );
 
     await verifyPeek(page);
-    await verifyDetailPublicationAndAttachmentDeletion(context, projectId);
+    await verifyDetailAttachmentsAndRealtime(context, projectId);
     await verifyStartSessionFromPeek(context, boardPath);
   },
 };
@@ -286,16 +286,17 @@ async function verifyPeek(page: Page): Promise<void> {
   await page.waitForURL((url) => !url.searchParams.has("peek"), { timeout: 10_000 });
 }
 
-// ---------- 详情：发布确认版与删除附件 ----------
+// ---------- 详情：附件区、跨窗口评论与删除附件 ----------
 
 /**
- * pr6 的两条浏览器级核销，换成新详情页：
- * - 第二个 Page 是同一浏览器上下文的另一窗口：它经发布对话框发布确认版，主窗口只能借 SSE
- *   收到 `artifact.published` 后回查；主窗口不点刷新。
+ * 详情页的浏览器级核销：
+ * - 附件区（需求附件评论文件与优先级 S2）：没有「发布确认版」入口；夹具预置的历史确认版收在底部，展开后只读可见。
+ * - 第二个 Page 是同一浏览器上下文的另一窗口：它在评论框发一条评论，主窗口只能借 SSE
+ *   收到 `comment.created` 后回查活动；主窗口不点刷新。
  * - 附件删除：先经同源 BFF 带外修改需求描述（夹具不广播），让主窗口持有旧数据；随后删除仍成功
  *   （删除不携带版本，没有拒绝式守卫，ADR-0004），确认对话框保留，删除后自动回查到最新描述。
  */
-async function verifyDetailPublicationAndAttachmentDeletion(
+async function verifyDetailAttachmentsAndRealtime(
   context: GateCStepContext,
   projectId: string,
 ): Promise<void> {
@@ -303,7 +304,7 @@ async function verifyDetailPublicationAndAttachmentDeletion(
   const detailPath = `/p/${projectId}/requirements/${String(GATE_C_FIXTURE_NUMBERS.reqDraft1)}`;
   const main = context.page;
 
-  // 整页加载前先挂等待：主窗口的需求 SSE 必须在发布前已建立，事件才有处可去。
+  // 整页加载前先挂等待：主窗口的需求 SSE 必须在另一窗口发评论前已建立，事件才有处可去。
   const realtimeConnected = main.waitForResponse(
     (response) => new URL(response.url()).pathname === "/api/v2/events" && response.status() === 200,
     { timeout: 20_000 },
@@ -322,46 +323,34 @@ async function verifyDetailPublicationAndAttachmentDeletion(
   await waitForReadMark(context, requirementId, GATE_C_FIXTURE_COMMENT_AT);
   const activity = main.getByRole("list", { name: "活动" });
 
+  // 确认版已停用：没有发布入口；以前发布的那一版收在「历史确认版」里，只读。
+  if ((await materials.getByRole("button", { name: "发布确认版" }).count()) !== 0) {
+    throw new Error("附件区不应再有「发布确认版」按钮");
+  }
+  const history = materials.getByTestId("historical-versions");
+  await history.getByRole("button", { name: "历史确认版（1）" }).click();
+  await history.getByText("第 1 版", { exact: true }).waitFor();
+  await history.getByRole("link", { name: "下载「发布材料.txt」" }).waitFor();
+  if ((await history.getByRole("button", { name: /^删除/u }).count()) !== 0) {
+    throw new Error("历史确认版里不应有删除按钮");
+  }
+  await activity.getByText("发布了确认版 · 第 1 版", { exact: false }).waitFor();
+  await activity.getByText("历史发布说明", { exact: true }).waitFor();
+  console.info("[requirements-attachments] 附件区无发布入口；历史确认版第 1 版只读可见，活动里的发布记录照常。");
+
   const publisher = await context.browserContext.newPage();
   try {
     await publisher.goto(context.origin + detailPath, { waitUntil: "domcontentloaded" });
     await publisher.getByRole("heading", { level: 1, name: "看板草稿一" }).waitFor();
-    await publisher
-      .getByTestId("materials-panel")
-      .getByRole("button", { name: "发布确认版" })
-      .click();
-    const dialog = publisher.getByTestId("publish-artifact-dialog");
-    await dialog.getByRole("heading", { name: "发布确认版 · 第 1 版" }).waitFor();
-    const keep = dialog.getByRole("checkbox", { name: "发布材料.txt" });
-    const leaveOut = dialog.getByRole("checkbox", { name: "待删除材料.txt" });
-    if (!(await keep.isChecked()) || !(await leaveOut.isChecked())) {
-      throw new Error("发布对话框的材料勾选框应默认全选");
-    }
-    // 只发布「发布材料.txt」：「待删除材料.txt」留在「其他材料」里，下面验证删除。
-    await leaveOut.click();
-    if (await leaveOut.isChecked()) throw new Error("取消勾选材料失败");
-    await dialog.getByLabel("这一版改了什么").fill("跨窗口发布说明");
-
-    // 这次回查只可能来自主窗口收到 artifact.published 后的查询失效：没有轮询、没有手动刷新。
-    const eventDrivenRefresh = waitForGet(
-      main,
-      `/api/v2/requirements/${requirementId}/artifact-versions`,
-    );
-    await dialog.getByRole("button", { name: "发布第 1 版" }).click();
-    await publisher
-      .locator('[data-testid="global-message"][data-feedback-kind="success"][data-feedback-result="global"]')
-      .filter({ hasText: "已发布确认版 · 第 1 版" })
-      .waitFor();
-    await dialog.waitFor({ state: "detached" });
+    // 这次回查只可能来自主窗口收到 comment.created 后的查询失效：没有轮询、没有手动刷新。
+    const eventDrivenRefresh = waitForGet(main, `/api/v2/requirements/${requirementId}/activity`);
+    await publisher.locator("#comment-composer").fill("跨窗口评论");
+    await publisher.getByRole("button", { name: /发表评论/u }).click();
+    await publisher.getByTestId("activity-comment").filter({ hasText: "跨窗口评论" }).waitFor({ timeout: 20_000 });
     await eventDrivenRefresh;
-
-    const artifact = main.getByTestId("artifact-version");
-    await artifact.getByText("确认版 · 第 1 版", { exact: true }).waitFor({ timeout: 20_000 });
-    await artifact.getByText("发布材料.txt", { exact: true }).waitFor();
-    await activity.getByText("发布了确认版 · 第 1 版", { exact: false }).waitFor({ timeout: 20_000 });
-    await activity.getByText("跨窗口发布说明", { exact: true }).waitFor();
-    console.info("[requirements-artifacts] 主窗口经 SSE（artifact.published）回查到确认版第 1 版与活动。");
-    await capture(context, "08-artifact-published-sse.png");
+    await main.getByTestId("activity-comment").filter({ hasText: "跨窗口评论" }).waitFor({ timeout: 20_000 });
+    console.info("[requirements-attachments] 主窗口经 SSE（comment.created）回查到另一窗口发的评论。");
+    await capture(context, "08-comment-realtime-sse.png");
 
     // 带外修改描述（夹具不广播 SSE）：主窗口仍显示旧描述。
     const outOfBandSummary = "带外补充的需求描述";
@@ -398,7 +387,7 @@ async function verifyDetailPublicationAndAttachmentDeletion(
   await attachmentRow.waitFor({ state: "detached", timeout: 20_000 });
   await main.getByText("带外补充的需求描述", { exact: true }).waitFor({ timeout: 20_000 });
   await activity.getByText("删除了「待删除材料.txt」", { exact: true }).waitFor({ timeout: 20_000 });
-  console.info("[requirements-artifacts] 附件删除成功：确认对话框保留，删除后回查到带外修改且附件行消失。");
+  console.info("[requirements-attachments] 附件删除成功：确认对话框保留，删除后回查到带外修改且附件行消失。");
   await capture(context, "10-attachment-deleted-after-refresh.png");
 }
 

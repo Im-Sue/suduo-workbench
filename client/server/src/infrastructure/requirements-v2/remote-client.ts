@@ -35,6 +35,7 @@ import type {
   UpdateRoomRequest,
   AttachmentMutationResponse,
   CommentDto,
+  CommentFileDto,
   CreateCommentRequest,
   CreateProjectRequest,
   CreateRequirementRequest,
@@ -53,7 +54,6 @@ import type {
   ProjectDto,
   ProjectStatsQuery,
   ProjectStatsResponse,
-  PublishArtifactVersionRequest,
   RegisterRequest,
   RequirementDetailDto,
   RequirementDto,
@@ -113,6 +113,8 @@ export class RequirementsRemoteClient {
     message: string;
     /** 云端的产品版本；较早的云端不报告版本时为 null。 */
     version: string | null;
+    /** 云端声明支持的功能（`CLOUD_FEATURES`）；较早的云端不声明时为空数组。 */
+    features: string[];
   }> {
     let response: Response;
     try {
@@ -153,6 +155,10 @@ export class RequirementsRemoteClient {
       reachable: true,
       message: messagesFor(locale).remote.test.ok,
       version: typeof payload.version === "string" && payload.version !== "" ? payload.version : null,
+      // 远程返回的是不受信的 JSON：只留字符串。
+      features: Array.isArray(payload.features)
+        ? (payload.features as unknown[]).filter((feature): feature is string => typeof feature === "string")
+        : [],
     };
   }
 
@@ -309,6 +315,84 @@ export class RequirementsRemoteClient {
     );
   }
 
+  // ───────────────────────────── 评论文件 ─────────────────────────────
+
+  /** 评论文件上传：multipart 流式转发，状态码与正文原样交回（同房间文件）。 */
+  async uploadCommentFile(input: {
+    requirementId: string;
+    body: AsyncIterable<Uint8Array>;
+    contentType: string;
+    headers?: Record<string, string>;
+    signal: AbortSignal;
+  }): Promise<{ status: number; body: unknown }> {
+    const response = await this.authenticatedFetch(
+      `/v2/requirements/${encodeURIComponent(input.requirementId)}/comment-files`,
+      {
+        method: "POST",
+        headers: {
+          ...(input.headers ?? {}),
+          Accept: "application/json",
+          "Content-Type": input.contentType,
+        },
+        body: input.body,
+        signal: input.signal,
+        timeoutMs: FILE_TIMEOUT_MS,
+      },
+    );
+    return { status: response.status, body: await response.json().catch(() => null) as unknown };
+  }
+
+  /** 评论文件元数据（会话工具确认归属用）。 */
+  getCommentFile(fileId: string): Promise<CommentFileDto> {
+    return this.request<CommentFileDto>(`/v2/comment-files/${encodeURIComponent(fileId)}`, { authenticated: true });
+  }
+
+  /** 评论文件内容：Range 等原样透传，206 / 304 / 416 也原样交回（同房间文件）。 */
+  downloadCommentFile(
+    fileId: string,
+    options: {
+      range?: string;
+      ifRange?: string;
+      ifNoneMatch?: string;
+      disposition?: "inline" | "attachment";
+      signal: AbortSignal;
+    },
+  ): Promise<Response> {
+    return this.authenticatedFetch(
+      withQuery(`/v2/comment-files/${encodeURIComponent(fileId)}/content`, {
+        disposition: options.disposition,
+      }),
+      {
+        method: "GET",
+        headers: {
+          Accept: "*/*",
+          ...(options.range === undefined ? {} : { Range: options.range }),
+          ...(options.ifRange === undefined ? {} : { "If-Range": options.ifRange }),
+          ...(options.ifNoneMatch === undefined ? {} : { "If-None-Match": options.ifNoneMatch }),
+        },
+        signal: options.signal,
+        timeoutMs: FILE_TIMEOUT_MS,
+        passStatuses: [304, 416],
+      },
+    );
+  }
+
+  /**
+   * 把评论文件复制成需求的新附件。云端要复制最多 300 MiB（读、算 sha256、落盘），用文件级超时：
+   * 普通请求的 15 秒在慢盘上会误报失败，用户一重试就多出一份重复附件。
+   */
+  async saveCommentFileAsAttachment(fileId: string): Promise<AttachmentMutationResponse> {
+    const response = await this.authenticatedFetch(
+      `/v2/comment-files/${encodeURIComponent(fileId)}/save-as-attachment`,
+      {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        timeoutMs: FILE_TIMEOUT_MS,
+      },
+    );
+    return await response.json() as AttachmentMutationResponse;
+  }
+
   listAudit(query: ListAuditQuery): Promise<ListAuditResponse> {
     return this.request<ListAuditResponse>(
       withQuery("/v2/audit", queryToRecord(query)),
@@ -327,16 +411,6 @@ export class RequirementsRemoteClient {
     return this.request<ListArtifactVersionsResponse>(
       `/v2/requirements/${encodeURIComponent(requirementId)}/artifact-versions`,
       { authenticated: true },
-    );
-  }
-
-  publishArtifactVersion(
-    requirementId: string,
-    input: PublishArtifactVersionRequest,
-  ): Promise<ArtifactVersionDetailDto> {
-    return this.request<ArtifactVersionDetailDto>(
-      `/v2/requirements/${encodeURIComponent(requirementId)}/artifact-versions`,
-      { method: "POST", body: input, authenticated: true },
     );
   }
 
@@ -833,6 +907,10 @@ export class RequirementsRemoteClient {
         safeRemoteMessage(code),
       );
     }
+    // 较早的需求服务没有某个端点时回的是框架默认的 404（不是我们的错误格式）：照「找不到」处理。
+    if (response.status === 404) {
+      throw new ApiError(404, "NOT_FOUND", safeRemoteMessage("NOT_FOUND"));
+    }
     throw new ApiError(
       503,
       "DEPENDENCY_UNAVAILABLE",
@@ -916,6 +994,10 @@ export class RequirementsRemoteClient {
     if (remoteError && ERROR_CODES.has(remoteError.code)) {
       const code = remoteError.code as RequirementsV2ErrorCode;
       throw new ApiError(safeRemoteStatus(status), code, safeRemoteMessage(code));
+    }
+    // 同 requestWithStatus：较早的需求服务没有这个端点时回框架默认的 404。
+    if (status === 404) {
+      throw new ApiError(404, "NOT_FOUND", safeRemoteMessage("NOT_FOUND"));
     }
     throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.remote.unrecognizedResponse);
   }

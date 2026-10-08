@@ -7,8 +7,13 @@ import {
 import {
   REQUIREMENT_ASSIGNEE_FILTER_ME,
   REQUIREMENT_ASSIGNEE_FILTER_NONE,
+  REQUIREMENT_PRIORITIES,
+  REQUIREMENT_PRIORITY_FILTER_NONE,
   REQUIREMENT_STATUSES,
+  CLOUD_FEATURES,
   parseRequirementNumberQuery,
+  parseRequirementPriorityFilter,
+  requirementPriorityRank,
   type ArtifactVersionDetailDto,
   type ArtifactVersionDto,
   type AttachmentDto,
@@ -38,6 +43,7 @@ import {
   type RequirementActivityEntryDto,
   type RequirementDetailDto,
   type RequirementDto,
+  type RequirementPriority,
   type RequirementStatus,
   type RequirementsEventDto,
   type RequirementsEventType,
@@ -113,6 +119,8 @@ const project: ProjectDto = {
 
 const CREATED_AT = "2026-08-17T00:00:00.000Z";
 const MATERIALS_AT = "2026-08-23T00:00:00.000Z";
+/** 预置的历史确认版的发布时间（确认版停用前）。 */
+const HISTORY_PUBLISHED_AT = "2026-08-24T00:00:00.000Z";
 /** 夹具里唯一一条评论（普通评论）的时间：详情页显示出它后，已读位置应记到这里。 */
 export const GATE_C_FIXTURE_COMMENT_AT = MATERIALS_AT;
 
@@ -155,9 +163,18 @@ interface FixtureRequirement {
   summary: string;
   status: RequirementStatus;
   assignee: UserSummaryDto | null;
+  priority: RequirementPriority | null;
   version: number;
   updatedBy: UserSummaryDto;
   updatedAt: string;
+}
+
+interface RequirementPatch {
+  title?: string;
+  summary?: string;
+  status?: RequirementStatus;
+  assignee?: UserSummaryDto | null;
+  priority?: RequirementPriority | null;
 }
 
 interface FixtureArtifactVersion extends ArtifactVersionDetailDto {
@@ -183,6 +200,7 @@ function initialRequirements(): Map<string, FixtureRequirement> {
       summary: "",
       status,
       assignee,
+      priority: null,
       version: 1,
       updatedBy: me,
       updatedAt: CREATED_AT,
@@ -326,6 +344,48 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
     });
   }
 
+  // 确认版停用前发布过的一版（只读历史）：版本、发布说明评论（并入发布条目，不单独成条）与活动。
+  {
+    const publishMaterial = attachments.get(GATE_C_FIXTURE_IDS.attachment1)!;
+    const historyNote = "历史发布说明";
+    artifactVersions.push({
+      id: GATE_C_FIXTURE_IDS.artifactVersion1,
+      requirementId: targetRequirementId,
+      versionNumber: 1,
+      publishedBy: me,
+      publishedAt: HISTORY_PUBLISHED_AT,
+      fileCount: 1,
+      note: historyNote,
+      files: [
+        {
+          id: GATE_C_FIXTURE_IDS.artifactFile1,
+          artifactVersionId: GATE_C_FIXTURE_IDS.artifactVersion1,
+          attachmentId: publishMaterial.id,
+          fileName: publishMaterial.fileName,
+          sizeBytes: publishMaterial.sizeBytes,
+          sha256: publishMaterial.sha256,
+        },
+      ],
+    });
+    comments.push({
+      id: GATE_C_FIXTURE_IDS.commentArtifact1,
+      requirementId: targetRequirementId,
+      artifactVersionId: GATE_C_FIXTURE_IDS.artifactVersion1,
+      body: historyNote,
+      author: me,
+      createdAt: HISTORY_PUBLISHED_AT,
+    });
+    record({
+      requirementId: targetRequirementId,
+      actor: me,
+      action: "artifact_version.published",
+      resourceType: "artifact_version",
+      resourceId: GATE_C_FIXTURE_IDS.artifactVersion1,
+      artifactVersion: { id: GATE_C_FIXTURE_IDS.artifactVersion1, versionNumber: 1, fileCount: 1, note: historyNote },
+      createdAt: HISTORY_PUBLISHED_AT,
+    });
+  }
+
   let eventSequence = 0;
   let remoteFailure = false;
   const readMarks = new Map<string, string>();
@@ -402,6 +462,7 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
     summary: item.summary,
     status: item.status,
     assignee: item.assignee,
+    priority: item.priority,
     commentCount: comments.filter((comment) => comment.requirementId === item.id).length,
     attachmentCount: listAttachments(item.id).length,
     createdBy: me,
@@ -450,6 +511,7 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       return json(response, 200, {
         service: "suduo-requirements-service",
         status: "ok",
+        features: [...CLOUD_FEATURES],
         database: { status: "ok", schemaVersion: 0 },
         uptimeMs: 1,
       });
@@ -572,87 +634,6 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
           .map(artifactSummary),
       });
     }
-    if (request.method === "POST" && versionsMatch?.[1]) {
-      const requirementId = decodeURIComponent(versionsMatch[1]);
-      const requirement = requirements.get(requirementId);
-      if (!requirement) return notFound(response);
-      const body = await requestJson(request) as {
-        operationKey?: unknown;
-        attachmentIds?: unknown;
-        note?: unknown;
-      };
-      if (
-        typeof body.operationKey !== "string" ||
-        !Array.isArray(body.attachmentIds) ||
-        body.attachmentIds.length === 0
-      ) {
-        return validationError(response);
-      }
-      const selectedAttachments = body.attachmentIds.map((attachmentId) =>
-        typeof attachmentId === "string" ? attachments.get(attachmentId) : undefined,
-      );
-      if (
-        selectedAttachments.some(
-          (attachment) => attachment === undefined || attachment.requirementId !== requirementId,
-        )
-      ) {
-        return validationError(response);
-      }
-      const versionNumber = artifactVersions.length + 1;
-      const versionId = versionNumber === 1
-        ? GATE_C_FIXTURE_IDS.artifactVersion1
-        : fixtureUuid(200 + versionNumber);
-      const note = typeof body.note === "string" && body.note.trim() ? body.note.trim() : null;
-      const publishedAt = new Date().toISOString();
-      const artifactVersion: FixtureArtifactVersion = {
-        id: versionId,
-        requirementId,
-        versionNumber,
-        publishedBy: me,
-        publishedAt,
-        fileCount: selectedAttachments.length,
-        note,
-        files: selectedAttachments.map((attachment, index) => ({
-          id: versionNumber === 1 && index === 0
-            ? GATE_C_FIXTURE_IDS.artifactFile1
-            : fixtureUuid(300 + versionNumber * 10 + index),
-          artifactVersionId: versionId,
-          attachmentId: attachment!.id,
-          fileName: attachment!.fileName,
-          sizeBytes: attachment!.sizeBytes,
-          sha256: attachment!.sha256,
-        })),
-      };
-      artifactVersions.push(artifactVersion);
-      // 远程服务会为发布生成一条说明评论（计入 commentCount），但活动里并入发布条目，不单独成条。
-      comments.unshift({
-        id: versionNumber === 1
-          ? GATE_C_FIXTURE_IDS.commentArtifact1
-          : fixtureUuid(400 + versionNumber),
-        requirementId,
-        artifactVersionId: versionId,
-        body: note ?? `发布了第 ${String(versionNumber)} 版确认版。`,
-        author: me,
-        createdAt: publishedAt,
-      });
-      record({
-        requirementId,
-        actor: me,
-        action: "artifact_version.published",
-        resourceType: "artifact_version",
-        resourceId: versionId,
-        artifactVersion: {
-          id: versionId,
-          versionNumber,
-          fileCount: artifactVersion.fileCount,
-          note,
-        },
-        createdAt: publishedAt,
-      });
-      json<ArtifactVersionDetailDto>(response, 201, artifactDetail(artifactVersion));
-      emit("artifact.published", requirementId, requirement.version);
-      return;
-    }
     const commentsMatch = /^\/v2\/requirements\/([^/]+)\/comments$/u.exec(url.pathname);
     if (request.method === "GET" && commentsMatch?.[1]) {
       const requirementId = decodeURIComponent(commentsMatch[1]);
@@ -660,6 +641,36 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
         items: comments.filter((comment) => comment.requirementId === requirementId),
         nextCursor: null,
       });
+    }
+    if (request.method === "POST" && commentsMatch?.[1]) {
+      // 与远程服务一致：发评论写一条活动并广播 comment.created（跨窗口实时验证用它）。
+      const requirementId = decodeURIComponent(commentsMatch[1]);
+      const requirement = requirements.get(requirementId);
+      if (!requirement) return notFound(response);
+      const body = await requestJson(request) as { body?: unknown };
+      if (typeof body.body !== "string" || body.body.trim() === "") return validationError(response);
+      const createdAt = new Date().toISOString();
+      const comment: CommentDto = {
+        id: fixtureUuid(600 + comments.length),
+        requirementId,
+        artifactVersionId: null,
+        body: body.body.trim(),
+        author: me,
+        createdAt,
+      };
+      comments.unshift(comment);
+      record({
+        requirementId,
+        actor: me,
+        action: "comment.created",
+        resourceType: "comment",
+        resourceId: comment.id,
+        comment: { id: comment.id, body: comment.body },
+        createdAt,
+      });
+      json<CommentDto>(response, 201, comment);
+      emit("comment.created", requirementId, requirement.version);
+      return;
     }
     const readMatch = /^\/v2\/requirements\/([^/]+)\/read$/u.exec(url.pathname);
     if (request.method === "PUT" && readMatch?.[1]) {
@@ -751,8 +762,9 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
         summary?: unknown;
         status?: unknown;
         assigneeId?: unknown;
+        priority?: unknown;
       };
-      const patch: { title?: string; summary?: string; status?: RequirementStatus; assignee?: UserSummaryDto | null } = {};
+      const patch: RequirementPatch = {};
       if (body.title !== undefined) {
         if (typeof body.title !== "string" || body.title.trim() === "") return validationError(response);
         patch.title = body.title;
@@ -771,6 +783,12 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
           : users.find((candidate) => candidate.id === body.assigneeId);
         if (assignee === undefined) return validationError(response);
         patch.assignee = assignee;
+      }
+      if (body.priority !== undefined) {
+        if (body.priority !== null && !(REQUIREMENT_PRIORITIES as readonly unknown[]).includes(body.priority)) {
+          return validationError(response);
+        }
+        patch.priority = body.priority as RequirementPriority | null;
       }
       if (Object.keys(patch).length === 0) return validationError(response);
       // 刻意不广播 requirement.changed：带外修改要能让另一个窗口保持旧数据。
@@ -968,7 +986,7 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
     return mentions;
   }
 
-  /** 列表：状态、搜索（标题 / 描述，形如编号时同时按编号）、负责人，按更新时间倒序。 */
+  /** 列表：状态、搜索（标题 / 描述，形如编号时同时按编号）、负责人、优先级；按更新时间倒序，`sort=priority` 时先按优先级。 */
   function listRequirements(url: URL, response: ServerResponse): void {
     const status = url.searchParams.get("status");
     if (status !== null && !isRequirementStatus(status)) return validationError(response);
@@ -982,6 +1000,11 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       if (!UUID.test(assignee)) return validationError(response);
       assigneeId = assignee;
     }
+    const priorityParam = url.searchParams.get("priority");
+    const priorities = priorityParam === null ? null : parseRequirementPriorityFilter(priorityParam);
+    if (priorityParam !== null && priorities === null) return validationError(response);
+    const sort = url.searchParams.get("sort");
+    if (sort !== null && sort !== "updated" && sort !== "priority") return validationError(response);
     const needle = search?.trim().toLowerCase();
     const number = search === null ? null : parseRequirementNumberQuery(search);
     const matched = [...requirements.values()]
@@ -994,9 +1017,16 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
           item.number === number,
       )
       .filter((item) => assigneeId === undefined || (item.assignee?.id ?? null) === assigneeId)
+      .filter(
+        (item) =>
+          priorities === null ||
+          priorities.includes(item.priority ?? REQUIREMENT_PRIORITY_FILTER_NONE),
+      )
       .toSorted(
         (left, right) =>
-          right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id),
+          (sort === "priority" ? requirementPriorityRank(right.priority) - requirementPriorityRank(left.priority) : 0) ||
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          right.id.localeCompare(left.id),
       );
     const offset = Number(url.searchParams.get("cursor") ?? "0");
     const limit = Number(url.searchParams.get("limit") ?? "50");
@@ -1007,11 +1037,11 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
     });
   }
 
-  /** 与远程服务一致：正文版本只随标题 / 描述 / 状态的实际变化递增，改负责人不递增；每项变化记一条活动。 */
+  /** 与远程服务一致：正文版本只随标题 / 描述 / 状态的实际变化递增，改负责人、优先级不递增；每项变化记一条活动。 */
   function applyChange(
     requirement: FixtureRequirement,
     actor: UserSummaryDto,
-    patch: { title?: string; summary?: string; status?: RequirementStatus; assignee?: UserSummaryDto | null },
+    patch: RequirementPatch,
   ): void {
     const at = new Date().toISOString();
     const edits: RequirementActivityChangeDto[] = [];
@@ -1048,6 +1078,14 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
         changes: [{ field: "assignee", from: requirement.assignee, to: patch.assignee }],
       });
       requirement.assignee = patch.assignee;
+    }
+    if (patch.priority !== undefined && patch.priority !== requirement.priority) {
+      record({
+        ...base,
+        action: "requirement.priority_changed",
+        changes: [{ field: "priority", from: requirement.priority, to: patch.priority }],
+      });
+      requirement.priority = patch.priority;
     }
     if (bodyChanged) requirement.version += 1;
     requirement.updatedBy = actor;

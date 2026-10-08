@@ -128,18 +128,10 @@ export const conversation = {
       description: "Stop Codex's current turn",
     },
     tool: {
-      noFiles: "No files listed to publish.",
-      unknownSize: "Size unknown",
-      noNote: "No publish note.",
-      note: "Publish note",
       sending: "Sending…",
-      publishing: "Publishing…",
       sendWarning: "Can't be undone once sent",
-      publishWarning: "Visible to the whole team once published. Can't be undone",
       send: "Send",
       dontSend: "Don't send",
-      publish: "Publish",
-      dontPublish: "Don't publish",
     },
   },
   stream: {

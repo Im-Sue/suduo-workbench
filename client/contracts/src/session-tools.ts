@@ -23,6 +23,26 @@ export function isSuDuoToolName(value: unknown): value is SuDuoToolName {
 }
 
 /**
+ * 已撤下的工具：确认版停用（需求附件评论文件与优先级）。名字仍留在 SUDUO_TOOL_NAMES 里——
+ * 旧会话的时间线要显示它们的标题；新会话不再挂它们。Codex 续接旧线程时不会重新领取工具清单，
+ * 模型仍可能调用，本机服务对它们统一回复「已停用」。
+ */
+export const RETIRED_SUDUO_TOOL_NAMES = [
+  "suduo_artifact_versions",
+  "suduo_artifact_fetch",
+  "suduo_artifact_publish",
+] as const satisfies readonly SuDuoToolName[];
+
+export type RetiredSuDuoToolName = (typeof RETIRED_SUDUO_TOOL_NAMES)[number];
+
+/** 新会话实际挂的 SuDuo 工具。 */
+export type ActiveSuDuoToolName = Exclude<SuDuoToolName, RetiredSuDuoToolName>;
+
+export function isRetiredSuDuoToolName(value: string): value is RetiredSuDuoToolName {
+  return (RETIRED_SUDUO_TOOL_NAMES as readonly string[]).includes(value);
+}
+
+/**
  * 品牌更名（ADR-0010）前的旧前缀。更名前建的 Codex 线程把工具清单存在线程里，续接后模型仍按旧名调用；
  * 旧会话的事件记录里也是旧名。执行与时间线都先过 currentSuDuoToolName 按新名认——唯一保留的旧品牌兼容。
  */
@@ -41,6 +61,7 @@ export const SUDUO_TOOL_NATIVE_METHOD = "item/tool/call";
  * 界面逐字展示，用户确认后本机服务才执行（ADR-0004「不可逆对外副作用」红线）。
  */
 export interface SuDuoToolConfirmationDto {
+  /** `artifact_publish` 只出现在确认版停用前的旧记录里，时间线据此显示历史；不会再新建。 */
   tool: "comment_submit" | "artifact_publish";
   requirement: {
     id: string;

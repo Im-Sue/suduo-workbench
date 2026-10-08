@@ -14,7 +14,9 @@ const apiMocks = vi.hoisted(() => ({
   listRequirementsMappings: vi.fn(),
   listRequirementsSessions: vi.fn(),
   listUsers: vi.fn(),
+  requirementsSettings: vi.fn(),
   saveRequirementsMapping: vi.fn(),
+  testRequirementsSettings: vi.fn(),
 }));
 
 vi.mock("../src/api/client.js", () => ({
@@ -103,6 +105,8 @@ beforeEach(() => {
   apiMocks.listLocalDirs.mockResolvedValue({ path: "/Users/me", parent: "/Users", home: "/Users/me", entries: [], truncated: false, recent: [] });
   apiMocks.inspectLocalDir.mockResolvedValue({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main" });
   apiMocks.saveRequirementsMapping.mockResolvedValue(mapping);
+  // 缺省：没配云端，云端功能（优先级）一律不显示。
+  apiMocks.requirementsSettings.mockResolvedValue({ configured: false });
   apiMocks.listUsers.mockResolvedValue({ items: [] });
 });
 
@@ -383,5 +387,55 @@ describe("新建需求对话框", () => {
     await settle();
     expect(apiMocks.createRequirement).toHaveBeenCalledWith("p1", { title: "新需求", status: "in_testing", assigneeId: "u1" });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    // 云端没声明支持优先级：不显示优先级。
+    expect(document.body.querySelector('[aria-label^="优先级："]')).toBeNull();
+  });
+
+  it("云端支持优先级时可选优先级（数字键 1 = 紧急），创建时带上", async () => {
+    apiMocks.requirementsSettings.mockResolvedValue({ configured: true, baseUrl: "http://cloud.test" });
+    apiMocks.testRequirementsSettings.mockResolvedValue({
+      baseUrl: "http://cloud.test",
+      reachable: true,
+      message: "",
+      version: "0.9.0",
+      features: ["requirement_priority"],
+    });
+    apiMocks.createRequirement.mockResolvedValue({ ...created, priority: "urgent" });
+    await render(
+      <CreateRequirementDialog
+        open
+        onOpenChange={() => undefined}
+        projectId="p1"
+        projectName="订单中心"
+        initialStatus="draft"
+        currentUser={null}
+        onView={() => undefined}
+      />,
+    );
+    const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="优先级：无优先级，点击修改"]');
+    expect(trigger).not.toBeNull();
+    await act(async () => {
+      trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await settle();
+    const menu = document.body.querySelector('[role="menu"]');
+    expect(menu?.textContent).toContain("紧急");
+    await act(async () => {
+      menu!.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true }));
+    });
+    await settle();
+    expect(document.body.querySelector('[aria-label="优先级：紧急，点击修改"]')).not.toBeNull();
+    const title = document.body.querySelector<HTMLInputElement>("#new-requirement-title");
+    await act(async () => typeInto(title!, "紧急需求"));
+    await act(async () => {
+      title!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }));
+    });
+    await settle();
+    expect(apiMocks.createRequirement).toHaveBeenCalledWith("p1", {
+      title: "紧急需求",
+      status: "draft",
+      assigneeId: null,
+      priority: "urgent",
+    });
   });
 });

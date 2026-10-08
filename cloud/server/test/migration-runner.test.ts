@@ -23,7 +23,9 @@ const VERSION_010 = "010_comment_created_at_clock_timestamp.sql";
 const VERSION_011 = "011_rooms_and_shared_agents.sql";
 const VERSION_012 = "012_i18n_structured_texts.sql";
 const VERSION_013 = "013_agent_run_text_codes.sql";
-const LATEST_VERSION = VERSION_013;
+const VERSION_014 = "014_requirement_priority.sql";
+const VERSION_015 = "015_requirement_comment_files.sql";
+const LATEST_VERSION = VERSION_015;
 const LEGACY_MIGRATIONS = [
   "001_initial.sql",
   "002_attachments.sql",
@@ -41,6 +43,8 @@ const ALL_MIGRATIONS = [
   VERSION_011,
   VERSION_012,
   VERSION_013,
+  VERSION_014,
+  VERSION_015,
 ];
 
 describe("迁移 005 审计项目归属", () => {
@@ -260,6 +264,91 @@ describe("迁移 006 需求编号与负责人", () => {
     } finally {
       await rm(legacyDirectory, { recursive: true, force: true });
     }
+  });
+});
+
+describe("迁移 014 需求优先级", () => {
+  it("既有需求的优先级为 0（无），取值限 0..4，两条排序索引存在", async () => {
+    const before014 = ALL_MIGRATIONS.slice(0, ALL_MIGRATIONS.indexOf(VERSION_014));
+    const legacyDirectory = await legacyMigrationsDirectory(before014);
+    try {
+      await withTemporaryDatabase(async (pool) => {
+        await expect(runMigrations(pool, legacyDirectory)).resolves.toBe(VERSION_013);
+        const actorId = randomUUID();
+        await pool.query(
+          `
+            INSERT INTO users (id, login_name, display_name, password_hash)
+            VALUES ($1, 'priority-user', 'Priority User', 'test-password-hash')
+          `,
+          [actorId],
+        );
+        const projectId = await insertLegacyProject(pool, actorId, "项目");
+        const requirementId = randomUUID();
+        await pool.query(
+          `
+            INSERT INTO requirements (id, project_id, number, title, summary, status, created_by, updated_by)
+            VALUES ($1, $2, 1, '历史需求', '', 'draft', $3, $3)
+          `,
+          [requirementId, projectId, actorId],
+        );
+
+        await expect(runMigrations(pool)).resolves.toBe(LATEST_VERSION);
+
+        await expect(pool.query("SELECT priority FROM requirements WHERE id = $1", [requirementId]))
+          .resolves.toMatchObject({ rows: [{ priority: 0 }] });
+        await expect(pool.query("UPDATE requirements SET priority = 4 WHERE id = $1", [requirementId]))
+          .resolves.toBeDefined();
+        await expect(pool.query("UPDATE requirements SET priority = 5 WHERE id = $1", [requirementId]))
+          .rejects.toMatchObject({ constraint: "requirements_priority_range" });
+        for (const index of [
+          "requirements_project_status_priority_cursor_idx",
+          "requirements_project_priority_cursor_idx",
+        ]) {
+          await expect(pool.query("SELECT to_regclass($1) AS index_name", [index]))
+            .resolves.toMatchObject({ rows: [{ index_name: index }] });
+        }
+      });
+    } finally {
+      await rm(legacyDirectory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("迁移 015 评论文件", () => {
+  it("未发出的文件 comment_id 与 position 都为空，发出后两者都有；存储键唯一", async () => {
+    await withTemporaryDatabase(async (pool) => {
+      await expect(runMigrations(pool)).resolves.toBe(LATEST_VERSION);
+      const actorId = randomUUID();
+      await pool.query(
+        "INSERT INTO users (id, login_name, display_name, password_hash) VALUES ($1, 'comment-file-user', 'U', 'hash')",
+        [actorId],
+      );
+      const projectId = await insertLegacyProject(pool, actorId, "项目");
+      const requirementId = randomUUID();
+      await pool.query(
+        "INSERT INTO requirements (id, project_id, number, title, summary, status, created_by, updated_by) VALUES ($1, $2, 1, 't', '', 'draft', $3, $3)",
+        [requirementId, projectId, actorId],
+      );
+      const insert = (id: string, storageKey: string) =>
+        pool.query(
+          `INSERT INTO requirement_comment_files (id, requirement_id, file_name, content_type, size_bytes, sha256, storage_key, uploaded_by)
+           VALUES ($1, $2, 'a.png', 'image/png', 1, $3, $4, $5)`,
+          [id, requirementId, "0".repeat(64), storageKey, actorId],
+        );
+      const fileId = randomUUID();
+      await insert(fileId, "objects/aa/one");
+      await expect(insert(randomUUID(), "objects/aa/one")).rejects.toMatchObject({ code: "23505" });
+      const commentId = randomUUID();
+      await pool.query(
+        "INSERT INTO requirement_comments (id, requirement_id, body, author_id) VALUES ($1, $2, 'x', $3)",
+        [commentId, requirementId, actorId],
+      );
+      await expect(pool.query("UPDATE requirement_comment_files SET comment_id = $1 WHERE id = $2", [commentId, fileId]))
+        .rejects.toMatchObject({ constraint: "requirement_comment_files_sent_pair" });
+      await expect(
+        pool.query("UPDATE requirement_comment_files SET comment_id = $1, position = 1 WHERE id = $2", [commentId, fileId]),
+      ).resolves.toBeDefined();
+    });
   });
 });
 

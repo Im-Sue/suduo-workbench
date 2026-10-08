@@ -216,11 +216,11 @@ describe("英文界面：需求看板与列表", () => {
       "ID",
       "Title",
       "Assignee",
-      "Materials · Comments · Sessions",
+      "Attachments · Comments · Sessions",
       "Updated",
     ]);
     const counts = cells[3];
-    expect(counts?.getAttribute("title")).toBe("Materials · Comments · Sessions");
+    expect(counts?.getAttribute("title")).toBe("Attachments · Comments · Sessions");
     expect(counts?.querySelector('[aria-hidden="true"]')?.querySelectorAll("svg")).toHaveLength(3);
     // 「Yesterday 10:35」与「2025年12月27日」都要一行放下：更新列 96px。
     expect(cells[4]?.className).toContain("w-24");
@@ -248,7 +248,7 @@ describe("英文界面：新建需求对话框", () => {
     expect(dialog?.querySelector('[aria-label="Status: In testing"]')).not.toBeNull();
     expect(dialog?.querySelector('[aria-label="Assignee: Unassigned"]')).not.toBeNull();
     expect(dialog?.querySelector<HTMLInputElement>("#new-requirement-title")?.placeholder).toBe("Requirement title");
-    expect(dialog?.textContent).toContain("Add materials");
+    expect(dialog?.textContent).toContain("Add attachments");
     expect(dialog?.textContent).toContain("Create another");
     expect(buttonByText("Cancel")).toBeDefined();
     await act(async () => buttonByText("Create requirement⌘⏎")?.click());

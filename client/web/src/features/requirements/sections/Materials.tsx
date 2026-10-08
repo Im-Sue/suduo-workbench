@@ -1,13 +1,9 @@
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  ArtifactVersionDetailDto,
-  ArtifactVersionDto,
-  RequirementsAttachmentDto,
-} from "../../../api/client.js";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ArtifactVersionDto, RequirementsAttachmentDto } from "../../../api/client.js";
 import {
   AlertCircleIcon,
   CheckIcon,
-  ChevronDownIcon,
+  ChevronRightIcon,
   DownloadIcon,
   EyeIcon,
   FileIcon,
@@ -26,20 +22,12 @@ import { ConfirmDialog, RegionError } from "../../../feedback/components/index.j
 import { reportFailure } from "../../../feedback/report.js";
 import { useT } from "../../../i18n/provider.js";
 import type { Messages } from "../../../i18n/messages/index.js";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { formatBytes, inlineUrl, previewKind } from "../format.js";
+import { formatBytes, inlineUrl, newestFirst, previewKind } from "../format.js";
 import { requirementKeys } from "../keys.js";
 import { artifactVersionQuery, artifactsQuery, attachmentsQuery } from "../queries.js";
 import {
@@ -49,60 +37,41 @@ import {
   useUploadQueue,
   type UploadItem,
 } from "../upload-queue.js";
-import { PublishArtifactDialog } from "./PublishArtifactDialog.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
 
 /**
- * 材料与确认版（原型 Detail · 材料与确认版）。
- * - 「确认版」是某一时刻的材料组合，发布后不可变；最新一版置顶，历史版本在菜单里切换查看；
- * - 其余没进过任何确认版的附件列在「其他材料」；
- * - 整个区块可拖入文件，页面上直接粘贴截图也会上传；每个文件独立上传、独立重试。
+ * 附件（需求附件评论文件与优先级 4.1）：需求的额外存储，用途由人决定。
+ * - 按上传时间从新到旧平铺，没有「确认版 / 其他材料」之分；读的人从上往下读，新旧重复以新的为准；
+ * - 以前发布过的确认版收在底部「历史确认版」，只能查看与下载（确认版已停用，不能再发布）；
+ * - 整个区块可拖入文件，页面上直接粘贴截图也会上传（评论框里的粘贴归评论）；每个文件独立上传、独立重试。
  */
 
-function useMaterials(requirementId: string) {
+function useAttachments(requirementId: string) {
   const attachments = useQuery(attachmentsQuery(requirementId));
-  const versions = useQuery(artifactsQuery(requirementId));
-  const newest = useMemo(
-    () => (versions.data?.items ?? []).toSorted((a, b) => b.versionNumber - a.versionNumber),
-    [versions.data],
-  );
-  const details = useQueries({
-    queries: newest.map((version) => artifactVersionQuery(requirementId, version.id)),
-  });
-  const detailById = new Map<string, ArtifactVersionDetailDto>();
-  for (const detail of details) if (detail.data !== undefined) detailById.set(detail.data.id, detail.data);
-  const allDetailsLoaded = details.every((detail) => detail.data !== undefined);
-  const publishedIds = new Set(
-    [...detailById.values()].flatMap((version) => version.files.map((file) => file.attachmentId)),
-  );
-  const others = (attachments.data?.items ?? []).filter((item) => !publishedIds.has(item.id));
-  return { attachments, versions, newest, detailById, allDetailsLoaded, others };
+  const items = useMemo(() => newestFirst(attachments.data?.items ?? []), [attachments.data]);
+  return { attachments, items };
 }
 
 // ---------- 速览：只读概要 ----------
 
 export function MaterialsPreview({ requirementId }: { requirementId: string }) {
   const text = useT().requirementDetail.materials;
-  const { attachments, newest } = useMaterials(requirementId);
-  const latest = newest[0];
+  const { attachments, items } = useAttachments(requirementId);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   return (
     <section className="flex flex-col gap-2" aria-labelledby={`peek-materials-${requirementId}`}>
       <div className="flex items-center gap-2">
         <h3 id={`peek-materials-${requirementId}`} className="m-0 text-small font-semibold">{text.heading}</h3>
         {attachments.data === undefined ? null : (
-          <span className="text-caption text-subtle-foreground">{attachments.data.items.length}</span>
-        )}
-        {latest === undefined ? null : (
-          <Badge variant="success" className="ml-auto">{text.versionBadge(latest.versionNumber)}</Badge>
+          <span className="text-caption text-subtle-foreground">{items.length}</span>
         )}
       </div>
       {attachments.isPending ? <Skeleton className="h-9 w-full" /> : null}
       {attachments.isError ? <p className="m-0 text-caption text-subtle-foreground">{text.previewLoadFailed}</p> : null}
-      {attachments.data?.items.length === 0 ? (
+      {attachments.data !== undefined && items.length === 0 ? (
         <p className="m-0 text-caption text-subtle-foreground">{text.empty}</p>
       ) : null}
-      {attachments.data?.items.slice(0, 5).map((attachment) => (
+      {items.slice(0, 5).map((attachment) => (
         <FileRow
           key={attachment.id}
           name={attachment.fileName}
@@ -111,9 +80,7 @@ export function MaterialsPreview({ requirementId }: { requirementId: string }) {
           onPreview={setPreview}
         />
       ))}
-      {attachments.data !== undefined && attachments.data.items.length > 5 ? (
-        <p className="m-0 text-caption text-subtle-foreground">{text.more(attachments.data.items.length - 5)}</p>
-      ) : null}
+      {items.length > 5 ? <p className="m-0 text-caption text-subtle-foreground">{text.more(items.length - 5)}</p> : null}
       <ImagePreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </section>
   );
@@ -125,12 +92,10 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
   const t = useT();
   const text = t.requirementDetail.materials;
   const queryClient = useQueryClient();
-  const { attachments, versions, newest, detailById, allDetailsLoaded, others } = useMaterials(requirementId);
+  const { attachments, items } = useAttachments(requirementId);
   const queue = useUploadQueue(requirementId);
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [viewingId, setViewingId] = useState<string | null>(null);
-  const [publishing, setPublishing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<RequirementsAttachmentDto | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const existingCount = attachments.data?.items.length ?? 0;
@@ -142,6 +107,8 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
   // 页面上直接粘贴截图即上传（输入框里粘贴文字不受影响）。
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
+      // 已经有人收下了这次粘贴（如评论框把截图当评论文件）：不再重复传成附件。
+      if (event.defaultPrevented) return;
       // 对话框开着时（如开始会话里手动输入路径）粘贴归对话框，不当材料上传。
       if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]') !== null) return;
       const files = Array.from(event.clipboardData?.files ?? []);
@@ -152,9 +119,6 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, [queryClient, requirementId, existingCount, t]);
-
-  const viewed = (viewingId === null ? undefined : newest.find((item) => item.id === viewingId)) ?? newest[0];
-  const viewedDetail = viewed === undefined ? undefined : detailById.get(viewed.id);
 
   const remove = async (attachment: RequirementsAttachmentDto) => {
     try {
@@ -200,17 +164,6 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
           <UploadIcon />
           {text.upload}
         </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          // 版本列表还没取到时不能发：否则「第几版」和默认勾选都按「没有版本」算，取到后又误报「别人刚发了一版」。
-          disabled={existingCount === 0 || !versions.isSuccess || !allDetailsLoaded}
-          disabledReason={existingCount === 0 ? text.publishNeedsMaterials : text.publishLoadingVersions}
-          onClick={() => setPublishing(true)}
-        >
-          <CheckIcon />
-          {text.publish}
-        </Button>
         <input
           ref={fileRef}
           type="file"
@@ -224,60 +177,7 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
         />
       </header>
 
-      {versions.isError ? (
-        <RegionError
-          kind={classifyFailure(versions.error).kind}
-          message={text.versionsLoadFailed(classifyFailure(versions.error).message)}
-          onRetry={() => void versions.refetch()}
-        />
-      ) : null}
-
-      {viewed === undefined ? null : (
-        <div className="flex flex-col gap-2 rounded-md border border-border bg-card p-3" data-testid="artifact-version">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={viewed.id === newest[0]?.id ? "success" : "neutral"}>
-              {text.versionBadge(viewed.versionNumber)}
-            </Badge>
-            <span className="min-w-0 flex-1 truncate text-caption text-subtle-foreground">
-              {text.publishedBy({
-                who: viewed.publishedBy.displayName,
-                time: (
-                  <time key="time" dateTime={viewed.publishedAt} title={formatDateTime(viewed.publishedAt)}>
-                    {formatRelativeTime(viewed.publishedAt)}
-                  </time>
-                ),
-              })}
-            </span>
-            {newest.length > 1 ? (
-              <VersionMenu versions={newest} currentId={viewed.id} onPick={setViewingId} />
-            ) : null}
-          </div>
-          {viewedDetail === undefined ? (
-            <Skeleton className="h-9 w-full" />
-          ) : (
-            <ul className="m-0 flex list-none flex-col gap-1 p-0">
-              {viewedDetail.files.map((file) => {
-                const url = api.artifactVersionFileDownloadUrl(viewed.id, file.id);
-                return (
-                  <li key={file.id}>
-                    <FileRow
-                      name={file.fileName}
-                      size={file.sizeBytes}
-                      downloadUrl={url}
-                      onPreview={setPreview}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      )}
-
       <div className="flex flex-col gap-1">
-        {newest.length > 0 && (others.length > 0 || queue.length > 0) ? (
-          <h3 className="m-0 mt-1 text-small font-semibold text-muted-foreground">{text.others}</h3>
-        ) : null}
         {attachments.isPending ? <Skeleton className="h-9 w-full" /> : null}
         {attachments.isError ? (
           <RegionError
@@ -292,7 +192,7 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
               <UploadRow item={item} />
             </li>
           ))}
-          {others.map((attachment) => (
+          {items.map((attachment) => (
             <li key={attachment.id}>
               <FileRow
                 name={attachment.fileName}
@@ -334,15 +234,7 @@ export function MaterialsPanel({ requirementId }: { requirementId: string }) {
           if (pendingDelete !== null) void remove(pendingDelete);
         }}
       />
-      {publishing ? (
-        <PublishArtifactDialog
-          requirementId={requirementId}
-          attachments={attachments.data?.items ?? []}
-          latest={newest[0] === undefined ? undefined : detailById.get(newest[0].id)}
-          onClose={() => setPublishing(false)}
-          onPublished={(version) => setViewingId(version.id)}
-        />
-      ) : null}
+      <HistoricalVersions requirementId={requirementId} onPreview={setPreview} />
       <ImagePreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </section>
   );
@@ -396,39 +288,97 @@ function ImagePreview({ name, url }: { name: string; url: string }) {
   );
 }
 
-function VersionMenu({
-  versions,
-  currentId,
-  onPick,
+/**
+ * 历史确认版：确认版停用前发布过的版本，收起放在附件区底部，只能查看与下载。
+ * 从没发布过（或读不到版本列表）时整块不显示；展开后才去取各版的文件清单。
+ */
+function HistoricalVersions({
+  requirementId,
+  onPreview,
 }: {
-  versions: ArtifactVersionDto[];
-  currentId: string;
-  onPick(id: string): void;
+  requirementId: string;
+  onPreview(preview: FilePreview): void;
 }) {
   const text = useT().requirementDetail.materials;
+  const versions = useQuery(artifactsQuery(requirementId));
+  const [open, setOpen] = useState(false);
+  const ordered = useMemo(
+    () => (versions.data?.items ?? []).toSorted((a, b) => b.versionNumber - a.versionNumber),
+    [versions.data],
+  );
+  if (ordered.length === 0) return null;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm" variant="ghost">
-          {text.history}
-          <ChevronDownIcon />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel>{text.allVersions}</DropdownMenuLabel>
-        {versions.map((version, index) => (
-          <DropdownMenuItem key={version.id} onSelect={() => onPick(version.id)}>
-            <span className="flex-1">
-              {text.versionItem(version.versionNumber, index === 0)}
-              <span className="ml-1.5 text-subtle-foreground">
-                {version.publishedBy.displayName} · {formatRelativeTime(version.publishedAt)}
-              </span>
-            </span>
-            {version.id === currentId ? <CheckIcon className="size-4 text-primary-text!" /> : null}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex flex-col gap-2" data-testid="historical-versions">
+      <button
+        type="button"
+        aria-expanded={open}
+        className="-ml-1.5 flex w-fit items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-small text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ChevronRightIcon className={cn("size-3.5 transition-transform", open && "rotate-90")} aria-hidden="true" />
+        {text.history(ordered.length)}
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-3">
+          <p className="m-0 text-caption text-subtle-foreground">{text.historyHint}</p>
+          {ordered.map((version) => (
+            <HistoricalVersion key={version.id} requirementId={requirementId} version={version} onPreview={onPreview} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function HistoricalVersion({
+  requirementId,
+  version,
+  onPreview,
+}: {
+  requirementId: string;
+  version: ArtifactVersionDto;
+  onPreview(preview: FilePreview): void;
+}) {
+  const text = useT().requirementDetail.materials;
+  const detail = useQuery(artifactVersionQuery(requirementId, version.id));
+  return (
+    <section className="flex flex-col gap-1" aria-label={text.versionItem(version.versionNumber)}>
+      <h3 className="m-0 flex flex-wrap items-baseline gap-1.5 text-small font-semibold">
+        <span>{text.versionItem(version.versionNumber)}</span>
+        <span className="font-normal text-caption text-subtle-foreground">
+          {text.publishedBy({
+            who: version.publishedBy.displayName,
+            time: (
+              <time key="time" dateTime={version.publishedAt} title={formatDateTime(version.publishedAt)}>
+                {formatRelativeTime(version.publishedAt)}
+              </time>
+            ),
+          })}
+        </span>
+      </h3>
+      {detail.isPending ? <Skeleton className="h-9 w-full" /> : null}
+      {detail.isError ? (
+        <RegionError
+          kind={classifyFailure(detail.error).kind}
+          message={text.versionLoadFailed(classifyFailure(detail.error).message)}
+          onRetry={() => void detail.refetch()}
+        />
+      ) : null}
+      {detail.data === undefined ? null : (
+        <ul className="m-0 flex list-none flex-col gap-1 p-0">
+          {detail.data.files.map((file) => (
+            <li key={file.id}>
+              <FileRow
+                name={file.fileName}
+                size={file.sizeBytes}
+                downloadUrl={api.artifactVersionFileDownloadUrl(version.id, file.id)}
+                onPreview={onPreview}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -547,8 +497,8 @@ function fileIconFor(name: string) {
   return FileIcon;
 }
 
-/** 剪贴板里的截图通常都叫 image.png：加上时间，免得一串同名文件。 */
-function renamePastedImage(file: File, t: Messages): File {
+/** 剪贴板里的截图通常都叫 image.png：加上时间，免得一串同名文件。评论框粘贴的截图也用它。 */
+export function renamePastedImage(file: File, t: Messages): File {
   if (!/^image\.(png|jpe?g|gif|webp)$/i.test(file.name)) return file;
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
   const extension = file.name.split(".").at(-1) ?? "png";

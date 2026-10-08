@@ -11,7 +11,6 @@ import type {
   RuntimeEventDraft,
   StartThreadResult,
   StartTurnResult,
-  SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
 import { ApiError } from "../src/application/api-error.js";
 import { ApprovalService } from "../src/application/approval-service.js";
@@ -482,23 +481,19 @@ describe("SessionToolService + ApprovalService：写工具确认", () => {
     expect(approvals.listBySession(session.id)).toEqual([]);
   });
 
-  it("发布确认版：确认卡带文件清单；确认后先上传再以审批 ID 为 operationKey 发布", async () => {
-    const { root, call, pendingApprovalOf, approvalService, runtime, remote } = setup();
-    mkdirSync(join(root, "docs"));
-    writeFileSync(join(root, "docs", "PRD.md"), "# PRD");
-    const callRef = call("suduo_artifact_publish", { paths: ["docs/PRD.md"], attachmentIds: ["att-1"], note: "第一版" });
-    const approval = await pendingApprovalOf(callRef);
-    const suDuoTool = asObject(asObject(approvalService.get(approval.id).request)["suDuoTool"]) as unknown as SuDuoToolConfirmationDto;
-    expect(suDuoTool.tool).toBe("artifact_publish");
-    expect(suDuoTool.publish?.files.map((file) => `${file.source}:${file.ref}`)).toEqual(["path:docs/PRD.md", "attachment:att-1"]);
-
-    await approvalService.decide(approval.id, { decision: "accept" });
-    expect(remote.callsOf("uploadAttachment")).toHaveLength(1);
-    expect(remote.callsOf("publishArtifactVersion")).toEqual([
-      ["req-1", { operationKey: approval.id, attachmentIds: ["att-uploaded-1", "att-1"], note: "第一版" }],
-    ]);
-    expect(runtime.responses[0]).toMatchObject({ callRef, success: true });
-    expect(textOf(runtime.responses[0]!)).toContain("已发布 REQ-1「商家端-订单详情优化」 的确认版 v3");
+  it("确认版已停用：旧会话里调用三个撤下的工具（含旧前缀）都回「已停用」，不建确认卡、不调远程", async () => {
+    const { session, call, responseOf, approvals, remote } = setup();
+    // eslint-disable-next-line no-restricted-syntax -- ADR-0010：更名前的旧线程按旧前缀调用，这里验证它同样认作已停用
+    for (const tool of ["suduo_artifact_publish", "suduo_artifact_versions", "zjwork_artifact_fetch"]) {
+      const response = await responseOf(call(tool, { version: 1 }));
+      expect(response.success).toBe(false);
+      const current = tool.replace(/^[a-z]+_artifact_/u, "suduo_artifact_");
+      expect(textOf(response)).toBe(
+        `${current} 已停用：SuDuo 不再有「确认版」，需求的资料都在附件里。用 suduo_requirement_attachments 看附件清单（最新在前），用 suduo_attachment_view 查看内容。`,
+      );
+    }
+    expect(approvals.listBySession(session.id)).toEqual([]);
+    expect(remote.calls).toEqual([]);
   });
 
   it("回包未送达（调用已失效）时审批仍 resolved，outcome.delivered=false", async () => {

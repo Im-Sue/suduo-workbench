@@ -16,6 +16,8 @@ import type {
 import {
   REQUIREMENT_ASSIGNEE_FILTER_ME,
   REQUIREMENT_ASSIGNEE_FILTER_NONE,
+  REQUIREMENT_COMMENT_MAX_FILES,
+  parseRequirementPriorityFilter,
 } from "@suduo/cloud-contracts";
 import type {
   CollaborationRepository,
@@ -71,6 +73,7 @@ export class CollaborationService {
       summary: request.summary?.trim() ?? "",
       status: request.status ?? "draft",
       assigneeId: request.assigneeId ?? null,
+      priority: request.priority ?? null,
     });
   }
 
@@ -87,6 +90,8 @@ export class CollaborationService {
       ...(query.creator === undefined
         ? {}
         : { creatorId: query.creator === REQUIREMENT_ASSIGNEE_FILTER_ME ? actorId : query.creator }),
+      ...(query.priority === undefined ? {} : { priorities: priorityFilter(query.priority) }),
+      ...(query.sort === undefined ? {} : { sort: query.sort }),
       readerId: actorId,
       ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
       limit: pageLimit(query.limit),
@@ -153,6 +158,7 @@ export class CollaborationService {
         : { summary: request.summary.trim() }),
       ...(request.status === undefined ? {} : { status: request.status }),
       ...(request.assigneeId === undefined ? {} : { assigneeId: request.assigneeId }),
+      ...(request.priority === undefined ? {} : { priority: request.priority }),
     });
   }
 
@@ -161,11 +167,16 @@ export class CollaborationService {
     requirementId: string,
     request: CreateCommentRequest,
   ) {
-    return this.repository.createComment({
-      actorId,
-      requirementId,
-      body: nonBlank(request.body, "Comment"),
-    });
+    // 正文与文件至少有一样；只带文件时正文可以为空（需求附件评论文件与优先级 R6）。
+    const body = (request.body ?? "").trim();
+    const fileIds = [...new Set(request.fileIds ?? [])];
+    if (body === "" && fileIds.length === 0) {
+      throw new ApplicationError(400, "VALIDATION_ERROR", "Comment must not be empty");
+    }
+    if (fileIds.length > REQUIREMENT_COMMENT_MAX_FILES) {
+      throw new ApplicationError(400, "VALIDATION_ERROR", `A comment can include at most ${String(REQUIREMENT_COMMENT_MAX_FILES)} files`);
+    }
+    return this.repository.createComment({ actorId, requirementId, body, fileIds });
   }
 
   listComments(requirementId: string, query: RequirementsCursorQuery) {
@@ -204,6 +215,14 @@ function assigneeCondition(
     throw new ApplicationError(400, "VALIDATION_ERROR", "assignee must be a user ID, me, or none");
   }
   return { kind: "user", userId: assignee };
+}
+
+function priorityFilter(value: string) {
+  const priorities = parseRequirementPriorityFilter(value);
+  if (priorities === null) {
+    throw new ApplicationError(400, "VALIDATION_ERROR", "priority must be comma-separated values of urgent, high, medium, low, or none");
+  }
+  return priorities;
 }
 
 function optionalResource(

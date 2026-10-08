@@ -1,6 +1,7 @@
 import {
   SUDUO_TOOL_NATIVE_METHOD,
   currentSuDuoToolName,
+  isRetiredSuDuoToolName,
   type ApprovalDecision,
   type JsonValue,
   type Locale,
@@ -93,13 +94,7 @@ export class SessionToolService implements ToolConfirmationHandler {
     if (confirmation === null || !accepted) {
       locale = this.safeLocaleOf(() => approval.sessionId);
       const text = toolFormat(locale).t.toolReply;
-      result = failure(
-        confirmation === null
-          ? text.write.incomplete
-          : confirmation.tool === "comment_submit"
-            ? text.dispatch.declinedComment
-            : text.dispatch.declinedPublish,
-      );
+      result = failure(confirmation === null ? text.write.incomplete : text.dispatch.declinedComment);
     } else {
       const context = this.deps.context.toolContext(approval.sessionId);
       locale = this.safeLocaleOf(() => approval.sessionId, context);
@@ -107,7 +102,7 @@ export class SessionToolService implements ToolConfirmationHandler {
       result =
         context === null
           ? failure(f.t.toolReply.dispatch.sessionUnlinked)
-          : await this.deps.tools.executeWrite(context, confirmation, approval.id).catch((error: unknown) =>
+          : await this.deps.tools.executeWrite(context, confirmation).catch((error: unknown) =>
               failure(f.t.toolReply.dispatch.runFailed(f.reasonOf(error))),
             );
     }
@@ -139,6 +134,13 @@ export class SessionToolService implements ToolConfirmationHandler {
     }
     const text = toolFormat(context.locale).t.toolReply;
     const args = isRecord(request.arguments) ? request.arguments : {};
+    if (isRetiredSuDuoToolName(request.tool)) {
+      // 确认版已停用：旧会话续接时仍带着旧工具清单，模型可能还会调用。说清楚并指向附件工具；
+      // 放在房间检查之前，免得房间里误说成「只能用只读工具」。
+      await this.respond(event, request.callRef, failure(text.dispatch.retired(request.tool)));
+      this.log({ event: "suduo.tool.retired", sessionId: context.sessionId, tool: request.tool });
+      return;
+    }
     if (context.room !== undefined && !context.room.allowedTools.includes(request.tool)) {
       // 房间任务会话只挂房间工具与需求只读工具（ADR-0009）：清单外的调用（笔记、写工具）一律不执行。
       await this.respond(event, request.callRef, failure(text.dispatch.roomReadOnly(request.tool)));
@@ -150,10 +152,7 @@ export class SessionToolService implements ToolConfirmationHandler {
         await this.respond(event, request.callRef, failure(text.dispatch.threadMissing));
         return;
       }
-      const prepared =
-        request.tool === "suduo_comment_submit"
-          ? await this.deps.tools.prepareComment(context, args)
-          : await this.deps.tools.preparePublish(context, args);
+      const prepared = await this.deps.tools.prepareComment(context, args);
       if ("contentItems" in prepared) {
         await this.respond(event, request.callRef, prepared);
         return;
@@ -231,10 +230,6 @@ export class SessionToolService implements ToolConfirmationHandler {
         return tools.requirementAttachments(context, args);
       case "suduo_attachment_view":
         return tools.attachmentView(context, args);
-      case "suduo_artifact_versions":
-        return tools.artifactVersions(context, args);
-      case "suduo_artifact_fetch":
-        return tools.artifactFetch(context, args);
       case "suduo_notes_read":
         return tools.notesRead(context, args, remember);
       case "suduo_notes_save":
@@ -402,9 +397,8 @@ export function confirmationOf(approval: ApprovalRecord): SuDuoToolConfirmationD
     return null;
   }
   const tool = payload["suDuoTool"];
-  return isRecord(tool) && (tool["tool"] === "comment_submit" || tool["tool"] === "artifact_publish")
-    ? (tool as unknown as SuDuoToolConfirmationDto)
-    : null;
+  // 只认发评论：确认版停用前的发布确认卡不再执行（本机服务重启时挂起的卡都已作废）。
+  return isRecord(tool) && tool["tool"] === "comment_submit" ? (tool as unknown as SuDuoToolConfirmationDto) : null;
 }
 
 export function isToolConfirmation(approval: ApprovalRecord): boolean {
@@ -413,11 +407,7 @@ export function isToolConfirmation(approval: ApprovalRecord): boolean {
 }
 
 function fingerprintOf(confirmation: SuDuoToolConfirmationDto): string {
-  if (confirmation.tool === "comment_submit") {
-    return `comment:${confirmation.requirement.id}:${confirmation.comment?.body ?? ""}`;
-  }
-  const files = (confirmation.publish?.files ?? []).map((file) => `${file.source}:${file.ref}`).sort();
-  return `publish:${confirmation.requirement.id}:${files.join("|")}`;
+  return `comment:${confirmation.requirement.id}:${confirmation.comment?.body ?? ""}`;
 }
 
 function turnIdOf(approval: ApprovalRecord): string | null {

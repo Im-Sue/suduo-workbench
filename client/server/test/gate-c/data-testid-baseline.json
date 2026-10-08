@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 286,
+  "total": 290,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -127,8 +127,12 @@
       "requirement-row",
       "requirements-list"
     ],
+    "web/src/features/requirements/components/PriorityMenu.tsx": [
+      "priority-menu-trigger"
+    ],
     "web/src/features/requirements/components/RequirementCard.tsx": [
-      "requirement-card"
+      "requirement-card",
+      "requirement-card-priority"
     ],
     "web/src/features/requirements/components/RequirementPeek.tsx": [
       "requirement-peek"
@@ -137,6 +141,8 @@
       "start-session-dialog"
     ],
     "web/src/features/requirements/RequirementDetailPage.tsx": [
+      "comment-composer",
+      "comment-notice",
       "description-editor",
       "requirement-detail",
       "start-session"
@@ -144,18 +150,21 @@
     "web/src/features/requirements/RequirementsPage.tsx": [
       "create-requirement",
       "requirements-page",
+      "requirements-priority-filter",
+      "requirements-sort",
       "requirements-view-switch"
     ],
     "web/src/features/requirements/sections/ActivityFeed.tsx": [
-      "activity-comment"
+      "activity-comment",
+      "comment-files"
+    ],
+    "web/src/features/requirements/sections/CommentFiles.tsx": [
+      "comment-pending-files"
     ],
     "web/src/features/requirements/sections/Materials.tsx": [
-      "artifact-version",
+      "historical-versions",
       "materials-panel",
       "upload-row"
-    ],
-    "web/src/features/requirements/sections/PublishArtifactDialog.tsx": [
-      "publish-artifact-dialog"
     ],
     "web/src/features/rooms/components/AgentRunDetail.tsx": [
       "run-detail"
@@ -266,9 +275,6 @@
       "approval-more",
       "tool-confirm-comment",
       "tool-confirm-duplicate",
-      "tool-confirm-file",
-      "tool-confirm-files",
-      "tool-confirm-note",
       "tool-confirm-title"
     ],
     "web/src/features/sessions/SessionHeader.tsx": [

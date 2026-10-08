@@ -54,8 +54,8 @@ beforeEach(() => {
   apiMocks.getRequirement.mockResolvedValue({ id: UUID, number: 7, title: "订单详情优化（改）", status: "in_development", version: 4 });
   apiMocks.listRequirementAttachments.mockResolvedValue({
     items: [
+      { id: "a2", requirementId: UUID, fileName: "原型.sketch", contentType: "application/octet-stream", sizeBytes: 2048, sha256: "y", uploadedBy: { id: "u", displayName: "李娜" }, createdAt: "2026-09-29T01:00:00Z" },
       { id: "a1", requirementId: UUID, fileName: "需求问题截图.png", contentType: "image/png", sizeBytes: 921_600, sha256: "x", uploadedBy: { id: "u", displayName: "李娜" }, createdAt: "2026-09-30T01:00:00Z" },
-      { id: "a2", requirementId: UUID, fileName: "原型.sketch", contentType: "application/octet-stream", sizeBytes: 2048, sha256: "y", uploadedBy: { id: "u", displayName: "李娜" }, createdAt: "2026-09-30T01:00:00Z" },
     ],
     requirementVersion: 4,
   });
@@ -85,7 +85,7 @@ describe("会话右栏「需求」标签：需求概要", () => {
     expect(q(node, "requirement-material-version")?.textContent).toContain("开工后需求改过");
     const rows = qa(node, "requirement-material-attachment");
     expect(rows).toHaveLength(2);
-    // 图片可在线看：点名字在新标签页打开 inline 地址；其它类型点名字下载。
+    // 最新在前（需求服务给的是升序）。图片可在线看：点名字在新标签页打开 inline 地址；其它类型点名字下载。
     const image = rows[0]?.querySelector("a");
     expect(image?.getAttribute("href")).toBe("/api/v2/attachments/a1/content?disposition=inline");
     expect(image?.getAttribute("target")).toBe("_blank");

@@ -2,7 +2,7 @@ import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { projectEvents } from "../src/event-projection/reducer.js";
 import { describeCodexError, describePermissions, localizeNotice } from "../src/event-projection/shared.js";
-import { duplicateNotice, publishFileSource, suDuoToolConfirmationTitle } from "../src/event-projection/suduo-tools.js";
+import { duplicateNotice, suDuoToolConfirmationTitle } from "../src/event-projection/suduo-tools.js";
 import type { TimelineEntry, TimelineStep, TurnTimeline } from "../src/event-projection/timeline.js";
 import { applyLocalePreference } from "../src/i18n/locale.js";
 import { messagesFor } from "../src/i18n/messages/index.js";
@@ -122,7 +122,6 @@ describe("时间线投影 · 英文", () => {
     };
     expect(suDuoToolConfirmationTitle(confirmation)).toBe("Publish confirmed version to REQ-1 “Order details”");
     expect(duplicateNotice(confirmation)).toBeNull();
-    expect(publishFileSource({ name: "a.md", sizeBytes: null, source: "attachment", ref: "att-1" })).toBe("Existing attachment");
     // 调用方也可以直接传字典，不依赖当前语言。
     applyLocalePreference("system");
     expect(suDuoToolConfirmationTitle(confirmation, messagesFor("en"))).toBe("Publish confirmed version to REQ-1 “Order details”");

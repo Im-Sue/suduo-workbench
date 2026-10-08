@@ -381,6 +381,7 @@ describe("Gate B HTTP", () => {
         reachable: true,
         message: "远程需求服务连接正常",
         version: null,
+        features: [],
       });
       expect(context.requirementsRemote.state.requests).toEqual([
         "https://requirements-probe.example/v2/health",
@@ -397,6 +398,16 @@ describe("Gate B HTTP", () => {
         payload: { baseUrl: "https://requirements-probe.example" },
       });
       expect(withVersion.json()).toMatchObject({ reachable: true, version: "0.7.0" });
+
+      // 云端声明的功能原样带回（只留字符串），网页据此显示优先级等入口。
+      context.requirementsRemote.state.healthFeatures = ["requirement_priority", 42, null];
+      const withFeatures = await context.server.inject({
+        method: "POST",
+        url: "/api/v2/requirements/settings/test",
+        headers: { host: context.host, origin: `http://${context.host}` },
+        payload: { baseUrl: "https://requirements-probe.example" },
+      });
+      expect(withFeatures.json()).toMatchObject({ features: ["requirement_priority"] });
     } finally {
       await context.server.close();
       context.database.close();
@@ -574,6 +585,19 @@ describe("Gate B HTTP", () => {
         assignee: "none",
       });
       context.requirementsRemote.state.requirementListQueries.pop();
+      // 优先级筛选与排序原样转给需求服务（看板按优先级排序）。
+      const prioritized = await context.server.inject({
+        method: "GET",
+        url: "/api/v2/projects/remote-project/requirements?status=draft&priority=urgent,none&sort=priority",
+        headers: { host: context.host },
+      });
+      expect(prioritized.statusCode).toBe(200);
+      expect(Object.fromEntries(new URLSearchParams(context.requirementsRemote.state.requirementListQueries.at(-1)))).toEqual({
+        status: "draft",
+        priority: "urgent,none",
+        sort: "priority",
+      });
+      context.requirementsRemote.state.requirementListQueries.pop();
 
       // 已读位置：带水位原样转发；不带请求体按现在记。
       const read = await context.server.inject({
@@ -642,6 +666,7 @@ describe("Gate B HTTP", () => {
         { title: "只有标题" },
         { title: "空描述带负责人", summary: "", assigneeId: "fixture-user" },
         { title: "显式不指派", assigneeId: null },
+        { title: "带优先级", priority: "urgent" },
       ];
       for (const payload of bodies) {
         const created = await context.server.inject({
@@ -669,9 +694,22 @@ describe("Gate B HTTP", () => {
         payload: { title: "负责人类型错误", assigneeId: 42 },
       });
       expect(badAssignee.statusCode).toBe(400);
-      expect(context.requirementsRemote.state.requirementCreateBodies).toHaveLength(3);
+      const badPriority = await context.server.inject({
+        method: "POST",
+        url: "/api/v2/projects/remote-project/requirements",
+        headers,
+        payload: { title: "优先级不认识", priority: "critical" },
+      });
+      expect(badPriority.statusCode).toBe(400);
+      expect(context.requirementsRemote.state.requirementCreateBodies).toHaveLength(4);
 
-      for (const payload of [{ assigneeId: "fixture-user" }, { assigneeId: null }, { summary: "" }]) {
+      for (const payload of [
+        { assigneeId: "fixture-user" },
+        { assigneeId: null },
+        { summary: "" },
+        { priority: "low" },
+        { priority: null },
+      ]) {
         const updated = await context.server.inject({
           method: "PATCH",
           url: "/api/v2/requirements/remote-requirement",
@@ -692,6 +730,8 @@ describe("Gate B HTTP", () => {
         { assigneeId: "fixture-user" },
         { assigneeId: null },
         { summary: "" },
+        { priority: "low" },
+        { priority: null },
       ]);
     } finally {
       await context.server.close();
@@ -825,7 +865,7 @@ describe("Gate B HTTP", () => {
     }
   });
 
-  it("代理产物版本列表、发布、详情和版本文件下载，并兼容透传新旧发布 body", async () => {
+  it("代理产物版本列表、详情和版本文件下载（只读）；发布不再代理", async () => {
     const context = createContext();
     try {
       configureRequirementsRemote(context);
@@ -839,26 +879,15 @@ describe("Gate B HTTP", () => {
         expect.objectContaining({ id: ARTIFACT_VERSION_ID, versionNumber: 1 }),
       ]);
 
-      const publishRequest = {
-        operationKey: "artifact-publish-operation-key",
-        attachmentIds: [ARTIFACT_ATTACHMENT_ID],
-        note: "交付第一版",
-      };
-      const legacyPublishRequest = { ...publishRequest, expectedVersion: 7 };
-      for (const payload of [publishRequest, legacyPublishRequest]) {
-        const published = await context.server.inject({
-          method: "POST",
-          url: "/api/v2/requirements/remote-requirement/artifact-versions",
-          headers: { host: context.host, origin: `http://${context.host}` },
-          payload,
-        });
-        expect(published.statusCode).toBe(201);
-        expect(published.json()).toMatchObject({ id: ARTIFACT_VERSION_ID, fileCount: 1 });
-      }
-      expect(context.requirementsRemote.state.artifactPublishBodies).toEqual([
-        publishRequest,
-        legacyPublishRequest,
-      ]);
+      // 确认版停用：本机服务不再代理发布，只留读取（历史确认版只读）。
+      const publish = await context.server.inject({
+        method: "POST",
+        url: "/api/v2/requirements/remote-requirement/artifact-versions",
+        headers: { host: context.host, origin: `http://${context.host}` },
+        payload: { operationKey: "artifact-publish-operation-key", attachmentIds: [ARTIFACT_ATTACHMENT_ID] },
+      });
+      expect(publish.statusCode).toBe(404);
+      expect(context.requirementsRemote.state.artifactPublishBodies).toEqual([]);
 
       const detail = await context.server.inject({
         method: "GET",
@@ -879,6 +908,82 @@ describe("Gate B HTTP", () => {
       expect(content.statusCode).toBe(200);
       expect(content.body).toBe("released artifact bytes");
       expect(content.headers["x-attachment-sha256"]).toBe(artifactFileFixtures()[0]!.sha256);
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
+  it("评论带文件：透传 fileIds，只有文件可不写正文，编号不合法 400；评论文件上传、下载、存为附件都转发", async () => {
+    const context = createContext();
+    try {
+      configureRequirementsRemote(context);
+      const headers = { host: context.host, origin: `http://${context.host}` };
+      const post = (payload: unknown) =>
+        context.server.inject({ method: "POST", url: `/api/v2/requirements/${SESSION_REQUIREMENT_ID}/comments`, headers, payload: payload as Record<string, unknown> });
+      expect((await post({ body: "看图", fileIds: ["cf-1"] })).statusCode).toBe(201);
+      expect((await post({ fileIds: ["cf-1"] })).statusCode).toBe(201);
+      expect((await post({ body: "  ", fileIds: ["cf-1"] })).statusCode).toBe(201);
+      for (const invalid of [
+        { fileIds: "cf-1" },
+        { fileIds: [1] },
+        { body: "x", fileIds: Array.from({ length: 11 }, (_, index) => `cf-${String(index)}`) },
+        { body: "  " },
+        {},
+      ]) {
+        expect((await post(invalid)).statusCode, JSON.stringify(invalid)).toBe(400);
+      }
+      expect(context.requirementsRemote.state.commentBodies).toEqual([
+        { body: "看图", fileIds: ["cf-1"] },
+        { fileIds: ["cf-1"] },
+        { body: "  ", fileIds: ["cf-1"] },
+      ]);
+
+      const uploaded = await context.server.inject({
+        method: "POST",
+        url: `/api/v2/requirements/${SESSION_REQUIREMENT_ID}/comment-files`,
+        headers: { ...headers, "content-type": "multipart/form-data; boundary=fixture" },
+        payload: "--fixture--\r\n",
+      });
+      expect(uploaded.statusCode).toBe(201);
+      expect(uploaded.json()).toMatchObject({ id: "cf-1", commentId: null });
+      const notMultipart = await context.server.inject({
+        method: "POST",
+        url: `/api/v2/requirements/${SESSION_REQUIREMENT_ID}/comment-files`,
+        headers: { ...headers, "content-type": "application/json" },
+        payload: {},
+      });
+      expect(notMultipart.statusCode).toBe(400);
+
+      const content = await context.server.inject({
+        method: "GET",
+        url: "/api/v2/comment-files/cf-1/content?disposition=inline",
+        headers: { host: context.host, range: "bytes=0-2" },
+      });
+      expect(content.statusCode).toBe(200);
+      expect(content.body).toBe("png-bytes");
+      expect(content.headers["content-type"]).toBe("image/png");
+      expect(content.headers["content-security-policy"]).toBe("sandbox");
+      expect(content.headers["x-content-type-options"]).toBe("nosniff");
+
+      const saved = await context.server.inject({
+        method: "POST",
+        url: "/api/v2/comment-files/cf-1/save-as-attachment",
+        headers,
+      });
+      expect(saved.statusCode).toBe(201);
+      expect(saved.json()).toMatchObject({ attachment: { id: "att-from-comment" } });
+      const meta = await context.server.inject({ method: "GET", url: "/api/v2/comment-files/cf-1", headers: { host: context.host } });
+      expect(meta.json()).toMatchObject({ id: "cf-1", commentId: "c-1" });
+      // 旧云端没有评论文件端点：框架默认的 404 照「找不到」处理，不说成「无法识别的响应」。
+      const missing = await context.server.inject({ method: "GET", url: "/api/v2/comment-files/missing", headers: { host: context.host } });
+      expect(missing.statusCode).toBe(404);
+      expect(missing.json()).toMatchObject({ error: { code: "NOT_FOUND" } });
+      expect(context.requirementsRemote.state.commentFileRequests).toEqual([
+        "POST upload multipart/form-data; boundary=fixture",
+        "GET content inline bytes=0-2",
+        "POST save no-body",
+      ]);
     } finally {
       await context.server.close();
       context.database.close();
@@ -1512,6 +1617,7 @@ function createRequirementsRemoteClient(
     connection: "ok" | "unavailable";
     /** 健康检查里报告的云端版本；不设置时模拟不报告版本的较早云端。 */
     healthVersion?: string;
+    healthFeatures?: unknown;
     requests: string[];
     requirementVersion: number;
     attachmentCount: number;
@@ -1527,6 +1633,8 @@ function createRequirementsRemoteClient(
     deletedArtifactAttachmentIds: Set<string>;
     sessionAttachments: unknown[];
     commentBodies: unknown[];
+    /** 评论文件端点收到的请求（方法 + 路径 + 关键参数）。 */
+    commentFileRequests: string[];
     commentConnection: "ok" | "unavailable";
     commentPostAttempts: number;
     commentListRequests: number;
@@ -1549,6 +1657,7 @@ function createRequirementsRemoteClient(
     deletedArtifactAttachmentIds: new Set(),
     sessionAttachments: [],
     commentBodies: [],
+    commentFileRequests: [],
     commentConnection: "ok",
     commentPostAttempts: 0,
     commentListRequests: 0,
@@ -1566,6 +1675,7 @@ function createRequirementsRemoteClient(
           service: "suduo-requirements-service",
           status: "ok",
           ...(state.healthVersion === undefined ? {} : { version: state.healthVersion }),
+          ...(state.healthFeatures === undefined ? {} : { features: state.healthFeatures }),
           database: { status: "ok", schemaVersion: "fixture" },
           uptimeMs: 1,
         }),
@@ -1806,6 +1916,41 @@ function createRequirementsRemoteClient(
         author: { id: "fixture-user", displayName: "Fixture User" },
         createdAt: "2026-09-05T00:00:00.000Z",
       }), { status: 201, headers: { "content-type": "application/json" } });
+    }
+    if (init?.method === "POST" && url.pathname === `/v2/requirements/${SESSION_REQUIREMENT_ID}/comment-files`) {
+      const headers = new Headers(init.headers);
+      state.commentFileRequests.push(`POST upload ${headers.get("content-type") ?? ""}`);
+      return new Response(JSON.stringify({ id: "cf-1", requirementId: SESSION_REQUIREMENT_ID, commentId: null, fileName: "截图.png" }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (init?.method === "GET" && url.pathname === "/v2/comment-files/cf-1/content") {
+      state.commentFileRequests.push(`GET content ${url.searchParams.get("disposition") ?? ""} ${new Headers(init.headers).get("range") ?? ""}`);
+      return new Response("png-bytes", {
+        status: 200,
+        headers: { "content-type": "image/png", "content-disposition": "inline; filename=\"a.png\"", etag: "\"sha\"" },
+      });
+    }
+    if (init?.method === "GET" && url.pathname === "/v2/comment-files/cf-1") {
+      return new Response(JSON.stringify({ id: "cf-1", requirementId: SESSION_REQUIREMENT_ID, commentId: "c-1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (init?.method === "GET" && url.pathname === "/v2/comment-files/missing") {
+      // 较早的需求服务没有这个端点：框架默认的 404 正文，不是我们的错误格式。
+      return new Response(JSON.stringify({ message: "Route GET:/v2/comment-files/missing not found", error: "Not Found", statusCode: 404 }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (init?.method === "POST" && url.pathname === "/v2/comment-files/cf-1/save-as-attachment") {
+      state.commentFileRequests.push(`POST save ${init.body === undefined ? "no-body" : "body"}`);
+      return new Response(JSON.stringify({ attachment: { id: "att-from-comment" }, requirementVersion: 1 }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
     }
     if (
       init?.method === "POST" &&

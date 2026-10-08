@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,6 @@ import type {
   StartTurnResult,
   SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
-import type { ArtifactVersionDetailDto } from "@suduo/cloud-contracts";
 import { ApiError } from "../src/application/api-error.js";
 import { ApprovalService } from "../src/application/approval-service.js";
 import { EventLedger } from "../src/application/event-ledger.js";
@@ -103,25 +102,6 @@ function setup() {
   return { root, remote, tools: new RequirementTools(remote), ctx: ctxOf(root) };
 }
 
-function version(id: string, versionNumber: number, files: Array<[string, string]>): ArtifactVersionDetailDto {
-  return {
-    id,
-    requirementId: "req-1",
-    versionNumber,
-    publishedBy: DEV,
-    publishedAt: `2026-09-2${String(versionNumber)}T02:00:00.000Z`,
-    fileCount: files.length,
-    files: files.map(([fileId, fileName]) => ({
-      id: fileId,
-      artifactVersionId: id,
-      attachmentId: "att-" + fileId,
-      fileName,
-      sizeBytes: 6,
-      sha256: "0".repeat(64),
-    })),
-  };
-}
-
 describe("英文会话：需求只读工具", () => {
   it("requirement_get：框架文字是英文，标题 / 人名 / 正文 / 评论原样；系统评论按英文渲染", async () => {
     const { remote, tools, ctx } = setup();
@@ -151,7 +131,7 @@ describe("英文会话：需求只读工具", () => {
     const text = textOf(await tools.requirementGet({ ...ctx, requirement: { ...ctx.requirement!, anchorKnown: false } }, {}));
     expect(text.startsWith("The following comes from the SuDuo requirements service.")).toBe(true);
     expect(text).toContain(`# REQ-1 “${TITLE}”`);
-    expect(text).toContain("- Status: Draft; Assignee: 陈思远; Current version: v3 (v2 when work started)");
+    expect(text).toContain("- Status: Draft; Priority: None; Assignee: 陈思远; Current version: v3 (v2 when work started)");
     expect(text).toContain("- 1 comment; 1 attachment (view them with suduo_requirement_comments / suduo_requirement_attachments)");
     expect(text).toContain("## Changes since work started (work started at ");
     expect(text).toContain("- Note: the requirements service's change-log boundary wasn't available");
@@ -277,7 +257,9 @@ describe("英文会话：需求只读工具", () => {
     remote.attachmentContent.set("att-md", Buffer.from("# 结论"));
     remote.attachmentContent.set("att-pdf", Buffer.from("%PDF-1.7"));
     const list = textOf(await tools.requirementAttachments(ctx, {}));
-    expect(list).toContain(`Attachments of REQ-1 “${TITLE}” (2 attachments; view their content with suduo_attachment_view):`);
+    expect(list).toContain(
+      `Attachments of REQ-1 “${TITLE}” (2 attachments, newest first; where content overlaps, the newer one wins; where it doesn't, they complement each other; if unsure, ask the user. View their content with suduo_attachment_view):`,
+    );
     expectNoFrameworkChinese(list);
 
     const markdown = textOf(await tools.attachmentView(ctx, { attachmentId: "att-md" }));
@@ -298,38 +280,6 @@ describe("英文会话：需求只读工具", () => {
     expect(textOf(await tools.attachmentView(ctx, { attachmentId: "att-md" }))).toContain(
       "Couldn't look up the content of attachment “说明.md”: The requirements service can't be reached right now (reset).",
     );
-  });
-
-  it("artifact_versions / artifact_fetch：英文说明，保存目录用英文名", async () => {
-    const { root, remote, tools, ctx } = setup();
-    expect(textOf(await tools.artifactVersions(ctx, {}))).toBe(`No confirmed version of REQ-1 “${TITLE}” has been published yet.`);
-    remote.versions.set("req-1", [
-      version("ver-1", 1, [["f1", "旧.md"]]),
-      version("ver-2", 2, [["f2", "PRD.md"], ["f3", "流程图.png"]]),
-    ]);
-    remote.versionFileContent.set("f2", Buffer.from("PRD v2"));
-    remote.versionFileContent.set("f3", Buffer.from("png"));
-    const list = textOf(await tools.artifactVersions(ctx, {}));
-    expect(list).toContain(`Confirmed versions of REQ-1 “${TITLE}” (2, newest first):`);
-    expect(list).toMatch(/## v2 · 陈思远 · .+ \(2 files\)\n- PRD\.md \(6B\)\n- 流程图\.png \(6B\)/u);
-    expect(list).toMatch(/## v1 · 陈思远 · .+ \(1 file\)/u);
-    expect(list.endsWith("To read the files, use suduo_artifact_fetch to save a version locally.")).toBe(true);
-    expectNoFrameworkChinese(list.replace("旧.md", ""));
-
-    const fetched = textOf(await tools.artifactFetch(ctx, { version: 2 }));
-    const dir = join(".suduo", "requirements", `REQ-1-${TITLE}`, "materials", "confirmed-version-v2");
-    expect(fetched).toMatch(new RegExp(`^Saved confirmed version v2 of REQ-1 “${TITLE}” \\(陈思远, .+\\) to ${dir.replace(/[.\\/]/gu, "\\$&")}/:`, "u"));
-    expect(readFileSync(join(root, dir, "PRD.md"), "utf8")).toBe("PRD v2");
-
-    expect(textOf(await tools.artifactFetch(ctx, { version: "x" }))).toBe("version must be a positive integer, e.g. 2.");
-    expect(textOf(await tools.artifactFetch(ctx, { version: 9 }))).toBe(
-      `REQ-1 “${TITLE}” has no confirmed version v9 (existing: v1, v2).`,
-    );
-    remote.fail.getArtifactVersion = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "timeout");
-    expect(textOf(await tools.artifactVersions(ctx, {}))).toContain(
-      "- Couldn't look up the file list (the requirements service is unavailable right now). You can try again later.",
-    );
-    expect(textOf(await tools.artifactFetch(ctx, { version: 2 }))).toContain("Couldn't look up the file list of confirmed version v2: ");
   });
 
   it("notes：英文说明，笔记内容原样", async () => {
@@ -362,82 +312,33 @@ describe("英文会话：需求只读工具", () => {
 
 describe("英文会话：对外写工具（确认卡与执行结果）", () => {
   it("准备阶段的报错", async () => {
-    const { root, tools, ctx } = setup();
+    const { tools, ctx } = setup();
     expect(textOf(await tools.prepareComment(ctx, { body: " " }))).toBe("The comment can't be empty.");
     expect(textOf(await tools.prepareComment(ctx, { body: "x".repeat(4_001) }))).toBe(
       "A comment can be at most 4000 characters; this one is 4001 characters. Shorten it before sending.",
     );
     expect(textOf(await tools.prepareComment({ ...ctx, requirement: null }, { body: "hi" }))).toBe(
-      "Only a session created from a requirement can post comments or publish confirmed versions.",
-    );
-    expect(textOf(await tools.preparePublish(ctx, {}))).toBe(
-      "Give at least one file to publish: paths (files in the project) or attachmentIds (existing attachments).",
-    );
-    expect(textOf(await tools.preparePublish(ctx, { paths: ["nope.md"] }))).toBe(
-      "Couldn't find the file nope.md in the project (the path must be relative to the project folder and must be a file).",
-    );
-    expect(textOf(await tools.preparePublish(ctxOf(root), { attachmentIds: ["att-x"] }))).toBe(
-      `REQ-1 “${TITLE}” has no attachment with ID att-x.`,
+      "Only a session created from a requirement can post comments.",
     );
   });
 
   it("发评论：成功、4xx「没发出」、其他失败「结果未确认，核对前不要重发」，英文同样明确", async () => {
     const { remote, tools, ctx } = setup();
     const card = (await tools.prepareComment(ctx, { body: "请确认收货地址字段" })) as SuDuoToolConfirmationDto;
-    const ok = textOf(await tools.executeWrite(ctx, card, "approval-1"));
+    const ok = textOf(await tools.executeWrite(ctx, card));
     expect(ok).toMatch(new RegExp(`^Posted the comment to REQ-1 “${TITLE}” \\(陈思远, .+, comment ID comment-new-1\\)\\.$`, "u"));
-    const untitled = textOf(await tools.executeWrite(ctx, { ...card, requirement: { ...card.requirement, number: null } }, "approval-1b"));
+    const untitled = textOf(await tools.executeWrite(ctx, { ...card, requirement: { ...card.requirement, number: null } }));
     expect(untitled.startsWith(`Posted the comment to requirement “${TITLE}” (`)).toBe(true);
 
     remote.fail.createComment = new ApiError(422, "VALIDATION_ERROR", "Comment is invalid");
-    expect(textOf(await tools.executeWrite(ctx, card, "approval-2"))).toBe("Couldn't post the comment: Comment is invalid.");
+    expect(textOf(await tools.executeWrite(ctx, card))).toBe("Couldn't post the comment: Comment is invalid.");
 
     remote.fail.createComment = new TypeError("fetch failed");
-    expect(textOf(await tools.executeWrite(ctx, card, "approval-3"))).toBe(
+    expect(textOf(await tools.executeWrite(ctx, card))).toBe(
       "The result of posting the comment is unconfirmed: fetch failed. Ask the user to check on the requirement page whether it was posted. Don't post it again before they check.",
     );
   });
 
-  it("发布确认版：确认后改过的文件、部分已上传、文件不见了、结果未确认", async () => {
-    const root = temporaryDirectory();
-    mkdirSync(join(root, "docs"));
-    writeFileSync(join(root, "docs", "PRD.md"), "# PRD");
-    writeFileSync(join(root, "docs", "B.md"), "# B");
-    const remote = new FakeRequirementsRemote();
-    remote.attachments.set("req-1", [attachmentFixture({ id: "att-1", fileName: "设计稿.png", contentType: "image/png", sizeBytes: 900 })]);
-    const tools = new RequirementTools(remote);
-    const ctx = ctxOf(root);
-    const card = (await tools.preparePublish(ctx, { paths: ["docs/PRD.md", "docs/B.md"], attachmentIds: ["att-1"] })) as SuDuoToolConfirmationDto;
-
-    writeFileSync(join(root, "docs", "PRD.md"), "# PRD changed after confirm");
-    const published = textOf(await tools.executeWrite(ctx, card, "approval-9"));
-    expect(published).toMatch(new RegExp(`^Published confirmed version v3 of REQ-1 “${TITLE}” \\(3 files, .+\\)\\.\\n`, "u"));
-    expect(published).toContain(
-      "\nNote: these files changed after the user confirmed, and the latest content was published. Tell the user: docs/PRD.md (5B when confirmed, 27B when published).",
-    );
-    expectNoFrameworkChinese(published);
-
-    remote.fail.publishArtifactVersion = new TypeError("socket hang up");
-    const unknown = textOf(await tools.executeWrite(ctx, card, "approval-10"));
-    expect(unknown).toBe(
-      "The result of publishing the confirmed version is unconfirmed: socket hang up. Ask the user to check on the requirement page whether it was published. Don't publish it again before they check." +
-        "\nFiles already uploaded as requirement attachments, but the confirmed version wasn't published: PRD.md (attachment ID att-uploaded-3); B.md (attachment ID att-uploaded-4). " +
-        "These attachments stay on the requirement; when you retry, you can put their attachment IDs in attachmentIds to publish them directly without uploading again.",
-    );
-
-    remote.fail.publishArtifactVersion = new ApiError(409, "VALIDATION_ERROR", "Attachment was deleted");
-    expect(textOf(await tools.executeWrite(ctx, card, "approval-11"))).toContain(
-      "Couldn't publish the confirmed version: Attachment was deleted.\nFiles already uploaded",
-    );
-
-    rmSync(join(root, "docs", "B.md"));
-    expect(textOf(await tools.executeWrite(ctx, card, "approval-12"))).toContain(
-      "The project file docs/B.md can no longer be found (it may have been moved or deleted after it was confirmed), so the confirmed version wasn't published.",
-    );
-    expect(textOf(await tools.executeWrite(ctx, { ...card, publish: undefined } as unknown as SuDuoToolConfirmationDto, "a"))).toBe(
-      "The confirmation card is incomplete, so nothing was done.",
-    );
-  });
 });
 
 describe("describeActivity（P1 需求卡也用）", () => {
@@ -464,6 +365,9 @@ describe("describeActivity（P1 需求卡也用）", () => {
       "edited the description (see the current description above), changed the status from “In testing” to “Done”, changed the assignee from “李娜” to “Unassigned”",
     );
     expect(en({ action: "requirement.updated", changes: [] })).toBe("updated the requirement");
+    expect(
+      en({ action: "requirement.priority_changed", changes: [{ field: "priority", from: null, to: "urgent" }] }),
+    ).toBe("changed the priority from “None” to “Urgent”");
     expect(en({ action: "comment.created", changes: [], comment: { id: "c", body: "长".repeat(100) } })).toBe(
       `commented: “${"长".repeat(80)}\n… (truncated)”`,
     );
@@ -661,6 +565,15 @@ describe("英文会话：工具调度", () => {
     expect(runtime.responses.at(-1)?.contentItems).toEqual([{ type: "inputText", text: message }]);
     const outcome = (approvals.getById(failing.id)!.decisionPayload as { outcome: { message: string } }).outcome;
     expect(outcome.message).toBe(message);
+  });
+
+  it("撤下的确认版工具：英文说明「已停用」并指向附件工具；房间里也一样，不说成只读限制", async () => {
+    const { call, responseOf } = serviceSetup({ withSessions: true });
+    const retired =
+      "suduo_artifact_fetch has been retired: SuDuo no longer has confirmed versions, and all requirement materials are attachments. " +
+      "List them with suduo_requirement_attachments (newest first) and view their content with suduo_attachment_view.";
+    expect(await responseOf(call("suduo_artifact_fetch", { version: 1 }))).toBe(retired);
+    expect(await responseOf(call("suduo_artifact_fetch", { version: 1 }, ROOM_THREAD_REF))).toBe(retired);
   });
 
   it("房间任务会话调清单外的工具：只读限制的说明是英文", async () => {

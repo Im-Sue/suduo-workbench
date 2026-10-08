@@ -23,7 +23,7 @@ import { StatusIcon } from "@/components/ui/status-icon";
 import { cn } from "@/lib/utils";
 import { requirementCode } from "../format.js";
 import type { RequirementListFilters } from "../keys.js";
-import { columnQuery, type ColumnState } from "../queries.js";
+import { columnItems, columnQuery, type ColumnState } from "../queries.js";
 import { RequirementCard } from "./RequirementCard.js";
 import { requirementStatusLabel } from "../../../ui/requirement-status.js";
 import { useT } from "../../../i18n/provider.js";
@@ -156,7 +156,7 @@ function BoardColumn({
   const t = useT();
   const query = useInfiniteQuery(columnQuery(projectId, status, filters));
   const { setNodeRef, isOver } = useDroppable({ id: status });
-  const items = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
+  const items = useMemo(() => columnItems(query.data), [query.data]);
   const loaded = query.data !== undefined;
   const hasMore = query.hasNextPage;
   useEffect(() => {

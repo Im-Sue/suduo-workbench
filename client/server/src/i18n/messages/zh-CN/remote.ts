@@ -44,11 +44,12 @@ export const remote = {
     baseUrlNotString: "baseUrl 必须是字符串",
     baseUrlInvalid: "远程服务地址无效",
     patchEmpty: "PATCH 至少提供一个字段",
-    publishInvalid: "产物发布请求无效",
     loginNameInvalid: "登录名格式无效",
     passwordLengthInvalid: "密码长度无效",
     summaryTooLong: "需求描述必须是不超过 4000 字符的字符串",
     assigneeInvalid: "assigneeId 必须是用户 ID 或 null",
+    commentFilesInvalid: "fileIds 必须是文件 ID 数组（最多 10 个）；带文件时评论正文最多 4000 字",
+    priorityInvalid: "priority 必须是 urgent、high、medium、low 之一或 null",
     /** label 是下面 fields 里的字段名。 */
     lengthOutOfRange: (label: string, maximum: number) => `${label}长度必须为 1 到 ${String(maximum)}`,
     fields: {

@@ -176,35 +176,6 @@ describe("SuDuo 工具确认卡（需求 4.3）", () => {
     expect(node.querySelector('[data-testid="tool-confirm-title"]')?.textContent).toBe("发评论到 这条需求");
   });
 
-  it("发布确认版：列出文件名、大小、来源与发布说明，按钮是「发布 / 不发布」", async () => {
-    const onDecide = vi.fn().mockResolvedValue(undefined);
-    const node = await renderToolDock({
-      approvals: [
-        toolApproval({
-          tool: "artifact_publish",
-          requirement,
-          publish: {
-            files: [
-              { name: "PRD.md", sizeBytes: 2048, source: "path", ref: "docs/PRD.md" },
-              { name: "原型.png", sizeBytes: null, source: "attachment", ref: "att-1" },
-            ],
-            note: "第一版 PRD\n含验收标准",
-          },
-          duplicateOf: null,
-        }),
-      ],
-      onDecide,
-    });
-    expect(node.querySelector('[data-testid="tool-confirm-title"]')?.textContent).toBe("发布确认版到 REQ-1「商家端-订单详情优化」");
-    const files = [...node.querySelectorAll<HTMLElement>('[data-testid="tool-confirm-file"]')].map((row) => row.textContent);
-    expect(files).toEqual(["PRD.md2.0 KB项目文件 docs/PRD.md", "原型.png大小未知已有附件"]);
-    expect(node.querySelector('[data-testid="tool-confirm-note"]')?.textContent).toContain("第一版 PRD\n含验收标准");
-    expect(node.textContent).toContain("发布后全组可见，不能撤回");
-    expect(buttonText(node)).toEqual(["不发布", "发布"]);
-    await act(async () => node.querySelector<HTMLButtonElement>('[data-testid="approval-decline"]')?.click());
-    expect(onDecide).toHaveBeenCalledWith(expect.objectContaining({ id: "ap-tool" }), "decline");
-  });
-
   it("本会话发过相同内容：只提示时间，按钮照常可用", async () => {
     const at = new Date(2026, 9, 1, 14, 32).getTime();
     const node = await renderToolDock({

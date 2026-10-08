@@ -51,3 +51,8 @@ export function previewKind(fileName: string): "image" | "document" | null {
 export function inlineUrl(downloadUrl: string): string {
   return `${downloadUrl}${downloadUrl.includes("?") ? "&" : "?"}disposition=inline`;
 }
+
+/** 附件按上传时间从新到旧（同一时刻按 id 倒序，顺序稳定）。需求服务按升序给，排序在这里做，连较早的服务也一样。 */
+export function newestFirst<T extends { createdAt: string; id: string }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+}

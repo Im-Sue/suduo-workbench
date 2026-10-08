@@ -21,6 +21,9 @@ const FROZEN: Record<string, string> = {
   "010_comment_created_at_clock_timestamp.sql": "d6473d74cfd94176268ec015d0c66aeed3c2c69528ed16904214bd151603c60f",
   "011_rooms_and_shared_agents.sql": "d872268eb9059f79f3fe429a711fcb22fcb989d89a0d5214145fd527b85698e4",
   "012_i18n_structured_texts.sql": "3728b138fcee82da3742cf2baaafc22b62e93ed0f2404d963b75e073f30635c1",
+  "013_agent_run_text_codes.sql": "dbae8d44f77cabf42d7094c678c1a99c5082e3daf03829bed731eb86a4138c78",
+  "014_requirement_priority.sql": "de83c0d244bac3023d42402ffcf26362248f8161a847fc2e9b0d4f320e89f8f4",
+  "015_requirement_comment_files.sql": "dfbf6d36fb3d460de60a994008705b4faf38997902bb90502a272ece08c019de",
 };
 
 const MIGRATIONS = new URL("../migrations/", import.meta.url);

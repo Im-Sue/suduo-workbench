@@ -14,7 +14,7 @@ import {
   summaryPreview,
 } from "../src/features/requirements/format.js";
 import { requirementKeys } from "../src/features/requirements/keys.js";
-import { findCachedItem, placeInColumns } from "../src/features/requirements/queries.js";
+import { columnItems, findCachedItem, placeInColumns } from "../src/features/requirements/queries.js";
 import { formatRelativeTime } from "../src/ui/format.js";
 
 const alice = { id: "u1", displayName: "陈思远" };
@@ -133,6 +133,15 @@ describe("活动时间线文案", () => {
     ).toMatchObject({ text: "发布了确认版 · 第 2 版（3 个文件）", body: "补充上限" });
   });
 
+  it("优先级：写成「从 A 改为 B」，无优先级说「无优先级」", () => {
+    expect(
+      presentActivity(
+        entry({ action: "requirement.priority_changed", changes: [{ field: "priority", from: null, to: "urgent" }] }),
+      ),
+    ).toMatchObject({ kind: "priority", text: "把优先级从「无优先级」改为「紧急」" });
+    expect(presentActivity(entry({ action: "requirement.priority_changed", changes: [] })).text).toBe("修改了优先级");
+  });
+
   it("不认识的动作也保留一条，不丢信息", () => {
     expect(presentActivity(entry({ action: "requirement.archived" as never })).text).toBe("更新了需求");
   });
@@ -167,6 +176,77 @@ describe("看板缓存的乐观改写", () => {
     placeInColumns(client, item({ id: "r9", status: "ready_for_development" }));
     expect(column(client, "draft")).toEqual([]);
     expect(column(client, "ready_for_development")).toEqual(["r9", "r3"]);
+  });
+
+  describe("按优先级排序的列", () => {
+    const filters = { sort: "priority" as const };
+    function seedSorted(
+      client: QueryClient,
+      pages: Array<{ items: RequirementListItemDto[]; nextCursor: string | null }>,
+      columnFilters: object = filters,
+    ) {
+      client.setQueryData(requirementKeys.column("p1", "draft", columnFilters), {
+        pages,
+        pageParams: pages.map((_, index) => (index === 0 ? undefined : String(index))),
+      });
+    }
+    const sorted = (client: QueryClient, columnFilters: object = filters) =>
+      client
+        .getQueryData<InfiniteData<ListRequirementItemsResponse>>(requirementKeys.column("p1", "draft", columnFilters))
+        ?.pages.map((page) => page.items.map((entry) => entry.id));
+    const at = (minute: number) => `2026-09-29T00:${String(minute).padStart(2, "0")}:00.000Z`;
+
+    it("按 (优先级, 更新时间, id) 放到该在的位置", () => {
+      const client = new QueryClient();
+      seedSorted(client, [
+        {
+          items: [
+            item({ id: "u1", priority: "urgent", updatedAt: at(5) }),
+            item({ id: "h1", priority: "high", updatedAt: at(9) }),
+            item({ id: "n1", priority: null, updatedAt: at(9) }),
+          ],
+          nextCursor: null,
+        },
+      ]);
+      placeInColumns(client, item({ id: "h2", priority: "high", updatedAt: at(7) }));
+      expect(sorted(client)).toEqual([["u1", "h1", "h2", "n1"]]);
+      // 改成紧急：刚改过（更新时间最新）的排在紧急最前。
+      placeInColumns(client, item({ id: "h2", priority: "urgent", updatedAt: at(10) }));
+      expect(sorted(client)).toEqual([["h2", "u1", "h1", "n1"]]);
+      // 无优先级的放到最后一页末尾（没有下一页）。
+      placeInColumns(client, item({ id: "n2", priority: null, updatedAt: at(1) }));
+      expect(sorted(client)).toEqual([["h2", "u1", "h1", "n1", "n2"]]);
+    });
+
+    it("落在已载入的最后一条之后、还有下一页时先不放", () => {
+      const client = new QueryClient();
+      seedSorted(client, [{ items: [item({ id: "u1", priority: "urgent", updatedAt: at(5) })], nextCursor: "next" }]);
+      placeInColumns(client, item({ id: "l1", priority: "low", updatedAt: at(9) }));
+      expect(sorted(client)).toEqual([["u1"]]);
+    });
+
+    it("带优先级筛选的列：改到筛选之外就从列里拿掉", () => {
+      const client = new QueryClient();
+      const urgentOnly = { ...filters, priority: "urgent" };
+      seedSorted(client, [{ items: [item({ id: "u1", priority: "urgent" })], nextCursor: null }], urgentOnly);
+      placeInColumns(client, item({ id: "u1", priority: "high" }));
+      expect(sorted(client, urgentOnly)).toEqual([[]]);
+      placeInColumns(client, item({ id: "n1", priority: null }));
+      expect(sorted(client, urgentOnly)).toEqual([[]]);
+      placeInColumns(client, item({ id: "u2", priority: "urgent" }));
+      expect(sorted(client, urgentOnly)).toEqual([["u2"]]);
+    });
+  });
+
+  it("各页拼起来时，同一条只保留第一次出现的", () => {
+    expect(
+      columnItems({
+        pages: [
+          { items: [item({ id: "r1" }), item({ id: "r2" })], nextCursor: "next" },
+          { items: [item({ id: "r2" }), item({ id: "r3" })], nextCursor: null },
+        ],
+      }).map((entry) => entry.id),
+    ).toEqual(["r1", "r2", "r3"]);
   });
 
   it("按编号在缓存中找到需求", () => {

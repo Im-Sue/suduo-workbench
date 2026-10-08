@@ -1,9 +1,10 @@
 import type { UserSummaryDto } from "./auth.js";
-import type { AuditResourceType, CommentSystemContent, RecordedAuditAction } from "./collaboration.js";
+import type { AuditResourceType, CommentFileDto, CommentSystemContent, RecordedAuditAction } from "./collaboration.js";
 import type {
   RequirementsCursorPage,
   RequirementsCursorQuery,
 } from "./pagination.js";
+import type { RequirementPriority } from "./priority.js";
 import type { RequirementStatus } from "./status.js";
 
 /**
@@ -15,6 +16,7 @@ export const REQUIREMENT_ACTIVITY_ACTIONS = [
   "requirement.updated",
   "requirement.status_changed",
   "requirement.assignee_changed",
+  "requirement.priority_changed",
   "comment.created",
   "attachment.created",
   "attachment.deleted",
@@ -33,6 +35,11 @@ export type RequirementActivityChangeDto =
       field: "assignee";
       from: UserSummaryDto | null;
       to: UserSummaryDto | null;
+    }
+  | {
+      field: "priority";
+      from: RequirementPriority | null;
+      to: RequirementPriority | null;
     };
 
 export interface RequirementActivityCommentDto {
@@ -40,6 +47,8 @@ export interface RequirementActivityCommentDto {
   body: string;
   /** 系统代写的评论才有，前端按它用自己的语言渲染（同 `CommentDto.system`）。 */
   system?: CommentSystemContent;
+  /** 评论带的文件（同 `CommentDto.files`）。较早的需求服务不返回。 */
+  files?: CommentFileDto[];
 }
 
 export interface RequirementActivityAttachmentDto {
@@ -65,7 +74,7 @@ export interface RequirementActivityEntryDto {
   resourceId: string;
   // 不带审计原始前后值（before / after）：时间线只渲染下面几项，原始值按需走 `/v2/audit`。
   createdAt: string;
-  /** `requirement.updated` / `status_changed` / `assignee_changed` 的字段变化；其余为空数组。 */
+  /** `requirement.updated` / `status_changed` / `assignee_changed` / `priority_changed` 的字段变化；其余为空数组。 */
   changes: RequirementActivityChangeDto[];
   /** `comment.created` 时为评论正文；其余为 null。 */
   comment: RequirementActivityCommentDto | null;

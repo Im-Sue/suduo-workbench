@@ -5,6 +5,7 @@ import type {
 } from "./pagination.js";
 import type { ProjectDto } from "./projects.js";
 import type { AttachmentDto } from "./collaboration.js";
+import type { RequirementPriority, RequirementSort } from "./priority.js";
 import type { RequirementStatus } from "./status.js";
 
 export interface RequirementDto {
@@ -18,6 +19,8 @@ export interface RequirementDto {
   status: RequirementStatus;
   /** 负责人；未指派时为 null。 */
   assignee: UserSummaryDto | null;
+  /** 优先级；无优先级时为 null。旧版需求服务不返回（客户端按「无」处理）。 */
+  priority?: RequirementPriority | null;
   /** 评论数（含产物发布时自动生成的说明评论）。 */
   commentCount: number;
   /** 未删除的附件数。 */
@@ -26,7 +29,7 @@ export interface RequirementDto {
   updatedBy: UserSummaryDto;
   createdAt: string;
   updatedAt: string;
-  /** 正文版本：只随标题 / 描述 / 状态的实际变化递增；改负责人不递增。 */
+  /** 正文版本：只随标题 / 描述 / 状态的实际变化递增；改负责人、优先级不递增。 */
   version: number;
   /**
    * 只在列表接口里给出：别人发的、在我上次打开这条需求之后的评论数。
@@ -59,6 +62,8 @@ export interface CreateRequirementRequest {
   status?: RequirementStatus;
   /** 负责人用户 id；缺省或 null 表示不指派。 */
   assigneeId?: string | null;
+  /** 缺省或 null 表示无优先级。 */
+  priority?: RequirementPriority | null;
 }
 
 export interface UpdateRequirementRequest {
@@ -67,6 +72,8 @@ export interface UpdateRequirementRequest {
   status?: RequirementStatus;
   /** 负责人用户 id；null 表示清空负责人。 */
   assigneeId?: string | null;
+  /** null 表示清空优先级。 */
+  priority?: RequirementPriority | null;
 }
 
 /** 负责人筛选的保留值：当前登录用户。 */
@@ -87,6 +94,10 @@ export interface ListRequirementsQuery extends RequirementsCursorQuery {
   assignee?: RequirementAssigneeFilter;
   /** 创建人：用户 id 或 `"me"`。 */
   creator?: typeof REQUIREMENT_ASSIGNEE_FILTER_ME | (string & {});
+  /** 优先级筛选，逗号分隔多选：`urgent,high,none`（`none` = 无优先级）。 */
+  priority?: string;
+  /** 排序方式，缺省 `updated`。换排序方式时游标不能沿用。 */
+  sort?: RequirementSort;
 }
 
 export type ListRequirementsResponse =

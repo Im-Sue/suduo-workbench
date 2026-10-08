@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type RequirementListItemDto } from "@suduo/client-contracts";
 import {
   REQUIREMENTS_WEB_ATTACHMENT_UPLOAD_PRECHECK_LIMIT,
+  type RequirementPriority,
   type RequirementStatus,
   type UserSummaryDto,
 } from "@suduo/cloud-contracts";
@@ -15,16 +16,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
+import { PriorityIcon } from "@/components/ui/priority-icon";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { formatBytes, requirementCode } from "../format.js";
+import { useCloudFeature } from "../cloud-features.js";
 import { useCreateRequirement } from "../queries.js";
 import { highlightRequirement } from "../highlight.js";
 import { enqueueUploads, precheck } from "../upload-queue.js";
 import { AssigneeMenu } from "./AssigneeMenu.js";
+import { PriorityMenu } from "./PriorityMenu.js";
 import { StatusMenu } from "./StatusMenu.js";
 import { UserAvatar } from "./UserAvatar.js";
+import { requirementPriorityLabel } from "../../../ui/requirement-priority.js";
 import { requirementStatusLabel } from "../../../ui/requirement-status.js";
 import { useT } from "../../../i18n/provider.js";
 
@@ -33,7 +38,8 @@ const SUMMARY_MAX = 4000;
 
 /**
  * 新建需求（原型 Main · 新建）：只有标题必填；状态按入口预填（列头「+」带该列状态，修复「列内新建错状态」）；
- * 负责人默认是自己；可先选材料，创建后自动上传；⌘⏎ 创建；「继续新建下一条」保留状态与负责人。
+ * 负责人默认是自己，优先级默认无（云端支持时才显示）；可先选材料，创建后自动上传；⌘⏎ 创建；
+ * 「继续新建下一条」保留状态、负责人与优先级。
  * 有未保存内容时，关闭需要确认。
  */
 export function CreateRequirementDialog({
@@ -61,6 +67,8 @@ export function CreateRequirementDialog({
   const [summary, setSummary] = useState("");
   const [status, setStatus] = useState<RequirementStatus>(initialStatus);
   const [assignee, setAssignee] = useState<UserSummaryDto | null>(currentUser);
+  const [priority, setPriority] = useState<RequirementPriority | null>(null);
+  const priorityEnabled = useCloudFeature("requirement_priority");
   const [files, setFiles] = useState<File[]>([]);
   const [rejected, setRejected] = useState<string | null>(null);
   const [more, setMore] = useState(false);
@@ -77,6 +85,7 @@ export function CreateRequirementDialog({
     setSummary("");
     setStatus(initialStatus);
     setAssignee(currentUser);
+    setPriority(null);
     setFiles([]);
     setRejected(null);
     setTitleError(false);
@@ -128,6 +137,7 @@ export function CreateRequirementDialog({
         ...(summary.trim() === "" ? {} : { summary }),
         status,
         assigneeId: assignee?.id ?? null,
+        ...(priority === null ? {} : { priority }),
       });
       if (files.length > 0) {
         // 对话框多半已关掉：材料传失败时单独提示，并给「查看」回到这条需求重试。
@@ -265,6 +275,22 @@ export function CreateRequirementDialog({
                   {assignee?.displayName ?? t.requirements.assignee.unassigned}
                 </button>
               </AssigneeMenu>
+              {priorityEnabled ? (
+                <PriorityMenu
+                  priority={priority}
+                  onChange={setPriority}
+                  trigger={
+                    <button
+                      type="button"
+                      className={cn(CHIP, priority === null && "text-subtle-foreground")}
+                      aria-label={t.requirements.priorityMenu.triggerLabel(requirementPriorityLabel(priority, t), false)}
+                    >
+                      <PriorityIcon priority={priority} aria-hidden="true" />
+                      {requirementPriorityLabel(priority, t)}
+                    </button>
+                  }
+                />
+              ) : null}
               <button type="button" className={cn(CHIP, "border-dashed")} onClick={() => fileRef.current?.click()}>
                 <PaperclipIcon className="size-3.5" aria-hidden="true" />
                 {t.requirements.create.addMaterials}

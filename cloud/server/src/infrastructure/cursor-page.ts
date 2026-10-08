@@ -13,13 +13,14 @@ export function cursorTimestampColumn(expression: string): string {
   return `to_char(${expression} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at`;
 }
 
-/** 选出了 `cursorTimestampColumn` 的查询行。 */
+/** 选出了 `cursorTimestampColumn` 的查询行。按优先级排序的需求列表另选出 `cursor_rank`。 */
 export interface CursorRow {
   id: string;
   cursor_at: string;
+  cursor_rank?: number;
 }
 
-/** 查询多取一行判断是否还有下一页；游标取本页最后一行的 (cursor_at, id)。 */
+/** 查询多取一行判断是否还有下一页；游标取本页最后一行的 (cursor_at, id)，有 cursor_rank 时一并带上。 */
 export function cursorPage<TRow extends CursorRow, TDto>(
   rows: TRow[],
   limit: number,
@@ -32,7 +33,11 @@ export function cursorPage<TRow extends CursorRow, TDto>(
     items: pageRows.map(map),
     nextCursor:
       hasMore && last !== undefined
-        ? encodeCursor({ timestamp: last.cursor_at, id: last.id })
+        ? encodeCursor({
+            timestamp: last.cursor_at,
+            id: last.id,
+            ...(last.cursor_rank === undefined ? {} : { rank: last.cursor_rank }),
+          })
         : null,
   };
 }

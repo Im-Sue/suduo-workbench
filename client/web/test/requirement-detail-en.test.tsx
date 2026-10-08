@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMocks = vi.hoisted(() => ({
   requirementsSettings: vi.fn(),
+  testRequirementsSettings: vi.fn(),
   getRequirementByNumber: vi.fn(),
   getRequirement: vi.fn(),
   listRequirementAttachments: vi.fn(),
@@ -28,6 +29,12 @@ const apiMocks = vi.hoisted(() => ({
   inspectLocalDir: vi.fn(),
   markRequirementRead: vi.fn(),
   listUsers: vi.fn(),
+  uploadCommentFile: vi.fn(),
+  createRequirementComment: vi.fn(),
+  saveCommentFileAsAttachment: vi.fn(),
+  getCommentFile: vi.fn(),
+  uploadRequirementAttachment: vi.fn(),
+  commentFileUrl: (id: string, disposition?: string) => `/api/v2/comment-files/${id}/content${disposition === "inline" ? "?disposition=inline" : ""}`,
   requirementAttachmentDownloadUrl: (id: string) => `/api/v2/attachments/${id}/content`,
   artifactVersionFileDownloadUrl: (versionId: string, fileId: string) => `/api/v2/artifact-versions/${versionId}/files/${fileId}`,
 }));
@@ -49,6 +56,7 @@ vi.mock("../src/api/client.js", () => ({
 vi.mock("../src/app/shell/SessionLauncher.js", () => ({ useSessionLauncher: () => ({ launch: vi.fn() }) }));
 vi.mock("../src/features/rooms/sections/RequirementRooms.js", () => ({ RequirementRooms: () => null }));
 
+const { ApiClientError } = await import("../src/api/client.js");
 const { applyLocalePreference } = await import("../src/i18n/locale.js");
 const { RequirementDetailPage } = await import("../src/features/requirements/RequirementDetailPage.js");
 const { ActivityFeed } = await import("../src/features/requirements/sections/ActivityFeed.js");
@@ -222,6 +230,28 @@ afterEach(async () => {
 const textOf = (node: ParentNode, selector: string) => node.querySelector(selector)?.textContent ?? null;
 
 describe("英文界面：需求详情", () => {
+  it("云端支持优先级时，侧栏多一项优先级（默认无优先级）", async () => {
+    apiMocks.requirementsSettings.mockResolvedValue({ configured: true, baseUrl: "http://cloud.test", session: { user: ALEX } });
+    apiMocks.testRequirementsSettings.mockResolvedValue({
+      baseUrl: "http://cloud.test",
+      reachable: true,
+      message: "",
+      version: "0.9.0",
+      features: ["requirement_priority"],
+    });
+    const node = await renderDetail();
+    const rail = node.querySelector("aside[aria-label='Requirement properties']");
+    expect([...(rail?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent)).toEqual([
+      "Status",
+      "Priority",
+      "Assignee",
+      "ID",
+      "Created",
+      "Updated",
+    ]);
+    expect(rail?.querySelector("button[aria-label='Priority: No priority, click to change']")).not.toBeNull();
+  });
+
   it("页头、侧栏字段名、本机代码目录与本机会话", async () => {
     const node = await renderDetail();
     expect(node.querySelector("[data-testid='start-session']")?.textContent).toBe("Start session");
@@ -243,35 +273,32 @@ describe("英文界面：需求详情", () => {
     expect([...(editor?.querySelectorAll("button") ?? [])].map((button) => button.textContent)).toEqual(["Discard", "Save"]);
   });
 
-  it("材料与确认版", async () => {
+  it("附件：最新在前、都能删；没有发布入口；历史确认版收起、只读", async () => {
     const node = await renderDetail();
     const panel = node.querySelector("[data-testid='materials-panel']");
-    expect(textOf(panel ?? node, "#materials-heading")).toBe("Materials and confirmed versions");
-    const version = panel?.querySelector("[data-testid='artifact-version']");
-    expect(version?.textContent).toContain("Confirmed version 2");
-    expect(version?.textContent).toContain("Sam Lee published");
-    expect(panel?.textContent).toContain("Other materials");
-    expect(panel?.querySelector("a[aria-label='Download “notes.pdf”']")).not.toBeNull();
+    expect(textOf(panel ?? node, "#materials-heading")).toBe("Attachments");
+    const names = [...(panel?.querySelectorAll("ul[aria-label='Attachments'] a[download]") ?? [])].map((link) =>
+      link.getAttribute("aria-label"),
+    );
+    expect(names).toEqual(["Download “notes.pdf”", "Download “spec.pdf”"]);
     expect(panel?.querySelector("button[aria-label='Delete “notes.pdf”']")).not.toBeNull();
+    expect(panel?.querySelector("button[aria-label='Delete “spec.pdf”']")).not.toBeNull();
     expect(panel?.textContent).toContain("Drag files here to upload, or paste a screenshot");
-  });
+    expect([...node.querySelectorAll("button")].some((button) => button.textContent?.includes("Publish"))).toBe(false);
 
-  it("发布确认版对话框", async () => {
-    const node = await renderDetail();
-    const publish = [...node.querySelectorAll("button")].find((button) => button.textContent === "Publish confirmed version");
-    expect(publish).toBeDefined();
-    await act(async () => publish?.click());
+    const history = panel?.querySelector("[data-testid='historical-versions']");
+    const toggle = history?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    expect(toggle?.textContent).toBe("Past confirmed versions (1)");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => toggle?.click());
     await settle(2);
-    const dialog = document.querySelector("[data-testid='publish-artifact-dialog']");
-    expect(dialog?.querySelector("h2")?.textContent).toBe("Publish confirmed version 3");
-    expect(dialog?.textContent).toContain("A confirmed version is the set of materials your team has agreed on.");
-    // 默认沿用上一版 + 上一版之后新传的：两份都勾上，新传的标「New」。
-    expect(dialog?.querySelector("legend")?.textContent).toBe("Included materials (2)");
-    expect(dialog?.textContent).toContain("New");
-    expect(dialog?.textContent).toContain("What changed in this version");
-    expect(dialog?.querySelector("textarea")?.getAttribute("placeholder")).toBe("e.g. Added export limits and retention period");
-    const buttons = [...(dialog?.querySelectorAll("button") ?? [])].map((button) => button.textContent);
-    expect(buttons).toEqual(expect.arrayContaining(["Cancel", "Publish version 3"]));
+    expect(history?.textContent).toContain(
+      "Confirmed versions have been retired. Versions published earlier are kept here for viewing and download only.",
+    );
+    expect(history?.textContent).toContain("Version 2");
+    expect(history?.textContent).toContain("Sam Lee published");
+    expect(history?.querySelector("a[aria-label='Download “spec.pdf”']")).not.toBeNull();
+    expect(history?.querySelector("button[aria-label^='Delete']")).toBeNull();
   });
 
   it("活动：筛选、动作描述，系统代写的发布评论按当前语言显示", async () => {
@@ -292,17 +319,176 @@ describe("英文界面：需求详情", () => {
   });
 });
 
+describe("评论带文件（云端支持时）", () => {
+  const commentFile = (id: string, fileName: string, contentType: string, kind: "image" | "file") => ({
+    id,
+    requirementId: REQ_ID,
+    commentId: null,
+    fileName,
+    contentType,
+    kind,
+    sizeBytes: 4,
+    sha256: id,
+    uploadedBy: ALEX,
+    createdAt: "2026-09-29T12:30:00.000Z",
+  });
+  const enableCommentFiles = () => {
+    apiMocks.requirementsSettings.mockResolvedValue({ configured: true, baseUrl: "http://cloud.test", session: { user: ALEX } });
+    apiMocks.testRequirementsSettings.mockResolvedValue({
+      baseUrl: "http://cloud.test",
+      reachable: true,
+      message: "",
+      version: "0.9.0",
+      features: ["comment_files"],
+    });
+  };
+  const paste = async (target: Element, files: File[]) => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { files, items: [], types: ["Files"], getData: () => "" } });
+    await act(async () => {
+      target.dispatchEvent(event);
+    });
+  };
+  const typeInto = (input: HTMLTextAreaElement, value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  it("粘贴截图只进待发列表、不传成附件；点发送才上传；上传失败不发评论，再发只补传失败的", async () => {
+    enableCommentFiles();
+    const uploaded = commentFile("cf-1", "Screenshot.png", "image/png", "image");
+    apiMocks.uploadCommentFile
+      .mockResolvedValueOnce(uploaded)
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(commentFile("cf-2", "log.txt", "text/plain", "file"));
+    apiMocks.createRequirementComment.mockResolvedValue({ id: "c9", requirementId: REQ_ID, artifactVersionId: null, body: "It breaks", author: ALEX, createdAt: "2026-09-29T13:00:00.000Z", files: [] });
+    const node = await renderDetail();
+    const composer = node.querySelector<HTMLTextAreaElement>("#comment-composer")!;
+    expect([...node.querySelectorAll("button")].some((button) => button.textContent === "Add files")).toBe(true);
+
+    await paste(composer, [new File(["png"], "image.png", { type: "image/png" })]);
+    const input = node.querySelector<HTMLInputElement>("[data-testid='comment-composer'] input[type='file']")!;
+    Object.defineProperty(input, "files", { value: [new File(["log"], "log.txt", { type: "text/plain" })], configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle(2);
+    const pending = () => [...node.querySelectorAll("[data-testid='comment-pending-files'] li")];
+    expect(pending()).toHaveLength(2);
+    expect(pending()[0]?.textContent).toMatch(/^Screenshot-.+\.png/u);
+    // 页面级粘贴监听看到评论框已经收下，不再传成附件；选文件时也还没上传。
+    expect(apiMocks.uploadRequirementAttachment).not.toHaveBeenCalled();
+    expect(apiMocks.uploadCommentFile).not.toHaveBeenCalled();
+
+    await act(async () => typeInto(composer, "It breaks"));
+    const send = () => [...node.querySelectorAll("button")].find((button) => button.textContent === "Comment⌘⏎")!;
+    await act(async () => send().click());
+    await settle(4);
+    expect(apiMocks.uploadCommentFile).toHaveBeenCalledTimes(2);
+    expect(apiMocks.createRequirementComment).not.toHaveBeenCalled();
+    expect(node.textContent).toContain("Some files weren't uploaded, so the comment wasn't sent.");
+    expect(pending()[1]?.getAttribute("data-state")).toBe("failed");
+
+    await act(async () => send().click());
+    await settle(4);
+    expect(apiMocks.uploadCommentFile).toHaveBeenCalledTimes(3);
+    expect(apiMocks.uploadCommentFile.mock.calls[2]?.[1]).toBeInstanceOf(File);
+    expect((apiMocks.uploadCommentFile.mock.calls[2]?.[1] as File).name).toBe("log.txt");
+    expect(apiMocks.createRequirementComment).toHaveBeenCalledWith(REQ_ID, { body: "It breaks", fileIds: ["cf-1", "cf-2"] });
+    expect(pending()).toHaveLength(0);
+    expect(composer.value).toBe("");
+  });
+
+  it("上传途中再加的文件留到下一次；评论其实已发出（响应丢了）时告知并不重复发", async () => {
+    enableCommentFiles();
+    let finishFirst: (value: unknown) => void = () => undefined;
+    apiMocks.uploadCommentFile.mockImplementationOnce(() => new Promise((resolve) => {
+      finishFirst = resolve;
+    }));
+    apiMocks.createRequirementComment.mockResolvedValueOnce({ id: "c9", requirementId: REQ_ID, artifactVersionId: null, body: "first", author: ALEX, createdAt: "2026-09-29T13:00:00.000Z", files: [] });
+    const node = await renderDetail();
+    const composer = node.querySelector<HTMLTextAreaElement>("#comment-composer")!;
+    const pending = () => [...node.querySelectorAll("[data-testid='comment-pending-files'] li")].map((item) => item.textContent ?? "");
+    const send = () => [...node.querySelectorAll("button")].find((button) => button.textContent === "Comment⌘⏎")!;
+    await paste(composer, [new File(["a"], "a.png", { type: "image/png" })]);
+    await act(async () => typeInto(composer, "first"));
+    await act(async () => send().click());
+    await settle(2);
+    // 上传中：输入框只读；这时再粘贴的文件进列表，但不属于这一条。
+    expect(composer.readOnly).toBe(true);
+    await paste(composer, [new File(["b"], "b.png", { type: "image/png" })]);
+    await act(async () => finishFirst(commentFile("cf-a", "a.png", "image/png", "image")));
+    await settle(4);
+    expect(apiMocks.createRequirementComment).toHaveBeenCalledWith(REQ_ID, { body: "first", fileIds: ["cf-a"] });
+    expect(pending()).toHaveLength(1);
+    expect(pending()[0]).toMatch(/^b\.png/u);
+    expect(composer.readOnly).toBe(false);
+
+    // 第二条：文件传上去了，发评论却被拒；查下来文件已挂在评论上 → 当作已发出，告知、不放回正文。
+    apiMocks.uploadCommentFile.mockResolvedValueOnce(commentFile("cf-b", "b.png", "image/png", "image"));
+    apiMocks.createRequirementComment.mockRejectedValueOnce(new ApiClientError(400, "VALIDATION_ERROR", "rejected"));
+    apiMocks.getCommentFile.mockResolvedValueOnce({ ...commentFile("cf-b", "b.png", "image/png", "image"), commentId: "c10" });
+    await act(async () => typeInto(composer, "second"));
+    await act(async () => send().click());
+    await settle(6);
+    expect(apiMocks.getCommentFile).toHaveBeenCalledWith("cf-b");
+    expect(node.querySelector("[data-testid='comment-notice']")?.textContent).toBe("That comment was actually sent. Activity has been refreshed.");
+    expect(pending()).toHaveLength(0);
+    expect(composer.value).toBe("");
+  });
+
+  it("评论里的文件：只带文件的评论不留空白气泡；图片缩略、文件卡片；可存为附件", async () => {
+    enableCommentFiles();
+    apiMocks.listRequirementActivity.mockResolvedValue({
+      items: [
+        entry({
+          id: "a9",
+          action: "comment.created",
+          resourceType: "comment",
+          resourceId: "c9",
+          createdAt: "2026-09-29T13:00:00.000Z",
+          comment: {
+            id: "c9",
+            body: "Attached 2 files: shot.png, log.zip",
+            system: { kind: "comment_files", params: { fileCount: 2 } },
+            files: [
+              { ...commentFile("cf-1", "shot.png", "image/png", "image"), commentId: "c9" },
+              { ...commentFile("cf-2", "log.zip", "application/zip", "file"), commentId: "c9" },
+            ],
+          },
+        }),
+      ],
+      nextCursor: null,
+    });
+    apiMocks.saveCommentFileAsAttachment.mockResolvedValue({ attachment: { id: "att-9" }, requirementVersion: 3 });
+    const node = await renderDetail();
+    const item = node.querySelector("[data-testid='activity-comment']")!;
+    expect(item.textContent).not.toContain("Attached 2 files");
+    const files = item.querySelector("[data-testid='comment-files']")!;
+    expect(files.querySelector("img")?.getAttribute("src")).toBe("/api/v2/comment-files/cf-1/content?disposition=inline");
+    expect(files.querySelector("[data-testid='room-file-card']")?.textContent).toContain("log.zip");
+    const save = files.querySelector<HTMLButtonElement>("button[aria-label='Save “log.zip” as an attachment']")!;
+    await act(async () => save.click());
+    await settle(2);
+    expect(apiMocks.saveCommentFileAsAttachment).toHaveBeenCalledWith("cf-2");
+  });
+});
+
 describe("中文界面照旧", () => {
-  it("侧栏字段名、材料区与描述编辑提示", async () => {
+  it("侧栏字段名、附件区与描述编辑提示", async () => {
     applyLocalePreference("zh-CN");
     const node = await renderDetail();
     const rail = node.querySelector("aside[aria-label='需求属性']");
     expect([...(rail?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent)).toEqual(["状态", "负责人", "编号", "创建", "更新"]);
     expect(rail?.querySelector("button[aria-label='负责人：未指派，点击修改']")).not.toBeNull();
     expect(rail?.textContent).toContain("可以读写 · 分支 main");
-    const version = node.querySelector("[data-testid='artifact-version']");
-    expect(version?.textContent).toContain("确认版 · 第 2 版");
-    expect(version?.textContent).toMatch(/^确认版 · 第 2 版Sam Lee 发布于 /);
+    expect(textOf(node, "#materials-heading")).toBe("附件");
+    const history = node.querySelector("[data-testid='historical-versions']");
+    const toggle = history?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    expect(toggle?.textContent).toBe("历史确认版（1）");
+    await act(async () => toggle?.click());
+    await settle(2);
+    expect(history?.textContent).toMatch(/第 2 版Sam Lee 发布于 /);
     expect(node.textContent).toContain("Sam Lee 发布了确认版 · 第 2 版（1 个文件）");
     const filter = node.querySelector("[aria-label='活动筛选']");
     expect([...(filter?.querySelectorAll("button") ?? [])].map((button) => button.textContent)).toEqual(["全部", "评论 2", "变更"]);

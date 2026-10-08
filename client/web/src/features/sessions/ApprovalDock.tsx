@@ -4,7 +4,7 @@ import type {
   JsonValue,
   SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
-import { ChevronDownIcon, FileDiffIcon, FileIcon, HandIcon, InfoIcon, SendIcon } from "lucide-react";
+import { ChevronDownIcon, FileDiffIcon, HandIcon, InfoIcon, SendIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileChangeEntry } from "../../event-projection/timeline.js";
 import { Button } from "@/components/ui/button";
@@ -18,14 +18,12 @@ import { Kbd } from "@/components/ui/kbd";
 import { describePermissions } from "../../event-projection/shared.js";
 import {
   duplicateNotice,
-  publishFileSource,
   suDuoToolConfirmationOf,
   suDuoToolConfirmationTitle,
 } from "../../event-projection/suduo-tools.js";
 import { useT } from "../../i18n/provider.js";
 import { currentLocale } from "../../i18n/locale.js";
 import { messagesFor, type Messages } from "../../i18n/messages/index.js";
-import { formatBytes } from "../../ui/format.js";
 
 /**
  * 审批坞（需求 §4.5）：固定在输入框上方，一次处理一个，多个时显示 1/3。
@@ -269,7 +267,6 @@ function ToolConfirmationCard({
   const t = useT();
   const text = t.conversation.approval;
   const tool = text.tool;
-  const comment = confirmation.tool === "comment_submit";
   const duplicate = duplicateNotice(confirmation, t);
   // 卡片刚出现的一小会儿按钮不可点：前一张卡上的双击不会落到这张不可撤回的卡上。
   const [armed, setArmed] = useState(false);
@@ -278,8 +275,6 @@ function ToolConfirmationCard({
     return () => window.clearTimeout(timer);
   }, []);
   const busy = deciding !== null || executing || !armed;
-  const files = confirmation.publish?.files ?? [];
-  const note = confirmation.publish?.note ?? null;
   return (
     <>
       <header className="flex items-center gap-2 px-3.5 pt-3 text-small">
@@ -292,43 +287,12 @@ function ToolConfirmationCard({
         )}
       </header>
       <div className="flex flex-col gap-1.5 px-3.5 pt-2">
-        {comment ? (
-          <div
-            className="max-h-60 overflow-auto rounded-sm bg-code-bg px-2.5 py-2 text-small break-words whitespace-pre-wrap text-foreground"
-            data-testid="tool-confirm-comment"
-          >
-            {confirmation.comment?.body ?? ""}
-          </div>
-        ) : (
-          <>
-            {files.length === 0 ? (
-              <p className="m-0 text-small text-muted-foreground">{tool.noFiles}</p>
-            ) : (
-              <ul className="m-0 flex max-h-48 list-none flex-col gap-0.5 overflow-auto p-0" data-testid="tool-confirm-files">
-                {files.map((file, index) => (
-                  <li key={`${file.source}:${file.ref}:${String(index)}`} className="flex min-h-7 items-center gap-2 px-1.5 text-small" data-testid="tool-confirm-file">
-                    <FileIcon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate text-foreground" title={file.name}>{file.name}</span>
-                    <span className="shrink-0 text-caption text-subtle-foreground">{file.sizeBytes === null ? tool.unknownSize : formatBytes(file.sizeBytes)}</span>
-                    <span className="max-w-[45%] shrink-0 truncate text-caption text-subtle-foreground" title={publishFileSource(file, t)}>
-                      {publishFileSource(file, t)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="text-small text-muted-foreground" data-testid="tool-confirm-note">
-              {note === null ? (
-                tool.noNote
-              ) : (
-                <>
-                  <span className="text-caption text-subtle-foreground">{tool.note}</span>
-                  <p className="m-0 mt-0.5 max-h-32 overflow-auto break-words whitespace-pre-wrap text-foreground">{note}</p>
-                </>
-              )}
-            </div>
-          </>
-        )}
+        <div
+          className="max-h-60 overflow-auto rounded-sm bg-code-bg px-2.5 py-2 text-small break-words whitespace-pre-wrap text-foreground"
+          data-testid="tool-confirm-comment"
+        >
+          {confirmation.comment?.body ?? ""}
+        </div>
         {duplicate === null ? null : (
           <p className="m-0 flex items-center gap-1.5 text-small text-foreground" role="note" data-testid="tool-confirm-duplicate">
             <InfoIcon className="size-3.5 shrink-0 text-warning" aria-hidden="true" />
@@ -338,16 +302,16 @@ function ToolConfirmationCard({
       </div>
       <footer className="flex items-center gap-2 px-3.5 py-3">
         <span className="min-w-0 flex-1 text-caption text-subtle-foreground">
-          {executing ? (comment ? tool.sending : tool.publishing) : comment ? tool.sendWarning : tool.publishWarning}
+          {executing ? tool.sending : tool.sendWarning}
           <span className="invisible group-focus/dock:visible" aria-hidden="true">
-            {" "}· <Kbd>Esc</Kbd> {comment ? tool.dontSend : tool.dontPublish}
+            {" "}· <Kbd>Esc</Kbd> {tool.dontSend}
           </span>
         </span>
         <Button variant="secondary" size="sm" loading={deciding === "decline"} disabled={busy} data-testid="approval-decline" onClick={() => onDecide("decline")}>
-          {comment ? tool.dontSend : tool.dontPublish}
+          {tool.dontSend}
         </Button>
         <Button variant="primary" size="sm" loading={deciding === "accept" || executing} disabled={busy} data-testid="approval-accept" onClick={() => onDecide("accept")}>
-          {comment ? tool.send : tool.publish}
+          {tool.send}
         </Button>
       </footer>
     </>

@@ -112,29 +112,11 @@ export function loadConfig(
   };
 }
 
-const DEFAULT_ATTACHMENT_EXTENSIONS = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".txt",
-  ".md",
-  ".csv",
-  ".json",
-  ".xml",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".zip",
-  ".html",
-  ".htm",
-  ".svg",
-] as const;
+/**
+ * 附件缺省允许的扩展名：与房间文件同一份清单（需求附件评论文件与优先级 R13）。
+ * 附件是需求的额外存储，PRD、截图、压缩包、视频都可能放进来；评论文件也按这份清单收，保证「存为附件」一定成功。
+ */
+const DEFAULT_ATTACHMENT_EXTENSIONS = DEFAULT_ROOM_FILE_EXTENSIONS;
 
 function attachmentExtensions(raw: string | undefined): ReadonlySet<string> {
   return extensionSet(raw, DEFAULT_ATTACHMENT_EXTENSIONS, "REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS");

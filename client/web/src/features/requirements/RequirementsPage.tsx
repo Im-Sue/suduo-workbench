@@ -4,10 +4,17 @@ import { type RequirementListItemDto } from "@suduo/client-contracts";
 import {
   REQUIREMENT_ASSIGNEE_FILTER_ME,
   REQUIREMENT_ASSIGNEE_FILTER_NONE,
+  REQUIREMENT_PRIORITIES,
+  REQUIREMENT_PRIORITY_FILTER_NONE,
+  REQUIREMENT_SORTS,
   REQUIREMENT_STATUSES,
+  parseRequirementPriorityFilter,
+  type RequirementPriorityFilterValue,
+  type RequirementSort,
   type RequirementStatus,
 } from "@suduo/cloud-contracts";
 import {
+  ArrowDownUpIcon,
   CheckIcon,
   ColumnsIcon,
   ListIcon,
@@ -29,15 +36,20 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import { PriorityIcon } from "@/components/ui/priority-icon";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { cn } from "@/lib/utils";
+import { useCloudFeature } from "./cloud-features.js";
 import { BoardView } from "./components/BoardView.js";
 import { CreateRequirementDialog } from "./components/CreateRequirementDialog.js";
 import { ListView } from "./components/ListView.js";
@@ -46,11 +58,14 @@ import { requirementCode } from "./format.js";
 import type { RequirementListFilters } from "./keys.js";
 import { findCachedItem, usersQuery, useRequirementIdByRef, useUpdateRequirement, type ColumnState } from "./queries.js";
 import { useRequirementsRealtimeState } from "./realtime.js";
+import { requirementPriorityLabel } from "../../ui/requirement-priority.js";
 import { requirementStatusLabel } from "../../ui/requirement-status.js";
+import { usePersistentChoice } from "../../ui/use-persistent-state.js";
 import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
 
 /**
- * 需求页（原型 Main）：看板 / 列表 + 右侧速览。筛选、视图、速览都记在 URL 里，可分享、可回退。
+ * 需求页（原型 Main）：看板 / 列表 + 右侧速览。筛选、视图、速览都记在 URL 里，可分享、可回退；
+ * 列内排序（优先级 / 最近更新）是个人偏好，记在本机。
  * 键盘：C 新建，/ 搜索，J K（或 ↑↓）移动，Enter 打开速览，1–7 改状态，Esc 关闭速览。
  */
 export type RequirementsView = "board" | "list";
@@ -61,6 +76,8 @@ export interface RequirementsSearch {
   status?: RequirementStatus;
   /** me / none / 用户 id */
   assignee?: string;
+  /** 优先级筛选，逗号分隔：urgent,high,none */
+  priority?: string;
   /** 速览中的需求编号（数字；旧链接里也可能是需求 id） */
   peek?: number | string;
 }
@@ -79,6 +96,8 @@ export function validateRequirementsSearch(search: Record<string, unknown>): Req
     result.status = status as RequirementStatus;
   }
   if (typeof search["assignee"] === "string" && search["assignee"] !== "") result.assignee = search["assignee"];
+  const priority = typeof search["priority"] === "string" ? parseRequirementPriorityFilter(search["priority"]) : null;
+  if (priority !== null) result.priority = priorityFilterParam(priority);
   const peek = search["peek"];
   if (typeof peek === "number" && Number.isInteger(peek) && peek > 0) result.peek = peek;
   else if (typeof peek === "string" && /^\d+$/.test(peek)) result.peek = Number(peek);
@@ -87,6 +106,18 @@ export function validateRequirementsSearch(search: Record<string, unknown>): Req
 }
 
 const VIEW_KEY = "suduo.requirements.view";
+const SORT_KEY = "suduo.requirements.sort";
+
+/** 筛选里的档位顺序：紧急 → 低，最后是「无」。 */
+const PRIORITY_FILTER_VALUES: readonly RequirementPriorityFilterValue[] = [
+  ...REQUIREMENT_PRIORITIES,
+  REQUIREMENT_PRIORITY_FILTER_NONE,
+];
+
+/** 选中的档位按固定顺序写成查询参数，同样的选择总是同一个地址、同一份缓存。 */
+function priorityFilterParam(values: readonly RequirementPriorityFilterValue[]): string {
+  return PRIORITY_FILTER_VALUES.filter((value) => values.includes(value)).join(",");
+}
 
 function readStoredView(): RequirementsView {
   try {
@@ -125,12 +156,18 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
   );
 
   const view: RequirementsView = search.view ?? readStoredView();
+  // 云端不支持优先级（较早的版本）时不显示优先级筛选与排序切换；排序参数照常带上，旧云端会忽略它。
+  const priorityEnabled = useCloudFeature("requirement_priority");
+  const [sort, setSort] = usePersistentChoice<RequirementSort>(SORT_KEY, REQUIREMENT_SORTS, "priority");
+  const priorityFilter = priorityEnabled ? search.priority : undefined;
   const filters = useMemo<RequirementListFilters>(
     () => ({
       ...(search.q === undefined ? {} : { search: search.q }),
       ...(search.assignee === undefined ? {} : { assignee: search.assignee }),
+      ...(priorityFilter === undefined ? {} : { priority: priorityFilter }),
+      sort,
     }),
-    [search.q, search.assignee],
+    [search.q, search.assignee, priorityFilter, sort],
   );
   const statuses = search.status === undefined ? REQUIREMENT_STATUSES : [search.status];
 
@@ -205,7 +242,8 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
   const allLoaded = visible.every((state) => state?.loaded === true);
   const total = visible.reduce((sum, state) => sum + (state?.count ?? 0), 0);
   const totalLabel = allLoaded ? t.requirements.page.total(total, visible.some((state) => state?.hasMore === true)) : null;
-  const filtered = search.q !== undefined || search.assignee !== undefined || search.status !== undefined;
+  const filtered =
+    search.q !== undefined || search.assignee !== undefined || search.status !== undefined || priorityFilter !== undefined;
   const noResult = filtered && allLoaded && total === 0;
 
   // ---------- 选中与速览 ----------
@@ -475,14 +513,54 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
           />
         </DropdownMenu>
 
+        {priorityEnabled ? (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <FilterChip active={priorityFilter !== undefined} data-testid="requirements-priority-filter">
+                {priorityFilter === undefined ? (
+                  <>
+                    <PlusIcon className="size-3.5" />
+                    {t.requirements.filter.priority}
+                  </>
+                ) : (
+                  t.requirements.filter.priorityValue(
+                    (parseRequirementPriorityFilter(priorityFilter) ?? []).map((value) =>
+                      requirementPriorityLabel(value === REQUIREMENT_PRIORITY_FILTER_NONE ? null : value, t),
+                    ),
+                  )
+                )}
+              </FilterChip>
+            </DropdownMenuTrigger>
+            <PriorityFilterMenu value={priorityFilter} onChange={(priority) => setSearch({ priority })} />
+          </DropdownMenu>
+        ) : null}
+
         {filtered ? (
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => clearSearch({ status: undefined, assignee: undefined })}
+            onClick={() => clearSearch({ status: undefined, assignee: undefined, priority: undefined })}
           >
             {t.requirements.page.clearFilters}
           </Button>
+        ) : null}
+
+        {priorityEnabled ? (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="ml-auto" data-testid="requirements-sort">
+                <ArrowDownUpIcon className="size-3.5" />
+                {t.requirements.sort.value(sort === "priority" ? t.requirements.sort.priority : t.requirements.sort.updated)}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>{t.requirements.sort.label}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={sort} onValueChange={(next) => setSort(next as RequirementSort)}>
+                <DropdownMenuRadioItem value="priority">{t.requirements.sort.priority}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="updated">{t.requirements.sort.updated}</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </div>
 
@@ -497,7 +575,7 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
               }
               action={{
                 label: t.requirements.page.clearFilters,
-                onClick: () => clearSearch({ status: undefined, assignee: undefined }),
+                onClick: () => clearSearch({ status: undefined, assignee: undefined, priority: undefined }),
               }}
             />
           </div>
@@ -521,6 +599,7 @@ export function RequirementsPage({ projectId }: { projectId: string }) {
               filters={filters}
               statuses={statuses}
               selectedId={search.peek === undefined ? selectedId : peekId}
+              showPriority={priorityEnabled}
               onSelect={(requirement) => setSelectedId(requirement.id)}
               onOpen={openPeek}
               onCreateIn={createIn}
@@ -636,6 +715,47 @@ function AssigneeFilterMenu({
         <>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => onChange(undefined)}>{t.requirements.filter.anyAssignee}</DropdownMenuItem>
+        </>
+      )}
+    </DropdownMenuContent>
+  );
+}
+
+/** 优先级多选：点一项切换选中，菜单保持打开；全部取消即不按优先级筛选。 */
+function PriorityFilterMenu({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange(value: string | undefined): void;
+}) {
+  const t = useT();
+  const selected = value === undefined ? [] : (parseRequirementPriorityFilter(value) ?? []);
+  const toggle = (item: RequirementPriorityFilterValue) => {
+    const next = selected.includes(item) ? selected.filter((entry) => entry !== item) : [...selected, item];
+    onChange(next.length === 0 ? undefined : priorityFilterParam(next));
+  };
+  return (
+    <DropdownMenuContent align="start" className="w-48">
+      {PRIORITY_FILTER_VALUES.map((item) => (
+        <DropdownMenuItem
+          key={item}
+          onSelect={(event) => {
+            event.preventDefault();
+            toggle(item);
+          }}
+        >
+          <PriorityIcon priority={item === REQUIREMENT_PRIORITY_FILTER_NONE ? null : item} aria-hidden="true" />
+          <span className="flex-1">
+            {requirementPriorityLabel(item === REQUIREMENT_PRIORITY_FILTER_NONE ? null : item, t)}
+          </span>
+          {selected.includes(item) ? <CheckIcon className="size-4 text-primary-text!" /> : null}
+        </DropdownMenuItem>
+      ))}
+      {value === undefined ? null : (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => onChange(undefined)}>{t.requirements.filter.anyPriority}</DropdownMenuItem>
         </>
       )}
     </DropdownMenuContent>

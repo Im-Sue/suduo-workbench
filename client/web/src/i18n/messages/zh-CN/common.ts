@@ -15,6 +15,14 @@ export const common = {
     completed: "已完成",
     on_hold: "暂缓",
   },
+  /** 需求优先级名（从急到缓）；没有优先级时显示 noPriority。 */
+  requirementPriority: {
+    urgent: "紧急",
+    high: "高",
+    medium: "中",
+    low: "低",
+  },
+  noPriority: "无优先级",
   time: {
     justNow: "刚刚",
     minutesAgo: (minutes: number) => `${String(minutes)} 分钟前`,

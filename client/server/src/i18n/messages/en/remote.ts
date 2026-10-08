@@ -38,11 +38,12 @@ export const remote = {
     baseUrlNotString: "baseUrl must be a string",
     baseUrlInvalid: "The server address isn't valid",
     patchEmpty: "PATCH must include at least one field",
-    publishInvalid: "The publish request isn't valid",
     loginNameInvalid: "That username isn't valid",
     passwordLengthInvalid: "The password length isn't valid",
     summaryTooLong: "The requirement description must be a string of up to 4,000 characters",
     assigneeInvalid: "assigneeId must be a user ID or null",
+    commentFilesInvalid: "fileIds must be an array of file IDs (up to 10); with files, the comment body can be at most 4000 characters",
+    priorityInvalid: "priority must be one of urgent, high, medium, low, or null",
     lengthOutOfRange: (label: string, maximum: number) => `${label} must be 1 to ${String(maximum)} characters`,
     fields: {
       projectName: "Project name",

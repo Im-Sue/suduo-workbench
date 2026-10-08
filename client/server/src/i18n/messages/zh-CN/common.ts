@@ -1,4 +1,4 @@
-import type { RequirementStatus } from "@suduo/cloud-contracts";
+import type { RequirementPriority, RequirementStatus } from "@suduo/cloud-contracts";
 
 /** 本机服务通用：兜底报错等多个分区共用的文字。 */
 export const common = {
@@ -14,4 +14,11 @@ export const common = {
     completed: "已完成",
     on_hold: "暂缓",
   } satisfies Record<RequirementStatus, string>,
+  /** 需求优先级名（与前端 `common.requirementPriority` 一致）；无优先级见 `toolText.noPriority`。 */
+  requirementPriority: {
+    urgent: "紧急",
+    high: "高",
+    medium: "中",
+    low: "低",
+  } satisfies Record<RequirementPriority, string>,
 };

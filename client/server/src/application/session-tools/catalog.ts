@@ -1,4 +1,4 @@
-import type { Locale, RuntimeToolSpec, SuDuoToolName } from "@suduo/client-contracts";
+import type { ActiveSuDuoToolName, Locale, RuntimeToolSpec } from "@suduo/client-contracts";
 import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
 
 /**
@@ -16,8 +16,8 @@ function viewSnippet(tool: string, argument: string): string {
 }
 
 /** 需求与笔记工具的定义，说明按字典。 */
-function requirementSpecs(d: ServerMessages["toolSpec"]): Record<SuDuoToolName, RuntimeToolSpec> {
-  const textReturn = (description: string, name: SuDuoToolName) => description + d.textReturn(name);
+function requirementSpecs(d: ServerMessages["toolSpec"]): Record<ActiveSuDuoToolName, RuntimeToolSpec> {
+  const textReturn = (description: string, name: ActiveSuDuoToolName) => description + d.textReturn(name);
   const numberParam = { type: "string", description: d.numberParam };
   return {
     suduo_requirement_get: {
@@ -63,28 +63,6 @@ function requirementSpecs(d: ServerMessages["toolSpec"]): Record<SuDuoToolName, 
         additionalProperties: false,
       },
     },
-    suduo_artifact_versions: {
-      name: "suduo_artifact_versions",
-      description: textReturn(d.artifactVersions, "suduo_artifact_versions"),
-      inputSchema: {
-        type: "object",
-        properties: { number: numberParam },
-        additionalProperties: false,
-      },
-    },
-    suduo_artifact_fetch: {
-      name: "suduo_artifact_fetch",
-      description: textReturn(d.artifactFetch.description, "suduo_artifact_fetch"),
-      inputSchema: {
-        type: "object",
-        properties: {
-          version: { type: "integer", minimum: 1, description: d.artifactFetch.version },
-          number: numberParam,
-        },
-        required: ["version"],
-        additionalProperties: false,
-      },
-    },
     suduo_notes_read: {
       name: "suduo_notes_read",
       description: textReturn(d.notesRead, "suduo_notes_read"),
@@ -116,19 +94,6 @@ function requirementSpecs(d: ServerMessages["toolSpec"]): Record<SuDuoToolName, 
           body: { type: "string", description: d.commentSubmit.body },
         },
         required: ["body"],
-        additionalProperties: false,
-      },
-    },
-    suduo_artifact_publish: {
-      name: "suduo_artifact_publish",
-      description: d.artifactPublish.description,
-      inputSchema: {
-        type: "object",
-        properties: {
-          paths: { type: "array", items: { type: "string" }, description: d.artifactPublish.paths },
-          attachmentIds: { type: "array", items: { type: "string" }, description: d.artifactPublish.attachmentIds },
-          note: { type: "string", description: d.artifactPublish.note },
-        },
         additionalProperties: false,
       },
     },
@@ -182,31 +147,27 @@ function roomSpecs(d: ServerMessages["toolSpec"]): Record<RoomToolName, RuntimeT
 }
 
 /** 只读与本机笔记工具：需求会话和项目会话都有。 */
-const READ_TOOLS: SuDuoToolName[] = [
+const READ_TOOLS: ActiveSuDuoToolName[] = [
   "suduo_requirement_get",
   "suduo_requirement_comments",
   "suduo_requirement_attachments",
   "suduo_attachment_view",
-  "suduo_artifact_versions",
-  "suduo_artifact_fetch",
   "suduo_notes_read",
   "suduo_notes_save",
 ];
 
 /** 对外写工具：只挂在需求会话上，目标需求只从会话派生。 */
-const WRITE_TOOLS: SuDuoToolName[] = ["suduo_comment_submit", "suduo_artifact_publish"];
+const WRITE_TOOLS: ActiveSuDuoToolName[] = ["suduo_comment_submit"];
 
 /**
  * 需求房间里的需求只读工具（ADR-0009）：不含结论笔记（所有者私有）与对外写工具
- * （共享 Agent 只问答与规划，不发评论、不发布确认版）。
+ * （共享 Agent 只问答与规划，不发评论）。
  */
-const ROOM_REQUIREMENT_TOOLS: SuDuoToolName[] = [
+const ROOM_REQUIREMENT_TOOLS: ActiveSuDuoToolName[] = [
   "suduo_requirement_get",
   "suduo_requirement_comments",
   "suduo_requirement_attachments",
   "suduo_attachment_view",
-  "suduo_artifact_versions",
-  "suduo_artifact_fetch",
 ];
 
 /**
@@ -220,7 +181,7 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
   const d = messagesFor(locale).toolSpec;
   const specs = requirementSpecs(d);
   const rooms = roomSpecs(d);
-  return sessionToolNames(scope).map((name) => (isRoomToolName(name) ? rooms[name] : specs[name as SuDuoToolName]));
+  return sessionToolNames(scope).map((name) => (isRoomToolName(name) ? rooms[name] : specs[name as ActiveSuDuoToolName]));
 }
 
 /** 某个 scope 下挂了哪些工具（调度时据此拒绝清单外的调用）。 */
@@ -241,6 +202,6 @@ export function isRoomToolName(name: string): name is RoomToolName {
   return (ROOM_TOOL_NAMES as readonly string[]).includes(name);
 }
 
-export function isWriteTool(name: string): name is "suduo_comment_submit" | "suduo_artifact_publish" {
+export function isWriteTool(name: string): name is "suduo_comment_submit" {
   return (WRITE_TOOLS as string[]).includes(name);
 }

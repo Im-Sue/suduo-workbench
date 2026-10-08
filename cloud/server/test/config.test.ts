@@ -42,3 +42,14 @@ it("房间文件根目录缺省为附件根目录同级的 -rooms，可覆盖；
   expect(() => loadConfig({ ...REQUIRED_ENVIRONMENT, REQUIREMENTS_ALLOWED_ROOM_FILE_EXTENSIONS: "bad ext" }))
     .toThrow("REQUIREMENTS_ALLOWED_ROOM_FILE_EXTENSIONS contains an invalid extension");
 });
+
+it("附件缺省允许的类型与房间文件同一份清单：压缩包、视频、日志都能传，可执行文件仍不行", () => {
+  const defaults = loadConfig(REQUIRED_ENVIRONMENT);
+  expect([...defaults.allowedAttachmentExtensions].toSorted()).toEqual([...(defaults.allowedRoomFileExtensions ?? [])].toSorted());
+  for (const extension of [".zip", ".rar", ".7z", ".tgz", ".mp4", ".mov", ".log", ".yaml", ".heic", ".pdf", ".png"]) {
+    expect(defaults.allowedAttachmentExtensions.has(extension), extension).toBe(true);
+  }
+  expect(defaults.allowedAttachmentExtensions.has(".exe")).toBe(false);
+  expect(loadConfig({ ...REQUIRED_ENVIRONMENT, REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS: "pdf,.ZIP" }).allowedAttachmentExtensions)
+    .toEqual(new Set([".pdf", ".zip"]));
+});

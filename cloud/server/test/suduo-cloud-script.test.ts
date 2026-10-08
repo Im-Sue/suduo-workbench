@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -145,5 +145,62 @@ describe.skipIf(process.platform === "win32")("suduo-cloud.sh 输出语言", () 
     expect(lines(run(EN, "restore", missing).stderr)).toContain(
       `  ✗ ${missing} is not a complete backup (expected database.pgdump and files.tar.gz).`,
     );
+  });
+});
+
+describe.skipIf(process.platform === "win32")("suduo-cloud.sh：退掉旧版模板写死的附件扩展名清单与 20 个上限", () => {
+  const OLD = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.png,.jpg,.jpeg,.gif,.webp,.zip,.html,.htm,.svg";
+
+  /** 复制脚本，把末尾的 main 调用换成只跑 retire_old_env_defaults（不碰 Docker）。 */
+  function retire(envContent: string): { env: string; stdout: string } {
+    const dir = mkdtempSync(join(tmpdir(), "suduo-cloud-retire-"));
+    try {
+      mkdirSync(join(dir, "scripts"));
+      mkdirSync(join(dir, "server"));
+      const source = readFileSync(SOURCE, "utf8");
+      expect(source.trimEnd().endsWith('main "$@"')).toBe(true);
+      writeFileSync(join(dir, "scripts", "suduo-cloud.sh"), source.trimEnd().replace(/main "\$@"$/u, "retire_old_env_defaults\n"));
+      writeFileSync(join(dir, "server", ".env"), envContent);
+      const result = spawnSync("bash", [join(dir, "scripts", "suduo-cloud.sh")], {
+        env: { PATH: process.env["PATH"] ?? "/usr/bin:/bin", LANG: "en_US.UTF-8" },
+        encoding: "utf8",
+      });
+      expect(result.status, result.stderr).toBe(0);
+      return { env: readFileSync(join(dir, "server", ".env"), "utf8"), stdout: result.stdout };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("一字未改的旧缺省清单（含 export 写法）被注释掉，其余行不动", () => {
+    for (const line of [`REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS=${OLD}`, `export REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS=${OLD}`]) {
+      const { env, stdout } = retire(`REQUIREMENTS_PORT=4100\n${line}\nPOSTGRES_DB=suduo_requirements\n`);
+      expect(env).toBe(`REQUIREMENTS_PORT=4100\n# ${line}\nPOSTGRES_DB=suduo_requirements\n`);
+      expect(stdout).toContain("old default attachment extension list");
+    }
+  });
+
+  it("旧模板的每需求 20 个附件上限被注释掉，改用缺省的 100", () => {
+    const { env, stdout } = retire(`REQUIREMENTS_MAX_ATTACHMENTS_PER_REQUIREMENT=20\nREQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS=${OLD}\n`);
+    expect(env).toBe(`# REQUIREMENTS_MAX_ATTACHMENTS_PER_REQUIREMENT=20\n# REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS=${OLD}\n`);
+    expect(stdout).toContain("limit of 20 attachments per requirement");
+    expect(stdout).toContain("old default attachment extension list");
+  });
+
+  it("改过的清单与上限、没有这一行时原样保留", () => {
+    for (const content of [
+      "REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS=.pdf,.zip\n",
+      "REQUIREMENTS_MAX_ATTACHMENTS_PER_REQUIREMENT=50\n",
+      "REQUIREMENTS_PORT=4100\n",
+      `# REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS=${OLD}\n`,
+    ]) {
+      expect(retire(content)).toEqual({ env: content, stdout: "" });
+    }
+  });
+
+  it("server/.env.example 不再写死附件扩展名与附件上限，新装用代码里的缺省", () => {
+    const example = readFileSync(fileURLToPath(new URL("../.env.example", import.meta.url)), "utf8");
+    expect(example).not.toMatch(/^REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS=/mu);
+    expect(example).not.toMatch(/^REQUIREMENTS_MAX_ATTACHMENTS_PER_REQUIREMENT=/mu);
   });
 });

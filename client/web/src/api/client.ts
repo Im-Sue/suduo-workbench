@@ -60,6 +60,7 @@ import type {
   AuditEntryDto as RequirementsAuditEntryDto,
   AuditResourceType,
   CommentDto as RequirementsCommentDto,
+  CommentFileDto,
   CreateCommentRequest,
   CreateProjectRequest as RequirementsCreateProjectRequest,
   CreateRequirementRequest,
@@ -72,12 +73,12 @@ import type {
   ListUsersResponse,
   LoginRequest,
   ListArtifactVersionsResponse,
-  PublishArtifactVersionRequest,
   ProjectStatsQuery,
   ProjectStatsResponse,
   ProjectDto as RequirementsProjectDto,
   RegisterRequest,
   RequirementAssigneeFilter,
+  RequirementSort,
   RequirementDetailDto,
   RequirementDto,
   RequirementStatus,
@@ -278,6 +279,10 @@ export const api = {
       assignee?: RequirementAssigneeFilter;
       /** 创建人：用户 id 或 "me"。 */
       creator?: string;
+      /** 优先级筛选，逗号分隔（`urgent,none`）。 */
+      priority?: string;
+      /** 缺省按最近更新；`priority` 先按优先级。 */
+      sort?: RequirementSort;
       cursor?: string;
       limit?: number;
     } = {},
@@ -376,12 +381,6 @@ export const api = {
       `/api/v2/requirements/${encodeURIComponent(requirementId)}/artifact-versions`,
     ),
 
-  publishArtifactVersion: (requirementId: string, body: PublishArtifactVersionRequest) =>
-    request<ArtifactVersionDetailDto>(
-      `/api/v2/requirements/${encodeURIComponent(requirementId)}/artifact-versions`,
-      { method: "POST", body },
-    ),
-
   getArtifactVersion: (versionId: string) =>
     request<ArtifactVersionDetailDto>(
       `/api/v2/artifact-versions/${encodeURIComponent(versionId)}`,
@@ -442,7 +441,7 @@ export const api = {
 
   /** pr5：试一个**尚未保存**的需求服务地址，不写入任何配置。 */
   testRequirementsSettings: (baseUrl: string) =>
-    request<{ baseUrl: string; reachable: boolean; message: string; version: string | null }>(
+    request<{ baseUrl: string; reachable: boolean; message: string; version: string | null; features?: string[] }>(
       "/api/v2/requirements/settings/test",
       { method: "POST", body: { baseUrl } },
     ),
@@ -899,6 +898,33 @@ export const api = {
     signal?: AbortSignal,
   ) => uploadRoomFile(roomId, file, onProgress, signal),
 
+  /** 评论文件上传（点发送时才传，需求附件评论文件与优先级 R7）：带进度，可取消。 */
+  uploadCommentFile: (
+    requirementId: string,
+    file: File,
+    onProgress: (percent: number) => void,
+    signal?: AbortSignal,
+  ) =>
+    uploadFileWithProgress<CommentFileDto>(
+      `/api/v2/requirements/${encodeURIComponent(requirementId)}/comment-files`,
+      file,
+      onProgress,
+      signal,
+    ),
+
+  /** 评论文件地址：inline = 浏览器里直接看（图片、视频、PDF、文本），否则下载。 */
+  commentFileUrl: (fileId: string, disposition: "inline" | "attachment" = "attachment") =>
+    `/api/v2/comment-files/${encodeURIComponent(fileId)}/content${disposition === "inline" ? "?disposition=inline" : ""}`,
+
+  /** 评论文件的元数据（发评论被拒时用来查文件是否已随别的评论发出）。 */
+  getCommentFile: (fileId: string) => request<CommentFileDto>(`/api/v2/comment-files/${encodeURIComponent(fileId)}`),
+
+  /** 把评论里的文件复制成需求的新附件。 */
+  saveCommentFileAsAttachment: (fileId: string) =>
+    request<AttachmentMutationResponse>(`/api/v2/comment-files/${encodeURIComponent(fileId)}/save-as-attachment`, {
+      method: "POST",
+    }),
+
   /** 房间文件地址：inline = 浏览器里直接看（图片、视频），否则下载。视频播放靠 Range 分段。 */
   roomFileUrl: (fileId: string, disposition: "inline" | "attachment" = "attachment") =>
     `/api/v2/room-files/${encodeURIComponent(fileId)}/content${disposition === "inline" ? "?disposition=inline" : ""}`,
@@ -982,13 +1008,23 @@ function uploadRoomFile(
   onProgress: (percent: number) => void,
   signal?: AbortSignal,
 ): Promise<RoomFileDto> {
+  return uploadFileWithProgress<RoomFileDto>(`/api/v2/rooms/${encodeURIComponent(roomId)}/files`, file, onProgress, signal);
+}
+
+/** 房间文件与评论文件共用：multipart 单文件上传，带进度，可取消；上限同为 300 MiB。 */
+function uploadFileWithProgress<T>(
+  url: string,
+  file: File,
+  onProgress: (percent: number) => void,
+  signal?: AbortSignal,
+): Promise<T> {
   if (file.size > ROOM_FILE_MAX_BYTES) {
     return Promise.reject(new ApiClientError(413, "ROOM_FILE_TOO_LARGE", uploadText().tooLarge));
   }
   if (signal?.aborted === true) return Promise.reject(uploadAbortError());
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open("POST", `/api/v2/rooms/${encodeURIComponent(roomId)}/files`);
+    request.open("POST", url);
     request.setRequestHeader("Accept", "application/json");
     request.setRequestHeader(LOCALE_HEADER, currentLocale());
     request.setRequestHeader("X-Attachment-Size", String(file.size));
@@ -1009,7 +1045,7 @@ function uploadRoomFile(
       const payload = parseJsonRecord(request.responseText);
       if (request.status >= 200 && request.status < 300) {
         onProgress(100);
-        resolve(payload as unknown as RoomFileDto);
+        resolve(payload as unknown as T);
         return;
       }
       const error = payload?.["error"];

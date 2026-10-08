@@ -7,28 +7,22 @@ export const toolSpec = {
     "Requirement number, e.g. REQ-12 or 12. In a requirement session, omit it to use the current requirement; in a project session, it's required.",
 
   requirementGet:
-    "Look up a SuDuo requirement: number, title, status, assignee, version, and full description. For the current requirement, it also gives the version when work started and the changes since then (who, when, and what changed).",
+    "Look up a SuDuo requirement: number, title, status, priority, assignee, version, and full description. For the current requirement, it also gives the version when work started and the changes since then (who, when, and what changed).",
   requirementComments: {
     description:
       "View the requirement's comments (author, time, body; publish notes for confirmed versions are marked), up to 20 per call. The cursor for the next page is given at both the start and the end of the result.",
     cursor: "The cursor given at the end of the previous page's result. Omit it for the first page.",
   },
   requirementAttachments:
-    "List the requirement's attachments: attachment ID, file name, type, size, uploader, and time. To view the content, use suduo_attachment_view.",
+    "List the requirement's attachments (newest first): attachment ID, file name, type, size, uploader, and time. Attachments are the requirement's materials (PRDs, screenshots, third-party docs, archives, etc.); " +
+    "where content overlaps, the newer one wins; where it doesn't, they complement each other; if unsure, ask the user. To view the content, use suduo_attachment_view.",
   attachmentView: {
     description: (snippet: string) =>
       "View the content of a requirement attachment. Images are handed to you to view directly; text files return their content directly; other types (PDF, archives, video, etc.) are saved to the project's .suduo/ folder and their path is returned. " +
       "Returns a string: the first line describes the attachment; for image attachments, each following line is a data:image/... URL. In exec, view it like this: " +
       snippet +
       "Don't print data:image URLs with text().",
-    attachmentId: "Attachment ID (from the attachment list).",
-  },
-  artifactVersions:
-    "List the requirement's confirmed versions (artifact versions): version number, publisher, time, and each version's file list.",
-  artifactFetch: {
-    description:
-      "Save all files of a confirmed version to the project's .suduo/requirements/<requirement>/materials/confirmed-version-v<version>/ (original file names are kept; fetching again overwrites them), and return the folder and the file list. You can then read these files directly.",
-    version: "Confirmed version number, e.g. 2.",
+    attachmentId: "Attachment ID (from the attachment list), or the ID of a file attached to a comment (from suduo_requirement_comments).",
   },
   notesRead:
     "Read this requirement's conclusion notes on this computer (entry files, confirmed conclusions, open questions, key decisions). The notes stay on this computer and aren't shared automatically.",
@@ -44,16 +38,6 @@ export const toolSpec = {
       "After the call, it pauses until the user confirms in the SuDuo interface, which can take from tens of seconds to a few minutes. While waiting, don't output progress messages such as “still waiting”. In exec, set the wait / yield time to the maximum allowed; after yielding, just keep waiting, and reply to the user once you have the result. " +
       "Returns a string: posted (with the comment details), declined by the user, or not posted, with the reason.",
     body: "Full text of the comment (Markdown, up to 4000 characters).",
-  },
-  artifactPublish: {
-    description:
-      "Publish files as a new confirmed version of the current requirement (visible to the whole team; it can't be withdrawn). Call it only when the user explicitly asks. " +
-      "paths are files in the project (paths relative to the project folder); once confirmed, they're uploaded as requirement attachments first and then published. attachmentIds are the requirement's existing attachments. " +
-      "After the call, it pauses until the user confirms in the SuDuo interface. While waiting, don't output progress messages. In exec, set the wait / yield time to the maximum, and reply to the user once you have the result. " +
-      "Returns a string: published (with the version number), declined by the user, or not published, with the reason.",
-    paths: "Paths of the project files to publish.",
-    attachmentIds: "IDs of the requirement's existing attachments.",
-    note: "Publish note (optional).",
   },
 
   roomLimit: "Number of messages. Default 20, max 50.",

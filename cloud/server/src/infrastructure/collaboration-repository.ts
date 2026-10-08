@@ -10,6 +10,9 @@ import type {
   RequirementActivityEntryDto,
   RequirementDetailDto,
   RequirementDto,
+  RequirementPriority,
+  RequirementPriorityFilterValue,
+  RequirementSort,
   RequirementStatus,
   RequirementsCursorPage,
   ProjectStatsResponse,
@@ -20,15 +23,21 @@ import type {
 import {
   AUDIT_ACTIONS,
   REQUIREMENT_ACTIVITY_ACTIONS,
+  REQUIREMENT_PRIORITIES,
+  REQUIREMENT_PRIORITY_CHANGED_ACTION,
+  REQUIREMENT_PRIORITY_FILTER_NONE,
   REQUIREMENT_STATUSES,
   REQUIREMENT_UNREAD_BASELINE_DAYS,
   STALE_RHYTHM,
   parseRequirementNumberQuery,
+  requirementPriorityFromRank,
+  requirementPriorityRank,
   staleLevel,
 } from "@suduo/cloud-contracts";
 import { decodeCursor } from "../application/cursor.js";
 import { ApplicationError, notFound } from "../application/errors.js";
 import { insertAuditLog } from "./audit-log.js";
+import { attachFilesToComment, commentFilesByComment, lockUnsentCommentFiles } from "./comment-file-repository.js";
 import { cursorPage, cursorTimestampColumn, type CursorRow } from "./cursor-page.js";
 import type { Database, QueryExecutor } from "./database.js";
 
@@ -51,6 +60,8 @@ interface RequirementRow {
   summary: string;
   status: RequirementStatus;
   assignee_user: UserSummaryDto | null;
+  /** 优先级权重 0..4，见 `requirementPriorityRank`。 */
+  priority: number;
   comment_count: number;
   unread_comment_count?: number;
   attachment_count: number;
@@ -176,6 +187,7 @@ const REQUIREMENT_COLUMNS = `
       WHEN assignee.id IS NULL THEN NULL
       ELSE json_build_object('id', assignee.id, 'displayName', assignee.display_name)
     END AS assignee_user,
+    r.priority,
     (
       SELECT count(*)::integer
       FROM requirement_comments requirement_comment
@@ -344,6 +356,7 @@ export class CollaborationRepository {
     summary: string;
     status: RequirementStatus;
     assigneeId: string | null;
+    priority: RequirementPriority | null;
   }): Promise<RequirementDto> {
     return this.database.transaction(async (client) => {
       // 取号即自增：UPDATE 持有项目行锁直到提交，同项目并发创建依次拿到连续编号；
@@ -367,8 +380,8 @@ export class CollaborationRepository {
       await client.query(
         `
           INSERT INTO requirements (
-            id, project_id, number, title, summary, status, assignee_id, created_by, updated_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+            id, project_id, number, title, summary, status, assignee_id, priority, created_by, updated_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $9, $8, $8)
         `,
         [
           id,
@@ -379,6 +392,7 @@ export class CollaborationRepository {
           input.status,
           input.assigneeId,
           input.actorId,
+          requirementPriorityRank(input.priority),
         ],
       );
       const requirement = await this.getRequirement(id, client);
@@ -390,7 +404,11 @@ export class CollaborationRepository {
         resourceId: id,
         action: "requirement.created",
         before: null,
-        after: { ...requirementAudit(requirement), assignee: requirement.assignee },
+        after: {
+          ...requirementAudit(requirement),
+          assignee: requirement.assignee,
+          priority: requirement.priority ?? null,
+        },
       });
       return requirement;
     });
@@ -402,13 +420,18 @@ export class CollaborationRepository {
     search?: string;
     assignee?: RequirementAssigneeCondition;
     creatorId?: string;
+    /** 优先级筛选：命中任一即可；`none` = 无优先级。 */
+    priorities?: RequirementPriorityFilterValue[];
+    /** 缺省 `updated`（最近更新在前）。 */
+    sort?: RequirementSort;
     /** 谁在看：按他的已读位置算 unreadCommentCount。 */
     readerId: string;
     cursor?: string;
     limit: number;
   }): Promise<RequirementsCursorPage<RequirementDto>> {
     await this.getProject(input.projectId);
-    const cursor = decodeCursor(input.cursor);
+    const byPriority = input.sort === "priority";
+    const cursor = decodeCursor(input.cursor, { withRank: byPriority });
     const values: unknown[] = [];
     const parameter = (value: unknown): string => {
       values.push(value);
@@ -435,6 +458,12 @@ export class CollaborationRepository {
     if (input.creatorId !== undefined) {
       conditions.push(`r.created_by = ${parameter(input.creatorId)}::uuid`);
     }
+    if (input.priorities !== undefined && input.priorities.length > 0) {
+      const ranks = input.priorities.map((value) =>
+        value === REQUIREMENT_PRIORITY_FILTER_NONE ? 0 : requirementPriorityRank(value),
+      );
+      conditions.push(`r.priority = ANY(${parameter(ranks)}::smallint[])`);
+    }
     // 新评论数只在「指派给我」的列表里算（我的工作用它）；看板各列、其他筛选不算，省两次子查询。
     // - artifact_version_id IS NULL：确认版的发布说明在时间线里并进「确认版」条目、不在评论里，不算新评论（数字与「评论」筛选看到的一致）。
     // - date_trunc 按毫秒比：接口给出的评论时间与已读水位都是毫秒精度，数据库里是微秒。
@@ -455,9 +484,12 @@ export class CollaborationRepository {
               )
           ) AS unread_comment_count,`
       : "";
+    // 按优先级排序时三个键都是降序（权重越急越大），一条行值比较就能翻页，也正好走 014 的索引。
     if (cursor !== null) {
       conditions.push(
-        `(r.updated_at, r.id) < (${parameter(cursor.timestamp)}::timestamptz, ${parameter(cursor.id)}::uuid)`,
+        byPriority
+          ? `(r.priority, r.updated_at, r.id) < (${parameter(cursor.rank)}::smallint, ${parameter(cursor.timestamp)}::timestamptz, ${parameter(cursor.id)}::uuid)`
+          : `(r.updated_at, r.id) < (${parameter(cursor.timestamp)}::timestamptz, ${parameter(cursor.id)}::uuid)`,
       );
     }
     const limit = parameter(input.limit + 1);
@@ -465,11 +497,12 @@ export class CollaborationRepository {
       `
         SELECT ${REQUIREMENT_COLUMNS},
           ${unreadColumn}
+          ${byPriority ? "r.priority AS cursor_rank," : ""}
           ${cursorTimestampColumn("r.updated_at")}
         FROM requirements r
         ${REQUIREMENT_JOINS}
         WHERE ${conditions.join(" AND ")}
-        ORDER BY r.updated_at DESC, r.id DESC
+        ORDER BY ${byPriority ? "r.priority DESC, " : ""}r.updated_at DESC, r.id DESC
         LIMIT ${limit}
       `,
       values,
@@ -696,6 +729,8 @@ export class CollaborationRepository {
     status?: RequirementStatus;
     /** undefined 表示不改负责人；null 表示清空。 */
     assigneeId?: string | null;
+    /** undefined 表示不改优先级；null 表示清空。 */
+    priority?: RequirementPriority | null;
   }): Promise<{ requirement: RequirementDto; changed: boolean }> {
     return this.database.transaction(async (client) => {
       const before = await this.getRequirement(input.requirementId, client);
@@ -739,7 +774,14 @@ export class CollaborationRepository {
             requirementId: input.requirementId,
             assigneeId: input.assigneeId,
           });
-      if (!contentChanged && assigneeChange === null) {
+      const priorityChange = input.priority === undefined
+        ? null
+        : await this.changePriority(client, {
+            actorId: input.actorId,
+            requirementId: input.requirementId,
+            priority: input.priority,
+          });
+      if (!contentChanged && assigneeChange === null && priorityChange === null) {
         return { requirement: before, changed: false };
       }
       const after = await this.getRequirement(input.requirementId, client);
@@ -771,6 +813,18 @@ export class CollaborationRepository {
           action: "requirement.assignee_changed",
           before: { assignee: assigneeChange.from },
           after: { assignee: assigneeChange.to },
+        });
+      }
+      if (priorityChange !== null) {
+        await insertAuditLog(client, {
+          actorId: input.actorId,
+          projectId: after.projectId,
+          requirementId: input.requirementId,
+          resourceType: "requirement",
+          resourceId: input.requirementId,
+          action: REQUIREMENT_PRIORITY_CHANGED_ACTION,
+          before: { priority: priorityChange.from },
+          after: { priority: priorityChange.to },
         });
       }
       return { requirement: after, changed: true };
@@ -814,10 +868,43 @@ export class CollaborationRepository {
     return { from, to };
   }
 
+  /** 优先级同负责人，是元数据：刷新 updated_at / updated_by，不递增正文版本。行锁的用法见 changeAssignee。 */
+  private async changePriority(
+    executor: QueryExecutor,
+    input: { actorId: string; requirementId: string; priority: RequirementPriority | null },
+  ): Promise<{ from: RequirementPriority | null; to: RequirementPriority | null } | null> {
+    const current = await executor.query<{ priority: number }>(
+      "SELECT priority FROM requirements WHERE id = $1 FOR NO KEY UPDATE",
+      [input.requirementId],
+    );
+    const row = current.rows[0];
+    if (row === undefined) throw notFound("Requirement");
+    const rank = requirementPriorityRank(input.priority);
+    if (row.priority === rank) return null;
+    await executor.query(
+      `
+        UPDATE requirements
+        SET priority = $1,
+            updated_by = $2,
+            updated_at = now()
+        WHERE id = $3
+      `,
+      [rank, input.actorId, input.requirementId],
+    );
+    return { from: requirementPriorityFromRank(row.priority), to: input.priority };
+  }
+
+  /**
+   * 发评论。带文件时在同一事务里锁住并挂上（见 lockUnsentCommentFiles）；只有文件、没写文字时
+   * 正文存一句英文兜底并记 system_kind=comment_files：新客户端只显示文件，旧客户端显示兜底正文（不会是空白评论）。
+   */
   async createComment(input: {
     actorId: string;
     requirementId: string;
+    /** 已去掉首尾空白；可以为空（此时必须带文件）。 */
     body: string;
+    /** 已去重，至多 REQUIREMENT_COMMENT_MAX_FILES 个。 */
+    fileIds: readonly string[];
   }): Promise<CommentDto> {
     return this.database.transaction(async (client) => {
       const requirement = await client.query<{ id: string; project_id: string }>(
@@ -825,14 +912,26 @@ export class CollaborationRepository {
         [input.requirementId],
       );
       if (requirement.rows[0] === undefined) throw notFound("Requirement");
+      const files = input.fileIds.length === 0
+        ? []
+        : await lockUnsentCommentFiles(client, input.requirementId, input.fileIds);
+      const filesOnly = input.body === "" && files.length > 0;
       const id = randomUUID();
       await client.query(
         `
-          INSERT INTO requirement_comments (id, requirement_id, body, author_id)
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO requirement_comments (id, requirement_id, body, author_id, system_kind, system_params)
+          VALUES ($1, $2, $3, $4, $5, $6)
         `,
-        [id, input.requirementId, input.body, input.actorId],
+        [
+          id,
+          input.requirementId,
+          filesOnly ? commentFilesFallbackBody(files.map((file) => file.fileName)) : input.body,
+          input.actorId,
+          filesOnly ? "comment_files" : null,
+          filesOnly ? { fileCount: files.length } : null,
+        ],
       );
+      if (files.length > 0) await attachFilesToComment(client, id, files.map((file) => file.id));
       const comment = await this.getComment(id, client);
       await insertAuditLog(client, {
         actorId: input.actorId,
@@ -845,6 +944,7 @@ export class CollaborationRepository {
         after: {
           requirementId: comment.requirementId,
           body: comment.body,
+          ...(files.length === 0 ? {} : { files: files.map((file) => ({ id: file.id, fileName: file.fileName })) }),
         },
       });
       return comment;
@@ -884,7 +984,8 @@ export class CollaborationRepository {
       `,
       values,
     );
-    return cursorPage(result.rows, input.limit, mapComment);
+    const files = await commentFilesByComment(this.database, result.rows.map((row) => row.id));
+    return cursorPage(result.rows, input.limit, (row) => ({ ...mapComment(row), files: files.get(row.id) ?? [] }));
   }
 
   async listAudit(input: {
@@ -1004,7 +1105,14 @@ export class CollaborationRepository {
       `,
       values,
     );
-    return cursorPage(result.rows, input.limit, mapActivity);
+    const files = await commentFilesByComment(
+      this.database,
+      result.rows.filter((row) => row.action === "comment.created").map((row) => row.resource_id),
+    );
+    return cursorPage(result.rows, input.limit, (row) => {
+      const entry = mapActivity(row);
+      return entry.comment === null ? entry : { ...entry, comment: { ...entry.comment, files: files.get(row.resource_id) ?? [] } };
+    });
   }
 
   private async getComment(id: string, executor: QueryExecutor): Promise<CommentDto> {
@@ -1026,7 +1134,8 @@ export class CollaborationRepository {
       [id],
     );
     if (result.rows[0] === undefined) throw notFound("Comment");
-    return mapComment(result.rows[0]);
+    const files = await commentFilesByComment(executor, [id]);
+    return { ...mapComment(result.rows[0]), files: files.get(id) ?? [] };
   }
 
 }
@@ -1053,6 +1162,7 @@ function mapRequirement(row: RequirementRow): RequirementDto {
     summary: row.summary,
     status: row.status,
     assignee: row.assignee_user,
+    priority: requirementPriorityFromRank(row.priority),
     commentCount: row.comment_count,
     attachmentCount: row.attachment_count,
     createdBy: row.created_by_user,
@@ -1148,6 +1258,13 @@ function activityChanges(
       to: userField(after, "assignee"),
     }];
   }
+  if (action === REQUIREMENT_PRIORITY_CHANGED_ACTION) {
+    return [{
+      field: "priority",
+      from: priorityField(before),
+      to: priorityField(after),
+    }];
+  }
   if (action !== "requirement.updated" && action !== "requirement.status_changed") {
     return [];
   }
@@ -1179,6 +1296,13 @@ function statusField(value: Record<string, unknown> | null): RequirementStatus |
   const field = stringField(value, "status");
   return field !== null && (REQUIREMENT_STATUSES as readonly string[]).includes(field)
     ? field as RequirementStatus
+    : null;
+}
+
+function priorityField(value: Record<string, unknown> | null): RequirementPriority | null {
+  const field = stringField(value, "priority");
+  return field !== null && (REQUIREMENT_PRIORITIES as readonly string[]).includes(field)
+    ? field as RequirementPriority
     : null;
 }
 
@@ -1246,12 +1370,21 @@ function mapComment(row: CommentRow): CommentDto {
 
 /** 认识的系统类型才带出类型 + 参数；不认识的（更新的云端写入的）只给正文，前端照常显示兜底文字。 */
 function commentSystemFields(kind: string | null, systemParams: unknown): Pick<CommentDto, "system"> {
-  if (kind !== "artifact_published") return {};
   const params = systemParams as Record<string, unknown> | null;
-  const versionNumber = params?.["versionNumber"];
   const fileCount = params?.["fileCount"];
+  if (kind === "comment_files") {
+    return typeof fileCount === "number" ? { system: { kind: "comment_files", params: { fileCount } } } : {};
+  }
+  if (kind !== "artifact_published") return {};
+  const versionNumber = params?.["versionNumber"];
   if (typeof versionNumber !== "number" || typeof fileCount !== "number") return {};
   return { system: { kind: "artifact_published", params: { versionNumber, fileCount } } };
+}
+
+/** 只有文件的评论存的兜底正文（英文，旧客户端显示它）：列出文件名，超长截断到正文上限。 */
+function commentFilesFallbackBody(fileNames: readonly string[]): string {
+  const body = `Attached ${String(fileNames.length)} ${fileNames.length === 1 ? "file" : "files"}: ${fileNames.join(", ")}`;
+  return body.length > 4_000 ? `${body.slice(0, 3_999)}…` : body;
 }
 
 function mapAudit(row: AuditRow): AuditEntryDto {

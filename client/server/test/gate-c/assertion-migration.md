@@ -50,8 +50,8 @@ P1 换了外壳（左侧栏 + 项目切换器 + ⌘K 命令面板、TanStack Rou
 | （新增）键盘改状态、速览、URL 筛选 | 新增 | 聚焦卡片按 1–7；点卡片开 `requirement-peek`、URL 带 `peek`、Esc 关闭且速览在内容面板内；按编号搜索、负责人「我负责的」 |
 | `detail-back` | retired | 详情页用面包屑；步骤直接按 URL 进出 |
 | 「实时已连接」文案 | retired | 整页加载前等待 `/api/v2/events` 响应，确保主窗口 SSE 已建立 |
-| 发布对话框「发布产物版本」/「变更说明（可选）」/「发布版本」 | replacement | `publish-artifact-dialog`：材料默认全选、「这一版改了什么」、「发布第 N 版」 |
-| `artifact-version-item` / `artifact-published-comment` /「查看产物版本」 | replacement | `artifact-version` 里「确认版 · 第 N 版」+ 活动「发布了确认版 · 第 N 版」 |
+| 发布对话框「发布产物版本」/「变更说明（可选）」/「发布版本」 | retired | 确认版停用（需求附件评论文件与优先级 S2）：附件区不再有发布入口，断言「没有发布确认版按钮」 |
+| `artifact-version-item` / `artifact-published-comment` /「查看产物版本」 | replacement | `historical-versions` 里「历史确认版（1）」展开后「第 1 版」只读 + 活动「发布了确认版 · 第 1 版」；跨窗口实时改用评论（`comment.created`） |
 | `comment-item` | replacement | `activity-comment` |
 | 详情 `v1` / `v2` 版本号文案 | retired（文案规范禁止版本号） | 带外改描述后删除附件，删除后回查到新描述 |
 | 附件 `article` +「删除」+ `dialog[删除附件]` | replacement | 行内 `aria-label=删除「文件名」` → `confirm-dialog`「删除「文件名」？」→「删除」 |

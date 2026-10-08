@@ -7,9 +7,6 @@
 const navigation = (nextCursor: string | null) =>
   nextCursor === null ? "这是最后一页。" : `还有下一页：cursor=${nextCursor}`;
 
-/** 对外写的对象：评论 / 确认版。 */
-const writeTarget = (kind: "comment" | "artifact") => (kind === "comment" ? "评论" : "确认版");
-
 export const toolReply = {
   /** 「查不到 X」里的 X（三态里的「查不到」，见 `toolText.unavailable`）。 */
   what: {
@@ -19,8 +16,6 @@ export const toolReply = {
     comments: (label: string) => `${label} 的评论`,
     attachmentList: (label: string) => `${label} 的附件清单`,
     attachmentContent: (fileName: string) => `附件 ${fileName} 的内容`,
-    confirmedVersions: (label: string) => `${label} 的确认版`,
-    versionFiles: (version: number) => `确认版 v${String(version)} 的文件清单`,
     file: (fileName: string) => `文件 ${fileName}`,
   },
   args: {
@@ -32,15 +27,14 @@ export const toolReply = {
   /** SuDuo 生成到项目 `.suduo/requirements/<需求>/materials/` 下的文件与目录名。 */
   files: {
     body: (version: number) => `需求正文-v${String(version)}.md`,
-    confirmedVersionDir: (version: number) => `确认版-v${String(version)}`,
     /** 文件名清理后为空时的兜底名。 */
     fallbackName: "附件",
     empty: (fileName: string) => `查不到文件 ${fileName}：需求服务返回了空内容。`,
     saveFailed: (fileName: string, reason: string) => `文件 ${fileName} 没有保存成功：${reason}。`,
   },
   get: {
-    status: (status: string, assignee: string, version: number) =>
-      `- 状态：${status}；负责人：${assignee}；当前版本：v${String(version)}`,
+    status: (status: string, priority: string, assignee: string, version: number) =>
+      `- 状态：${status}；优先级：${priority}；负责人：${assignee}；当前版本：v${String(version)}`,
     startVersion: (version: number) => `（开工时 v${String(version)}）`,
     created: (createdBy: string, createdAt: string, updatedBy: string, updatedAt: string) =>
       `- 创建：${createdBy}，${createdAt}；最后修改：${updatedBy}，${updatedAt}`,
@@ -75,6 +69,7 @@ export const toolReply = {
     summaryChanged: "修改了正文（当前正文见上方）",
     statusChanged: (from: string, to: string) => `把状态从「${from}」改成「${to}」`,
     assigneeChanged: (from: string, to: string) => `把负责人从「${from}」改成「${to}」`,
+    priorityChanged: (from: string, to: string) => `把优先级从「${from}」改成「${to}」`,
     updated: "修改了需求",
     join: (parts: readonly string[]) => parts.join("，"),
   },
@@ -85,37 +80,27 @@ export const toolReply = {
     navigation,
     clipped: (length: number) => `……（这条评论共 ${String(length)} 字，后面省略；需要全文请让用户在需求页查看）`,
     publishNote: "（确认版发布说明）",
+    /** 评论带的文件，下面每行一个：编号 · 文件名 · 类型 · 大小。 */
+    filesHeading: (count: number) => `附带 ${String(count)} 个文件（用 suduo_attachment_view 查看，参数 attachmentId 填文件编号）：`,
     /** 系统代写的评论（契约 `CommentDto.system`）：按会话语言渲染，不用存下的英文兜底正文。 */
     system: {
       artifactPublished: (versionNumber: number, fileCount: number) =>
         `发布了产物 v${String(versionNumber)}，含 ${String(fileCount)} 个文件。`,
+      /** 只带文件、没写文字的评论。 */
+      commentFiles: (fileCount: number) => `（没写文字，只附了 ${String(fileCount)} 个文件）`,
     },
   },
   attachments: {
     none: (label: string) => `${label} 没有附件。`,
-    header: (label: string, count: number) => `${label} 的附件（${String(count)} 个，用 suduo_attachment_view 查看内容）：`,
+    /** 附件按上传时间从新到旧列出；阅读约定是用户定的（需求附件评论文件与优先级）。 */
+    header: (label: string, count: number) =>
+      `${label} 的附件（${String(count)} 个，最新在前；内容重复时以较新的为准，不重复的互为补充，拿不准就问用户。用 suduo_attachment_view 查看内容）：`,
     notFound: (label: string, id: string) =>
       `${label} 的附件里没有 ID 为 ${id} 的附件（可能已删除，或属于别的需求）。先用 suduo_requirement_attachments 看附件清单。`,
     head: (fileName: string, contentType: string, size: string, uploader: string, time: string) =>
       `附件 ${fileName}（${contentType}，${size}，${uploader} 上传于 ${time}）`,
     savedLong: (path: string) => `内容较长，已保存到项目内 ${path}，请直接读取这个文件。`,
     saved: (path: string) => `已保存到项目内 ${path}，可以直接读取这个文件。`,
-  },
-  artifacts: {
-    none: (label: string) => `${label} 还没有发布过确认版。`,
-    header: (label: string, count: number) => `${label} 的确认版（${String(count)} 个，最新在前）：`,
-    version: (version: number, publisher: string, time: string, fileCount: number) =>
-      `## v${String(version)} · ${publisher} · ${time}（${String(fileCount)} 个文件）`,
-    filesUnavailable: "- 文件清单查不到（需求服务暂时不可用），可以稍后再查。",
-    file: (fileName: string, size: string) => `- ${fileName}（${size}）`,
-    more: (count: number) => `另有 ${String(count)} 个更早的版本未列出。`,
-    fetchHint: "要读文件内容，用 suduo_artifact_fetch 把某个版本保存到本地。",
-    invalidVersion: "version 必须是正整数，例如 2。",
-    /** `existing` 是现有版本（「v1」「v2」）。 */
-    noSuchVersion: (label: string, version: number, existing: readonly string[]) =>
-      `${label} 没有确认版 v${String(version)}（现有：${existing.join("、") || "无"}）。`,
-    fetched: (label: string, version: number, publisher: string, time: string, dir: string) =>
-      `已把 ${label} 的确认版 v${String(version)}（${publisher}，${time}）保存到 ${dir}/：`,
   },
   notes: {
     none: (label: string, path: string) => `${label} 在本机还没有结论笔记（${path}）。`,
@@ -129,36 +114,22 @@ export const toolReply = {
     changedSinceRead:
       "注意：在你上次读取之后，笔记被用户或其他会话改过；旧内容已存档。请告诉用户，并确认这次写入没有丢掉对方新加的内容。",
   },
-  /** 对外写工具（发评论、发布确认版）：确认卡的准备与确认后的执行结果。 */
+  /** 对外写工具（发评论）：确认卡的准备与确认后的执行结果。 */
   write: {
     commentEmpty: "评论内容不能为空。",
     commentTooLong: (limit: number, length: number) =>
       `评论最多 ${String(limit)} 字，现在是 ${String(length)} 字，请精简后再发。`,
-    noFiles: "至少给出一个要发布的文件：paths（项目里的文件）或 attachmentIds（已有附件）。",
-    fileNotFound: (path: string) => `项目里找不到文件 ${path}（路径要相对项目目录，且必须是文件）。`,
-    attachmentNotFound: (label: string, id: string) => `${label} 的附件里没有 ID 为 ${id} 的附件。`,
-    requirementSessionOnly: "只有从需求创建的会话才能发评论或发布确认版。",
+    requirementSessionOnly: "只有从需求创建的会话才能发评论。",
     /** 确认卡里的需求没有编号时的称呼。 */
     requirementTitleOnly: (title: string) => `需求「${title}」`,
     commentSent: (label: string, author: string, time: string, id: string) =>
       `已发出评论到 ${label}（${author}，${time}，评论 ID ${id}）。`,
     incomplete: "确认卡内容不完整，没有执行。",
-    changedFile: (path: string, confirmedSize: string, currentSize: string) =>
-      `${path}（确认时 ${confirmedSize}，发布时 ${currentSize}）`,
-    uploadedFile: (fileName: string, id: string) => `${fileName}（附件 ID ${id}）`,
-    published: (label: string, version: number, fileCount: number, time: string) =>
-      `已发布 ${label} 的确认版 v${String(version)}（${String(fileCount)} 个文件，${time}）。`,
-    changedAfterConfirm: (files: readonly string[]) =>
-      `\n注意：这些文件在用户确认之后又被改过，发布的是最新内容，请告诉用户：${files.join("；")}。`,
-    uploadedNotPublished: (files: readonly string[]) =>
-      `\n已经上传成需求附件、但确认版没有发布的文件：${files.join("；")}。` +
-      "这些附件留在需求上；重试时可以把它们的附件 ID 放进 attachmentIds 直接发布，不用重新上传。",
-    projectFileMissing: (path: string) => `项目里的文件 ${path} 找不到了（可能在确认之后被移动或删除），确认版没有发布。`,
     /** 远程明确没接受（4xx）。 */
-    notSent: (kind: "comment" | "artifact", reason: string) => `未能发出${writeTarget(kind)}：${reason}。`,
+    notSent: (_kind: "comment", reason: string) => `未能发出评论：${reason}。`,
     /** 其他失败：可能已经送达，提醒核对、不要重发。 */
-    unconfirmed: (kind: "comment" | "artifact", reason: string) =>
-      `${writeTarget(kind)}的发送结果未确认：${reason}。请让用户到需求页核对是否已经发出，不要直接重发。`,
+    unconfirmed: (_kind: "comment", reason: string) =>
+      `评论的发送结果未确认：${reason}。请让用户到需求页核对是否已经发出，不要直接重发。`,
   },
   /** 工具调度（`session-tool-service.ts`）。 */
   dispatch: {
@@ -169,7 +140,9 @@ export const toolReply = {
     roomToolsUnavailable: "房间工具暂时不可用。",
     unknownTool: (tool: string) => `SuDuo 没有工具 ${tool}。`,
     declinedComment: "用户没有同意，评论没有发出。",
-    declinedPublish: "用户没有同意，确认版没有发布。",
+    /** 确认版停用后，旧会话里模型仍调用三个已撤下的工具时。 */
+    retired: (tool: string) =>
+      `${tool} 已停用：SuDuo 不再有「确认版」，需求的资料都在附件里。用 suduo_requirement_attachments 看附件清单（最新在前），用 suduo_attachment_view 查看内容。`,
     sessionUnlinked: "会话已经没有关联的 SuDuo 项目，没有执行。",
     runFailed: (reason: string) => `执行时出错：${reason}`,
     /** 结果记进账本时图片的占位。 */

@@ -291,6 +291,7 @@ cmd_install() {
     ok "检测到已有配置 server/.env，沿用其中的密钥（不会覆盖）" "Found server/.env; keeping its secrets (it is never overwritten)"
     [ -z "$wanted_port" ] || set_env_value REQUIREMENTS_PORT "$wanted_port"
     check_placeholder_secrets
+    retire_old_env_defaults
     local running checkout
     running="$(health_json 2>/dev/null | json_field version || true)"
     checkout="$(product_version)"
@@ -339,6 +340,33 @@ cmd_install() {
        "Anyone who can reach this address can register an account. Keep it on a private network or VPN, or behind a reverse proxy with access control (see the deployment guide)."
   warn "企业使用 SuDuo 一般属于商业使用：可以直接用，请在开始使用后 30 天内登记，目前免费。见 COMMERCIAL.md。" \
        "Use by a company is generally commercial use: you can start right away and register within 30 days of first use. It is currently free. See COMMERCIAL.md."
+}
+
+# 0.9.0 及之前的 server/.env.example 写死了两项旧值（install 时原样拷进 .env），会盖住新的缺省：
+# 附件扩展名的旧清单、每个需求 20 个附件的旧上限（代码缺省是 100）。
+# 一字未改的那一行视为「当时的缺省值」，注释掉以采用新的缺省；改过的说明是有意配置，原样保留。
+OLD_DEFAULT_ATTACHMENT_EXTENSIONS=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.png,.jpg,.jpeg,.gif,.webp,.zip,.html,.htm,.svg"
+OLD_DEFAULT_MAX_ATTACHMENTS="20"
+
+comment_out_env_key() { # comment_out_env_key KEY → 在 .env 里把这一行（含 export 写法）改成注释
+  local tmp
+  tmp="$(mktemp)"
+  sed "s/^\([[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}$1=\)/# \1/" "$ENV_FILE" > "$tmp"
+  cat "$tmp" > "$ENV_FILE"
+  rm -f "$tmp"
+}
+
+retire_old_env_defaults() {
+  if [ "$(env_value REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS)" = "$OLD_DEFAULT_ATTACHMENT_EXTENSIONS" ]; then
+    comment_out_env_key REQUIREMENTS_ALLOWED_ATTACHMENT_EXTENSIONS
+    ok "server/.env 里的附件扩展名还是旧版的缺省清单，已注释掉，改用新的缺省（压缩包、视频、日志等都能传）" \
+       "server/.env still had the old default attachment extension list; it was commented out so the new default applies (archives, videos, logs and more)."
+  fi
+  if [ "$(env_value REQUIREMENTS_MAX_ATTACHMENTS_PER_REQUIREMENT)" = "$OLD_DEFAULT_MAX_ATTACHMENTS" ]; then
+    comment_out_env_key REQUIREMENTS_MAX_ATTACHMENTS_PER_REQUIREMENT
+    ok "server/.env 里每个需求的附件上限还是旧版的 20，已注释掉，改用缺省的 100" \
+       "server/.env still had the old limit of 20 attachments per requirement; it was commented out so the default of 100 applies."
+  fi
 }
 
 check_placeholder_secrets() {
@@ -575,6 +603,7 @@ cmd_upgrade() {
     backup="$BACKUP_RESULT"
     ok "已备份到 $backup" "Backed up to $backup"
   fi
+  retire_old_env_defaults
   say "  … 重新构建并启动" "  … rebuilding and starting"
   compose up -d --build
   if ! wait_for_health; then

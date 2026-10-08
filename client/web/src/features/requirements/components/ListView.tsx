@@ -7,26 +7,30 @@ import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PriorityIcon } from "@/components/ui/priority-icon";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { cn } from "@/lib/utils";
 import { requirementCode } from "../format.js";
 import type { RequirementListFilters } from "../keys.js";
-import { columnQuery, type ColumnState } from "../queries.js";
+import { columnItems, columnQuery, type ColumnState } from "../queries.js";
 import { useRecentlyChanged } from "../highlight.js";
 import { UserAvatar } from "./UserAvatar.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
+import { requirementPriorityLabel } from "../../../ui/requirement-priority.js";
 import { requirementStatusLabel } from "../../../ui/requirement-status.js";
 import { useT } from "../../../i18n/provider.js";
 
 /**
  * 列表视图：按状态分组（可折叠），与看板共用每个状态的分页查询，切换视图不重新加载。
  * 行是按钮：点击或 Enter 打开速览，↑↓ / J K 移动，1–7 改状态。
+ * 云端支持优先级时多一列优先级（图标 + 名称，无优先级留空）。
  */
 export function ListView({
   projectId,
   filters,
   statuses,
   selectedId,
+  showPriority = false,
   onSelect,
   onOpen,
   onCreateIn,
@@ -34,6 +38,7 @@ export function ListView({
 }: {
   projectId: string;
   filters: RequirementListFilters;
+  showPriority?: boolean;
   statuses: readonly RequirementStatus[];
   selectedId: string | null;
   onSelect(requirement: RequirementListItemDto): void;
@@ -57,6 +62,7 @@ export function ListView({
       <div className="sticky top-0 z-10 flex h-8 items-center gap-3 border-b border-border bg-card px-5 text-caption text-subtle-foreground">
         <span className="w-[72px] shrink-0">{t.requirements.list.header.number}</span>
         <span className="min-w-0 flex-1">{t.requirements.list.header.title}</span>
+        {showPriority ? <span className="w-20 shrink-0">{t.requirements.list.header.priority}</span> : null}
         <span className="w-28 shrink-0">{t.requirements.list.header.assignee}</span>
         {/* 与卡片同一套图标；等宽字体下每个图标占一个字符宽，正好对在下面「0 · 4 · 1」的数字上。文字给读屏与悬停。 */}
         <span className="w-28 shrink-0 font-mono whitespace-pre" title={t.requirements.list.header.counts}>
@@ -77,6 +83,7 @@ export function ListView({
           projectId={projectId}
           status={status}
           filters={filters}
+          showPriority={showPriority}
           collapsed={collapsed.has(status)}
           onToggle={() => toggle(status)}
           selectedId={selectedId}
@@ -94,6 +101,7 @@ function ListGroup({
   projectId,
   status,
   filters,
+  showPriority,
   collapsed,
   onToggle,
   selectedId,
@@ -105,6 +113,7 @@ function ListGroup({
   projectId: string;
   status: RequirementStatus;
   filters: RequirementListFilters;
+  showPriority: boolean;
   collapsed: boolean;
   onToggle(): void;
   selectedId: string | null;
@@ -115,7 +124,7 @@ function ListGroup({
 }) {
   const t = useT();
   const query = useInfiniteQuery(columnQuery(projectId, status, filters));
-  const items = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
+  const items = useMemo(() => columnItems(query.data), [query.data]);
   const loaded = query.data !== undefined;
   const hasMore = query.hasNextPage;
   useEffect(() => {
@@ -123,7 +132,7 @@ function ListGroup({
   }, [onState, status, items.length, hasMore, loaded]);
   const label = requirementStatusLabel(status);
   // 筛选后没有条目的组整组隐藏，减少噪音；未筛选时保留空组，方便就地新建。
-  const filtered = (filters.search ?? "") !== "" || filters.assignee !== undefined;
+  const filtered = (filters.search ?? "") !== "" || filters.assignee !== undefined || filters.priority !== undefined;
   if (filtered && query.isSuccess && items.length === 0) return null;
 
   return (
@@ -177,6 +186,7 @@ function ListGroup({
               key={requirement.id}
               requirement={requirement}
               selected={requirement.id === selectedId}
+              showPriority={showPriority}
               onFocus={() => onSelect(requirement)}
               onClick={() => onOpen(requirement)}
             />
@@ -197,11 +207,13 @@ function ListGroup({
 function ListRow({
   requirement,
   selected,
+  showPriority,
   onFocus,
   onClick,
 }: {
   requirement: RequirementListItemDto;
   selected: boolean;
+  showPriority: boolean;
   onFocus(): void;
   onClick(): void;
 }) {
@@ -227,6 +239,18 @@ function ListRow({
     >
       <span className="w-[72px] shrink-0 font-mono text-caption text-subtle-foreground">{code}</span>
       <span className="min-w-0 flex-1 truncate text-body font-medium">{requirement.title}</span>
+      {showPriority ? (
+        <span className="flex w-20 shrink-0 items-center gap-1.5 text-small">
+          {requirement.priority == null ? (
+            <span className="sr-only">{requirementPriorityLabel(null, t)}</span>
+          ) : (
+            <>
+              <PriorityIcon priority={requirement.priority} aria-hidden="true" />
+              <span className="truncate">{requirementPriorityLabel(requirement.priority, t)}</span>
+            </>
+          )}
+        </span>
+      ) : null}
       <span className="flex w-28 shrink-0 items-center gap-1.5 text-small">
         <UserAvatar user={requirement.assignee} />
         <span className={cn("truncate", requirement.assignee === null && "text-subtle-foreground")}>

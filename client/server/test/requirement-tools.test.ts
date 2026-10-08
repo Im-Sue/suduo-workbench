@@ -1,14 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SuDuoToolConfirmationDto } from "@suduo/client-contracts";
-import type { ArtifactVersionDetailDto } from "@suduo/cloud-contracts";
 import { ApiError } from "../src/application/api-error.js";
 import { formatBytes, formatTime, toolFormat, type ToolResult } from "../src/application/session-tools/format.js";
 import { RequirementTools, type ToolSessionContext } from "../src/application/session-tools/requirement-tools.js";
 import {
-  DEV,
+  PM,
   FakeRequirementsRemote,
   activityFixture,
   attachmentFixture,
@@ -120,7 +119,7 @@ describe("suduo_requirement_get", () => {
     const text = textOf(result);
     expect(text.startsWith(EVIDENCE_NOTE)).toBe(true);
     expect(text).toContain("# REQ-1「商家端-订单详情优化」");
-    expect(text).toContain("- 状态：草稿；负责人：陈思远；当前版本：v3（开工时 v2）");
+    expect(text).toContain("- 状态：草稿；优先级：无；负责人：陈思远；当前版本：v3（开工时 v2）");
     expect(text).toContain("- 评论 1 条；附件 1 个");
     expect(text.endsWith("## 正文\n订单详情弹窗增加客户收货信息。")).toBe(true);
     expect(text).toContain(`## 开工以后的变化（开工时刻 ${formatTime(STARTED_AT)}）`);
@@ -231,6 +230,36 @@ describe("suduo_requirement_comments", () => {
     expect(second.endsWith("这是最后一页。")).toBe(true);
   });
 
+  it("评论带的文件逐条列出编号；只有文件的评论按会话语言说明", async () => {
+    const { remote, tools, ctx } = setup();
+    const file = {
+      id: "cf-1",
+      requirementId: "req-1",
+      commentId: "comment-1",
+      fileName: "报错截图.png",
+      contentType: "image/png",
+      kind: "image" as const,
+      sizeBytes: 2048,
+      sha256: "0".repeat(64),
+      uploadedBy: PM,
+      createdAt: "2026-09-21T02:01:00.000Z",
+    };
+    remote.comments.set("req-1", [
+      commentFixture(1, { body: "导出按钮点了没反应", files: [file] }),
+      commentFixture(2, {
+        body: "Attached 1 file: a.zip",
+        system: { kind: "comment_files", params: { fileCount: 1 } },
+        files: [{ ...file, id: "cf-2", fileName: "a.zip", contentType: "application/zip", kind: "file" }],
+      }),
+    ]);
+    const text = textOf(await tools.requirementComments(ctx, {}));
+    expect(text).toContain(
+      "导出按钮点了没反应\n附带 1 个文件（用 suduo_attachment_view 查看，参数 attachmentId 填文件编号）：\n- cf-1 · 报错截图.png · image/png · 2.0KB",
+    );
+    expect(text).toContain("（没写文字，只附了 1 个文件）\n附带 1 个文件");
+    expect(text).not.toContain("Attached 1 file");
+  });
+
   it("评论很长时逐条截断，翻页提示不会被整体截断吃掉", async () => {
     const { remote, tools, ctx } = setup();
     remote.comments.set(
@@ -264,11 +293,14 @@ describe("suduo_requirement_attachments", () => {
   it("列出附件；没有附件时说没有；清单查不到时失败", async () => {
     const { remote, tools, ctx } = setup();
     expect(textOf(await tools.requirementAttachments(ctx, {}))).toBe("REQ-1「商家端-订单详情优化」 没有附件。");
+    // 需求服务按上传时间升序给出；工具按最新在前列，并写明阅读约定。
     remote.attachments.set("req-1", [
       attachmentFixture({ id: "att-1", fileName: "需求问题截图.png", contentType: "image/png", sizeBytes: 2048 }),
+      attachmentFixture({ id: "att-2", fileName: "PRD v2.pdf", contentType: "application/pdf", createdAt: "2026-09-25T02:00:00.000Z" }),
     ]);
     const listed = textOf(await tools.requirementAttachments(ctx, {}));
-    expect(listed).toContain("（1 个，用 suduo_attachment_view 查看内容）");
+    expect(listed).toContain("（2 个，最新在前；内容重复时以较新的为准，不重复的互为补充，拿不准就问用户。用 suduo_attachment_view 查看内容）");
+    expect(listed.indexOf("- att-2 · PRD v2.pdf")).toBeLessThan(listed.indexOf("- att-1 · 需求问题截图.png"));
     expect(listed).toContain("- att-1 · 需求问题截图.png · image/png · 2.0KB · 李娜 · ");
 
     remote.fail.listAttachments = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "down");
@@ -298,6 +330,34 @@ describe("suduo_attachment_view", () => {
     context.remote.attachmentContent.set("att-evil", Buffer.from("evil"));
     return { ...context, png };
   }
+
+  it("评论文件也能看：按编号找到本需求的评论文件，图片交给模型；别的需求的 / 不存在的说找不到", async () => {
+    const { remote, tools, ctx, png } = withAttachments();
+    const commentFile = {
+      id: "cf-img",
+      requirementId: "req-1",
+      commentId: "comment-1",
+      fileName: "评论截图.png",
+      contentType: "image/png",
+      kind: "image" as const,
+      sizeBytes: png.length,
+      sha256: "0".repeat(64),
+      uploadedBy: PM,
+      createdAt: "2026-09-22T02:00:00.000Z",
+    };
+    remote.commentFiles.set("cf-img", commentFile);
+    remote.commentFileContent.set("cf-img", png);
+    remote.commentFiles.set("cf-other", { ...commentFile, id: "cf-other", requirementId: "req-2" });
+    const result = await tools.attachmentView(ctx, { attachmentId: "cf-img" });
+    expect(result.success).toBe(true);
+    expect(result.contentItems[1]).toEqual({ type: "inputImage", imageUrl: "data:image/png;base64," + PNG_1X1 });
+    expect(remote.callsOf("downloadCommentFile")).toEqual([["cf-img", "inline"]]);
+    for (const id of ["cf-other", "cf-missing"]) {
+      const missing = await tools.attachmentView(ctx, { attachmentId: id });
+      expect(missing.success).toBe(false);
+      expect(textOf(missing)).toContain(`没有 ID 为 ${id} 的附件`);
+    }
+  });
 
   it("≤8MB 图片：说明行 + data URL 图片", async () => {
     const { tools, ctx, png } = withAttachments();
@@ -374,92 +434,6 @@ describe("suduo_attachment_view", () => {
     const result = await tools.attachmentView(ctx, { attachmentId: "att-img" });
     expect(result.success).toBe(false);
     expect(textOf(result)).toContain("查不到附件 需求问题截图.png 的内容");
-  });
-});
-
-describe("suduo_artifact_versions / suduo_artifact_fetch", () => {
-  function version(id: string, versionNumber: number, files: Array<[string, string]>): ArtifactVersionDetailDto {
-    return {
-      id,
-      requirementId: "req-1",
-      versionNumber,
-      publishedBy: DEV,
-      publishedAt: `2026-09-2${String(versionNumber)}T02:00:00.000Z`,
-      fileCount: files.length,
-      files: files.map(([fileId, fileName]) => ({
-        id: fileId,
-        artifactVersionId: id,
-        attachmentId: "att-" + fileId,
-        fileName,
-        sizeBytes: 6,
-        sha256: "0".repeat(64),
-      })),
-    };
-  }
-
-  function withVersions() {
-    const context = setup();
-    context.remote.versions.set("req-1", [
-      version("ver-1", 1, [["f1", "旧.md"]]),
-      version("ver-2", 2, [["f2", "PRD.md"], ["f3", "流程图.png"]]),
-    ]);
-    context.remote.versionFileContent.set("f1", Buffer.from("old"));
-    context.remote.versionFileContent.set("f2", Buffer.from("PRD v2"));
-    context.remote.versionFileContent.set("f3", Buffer.from("png-bytes"));
-    return context;
-  }
-
-  it("列出确认版（最新在前）与文件清单", async () => {
-    const { tools, ctx } = withVersions();
-    const text = textOf(await tools.artifactVersions(ctx, {}));
-    expect(text).toContain("REQ-1「商家端-订单详情优化」 的确认版（2 个，最新在前）：");
-    expect(text.indexOf("## v2")).toBeLessThan(text.indexOf("## v1"));
-    expect(text).toContain("- PRD.md（6B）");
-    expect(text).toContain("suduo_artifact_fetch");
-  });
-
-  it("没有确认版时确认无；列表查不到时失败", async () => {
-    const { remote, tools, ctx } = setup();
-    expect(textOf(await tools.artifactVersions(ctx, {}))).toBe("REQ-1「商家端-订单详情优化」 还没有发布过确认版。");
-    remote.fail.listArtifactVersions = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "down");
-    const failed = await tools.artifactVersions(ctx, {});
-    expect(failed.success).toBe(false);
-    expect(textOf(failed)).toContain("查不到REQ-1「商家端-订单详情优化」 的确认版");
-  });
-
-  it("artifact_fetch 把整版保存到 materials/确认版-vN/，重复拉取直接覆盖", async () => {
-    const { root, remote, tools, ctx } = withVersions();
-    const result = await tools.artifactFetch(ctx, { version: 2 });
-    expect(result.success).toBe(true);
-    const target = join(MATERIALS, "确认版-v2");
-    expect(textOf(result)).toBe(
-      [
-        `已把 REQ-1「商家端-订单详情优化」 的确认版 v2（陈思远，${formatTime("2026-09-22T02:00:00.000Z")}）保存到 ${target}/：`,
-        `- ${join(target, "PRD.md")}`,
-        `- ${join(target, "流程图.png")}`,
-      ].join("\n"),
-    );
-    expect(readFileSync(join(root, target, "PRD.md"), "utf8")).toBe("PRD v2");
-    expect(readFileSync(join(root, target, "流程图.png"), "utf8")).toBe("png-bytes");
-    expect(remote.callsOf("downloadArtifactVersionFile")).toEqual([
-      ["ver-2", "f2"],
-      ["ver-2", "f3"],
-    ]);
-
-    remote.versionFileContent.set("f2", Buffer.from("PRD v2 修订"));
-    await tools.artifactFetch(ctx, { version: "2" });
-    expect(readFileSync(join(root, target, "PRD.md"), "utf8")).toBe("PRD v2 修订");
-    expect(readdirSync(join(root, target)).sort()).toEqual(["PRD.md", "流程图.png"]);
-  });
-
-  it("版本号不对：不存在 / 不是正整数", async () => {
-    const { tools, ctx } = withVersions();
-    const missing = await tools.artifactFetch(ctx, { version: 9 });
-    expect(missing.success).toBe(false);
-    expect(textOf(missing)).toContain("没有确认版 v9（现有：v1、v2）");
-    const invalid = await tools.artifactFetch(ctx, { version: "abc" });
-    expect(invalid.success).toBe(false);
-    expect(textOf(invalid)).toContain("version 必须是正整数");
   });
 });
 
@@ -546,57 +520,14 @@ describe("写工具：确认卡与确认后执行", () => {
     expect(remote.callsOf("getRequirementByNumber")).toEqual([]);
 
     const projectSession = await tools.prepareComment(projectCtx(root), { body: "hi" });
-    expect(textOf(projectSession as ToolResult)).toBe("只有从需求创建的会话才能发评论或发布确认版。");
-  });
-
-  it("preparePublish：路径不存在 / 越界 / 不是文件失败；正常给出文件清单", async () => {
-    const base = temporaryDirectory();
-    const root = join(base, "project");
-    mkdirSync(join(root, "docs"), { recursive: true });
-    mkdirSync(join(root, "folder"));
-    writeFileSync(join(root, "docs", "PRD.md"), "# PRD");
-    writeFileSync(join(base, "x"), "outside");
-    symlinkSync(join(base, "x"), join(root, "link.md"));
-    const remote = new FakeRequirementsRemote();
-    remote.attachments.set("req-1", [
-      attachmentFixture({ id: "att-1", fileName: "需求问题截图.png", contentType: "image/png", sizeBytes: 900 }),
-    ]);
-    const tools = new RequirementTools(remote);
-    const ctx = requirementCtx(root);
-
-    expect(textOf((await tools.preparePublish(ctx, {})) as ToolResult)).toContain("至少给出一个要发布的文件");
-    expect(textOf((await tools.preparePublish(ctx, { paths: ["nope.md"] })) as ToolResult)).toBe(
-      "项目里找不到文件 nope.md（路径要相对项目目录，且必须是文件）。",
-    );
-    expect(textOf((await tools.preparePublish(ctx, { paths: ["../x"] })) as ToolResult)).toContain("项目里找不到文件 ../x");
-    expect(textOf((await tools.preparePublish(ctx, { paths: ["link.md"] })) as ToolResult)).toContain("项目里找不到文件 link.md");
-    expect(textOf((await tools.preparePublish(ctx, { paths: ["folder"] })) as ToolResult)).toContain("项目里找不到文件 folder");
-    expect(textOf((await tools.preparePublish(ctx, { attachmentIds: ["att-x"] })) as ToolResult)).toContain(
-      "没有 ID 为 att-x 的附件",
-    );
-
-    const ok = await tools.preparePublish(ctx, { paths: [" docs/PRD.md "], attachmentIds: ["att-1"], note: "  第一版  " });
-    expect(ok).toEqual({
-      tool: "artifact_publish",
-      requirement: { id: "req-1", projectId: "proj-1", number: 1, title: "商家端-订单详情优化" },
-      publish: {
-        files: [
-          { name: "PRD.md", sizeBytes: 5, source: "path", ref: "docs/PRD.md" },
-          { name: "需求问题截图.png", sizeBytes: 900, source: "attachment", ref: "att-1" },
-        ],
-        note: "第一版",
-      },
-      duplicateOf: null,
-    });
-    const noNote = await tools.preparePublish(ctx, { paths: ["docs/PRD.md"], note: "   " });
-    expect(isConfirmation(noNote) ? noNote.publish?.note : "not confirmation").toBeNull();
+    expect(textOf(projectSession as ToolResult)).toBe("只有从需求创建的会话才能发评论。");
   });
 
   it("executeWrite 评论：成功文案；4xx「未能发出」；网络错误「结果未确认…不要直接重发」", async () => {
     const { remote, tools, ctx } = setup();
     const confirmation = (await tools.prepareComment(ctx, { body: "请确认" })) as SuDuoToolConfirmationDto;
 
-    const ok = await tools.executeWrite(ctx, confirmation, "approval-1");
+    const ok = await tools.executeWrite(ctx, confirmation);
     expect(ok.success).toBe(true);
     expect(textOf(ok)).toBe(
       `已发出评论到 REQ-1「商家端-订单详情优化」（陈思远，${formatTime("2026-09-30T06:00:00.000Z")}，评论 ID comment-new-1）。`,
@@ -604,59 +535,32 @@ describe("写工具：确认卡与确认后执行", () => {
     expect(remote.callsOf("createComment")).toEqual([["req-1", { body: "请确认" }]]);
 
     remote.fail.createComment = new ApiError(422, "VALIDATION_ERROR", "评论内容不合法");
-    const rejected = await tools.executeWrite(ctx, confirmation, "approval-2");
+    const rejected = await tools.executeWrite(ctx, confirmation);
     expect(rejected.success).toBe(false);
     expect(textOf(rejected)).toBe("未能发出评论：评论内容不合法。");
 
     remote.fail.createComment = new TypeError("fetch failed");
-    const unknown = await tools.executeWrite(ctx, confirmation, "approval-3");
+    const unknown = await tools.executeWrite(ctx, confirmation);
     expect(unknown.success).toBe(false);
     expect(textOf(unknown)).toBe("评论的发送结果未确认：fetch failed。请让用户到需求页核对是否已经发出，不要直接重发。");
 
     for (const status of [408, 503]) {
       remote.fail.createComment = new ApiError(status, "DEPENDENCY_UNAVAILABLE", "超时");
-      expect(textOf(await tools.executeWrite(ctx, confirmation, "approval-x"))).toContain("结果未确认");
+      expect(textOf(await tools.executeWrite(ctx, confirmation))).toContain("结果未确认");
     }
   });
 
-  it("executeWrite 发布：先上传项目文件，再以审批 ID 为 operationKey 发布", async () => {
-    const root = temporaryDirectory();
-    mkdirSync(join(root, "docs"));
-    writeFileSync(join(root, "docs", "PRD.md"), "# PRD 正文");
-    const remote = new FakeRequirementsRemote();
-    remote.attachments.set("req-1", [
-      attachmentFixture({ id: "att-1", fileName: "需求问题截图.png", contentType: "image/png", sizeBytes: 900 }),
-    ]);
-    const tools = new RequirementTools(remote);
-    const ctx = requirementCtx(root);
-    const confirmation = (await tools.preparePublish(ctx, {
-      paths: ["docs/PRD.md"],
-      attachmentIds: ["att-1"],
-      note: "第一版",
-    })) as SuDuoToolConfirmationDto;
-
-    const result = await tools.executeWrite(ctx, confirmation, "approval-9");
-    expect(result.success).toBe(true);
-    expect(textOf(result)).toBe(
-      `已发布 REQ-1「商家端-订单详情优化」 的确认版 v3（2 个文件，${formatTime("2026-09-30T06:00:00.000Z")}）。`,
-    );
-    expect(remote.uploads).toHaveLength(1);
-    expect(remote.uploads[0]?.requirementId).toBe("req-1");
-    expect(remote.uploads[0]?.contentType).toMatch(/^multipart\/form-data; boundary=/u);
-    expect(remote.uploads[0]?.body).toContain('filename="PRD.md"');
-    expect(remote.uploads[0]?.body).toContain("# PRD 正文");
-    expect(remote.callsOf("publishArtifactVersion")).toEqual([
-      ["req-1", { operationKey: "approval-9", attachmentIds: ["att-uploaded-1", "att-1"], note: "第一版" }],
-    ]);
-
-    remote.fail.publishArtifactVersion = new ApiError(409, "VALIDATION_ERROR", "附件已删除");
-    const failed = await tools.executeWrite(ctx, confirmation, "approval-10");
-    expect(failed.success).toBe(false);
-    // 项目文件已经上传成附件、发布失败：告知哪些附件留在需求上，重试可直接用附件 ID（ADR-0004 告知现状与选项）。
-    expect(textOf(failed)).toContain("未能发出确认版：附件已删除。");
-    expect(textOf(failed)).toContain("已经上传成需求附件、但确认版没有发布的文件");
-
-    const incomplete = await tools.executeWrite(ctx, { ...confirmation, publish: undefined } as unknown as SuDuoToolConfirmationDto, "a");
-    expect(textOf(incomplete)).toBe("确认卡内容不完整，没有执行。");
+  it("executeWrite：确认版停用前留下的发布确认卡不再执行", async () => {
+    const { remote, tools, ctx } = setup();
+    const legacy = {
+      tool: "artifact_publish",
+      requirement: { id: "req-1", projectId: "proj-1", number: 1, title: "商家端-订单详情优化" },
+      publish: { files: [{ name: "PRD.md", sizeBytes: 10, source: "path", ref: "docs/PRD.md" }], note: null },
+      duplicateOf: null,
+    } as SuDuoToolConfirmationDto;
+    const result = await tools.executeWrite(ctx, legacy);
+    expect(result.success).toBe(false);
+    expect(textOf(result)).toBe("确认卡内容不完整，没有执行。");
+    expect(remote.calls).toEqual([]);
   });
 });
