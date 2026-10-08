@@ -10,6 +10,7 @@ import type {
   RpcInbound,
   RpcRequestOptions,
 } from "@suduo/client-contracts";
+import { withLoopbackNoProxy } from "../src/infrastructure/mcp/loopback-no-proxy.js";
 import { createSuDuoApplication } from "../src/server-application.js";
 
 const temporaryPaths: string[] = [];
@@ -65,8 +66,9 @@ describe("G 应用层代理热生效", () => {
       expect(environments[0]).toMatchObject({
         ALL_PROXY: configuredProxy,
         all_proxy: configuredProxy,
-        NO_PROXY: "localhost",
-        no_proxy: "localhost",
+        // 本机地址总是直连（SuDuo 本机 MCP 工具服务，ADR-0015）
+        NO_PROXY: "localhost,127.0.0.1,::1",
+        no_proxy: "localhost,127.0.0.1,::1",
       });
 
       const updated = await application.server.inject({
@@ -81,8 +83,9 @@ describe("G 应用层代理热生效", () => {
       await application.runtime.modelList({ limit: 1 });
       expect(environments[1]?.["ALL_PROXY"]).toBe(process.env["ALL_PROXY"]);
       expect(environments[1]?.["all_proxy"]).toBe(process.env["all_proxy"]);
-      expect(environments[1]?.["NO_PROXY"]).toBe(process.env["NO_PROXY"]);
-      expect(environments[1]?.["no_proxy"]).toBe(process.env["no_proxy"]);
+      const inherited = withLoopbackNoProxy(Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)));
+      expect(environments[1]?.["NO_PROXY"]).toBe(inherited["NO_PROXY"]);
+      expect(environments[1]?.["no_proxy"]).toBe(inherited["no_proxy"]);
       expect(environments[1]?.["ALL_PROXY"]).not.toBe(configuredProxy);
     } finally {
       await application.close();

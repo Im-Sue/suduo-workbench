@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  RuntimeToolServer,
   AgentRuntime,
   ApproveInput,
   ApproveResult,
@@ -22,7 +23,7 @@ import type {
   StartTurnResult,
   ThreadRef,
 } from "@suduo/client-contracts";
-import { RUNTIME_APPROVAL_MODE_POLICIES } from "@suduo/client-contracts";
+import { RUNTIME_APPROVAL_MODE_POLICIES, SUDUO_MCP_SERVER_NAME } from "@suduo/client-contracts";
 import {
   isApprovalServerRequest,
   mapApprovalDecision,
@@ -35,6 +36,7 @@ import {
   normalizeCodexNotification,
 } from "./codex-event-normalizer.js";
 import { mapRuntimeInputs } from "./codex-input-mapper.js";
+import { withLoopbackNoProxy } from "../../mcp/loopback-no-proxy.js";
 import {
   CodexThreadModelTracker,
   createCodexModelDefaults,
@@ -84,6 +86,8 @@ export interface CodexRuntimeOptions {
 export class CodexRuntime implements AgentRuntime {
   readonly runtimeId: string;
   readonly runtimeKind = "codex";
+  /** 能接 SuDuo 本机 MCP 工具服务（ADR-0015，S0 实测：线程级配置覆盖注入、续接换令牌都成立）。 */
+  readonly supportsToolServer = true;
   private readonly transport: CodexTransportFactory;
   private readonly codexBin: string;
   private readonly env: Record<string, string>;
@@ -136,10 +140,11 @@ export class CodexRuntime implements AgentRuntime {
         approvalsReviewer: security.approvalsReviewer,
         sandbox: security.sandbox.mode,
         ...(developerInstructions === "" ? {} : { developerInstructions }),
-        // 房间 Agent 档：建线程与续接都要带（续接不带的话 MCP 会重新启动）。
-        ...(input.approvalMode === "readonly"
-          ? { config: await this.externalToolsOff(connection, input.projectRoot) }
-          : {}),
+        // 房间 Agent 档（关掉所有者的 MCP）与 SuDuo 工具服务：建线程与续接都要带（续接不带的话 MCP 会重新启动）。
+        ...threadConfig(
+          input.approvalMode === "readonly" ? await this.externalToolsOff(connection, input.projectRoot) : null,
+          input.toolServer ?? null,
+        ),
       };
       const result = await connection.request(
         input.mode === "create" ? "thread/start" : "thread/resume",
@@ -823,7 +828,7 @@ export class CodexRuntime implements AgentRuntime {
   private async createConnection(): Promise<RpcConnection> {
     const connection = await this.transport.connect({
       codexBin: this.codexBin,
-      env: this.env,
+      env: withLoopbackNoProxy(this.env),
       signal: this.connectionAbort.signal,
     });
     try {
@@ -1224,4 +1229,34 @@ function dynamicToolsParam(
       inputSchema: tool.inputSchema,
     })),
   };
+}
+
+/**
+ * 线程级配置覆盖（Codex 深合并）：房间档关掉所有者的 MCP 与连接器；SuDuo 工具服务按 S0 实测的配置注入——
+ * 带令牌的请求头、长工具超时（写工具会等用户确认）、工具直接放行（不配时 never 档会拒绝调用；
+ * 写操作的确认由 SuDuo 自己的确认卡负责）。两者都没有时不下发 config。
+ */
+export function threadConfig(
+  roomOff: Record<string, JsonValue> | null,
+  toolServer: RuntimeToolServer | null,
+): { config?: Record<string, JsonValue> } {
+  if (roomOff === null && toolServer === null) {
+    return {};
+  }
+  const config: Record<string, JsonValue> = { ...(roomOff ?? {}) };
+  if (toolServer !== null) {
+    const servers = config["mcp_servers"];
+    config["mcp_servers"] = {
+      ...(servers !== null && typeof servers === "object" && !Array.isArray(servers) ? servers : {}),
+      [SUDUO_MCP_SERVER_NAME]: {
+        enabled: true,
+        url: toolServer.url,
+        http_headers: { Authorization: `Bearer ${toolServer.token}` },
+        tool_timeout_sec: toolServer.toolTimeoutSec,
+        startup_timeout_sec: 20,
+        default_tools_approval_mode: "approve",
+      },
+    };
+  }
+  return { config };
 }

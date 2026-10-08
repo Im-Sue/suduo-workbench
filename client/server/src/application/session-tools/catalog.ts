@@ -205,3 +205,54 @@ export function isRoomToolName(name: string): name is RoomToolName {
 export function isWriteTool(name: string): name is "suduo_comment_submit" {
   return (WRITE_TOOLS as string[]).includes(name);
 }
+
+/** 经 SuDuo 本机 MCP 工具服务（ADR-0015）下发时去掉的前缀：各家 Agent 会自己加服务名前缀（S0 实测）。 */
+const MCP_TOOL_PREFIX = "suduo_";
+
+/** 内部工具名 → MCP 工具名（suduo_requirement_get → requirement_get）。 */
+export function mcpToolName(internal: string): string {
+  return internal.startsWith(MCP_TOOL_PREFIX) ? internal.slice(MCP_TOOL_PREFIX.length) : internal;
+}
+
+/** MCP 工具名 → 内部工具名。 */
+export function internalToolName(mcpName: string): string {
+  return MCP_TOOL_PREFIX + mcpName;
+}
+
+const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES]);
+
+/** 说明与回复文字里提到的 SuDuo 工具名换成 MCP 名（只换认识的工具名，其余原样）。 */
+export function mcpToolText(text: string): string {
+  return text.replace(/\bsuduo_[a-z_]+/g, (name) => (KNOWN_TOOL_NAMES.has(name) ? mcpToolName(name) : name));
+}
+
+/**
+ * 经 MCP 下发的工具定义：不用代码模式的写法（去掉返回格式那一句、查看类与发评论换成 MCP 版说明），
+ * 工具名与说明里提到的工具名都去掉 suduo_ 前缀。参数与 schema 不变。按建线程时定下的工具清单给出，
+ * 不认识的名字跳过。
+ */
+export function mcpToolSpecsFor(toolNames: readonly string[], locale: Locale): RuntimeToolSpec[] {
+  const d = messagesFor(locale).toolSpec;
+  const specs = requirementSpecs(d);
+  const rooms = roomSpecs(d);
+  return toolNames.flatMap((name): RuntimeToolSpec[] => {
+    const spec = isRoomToolName(name) ? rooms[name] : KNOWN_TOOL_NAMES.has(name) ? specs[name as ActiveSuDuoToolName] : undefined;
+    if (spec === undefined) return [];
+    let description = spec.description.replace(d.textReturn(spec.name), "");
+    if (spec.name === "suduo_attachment_view") description = d.mcp.attachmentView;
+    if (spec.name === "suduo_room_file_view") description = d.mcp.roomFileView;
+    if (spec.name === "suduo_comment_submit") description = d.mcp.commentSubmit;
+    return [
+      {
+        name: mcpToolName(spec.name),
+        description: mcpToolText(description).trim(),
+        inputSchema: JSON.parse(mcpToolText(JSON.stringify(spec.inputSchema))) as RuntimeToolSpec["inputSchema"],
+      },
+    ];
+  });
+}
+
+/** 某个范围的 MCP 工具定义。 */
+export function mcpToolSpecs(scope: SessionToolScope, locale: Locale): RuntimeToolSpec[] {
+  return mcpToolSpecsFor(sessionToolNames(scope), locale);
+}

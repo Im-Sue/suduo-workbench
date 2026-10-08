@@ -50,6 +50,8 @@ import { buildHttpServer } from "./infrastructure/http/http-server.js";
 import { AgentCatalogService } from "./application/agents/agent-catalog-service.js";
 import { AgentSettingsStore, agentSettingsPathFor } from "./application/agents/agent-settings-store.js";
 import { terminalOpener } from "./application/agents/terminal-login.js";
+import { MCP_ENDPOINT_PATH } from "./infrastructure/mcp/mcp-endpoint.js";
+import { ToolTokenRegistry } from "./infrastructure/mcp/tool-tokens.js";
 import { LoopbackGuard } from "./infrastructure/http/loopback-guard.js";
 import { CodexRuntime } from "./infrastructure/runtime/codex/codex-runtime.js";
 import { RuntimeRegistry } from "./infrastructure/runtime/runtime-registry.js";
@@ -202,7 +204,16 @@ export function createSuDuoApplication(
   });
   const registry = new RuntimeRegistry();
   registry.register(runtime);
-  const supervisor = new RuntimeSupervisor(registry);
+  // SuDuo 本机 MCP 工具服务（ADR-0015）：令牌只在内存；地址取本机服务实际监听的端口（还没监听时为 null，退回 dynamicTools）。
+  const toolTokens = new ToolTokenRegistry();
+  let httpServer: FastifyInstance | null = null;
+  const toolServerUrl = (): string | null => {
+    const address = httpServer?.server.address();
+    return address !== null && address !== undefined && typeof address === "object"
+      ? `http://127.0.0.1:${String(address.port)}${MCP_ENDPOINT_PATH}`
+      : null;
+  };
+  const supervisor = new RuntimeSupervisor(registry, process.env, { tokens: toolTokens, url: toolServerUrl });
   settingsService.setProxySettingsChangedHandler(async () => {
     applyProxySettings(
       codexEnvironment,
@@ -496,7 +507,8 @@ export function createSuDuoApplication(
       ? {}
       : { onError: options.onBackgroundError }),
   }));
-  const restoration = restore();
+  // 启动时恢复线程要等本机服务开始监听：用 MCP 工具服务的线程续接时要注入它的地址（ADR-0015）。
+  let restoration: Promise<void> = Promise.resolve();
   // 新版需求会话（ADR-0008）启动时的一次性清理与基线回收；尽力而为，不阻塞启动。
   void retireLegacySessionContext({
     v2DataDirectory,
@@ -512,6 +524,7 @@ export function createSuDuoApplication(
   void workspace.collectBaselineGarbage();
   const server = buildHttpServer({
     requestGuard: new LoopbackGuard(),
+    toolMcp: { tokens: toolTokens, host: sessionTools, serverVersion: process.env["npm_package_version"] ?? "0" },
     idempotency: new IdempotencyService(idempotencyRecords),
     projects: projectService,
     sessions: sessionService,
@@ -568,6 +581,11 @@ export function createSuDuoApplication(
     ...(options.onExitRequested === undefined
       ? {}
       : { requestShutdown: options.onExitRequested }),
+  });
+  httpServer = server;
+  server.addHook("onListen", (done) => {
+    restoration = restore();
+    done();
   });
   idleMonitor.start();
   runner.start();

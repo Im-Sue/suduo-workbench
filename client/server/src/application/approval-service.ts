@@ -1,3 +1,4 @@
+import { SUDUO_MCP_CONNECTION_ID } from "@suduo/client-contracts";
 import type {
   ApprovalDecision,
   ApprovalOption,
@@ -191,6 +192,11 @@ export class ApprovalService {
   ): number {
     let count = 0;
     for (const approval of this.approvals.listPendingOrDeciding()) {
+      // 经 MCP 的确认卡不属于任何运行时连接（ADR-0015）：待确认的留着当待发出草稿；正在执行的，
+      // 本进程还在跑就留着，重启后结果未知，按下面「结果未确认」作废，免得卡在执行中谁也动不了。
+      if (approval.runtimeConnectionId === SUDUO_MCP_CONNECTION_ID && (approval.status === "pending" || options.inProcess === true)) {
+        continue;
+      }
       if (options.runtimeId !== undefined && this.threads.getById(approval.sessionThreadId)?.threadRef.runtimeId !== options.runtimeId) {
         continue;
       }

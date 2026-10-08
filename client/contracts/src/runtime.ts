@@ -31,9 +31,25 @@ export interface StartThreadBase {
   developerInstructions?: string;
   /**
    * 挂到线程上的客户端自定义工具（Codex `dynamicTools`，ADR-0008）。只在新建线程时下发；
-   * 续接线程时 Codex 从线程记录里恢复，runtime 忽略此字段。
+   * 续接线程时 Codex 从线程记录里恢复，runtime 忽略此字段。ADR-0015 起只给老线程与不支持
+   * SuDuo 工具服务的运行时用；支持的运行时改用 `toolServer`。
    */
   dynamicTools?: RuntimeToolSpec[];
+  /**
+   * SuDuo 本机 MCP 工具服务（ADR-0015）：地址与这个会话的令牌。新建与续接都要带（令牌每次重签）；
+   * 运行时按自己的通道注入（Codex 线程配置覆盖、Claude mcpServers、ACP session/new）。
+   */
+  toolServer?: RuntimeToolServer;
+}
+
+/** SuDuo 本机 MCP 工具服务的连接信息（ADR-0015）。 */
+export interface RuntimeToolServer {
+  /** 如 http://127.0.0.1:8787/mcp；只听 127.0.0.1。 */
+  url: string;
+  /** 这个会话的令牌（Authorization: Bearer）；只在内存里，每次建线程或续接重签。 */
+  token: string;
+  /** 给 Agent 配的工具超时（秒）：写工具会挂起等用户确认，服务端在它到达前转草稿。 */
+  toolTimeoutSec: number;
 }
 
 /** 客户端自定义工具的声明（对应 Codex `DynamicToolSpec` 的 function 形态）。 */
@@ -187,6 +203,8 @@ export interface AgentRuntime {
   readonly runtimeKind: string;
   /** 驱动的是哪家 Agent（配置表的 id）；不写时 Codex 运行时视为 codex（ADR-0014）。 */
   readonly agentId?: string;
+  /** 能接 SuDuo 本机 MCP 工具服务（ADR-0015）；不支持的运行时继续用 dynamicTools。 */
+  readonly supportsToolServer?: boolean;
 
   startThread(input: StartThreadInput): Promise<StartThreadResult>;
   startTurn(input: StartTurnInput): Promise<StartTurnResult>;

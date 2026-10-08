@@ -95,6 +95,8 @@ import {
   type ProxySettingsRouteDependencies,
 } from "./routes/proxy-settings-routes.js";
 import { registerAgentsRoutes, type AgentsRouteDependencies } from "./routes/agents-routes.js";
+import { MCP_ENDPOINT_PATH, registerMcpEndpoint, type McpToolHost } from "../mcp/mcp-endpoint.js";
+import type { ToolTokenRegistry } from "../mcp/tool-tokens.js";
 import {
   registerMcpRoutes,
   type McpRouteDependencies,
@@ -127,6 +129,8 @@ export interface HttpServerDependencies
     SystemActivityRouteDependencies {
   requestGuard: LoopbackGuard;
   idempotency: IdempotencyService;
+  /** SuDuo 本机 MCP 工具服务（ADR-0015）；不传时不开 /mcp。 */
+  toolMcp?: { tokens: ToolTokenRegistry; host: McpToolHost; serverVersion: string };
   projects: ProjectService;
   sessions: SessionService;
   runStatus: SessionRunStatusService;
@@ -195,9 +199,17 @@ export function buildHttpServer(
   }
 
   server.addHook("onRequest", async (request) => {
+    // SuDuo 本机 MCP 工具服务有自己的守卫（loopback Host + 会话令牌 + 同源 Origin）：Agent 的请求不带 Origin，
+    // 全局守卫会把它的 POST 当成跨源写请求拒掉（ADR-0015）。
+    if (dependencies.toolMcp !== undefined && (request.url === MCP_ENDPOINT_PATH || request.url.startsWith(MCP_ENDPOINT_PATH + "?"))) {
+      return;
+    }
     dependencies.requestGuard.guard(request);
     dependencies.activity?.touch();
   });
+  if (dependencies.toolMcp !== undefined) {
+    registerMcpEndpoint(server, dependencies.toolMcp);
+  }
   registerRequestLocale(server, dependencies.settings);
 
   server.setErrorHandler((error, request, reply) => {

@@ -136,6 +136,7 @@ export const toolReply = {
     roomToolsUnavailable: "Room tools are unavailable right now.",
     unknownTool: (tool: string) => `SuDuo has no tool named ${tool}.`,
     declinedComment: "The user didn't approve, so the comment wasn't posted.",
+    commentDraftSaved: "The user hasn't confirmed yet, so the comment was saved as a draft (not posted). The user can send or discard it from SuDuo later; don't call the comment tool again.",
     retired: (tool: string) =>
       `${tool} has been retired: SuDuo no longer has confirmed versions, and all requirement materials are attachments. ` +
       "List them with suduo_requirement_attachments (newest first) and view their content with suduo_attachment_view.",

@@ -1,8 +1,14 @@
-import type {
-  RuntimeRegistry as RuntimeRegistryContract,
-  RuntimeToolSpec,
-  StartThreadResult,
+import {
+  SUDUO_MCP_TOOL_TIMEOUT_SEC,
+  type AgentRuntime,
+  type JsonValue,
+  type RuntimeRegistry as RuntimeRegistryContract,
+  type RuntimeThread,
+  type RuntimeToolServer,
+  type RuntimeToolSpec,
+  type StartThreadResult,
 } from "@suduo/client-contracts";
+import type { ToolTokenRegistry } from "../infrastructure/mcp/tool-tokens.js";
 import type { SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRecord } from "../infrastructure/db/repositories/session-thread-repository.js";
 import { ApiError, IndeterminateOperationError } from "./api-error.js";
@@ -16,7 +22,44 @@ export class RuntimeSupervisor {
   constructor(
     private readonly runtimes: RuntimeRegistryContract,
     private readonly approvalModeEnvironment: NodeJS.ProcessEnv = process.env,
+    /**
+     * SuDuo 本机 MCP 工具服务（ADR-0015）：令牌表与当前地址（本机服务还没监听时为 null）。
+     * 不传时一律走 dynamicTools（测试与老调用方）。
+     */
+    private readonly toolServer: { tokens: ToolTokenRegistry; url: () => string | null } | null = null,
   ) {}
+
+  /**
+   * 这次建线程用哪种工具通道（ADR-0015）：运行时支持且工具服务在线时签令牌走 MCP（令牌授予这份工具清单），
+   * 否则沿用 dynamicTools。没有工具（项目没关联等）时什么都不挂。
+   */
+  private toolChannel(
+    runtime: AgentRuntime,
+    sessionId: string,
+    dynamicTools: RuntimeToolSpec[] | undefined,
+  ): { params: { toolServer?: RuntimeToolServer; dynamicTools?: RuntimeToolSpec[] }; mcpTools: string[] | null } {
+    if (dynamicTools === undefined || dynamicTools.length === 0) {
+      return { params: dynamicTools === undefined ? {} : { dynamicTools }, mcpTools: null };
+    }
+    const toolNames = dynamicTools.map((tool) => tool.name);
+    const toolServer = runtime.supportsToolServer === true ? this.issueToolServer(sessionId, toolNames) : null;
+    return toolServer === null
+      ? { params: { dynamicTools }, mcpTools: null }
+      : { params: { toolServer }, mcpTools: toolNames };
+  }
+
+  /** 工具服务在线时给会话签令牌（作废旧的）；没在监听时返回 null。 */
+  private issueToolServer(sessionId: string, toolNames: readonly string[]): RuntimeToolServer | null {
+    const url = this.toolServer?.url() ?? null;
+    if (this.toolServer === null || url === null) {
+      return null;
+    }
+    return {
+      url,
+      token: this.toolServer.tokens.issue(sessionId, toolNames, SUDUO_MCP_TOOL_TIMEOUT_SEC),
+      toolTimeoutSec: SUDUO_MCP_TOOL_TIMEOUT_SEC,
+    };
+  }
 
   /**
    * 驱动这家 Agent 的运行时 id（ADR-0014）。没有注册（配置表里有、但这个版本还没接上它的通道，
@@ -40,8 +83,9 @@ export class RuntimeSupervisor {
     dynamicTools?: RuntimeToolSpec[];
   }): Promise<StartThreadResult> {
     const runtime = this.getRuntime(input.runtimeId);
+    const tools = this.toolChannel(runtime, input.session.id, input.dynamicTools);
     try {
-      return await runtime.startThread({
+      const started = await runtime.startThread({
         mode: "create",
         sessionId: input.session.id,
         projectRoot: input.workspace.executionRoot,
@@ -50,8 +94,9 @@ export class RuntimeSupervisor {
         ...(input.developerInstructions === undefined
           ? {}
           : { developerInstructions: input.developerInstructions }),
-        ...(input.dynamicTools === undefined ? {} : { dynamicTools: input.dynamicTools }),
+        ...tools.params,
       });
+      return tools.mcpTools === null ? started : markToolChannel(started, tools.mcpTools);
     } catch (error) {
       throw new IndeterminateOperationError(
         (t) => t.session.threadCreateIndeterminate,
@@ -106,6 +151,7 @@ export class RuntimeSupervisor {
       try {
         const setup = (await input.rebuildSetup?.().catch(() => null)) ?? null;
         const runtime = this.getRuntime(input.binding.threadRef.runtimeId);
+        const tools = this.toolChannel(runtime, input.session.id, setup?.dynamicTools);
         rebuilt = await runtime.startThread({
           mode: "create",
           sessionId: input.session.id,
@@ -115,8 +161,11 @@ export class RuntimeSupervisor {
           ...(setup?.developerInstructions === undefined
             ? {}
             : { developerInstructions: setup.developerInstructions }),
-          ...(setup?.dynamicTools === undefined ? {} : { dynamicTools: setup.dynamicTools }),
+          ...tools.params,
         });
+        if (tools.mcpTools !== null) {
+          rebuilt = markToolChannel(rebuilt, tools.mcpTools);
+        }
       } catch {
         throw resumeError;
       }
@@ -164,6 +213,14 @@ export class RuntimeSupervisor {
     key: string,
   ): Promise<void> {
     const runtime = this.getRuntime(input.binding.threadRef.runtimeId);
+    // 用 MCP 的线程续接时按记下的工具清单重签令牌并重新注入（ADR-0015）；老线程的 dynamicTools 由 Codex 自己恢复。
+    const toolNames = toolServerTools(input.binding.metadata);
+    const toolServer = toolNames === null ? null : this.issueToolServer(input.session.id, toolNames);
+    if (toolNames !== null && toolServer === null) {
+      // 工具服务还没在监听：现在续接会挂不上工具，而续接过的线程之后不会再续接。先不续接、不记为就绪，
+      // 下次用到时再来（不抛错：抛错会让发消息那条路改为重建线程、丢掉历史）。
+      return;
+    }
     try {
       await runtime.startThread({
         mode: "resume",
@@ -172,6 +229,7 @@ export class RuntimeSupervisor {
         projectRoot: input.workspace.executionRoot,
         workspaceRoots: [input.workspace.executionRoot],
         approvalMode: sessionRuntimeApprovalMode(input.session, this.approvalModeEnvironment),
+        ...(toolServer === null ? {} : { toolServer }),
       });
       this.readyThreads.add(key);
     } catch (error) {
@@ -184,4 +242,40 @@ export class RuntimeSupervisor {
 
 function threadKey(runtimeId: string, threadId: string): string {
   return runtimeId + ":" + threadId;
+}
+
+/**
+ * 线程元数据里记下「用 SuDuo MCP 工具服务」与这个线程的工具清单，续接时据此重签令牌
+ * （相当于 Codex 把 dynamicTools 存在线程里）。老线程没有这个标记。
+ */
+const TOOL_CHANNEL_KEY = "suDuoToolChannel";
+const TOOL_NAMES_KEY = "suDuoTools";
+
+/** 线程用 MCP 工具服务时返回它的工具清单，否则 null。 */
+export function toolServerTools(metadata: JsonValue): string[] | null {
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata) || metadata[TOOL_CHANNEL_KEY] !== "mcp") {
+    return null;
+  }
+  const names = metadata[TOOL_NAMES_KEY];
+  return Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : null;
+}
+
+export function usesToolServer(metadata: JsonValue): boolean {
+  return toolServerTools(metadata) !== null;
+}
+
+function markToolChannel(result: StartThreadResult, toolNames: string[]): StartThreadResult {
+  const mark = (thread: RuntimeThread): RuntimeThread => ({
+    ...thread,
+    metadata: {
+      ...(thread.metadata !== null && typeof thread.metadata === "object" && !Array.isArray(thread.metadata) ? thread.metadata : {}),
+      [TOOL_CHANNEL_KEY]: "mcp",
+      [TOOL_NAMES_KEY]: toolNames,
+    },
+  });
+  const primaryId = result.primaryThread.threadRef.threadId;
+  return {
+    primaryThread: mark(result.primaryThread),
+    threads: result.threads.map((thread) => (thread.threadRef.threadId === primaryId ? mark(thread) : thread)),
+  };
 }

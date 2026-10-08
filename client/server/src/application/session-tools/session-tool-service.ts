@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import {
+  SUDUO_MCP_CONNECTION_ID,
   SUDUO_TOOL_NATIVE_METHOD,
   currentSuDuoToolName,
   isRetiredSuDuoToolName,
@@ -15,8 +17,10 @@ import type { SessionRepository } from "../../infrastructure/db/repositories/ses
 import type { SessionThreadRecord, SessionThreadRepository } from "../../infrastructure/db/repositories/session-thread-repository.js";
 import type { ToolConfirmationHandler } from "../approval-service.js";
 import type { EventLedger } from "../event-ledger.js";
-import { isWriteTool } from "./catalog.js";
-import { failure, limitToolResult, toolFormat, type ToolResult } from "./format.js";
+import type { McpToolCallResult, McpToolContent, McpToolDefinition, McpToolHost } from "../../infrastructure/mcp/mcp-endpoint.js";
+import type { ToolGrant } from "../../infrastructure/mcp/tool-tokens.js";
+import { internalToolName, isWriteTool, mcpToolSpecsFor, mcpToolText, sessionToolNames, type SessionToolScope } from "./catalog.js";
+import { failure, limitToolResult, textResult, toolFormat, type ToolResult } from "./format.js";
 import type { RequirementTools, ToolSessionContext } from "./requirement-tools.js";
 import type { RoomTools } from "./room-tools.js";
 import type { SessionContextService } from "./session-context.js";
@@ -26,6 +30,9 @@ import type { SessionContextService } from "./session-context.js";
  * 只有调用来自 SuDuo 不认识的线程时才会用到。
  */
 const FALLBACK_LOCALE: Locale = "zh-CN";
+
+/** 经 MCP 的写工具在 Agent 工具超时前多少秒转草稿（S0：Codex 超时既不断开也不取消，只能自己计时）。 */
+const MCP_DRAFT_MARGIN_SEC = 30;
 
 /** 只进日志的报错说明：开发者看的，固定英文。 */
 function logReason(error: unknown): string {
@@ -37,11 +44,16 @@ function logReason(error: unknown): string {
  * `tool.call-requested` 事件，这里异步执行并回包。只读工具直接执行；对外写工具
  * 生成确认卡（复用审批表），等用户在审批坞决定后由 `confirm` 执行并回包。
  */
-export class SessionToolService implements ToolConfirmationHandler {
+export class SessionToolService implements ToolConfirmationHandler, McpToolHost {
   /** 模型上次读到的笔记哈希（会话 + 需求），用于「读后被改过」的告知。只在内存里。 */
   private readonly notesReads = new Map<string, string | null>();
   /** 准备阶段就被 Codex 撤回的调用：准备完成后不再建确认卡（否则会留下点了也回不到模型的孤儿卡）。 */
   private readonly cancelledCalls = new Set<string>();
+  /**
+   * 经 MCP 发起、正挂起等用户确认的写工具调用（ADR-0015）：callRef → 回包。用户的决定开始执行后
+   * 记 executing：之后到点或 Agent 断开都不再回「已存为草稿」，等执行结果（免得告诉 Agent 没发、其实发了）。
+   */
+  private readonly mcpPending = new Map<string, { settle: (result: ToolResult) => void; executing: boolean; signal: AbortSignal }>();
 
   constructor(
     private readonly deps: {
@@ -59,8 +71,121 @@ export class SessionToolService implements ToolConfirmationHandler {
        */
       sessions: Pick<SessionRepository, "getById">;
       log?: (line: Record<string, unknown>) => void;
+      /** 测试用：经 MCP 等确认等多久转草稿；默认比给 Agent 配的工具超时早 30 秒。 */
+      mcpDraftAfterMs?: number;
     },
   ) {}
+
+  /** MCP tools/list（ADR-0015）：给令牌授予的工具（建线程时定下），说明不用代码模式的写法。 */
+  listTools(grant: ToolGrant): McpToolDefinition[] {
+    return mcpToolSpecsFor(grant.toolNames, this.localeOf(grant.sessionId)).map((spec) => ({
+      name: spec.name,
+      description: spec.description,
+      inputSchema: spec.inputSchema,
+    }));
+  }
+
+  /** MCP tools/call（ADR-0015）：只读工具直接执行；写工具建确认卡、挂起等用户决定，等太久转草稿。 */
+  async callTool(
+    grant: ToolGrant,
+    name: string,
+    args: Record<string, unknown>,
+    call: { requestKey: string; signal: AbortSignal },
+  ): Promise<McpToolCallResult> {
+    const startedAt = Date.now();
+    const sessionId = grant.sessionId;
+    const internal = internalToolName(name);
+    const context = this.deps.context.toolContext(sessionId);
+    if (context === null) {
+      return toMcpResult(failure(toolFormat(this.localeOf(sessionId)).t.toolReply.dispatch.noProject));
+    }
+    const f = toolFormat(context.locale);
+    if (!grant.toolNames.includes(internal) || !sessionToolNames(scopeOf(context)).includes(internal)) {
+      // 范围外的调用（房间任务里调笔记 / 写工具等）：不执行（ADR-0009）。
+      const reason = context.room !== undefined ? f.t.toolReply.dispatch.roomReadOnly(internal) : f.t.toolReply.dispatch.unknownTool(name);
+      return toMcpResult(failure(reason));
+    }
+    const draftAt = startedAt + (this.deps.mcpDraftAfterMs ?? (grant.toolTimeoutSec - MCP_DRAFT_MARGIN_SEC) * 1000);
+    const result = await (isWriteTool(internal)
+      ? this.mcpWrite(context, internal, args, call, draftAt)
+      : this.runReadTool(context, internal, args)
+    ).catch((error: unknown) => failure(f.t.toolReply.dispatch.runFailed(f.reasonOf(error))));
+    this.log({ event: "suduo.tool.mcp_call", sessionId, tool: internal, success: result.success, durationMs: Date.now() - startedAt });
+    return toMcpResult(limitToolResult(result, f));
+  }
+
+  private async mcpWrite(
+    context: ToolSessionContext,
+    tool: string,
+    args: Record<string, unknown>,
+    call: { requestKey: string; signal: AbortSignal },
+    /** 到这个时刻还没确认就转草稿：Agent 的工具超时减余量，从请求到达算起（准备阶段也算在内）。 */
+    draftAt: number,
+  ): Promise<ToolResult> {
+    const text = toolFormat(context.locale).t.toolReply;
+    const binding = this.deps.threads.getPrimary(context.sessionId);
+    if (!binding) {
+      return failure(text.dispatch.threadMissing);
+    }
+    const prepared = await this.deps.tools.prepareComment(context, args);
+    if ("contentItems" in prepared) {
+      return prepared;
+    }
+    if (call.signal.aborted) {
+      // 准备期间 Agent 已经走了：不建卡，免得留下没人等的卡。
+      return failure(text.write.incomplete);
+    }
+    const callRef = "mcp:" + randomUUID();
+    const confirmation: SuDuoToolConfirmationDto = {
+      ...prepared,
+      duplicateOf: this.findDuplicate(context.sessionId, prepared),
+    };
+    this.deps.ledger.appendApprovalRequested({
+      sessionId: context.sessionId,
+      sessionThreadId: binding.id,
+      kind: "other",
+      runtimeConnectionId: SUDUO_MCP_CONNECTION_ID,
+      runtimeRequestId: call.requestKey,
+      runtimeApprovalRef: callRef,
+      event: {
+        source: "suduo:mcp",
+        type: "approval.requested",
+        payload: {
+          kind: "other",
+          approvalRef: callRef,
+          connectionId: SUDUO_MCP_CONNECTION_ID,
+          requestId: call.requestKey,
+          nativeMethod: SUDUO_TOOL_NATIVE_METHOD,
+          request: { threadId: binding.threadRef.threadId, turnId: null, callId: callRef, tool, arguments: args as JsonValue },
+          suDuoTool: confirmation as unknown as JsonValue,
+        },
+        threadRef: binding.threadRef,
+        turnRef: null,
+        ts: Date.now(),
+        dedupeKey: "tool-confirm:" + callRef,
+      },
+    });
+    this.log({ event: "suduo.tool.awaiting_confirmation", sessionId: context.sessionId, tool, channel: "mcp" });
+    return new Promise<ToolResult>((resolve) => {
+      const settle = (result: ToolResult) => {
+        if (!this.mcpPending.delete(callRef)) {
+          return;
+        }
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const entry = { settle, executing: false, signal: call.signal };
+      // 到点或 Agent 取消：确认卡留着当待发出草稿（不作废），先回 Agent「已存为草稿」（ADR-0015 第 4 条）。
+      // 用户的决定已在执行时不转草稿，等执行结果。
+      const draft = () => {
+        if (!entry.executing) settle(textResult(text.dispatch.commentDraftSaved));
+      };
+      const timer = setTimeout(draft, Math.max(0, draftAt - Date.now()));
+      timer.unref?.();
+      this.mcpPending.set(callRef, entry);
+      call.signal.addEventListener("abort", draft, { once: true });
+    });
+  }
 
   /** runtime-consumer 的入口：不 await，避免卡住所有会话共用的订阅循环。 */
   handle(event: RuntimeEventDraft): void {
@@ -87,6 +212,10 @@ export class SessionToolService implements ToolConfirmationHandler {
 
   /** 审批坞上的决定（ApprovalService 转来）。从不抛错：执行结果写进返回值。 */
   async confirm(approval: ApprovalRecord, decision: ApprovalDecision): Promise<JsonValue> {
+    const pendingMcp = this.mcpPending.get(approval.runtimeApprovalRef);
+    if (pendingMcp !== undefined) {
+      pendingMcp.executing = true;
+    }
     const confirmation = confirmationOf(approval);
     const accepted = decision === "accept" || decision === "acceptForSession";
     let result: ToolResult;
@@ -320,8 +449,17 @@ export class SessionToolService implements ToolConfirmationHandler {
     }
   }
 
-  /** 回包；runtime 不存在或回包出错都只记日志，不抛错。 */
+  /** 回包；runtime 不存在或回包出错都只记日志，不抛错。经 MCP 的调用回给挂起的请求。 */
   private async deliver(runtimeId: string, callRef: string, result: ToolResult): Promise<{ delivered: boolean }> {
+    const mcp = this.mcpPending.get(callRef);
+    if (mcp !== undefined) {
+      mcp.settle(result);
+      return { delivered: !mcp.signal.aborted };
+    }
+    if (callRef.startsWith("mcp:")) {
+      // 已经按草稿回过 Agent：这次决定只入账，不再回包。
+      return { delivered: false };
+    }
     try {
       const outcome = await this.deps.runtimes.get(runtimeId).respondToolCall?.({ callRef, ...result });
       return outcome ?? { delivered: false };
@@ -425,4 +563,24 @@ function textOf(result: ToolResult, image: string): string {
 
 function isRecord(value: unknown): value is Record<string, JsonValue> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 会话的工具范围（与建线程时 `sessionToolSpecs` 用的一致）。 */
+function scopeOf(context: ToolSessionContext): SessionToolScope {
+  if (context.room !== undefined) {
+    return context.requirement === null ? "room" : "room_requirement";
+  }
+  return context.requirement === null ? "project" : "requirement";
+}
+
+/** 内部工具结果 → MCP 内容：文字里的工具名换成 MCP 名，data URL 图片拆成 base64 与类型。 */
+function toMcpResult(result: ToolResult): McpToolCallResult {
+  const content: McpToolContent[] = result.contentItems.map((item) => {
+    if (item.type === "inputText") {
+      return { type: "text", text: mcpToolText(item.text) };
+    }
+    const match = /^data:([^;,]+);base64,(.*)$/s.exec(item.imageUrl);
+    return match ? { type: "image", mimeType: match[1]!, data: match[2]! } : { type: "text", text: item.imageUrl };
+  });
+  return { content, isError: !result.success };
 }

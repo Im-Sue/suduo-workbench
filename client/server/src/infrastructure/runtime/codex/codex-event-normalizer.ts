@@ -1,9 +1,10 @@
-import type {
-  JsonValue,
-  RpcInbound,
-  RuntimeEventDraft,
-  ThreadRef,
-  TurnRef,
+import {
+  SUDUO_MCP_SERVER_NAME,
+  type JsonValue,
+  type RpcInbound,
+  type RuntimeEventDraft,
+  type ThreadRef,
+  type TurnRef,
 } from "@suduo/client-contracts";
 
 const EVENT_TYPE_BY_NATIVE_METHOD: Readonly<Record<string, string>> = {
@@ -121,7 +122,7 @@ function normalizePayload(
   method: string,
   rawParams: Record<string, JsonValue>,
 ): JsonValue {
-  const params = sanitizeDynamicToolItem(method, rawParams);
+  const params = sanitizeDynamicToolItem(method, adoptSuDuoMcpItem(method, rawParams));
   const extensions = {
     codex: {
       nativeType: method,
@@ -293,6 +294,55 @@ export const OMITTED_IMAGE_URL = "[image omitted]";
  * 所以只用与语言无关的省略号（工具结果本身已按会话语言写）。
  */
 const DYNAMIC_TOOL_TEXT_CLIPPED = "\n…";
+
+/**
+ * 经 SuDuo 本机 MCP 工具服务（ADR-0015）的调用，Codex 记为 mcpToolCall（服务 suduo）。账本里 SuDuo 工具调用
+ * 只有一种形状（ADR-0014：SuDuo 自己的 item 模型），所以换成与 dynamicTools 通道相同的 dynamicToolCall：
+ * 工具名补回 suduo_ 前缀，结果内容换成 inputText / inputImage，界面、房间进度、图片瘦身都照旧。
+ */
+function adoptSuDuoMcpItem(method: string, params: Record<string, JsonValue>): Record<string, JsonValue> {
+  if (method !== "item/started" && method !== "item/completed") {
+    return params;
+  }
+  const item = asObject(params["item"]);
+  if (item["type"] !== "mcpToolCall" || item["server"] !== SUDUO_MCP_SERVER_NAME || typeof item["tool"] !== "string") {
+    return params;
+  }
+  const status = typeof item["status"] === "string" ? item["status"] : "inProgress";
+  const error = asObject(item["error"]);
+  const result = asObject(item["result"]);
+  const contentItems: JsonValue[] | null =
+    typeof error["message"] === "string"
+      ? [{ type: "inputText", text: error["message"] }]
+      : Array.isArray(result["content"])
+        ? result["content"].map(mcpContentItem)
+        : null;
+  return {
+    ...params,
+    item: {
+      type: "dynamicToolCall",
+      id: item["id"] ?? null,
+      namespace: null,
+      tool: "suduo_" + item["tool"],
+      arguments: item["arguments"] ?? null,
+      status,
+      contentItems,
+      success: status === "inProgress" ? null : status === "completed" && item["error"] == null,
+      durationMs: item["durationMs"] ?? null,
+    },
+  };
+}
+
+function mcpContentItem(entry: JsonValue): JsonValue {
+  const content = asObject(entry);
+  if (content["type"] === "text" && typeof content["text"] === "string") {
+    return { type: "inputText", text: content["text"] };
+  }
+  if (content["type"] === "image" && typeof content["data"] === "string" && typeof content["mimeType"] === "string") {
+    return { type: "inputImage", imageUrl: `data:${content["mimeType"]};base64,${content["data"]}` };
+  }
+  return { type: "inputText", text: JSON.stringify(entry) };
+}
 
 /**
  * 自定义工具调用（ADR-0008）的 item 原样落库会带上整张图片的 data URL 和大段文本：

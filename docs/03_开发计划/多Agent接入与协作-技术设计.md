@@ -96,7 +96,8 @@ updated: 2026-10-08
 | `reasoning` | 推理 | `summary[]`、`content[]` | Codex；Claude thinking；ACP thought chunk |
 | `commandExecution` | 命令 | `command`、`cwd`、`aggregatedOutput`、`exitCode`、`durationMs`、`commandActions[]` | Codex；Claude Bash / Read / Grep / Glob；ACP execute / read / search |
 | `fileChange` | 文件改动 | `changes[]{path, kind, diff}` | Codex；Claude Edit / Write / MultiEdit（hook patch）；ACP edit / delete / move、`fs/write_text_file` |
-| `mcpToolCall` | **统一工具调用** | `server`、`tool`、`arguments`、`result`、`error`、`status` | Codex MCP；SuDuo 工具（各 Agent）；Claude `mcp__*`；ACP other |
+| `dynamicToolCall` | **SuDuo 工具调用**（不论经哪个通道） | `tool`（带 `suduo_` 前缀的内部名）、`arguments`、`contentItems[]`（inputText / inputImage）、`success`、`status` | Codex dynamicTools（老线程）；Codex / Claude / ACP 经 SuDuo MCP 的调用由各适配器换成这个形状（S2 实施） |
+| `mcpToolCall` | 其他 MCP 工具调用 | `server`、`tool`、`arguments`、`result`、`error`、`status` | Codex MCP；Claude `mcp__*`（suduo 除外）；ACP other |
 | `webSearch` | 搜索 / 抓取 | `query` | Codex；Claude WebSearch / WebFetch；ACP fetch |
 | `plan` | 计划 | 文本 / 步骤 | Codex；Claude TodoWrite / ExitPlanMode；ACP plan |
 | `collabAgentToolCall` | Agent 原生子 Agent | 描述、状态 | Codex；Claude Task / Agent |
@@ -107,7 +108,7 @@ updated: 2026-10-08
 | `suduoReference`（新，P2） | 读取留痕 | `target`（会话 / 交接包 / 评审）、`view`、`atSeq` | ContextService 写入读取方会话 |
 | `suduoReview`（新，P2） | 评审结果 | `reviewId`、`reviewerAgentId`、`findings[]` 摘要 | ReviewService 写入被评会话 |
 
-- 老 Codex 线程的 `dynamicToolCall` 继续可渲染；新会话不再产生。
+- SuDuo 工具调用在账本里只有 `dynamicToolCall` 一种形状（S2 实施时改：原计划统一成 `mcpToolCall` 再改前端；改为各适配器换形状，界面、房间进度、图片瘦身都不用动，老线程与新线程一致）。
 - `extensions.<agentId>` 只供诊断，解析不得依赖。
 - 事件类型不变；`ThreadRef.runtimeKind` 填通道名；会话另记 `agentId`。回合结局统一用 `turn.completed` 的 `turn.status`（`completed` / `failed` / `interrupted`）。
 - `suduo*` 条目由 SuDuo 自己写入账本（来源 `system:suduo`），与 Agent 事件同一条时间线，前端按类型渲染卡片。
@@ -183,7 +184,7 @@ updated: 2026-10-08
 
 ### 2.9 MCP 工具集合与角色
 
-令牌映射到 `{ sessionId, role, scope }`，`tools/list` 按下表返回：
+令牌映射到 `{ sessionId, 工具清单 }`：清单在建线程时按会话角色与 scope 由下表定下（与 dynamicTools 一样随线程固定，记在线程元数据里，续接时按它重签令牌），`tools/list` 只返回清单内的工具，清单外的 `tools/call` 不执行（S2 实施：Agent 建线程时就来取清单，那时会话的需求关联还没写入，不能现查）：
 
 | 工具 | 主会话 | 子会话 | 评审会话 | 试做会话 | 房间任务 |
 |---|---|---|---|---|---|
@@ -294,7 +295,7 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 
 ### 4.3 需求工具（MCP）
 
-守卫 → 令牌 → 角色与 scope → `tools/list` / `tools/call`；写工具（comment_submit）挂起等确认；**服务端自己计时**——在给该 Agent 配置的工具超时到达前（留 30 秒余量）仍未确认，就把确认卡转为草稿（`tool_drafts`）并回复 Agent「已存为草稿，等用户在界面确认」；收到 MCP 取消通知或连接断开时同样转草稿（S0：Codex 超时时既不断开也不发取消，只能靠服务端计时）。
+守卫 → 令牌 → 角色与 scope → `tools/list` / `tools/call`；写工具（comment_submit）挂起等确认；**服务端自己计时**——在给该 Agent 配置的工具超时到达前（留 30 秒余量）仍未确认，就把确认卡转为草稿（不另建表：确认卡本身就是草稿，它不属于任何运行时连接，Agent 断开与本机服务重启都不作废）并回复 Agent「已存为草稿，等用户在界面确认」；收到 MCP 取消通知或连接断开时同样转草稿（S0：Codex 超时时既不断开也不发取消，只能靠服务端计时）。
 
 ### 4.4 委派时序
 
@@ -346,8 +347,8 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 |---|---|
 | `019_session_agent_graph` | 重建 `sessions`（SQLite 改 CHECK 需重建）：`kind` 增加 delegate / reviewer / trial，`approval_mode` 增加 readonly；新增 `agent_id`（默认 `codex`）、`parent_session_id`、`root_session_id`（老会话 = 自身）、`relation`、`relation_meta`、`workspace_path`、`rules_version`；索引 `root_session_id` |
 | `020_approval_decisions` | 重建 `approvals`，`decision` 的 CHECK 增加 `acceptAlways`、`declineAlways` |
-| `021_session_tool_tokens` | `(session_id, token_hash, role, scope_json, created_at, revoked_at)` |
-| `022_tool_drafts` | `(id, session_id, tool, target_json, content_json, status, created_at, resolved_at)` |
+| ~~`021_session_tool_tokens`~~ | S2 实施取消：令牌只在内存（本机服务重启时 Agent 进程跟着重启，续接时重签），工具清单记在线程元数据 |
+| ~~`022_tool_drafts`~~ | S2 实施取消：等不到确认的写工具调用，确认卡本身就是草稿 |
 | `023_agent_settings` | `(agent_id, enabled, bin_override, concurrency, updated_at)`；全局上限、默认 Agent 存现有设置 |
 | `024_delegations` | `(id, parent_session_id, parent_turn_id, tool_call_id, child_session_id, agent_id, task, workspace_mode, status, auto_handback, result_json, created_at, finished_at)` |
 | `025_session_references` | `(id, reader_session_id, target_kind, target_id, view, target_seq, created_at)` |
@@ -392,11 +393,11 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 
 ### 7.2 MCP
 
-`POST/GET /mcp`，`Authorization: Bearer <会话令牌>`；`serverInfo.name = "suduo"`；工具与角色见 2.9；参数 schema 写在 `client/contracts/src/mcp-tools.ts`（新），服务端与测试共用。
+`POST /mcp`（单条 JSON-RPC、直接回 JSON；`GET` 回 405，不开 SSE 流），`Authorization: Bearer <会话令牌>`；`serverInfo.name = "suduo"`；工具与角色见 2.9；工具定义沿用服务端 `session-tools/catalog.ts`（MCP 版由 `mcpToolSpecsFor` 生成），不另建契约文件。
 
 ### 7.3 契约
 
-新增 `items.ts`、`agents.ts`、`collab.ts`（会话角色与关系、委派、评审、试做、共享对象 DTO）、`mcp-tools.ts`；`runtime.ts` 按 2.5；`registry.ts` 增加 `list()`、`getByAgent()`；`config.ts` 的 `ApprovalMode` 增加 `readonly`，并增加 `DEFAULT_AGENT_ID`、默认并发。
+新增 `items.ts`、`agents.ts`、`collab.ts`（会话角色与关系、委派、评审、试做、共享对象 DTO）；`runtime.ts` 按 2.5；`registry.ts` 增加 `list()`、`getByAgent()`；`config.ts` 的 `ApprovalMode` 增加 `readonly`，并增加 `DEFAULT_AGENT_ID`、默认并发。
 
 ---
 
@@ -520,7 +521,7 @@ OpenCode 完整回合：SuDuo MCP 工具调用成功（带会话令牌，Agent �
 
 **未实测（留待后续分片）**：Cursor CLI、Kimi Code（本机未装，配置按官方说明）；Gemini、Qwen、Copilot 的完整回合（需用户登录）；Windows 上的 worktree 与可执行文件解析；各 Agent 调用 `*_submit` 类工具的可靠性（随 S9 / S11 实测）。
 
-### S1 契约与地基（进行中）
+### S1 契约与地基（已完成）
 
 - **S1-1（已完成）**：运行时接口以 `approvalMode: RuntimeApprovalMode` 取代 Codex 专有的 `security`；`RuntimeApprovalMode` = 用户三档 + `readonly`，Codex 适配器用 `RUNTIME_APPROVAL_MODE_POLICIES` 换算，房间任务显式传 `readonly`，删除按组合猜房间档的逻辑。**偏差**：用户可选的「只读」档（数据库 `approval_mode` 放宽、界面选择器）移到 S5 与界面一起做，S1 不动会话表的这一列。质量门：client typecheck、lint 通过；受影响 7 组测试 84 项通过。
 - **S1-2（已完成）**：Agent 配置表（八家，参数来自 S0 实测或官方核实；无可靠依据的不设最低版本，只记「已验证版本」作提示）、可执行文件解析（覆盖 → PATH → 常见安装目录，Windows 优先 `.cmd`）、状态检测服务（版本、Claude 登录状态只读 `loggedIn`、ACP 登录状态待 S4 握手判断；结果缓存成功 10 分钟、失败 1 分钟；运行中鉴权失败可回灌）、Agent 设置单独存 `agent-settings.json`（不碰 `settings.json`，替代原计划的 `agent_settings` 表）、打开系统终端执行官方登录命令；接口 `GET /api/v1/agents`、`POST /api/v1/agents/:id/recheck`、`POST /api/v1/agents/:id/login`、`GET / PUT /api/v1/settings/agents`。DTO 增加 `runtimeAvailable`（S3 / S4 之前 Claude 与 ACP 为 false）、`verifiedVersion`。本机真实冒烟：claude 2.1.284 ready、Codex ready、Copilot / Gemini / OpenCode / Qwen installed、Cursor / Kimi not_installed；八家并行检测约 8.5 秒（Node 写的 CLI 启动慢）→ S5 界面先出列表、状态逐个刷新。
@@ -528,3 +529,25 @@ OpenCode 完整回合：SuDuo MCP 工具调用成功（带会话令牌，Agent �
 - **S1-4（已完成）**：每个已注册的运行时一条事件消费循环。实施中发现一处多 Agent 下的真实缺陷并修正：连接断开时原来会作废**所有**待审批、恢复**所有**线程——接入第二家 Agent 后，一家 Agent 的进程退出会连带作废别家会话里的确认卡。现在 `orphanPersistedPending` 与线程恢复都按运行时限定（ADR-0017 故障隔离），并加了对应测试。
 - **S1-5（调整：移到 S8）**：调度器原计划在 S1 以宽松上限接入所有回合。实施时判断：在委派与并行试做（S8 / S10）之前没有任何场景会触发上限，S1 接入只会留下测不出效果的占位代码；开回合的调用点只有 `message-service` 与房间任务两三处，S8 补接成本低。改为在 S8 与委派一起完整实现与测试。
 - **S1-6（已完成）**：审批载荷加中立字段 `subject` / `options` / `display`（契约 `NeutralApprovalFields`），Codex 映射器补齐（原生字段保留，前端 S5 再切换）；决策增加 `acceptAlways` / `declineAlways`，`ApproveInput` 带 `optionId`（取代原设计的 `ApprovalResolution` 新类型，改动更小）；决定时按卡上的 options 解析选项、不在选项里报 400，没有 options 的老卡与工具确认卡只认原来四种；迁移 020 重建 `approvals` 放宽 `decision` 的 CHECK。质量门：typecheck、lint、全量测试 1625 项通过。
+- **S1 验收**：gate-c 全量（官方 Lima 虚拟机，S1 末提交 2f2fa5d）通过，19 步全过（`GATE_EXIT=0`），即 Codex 行为零变化；`/api/v1/agents` 八家检测见 S1-2。「所有回合经调度器准入」随 S1-5 移到 S8。
+
+### S2 本机 MCP 工具服务（已完成）
+
+- **实现**：`infrastructure/mcp/mcp-endpoint.ts`（Streamable HTTP 最小实现：单条 JSON-RPC、`initialize` / `ping` / `tools/list` / `tools/call`，`notifications/cancelled` 中止进行中的调用；守卫 = loopback Host + 会话令牌 + 带 Origin 时须同源，全局 LoopbackGuard 对 `/mcp` 豁免）、`tool-tokens.ts`（内存、只存哈希、每会话一个有效令牌，重签即作废）；会话工具服务实现 MCP 一侧（工具名去 `suduo_` 前缀，说明与回复文字里提到的工具名同样换掉；图片转 MCP image）；监督器按运行时能力选通道——运行时支持且工具服务在线时签令牌走 MCP，否则沿用 dynamicTools，老线程续接不变；Codex 适配器把 `mcp_servers.suduo` 写进线程级配置（与房间档关掉所有者 MCP 的覆盖合并）。
+- **写工具**：建确认卡（连接 id 固定为 `suduo-mcp`，不属于任何运行时连接），挂起等用户决定；到「工具超时 − 30 秒」或 Agent 取消 / 断开时回复「已存为草稿」，卡片留着，之后确认照样发出。
+- **账本形状**：Codex 把 MCP 调用记为 `mcpToolCall`（服务 suduo）；事件归一化时换成与 dynamicTools 通道相同的 `dynamicToolCall`（工具名补回前缀、结果换成 inputText / inputImage），界面、房间进度、图片瘦身都不用改。Claude 与 ACP 运行时同样落成这个形状。实测 Codex 0.159.2：工具返回 `isError` 时条目 `status: failed`、内容保留、`error` 为 null。
+- **端到端实测发现并修正的两处问题**（单测没覆盖到，均已补测试）：① Agent 在建线程时就来取 `tools/list`，而需求会话的需求关联在线程建好后才写入，现查会话范围得到空清单（Codex 会缓存）→ 改为令牌授予建线程时定下的工具清单（见 2.9）；② Node 的请求对象在请求体读完时就触发 `close`，拿它当「Agent 断开」会让每次写工具调用立刻被当成取消 → 改听响应的 `close`，并加了真实连接的测试（用旧写法会失败）。
+- **验收**：本机真实链路（分支构建起在 18788，数据为 stack-b 的副本，Codex 走中转站，需求服务为本机云端）：新需求会话经 MCP 调 `requirement_get` → `comment_submit` → 确认卡 → 确认 → 评论落到云端 → 结果回到 Codex，回合正常结束；重启本机服务后同一会话续接，按记下的清单重签令牌，`requirement_comments` 照常可用。驱动脚本 `/Volumes/Sue-SSD/Dev/tmp/suduo/s2-e2e*.mjs`。到点转草稿只在单测里验证（真实等待要 9 分半）。质量门见下方「独立复核」之后的数字。
+- **偏差**：令牌与草稿不建表（6.1 的 021 / 022 取消）；不新建 `contracts/src/mcp-tools.ts`；角色矩阵（委派、评审等工具）随 P2 各分片加入清单，S2 只有现有四种 scope。
+- **独立复核（subagent）与处理**：
+  1. 启动时恢复线程早于本机服务开始监听，排在前面的 MCP 线程续接时拿不到地址、挂不上工具，且被记为就绪、之后不再续接 → 恢复改在 Fastify `onListen` 之后开始；续接 MCP 线程时工具服务没在监听就先不续接、不记就绪（不抛错，免得发消息那条路改为重建线程、丢历史）。已修，加测试。
+  2. Codex 访问 127.0.0.1 也走 HTTP_PROXY / ALL_PROXY（复核实测），代理在别的机器上时连不到工具服务、令牌明文发给代理；老的 dynamicTools 走 stdio 没有这个问题 → 启动 Agent 子进程时 `NO_PROXY` / `no_proxy` 补上 `127.0.0.1,localhost,::1`（`withLoopbackNoProxy`，Claude / ACP 运行时同样用它；不改出网代理设置本身）。已修，加测试。
+  3. 重启时还在执行中（deciding）的 MCP 确认卡被一律跳过，会永远卡住、人无法恢复（不符合 ADR-0004）→ 只跳过待确认的；执行中的在本进程内留着，重启后按「结果未确认，请先核对」作废。已修，加测试。
+  4. 用户点了发出、执行期间刚好到点或 Agent 断开，会告诉 Agent「没发出」而评论其实发了 → 决定开始执行时记 executing，之后不再转草稿、等执行结果。已修，加测试（去掉修正时测试失败）。
+  5. 写工具准备阶段抛错时回的不是 JSON-RPC 结果 → `callTool` 统一捕获，回失败结果。已修。
+  6. 同一会话两个客户端用同一个请求 id 时 inflight 互删 → 只删自己的，requestKey 加序号。已修。
+  7. 转草稿的时刻改为从请求到达算起，用令牌里记的该 Agent 工具超时（`ToolGrant.toolTimeoutSec`），不再用全局常量。已修。
+  8. 协议：只含 JSON-RPC 响应的 POST 改回 202（已修）。**留给 S3 / S4 实测再定**：401 不带 `WWW-Authenticate` 时实现了 MCP 授权的客户端（Claude Code）可能转去走 OAuth 发现；不开 SSE 就发不了进度通知，工具超时不可配、又只在收到进度时重置的客户端会先超时（卡片照样留作草稿，但 Agent 看到超时错误）；按 2025-03-26 协商时不支持批量请求。
+  9. 回复文字里的工具名替换也会改到需求正文、评论、附件文字里恰好出现的 `suduo_<工具名>`：只影响给模型看的文字，不落盘（笔记工具不经工具返回正文），接受。
+  10. 用户自己的 Codex 配置里已有名为 suduo 的 MCP 服务时会与线程级配置合并冲突：概率极低，接受，记在这里。
+- **复核后重测**：client typecheck、lint 通过，全量测试 1646 项通过（server 711、web 887、desktop 36、contracts 12）；真实链路重跑（新需求会话读需求 → 发评论确认 → 落云端；重启后续接按清单重签令牌、工具可用）通过。gate-c 全量（官方 Lima 虚拟机，含复核后的修正）19 步全过（`GATE_EXIT=0`）：新 Codex 会话已默认走 MCP，老线程照常；虚拟机里 Codex 继承了宿主代理，本机直连的修正在这里同样生效。
