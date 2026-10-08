@@ -101,6 +101,9 @@ export function toolFormat(locale: Locale) {
     requirementLabel: (requirement: Pick<RequirementDto, "number" | "title">): string =>
       text.requirementLabel(formatRequirementNumber(requirement.number), requirement.title),
     statusLabel: (status: RequirementDto["status"]): string => statusLabel(status, locale),
+    /** 优先级名；无优先级（或旧版需求服务没给）时为「无」。 */
+    priorityLabel: (priority: RequirementDto["priority"]): string =>
+      priority === null || priority === undefined ? text.noPriority : t.common.requirementPriority[priority],
     userName: (user: UserSummaryDto | null | undefined): string => user?.displayName ?? text.unassigned,
     evidenceNote: text.evidenceNote,
   };

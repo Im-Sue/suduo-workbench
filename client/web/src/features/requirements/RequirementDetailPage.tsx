@@ -1,11 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { RequirementListItemDto } from "@suduo/client-contracts";
-import type { UserSummaryDto } from "@suduo/cloud-contracts";
+import type { CommentFileDto, UserSummaryDto } from "@suduo/cloud-contracts";
 import {
   AlertTriangleIcon,
   ChevronRightIcon,
   FolderGit2Icon,
+  PaperclipIcon,
   PencilIcon,
   PlayIcon,
 } from "lucide-react";
@@ -25,7 +26,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useCloudFeature } from "./cloud-features.js";
 import { AssigneeMenu } from "./components/AssigneeMenu.js";
+import { PriorityMenu } from "./components/PriorityMenu.js";
 import { StatusMenu } from "./components/StatusMenu.js";
 import { UserAvatar } from "./components/UserAvatar.js";
 import { requirementCode } from "./format.js";
@@ -34,7 +37,8 @@ import { useCreateComment, useRequirement, useRequirementIdByRef, useUpdateRequi
 import { useReadMarker } from "./read-marker.js";
 import { ActivityFeed, type ActivityFilter } from "./sections/ActivityFeed.js";
 import { LocalSessions } from "./sections/LocalSessions.js";
-import { MaterialsPanel } from "./sections/Materials.js";
+import { PendingCommentFiles, useCommentFiles, type SentBatch } from "./sections/CommentFiles.js";
+import { MaterialsPanel, renamePastedImage } from "./sections/Materials.js";
 import { RequirementRooms } from "../rooms/sections/RequirementRooms.js";
 import { formatDateTime, formatRelativeTime } from "../../ui/format.js";
 
@@ -218,6 +222,8 @@ function DetailBody({ projectId, requirement }: { projectId: string; requirement
 
 function hasUnsavedWork(): boolean {
   if (document.querySelector('#requirement-title, [data-testid="description-editor"]') !== null) return true;
+  // 评论框里待发的文件也算没发出的内容。
+  if (document.querySelector('[data-testid="comment-pending-files"] li') !== null) return true;
   const comment = document.querySelector<HTMLTextAreaElement>("#comment-composer");
   return comment !== null && comment.value.trim() !== "";
 }
@@ -456,26 +462,80 @@ function CommentThread({
   filter: ActivityFilter;
   onShownComments?(latestCommentAt: string | null): void;
 }) {
-  const text = useT().requirementDetail.comments;
+  const t = useT();
+  const text = t.requirementDetail.comments;
   const comment = useCreateComment(requirementId);
+  // 云端支持评论文件时（需求附件评论文件与优先级 4.2）才能附文件；较早的云端照旧只能写字。
+  const filesEnabled = useCloudFeature("comment_files");
+  const attachments = useCommentFiles(requirementId);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<Failure | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [uploadFailed, setUploadFailed] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const tooLong = draft.length > 4000;
+  const busy = uploading || comment.isPending;
+  const canSend = (draft.trim() !== "" || attachments.files.length > 0) && !tooLong && !busy;
   // 发送中输入框已经清空，发不出去时要把正文放回来；这时重建，放回的那一步会落空、正文丢掉：别的标签页切语言时等它回来。
-  useLossCheck(comment.isPending);
+  useLossCheck(busy);
 
   const send = async () => {
     const body = draft.trim();
-    if (body === "" || tooLong || comment.isPending) return;
+    if (!canSend) return;
     setError(null);
+    setUploadFailed(false);
+    setNotice(null);
+    // 点发送时才上传文件（R7）：上传这一刻列表里的文件；有没传上去的，评论不发出，失败的标在列表里，再点发送只补传它们。
+    let batch: SentBatch = { localIds: [], files: [] };
+    if (attachments.files.length > 0) {
+      setUploading(true);
+      try {
+        const uploaded = await attachments.uploadAll();
+        if (uploaded === null) {
+          setUploadFailed(true);
+          return;
+        }
+        batch = uploaded;
+      } finally {
+        setUploading(false);
+      }
+    }
     setDraft("");
     try {
-      await comment.mutateAsync(body);
+      await comment.mutateAsync({ body, fileIds: batch.files.map((file) => file.id), files: batch.files });
+      attachments.removeSent(batch.localIds);
     } catch (cause) {
-      // 发不出去：把内容放回输入框，原地提示，可直接再发。
+      const failure = classifyFailure(cause);
+      // 文件已随别的评论发出（多半是上次发送其实成功了、只是响应没回来）：查清楚、告知，不让人卡在反复失败里（ADR-0004 告知而非只拒绝）。
+      if (batch.files.length > 0 && failure.status === 400 && (await settleAlreadySent(batch.files, body))) return;
+      // 发不出去：把内容放回输入框（已传好的文件编号留着，再发不重传），原地提示，可直接再发。
       setDraft(body);
-      setError(classifyFailure(cause));
+      setError(failure);
     }
+  };
+
+  /** 发评论被拒时看看这些文件是不是已经挂在评论上了；是的话从待发列表拿掉、刷新时间线并说明。返回是否处理了。 */
+  const settleAlreadySent = async (files: readonly CommentFileDto[], body: string): Promise<boolean> => {
+    const states = await Promise.all(files.map((file) => api.getCommentFile(file.id).catch(() => null)));
+    const sent = states.flatMap((state) => (state !== null && state.commentId !== null ? [state.id] : []));
+    if (sent.length === 0) return false;
+    attachments.removeByFileIds(sent);
+    void queryClient.invalidateQueries({ queryKey: requirementKeys.activity(requirementId) });
+    if (sent.length === files.length) {
+      // 整条评论其实已经发出：不再放回正文，免得重复发一条。
+      setNotice(text.alreadySent);
+    } else {
+      setDraft(body);
+      setNotice(text.someAlreadySent);
+    }
+    return true;
+  };
+
+  const addFiles = (files: readonly File[]) => {
+    if (files.length > 0) attachments.add(files);
   };
 
   const pending =
@@ -484,7 +544,14 @@ function CommentThread({
         <UserAvatar user={me} size="lg" className="mt-0.5" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-small font-semibold">{me?.displayName ?? text.me} <span className="font-normal text-subtle-foreground">{text.sending}</span></span>
-          <div className="rounded-md border border-border bg-card px-3 py-2 text-body whitespace-pre-wrap">{comment.variables}</div>
+          {comment.variables.body === "" ? null : (
+            <div className="rounded-md border border-border bg-card px-3 py-2 text-body whitespace-pre-wrap">{comment.variables.body}</div>
+          )}
+          {comment.variables.files.length === 0 ? null : (
+            <p className="m-0 text-caption text-subtle-foreground">
+              {text.joinNames(comment.variables.files.map((file) => file.fileName))}
+            </p>
+          )}
         </div>
       </li>
     ) : null;
@@ -494,15 +561,45 @@ function CommentThread({
       <ActivityFeed requirementId={requirementId} mode="timeline" filter={filter} footer={pending} {...(onShownComments === undefined ? {} : { onShownComments })} />
       <div className="flex gap-2.5">
         <UserAvatar user={me} size="lg" className="mt-1" />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-col gap-2 rounded-md",
+            dragging && "outline-2 outline-dashed outline-primary/50",
+          )}
+          data-testid="comment-composer"
+          onDragOver={(event) => {
+            if (!filesEnabled || !Array.from(event.dataTransfer.types).includes("Files")) return;
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+          }}
+          onDrop={(event) => {
+            if (!filesEnabled) return;
+            event.preventDefault();
+            setDragging(false);
+            addFiles(Array.from(event.dataTransfer.files));
+          }}
+        >
           <label htmlFor="comment-composer" className="sr-only">{text.label}</label>
           <Textarea
             id="comment-composer"
             rows={draft === "" ? 2 : Math.min(12, draft.split("\n").length + 1)}
-            placeholder={text.placeholder}
+            placeholder={dragging ? text.dropToAttach : text.placeholder}
             value={draft}
+            // 上传途中正文已经取好：只读，免得补写的字在发出后被清掉。
+            readOnly={uploading}
             aria-invalid={tooLong || undefined}
             onChange={(event) => setDraft(event.target.value)}
+            onPaste={(event) => {
+              if (!filesEnabled) return;
+              const files = Array.from(event.clipboardData.files);
+              if (files.length === 0) return;
+              // 收下这次粘贴：附件区的页面级粘贴监听看到 defaultPrevented 就不再传成附件。
+              event.preventDefault();
+              addFiles(files.map((file) => renamePastedImage(file, t)));
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
                 event.preventDefault();
@@ -510,10 +607,42 @@ function CommentThread({
               }
             }}
           />
+          <PendingCommentFiles files={attachments.files} busy={busy} onRemove={attachments.remove} />
+          {attachments.rejected === null ? null : <InlineError kind="validation">{attachments.rejected}</InlineError>}
+          {uploadFailed ? <InlineError kind="upstream_unavailable">{text.uploadFailed}</InlineError> : null}
+          {notice === null ? null : (
+            <p className="m-0 text-caption text-muted-foreground" role="status" data-testid="comment-notice">{notice}</p>
+          )}
           {error === null ? null : <InlineError kind={error.kind}>{text.sendFailed(error.message)}</InlineError>}
           {tooLong ? <InlineError kind="validation">{text.tooLong}</InlineError> : null}
-          <div className="flex justify-end">
-            <Button size="sm" variant="primary" disabled={draft.trim() === ""} onClick={() => void send()}>
+          <div className="flex items-center justify-end gap-2">
+            {filesEnabled ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mr-auto"
+                  disabled={busy}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <PaperclipIcon />
+                  {text.addFiles}
+                </Button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? []);
+                    event.target.value = "";
+                    addFiles(files);
+                  }}
+                />
+              </>
+            ) : null}
+            {uploading ? <span className="text-caption text-subtle-foreground" role="status">{text.uploading}</span> : null}
+            <Button size="sm" variant="primary" disabled={!canSend} loading={busy} onClick={() => void send()}>
               {text.submit}
               <Kbd className="ml-1">⌘⏎</Kbd>
             </Button>
@@ -526,10 +655,11 @@ function CommentThread({
 
 // ---------- 右栏属性 ----------
 
-/** 窄屏（右栏收起）时标题下的一行：状态、负责人仍能直接改。 */
+/** 窄屏（右栏收起）时标题下的一行：状态、优先级、负责人仍能直接改。 */
 function CompactProperties({ requirement, me }: { requirement: RequirementListItemDto; me: UserSummaryDto | null }) {
   const text = useT().requirementDetail.properties;
   const update = useUpdateRequirement();
+  const priorityEnabled = useCloudFeature("requirement_priority");
   return (
     <div className="-ml-2 flex items-center gap-3 text-small lg:hidden">
       <StatusMenu
@@ -537,6 +667,13 @@ function CompactProperties({ requirement, me }: { requirement: RequirementListIt
         pending={update.isPending && update.variables?.patch.status !== undefined}
         onChange={(status) => update.mutate({ requirement, patch: { status } })}
       />
+      {priorityEnabled ? (
+        <PriorityMenu
+          priority={requirement.priority ?? null}
+          pending={update.isPending && update.variables?.patch.priority !== undefined}
+          onChange={(priority) => update.mutate({ requirement, patch: { priority } })}
+        />
+      ) : null}
       <AssigneeMenu
         assignee={requirement.assignee}
         currentUserId={me?.id ?? null}
@@ -569,6 +706,7 @@ function PropertiesRail({
   const t = useT();
   const text = t.requirementDetail.properties;
   const update = useUpdateRequirement();
+  const priorityEnabled = useCloudFeature("requirement_priority");
   return (
     <aside className="hidden w-[280px] shrink-0 flex-col gap-6 lg:flex" aria-label={text.label}>
       <dl className="m-0 grid grid-cols-[64px_minmax(0,1fr)] items-center gap-x-3 gap-y-3 text-small">
@@ -580,6 +718,18 @@ function PropertiesRail({
             onChange={(status) => update.mutate({ requirement, patch: { status } })}
           />
         </dd>
+        {priorityEnabled ? (
+          <>
+            <dt className="text-subtle-foreground">{text.priority}</dt>
+            <dd className="m-0 -ml-2">
+              <PriorityMenu
+                priority={requirement.priority ?? null}
+                pending={update.isPending && update.variables?.patch.priority !== undefined}
+                onChange={(priority) => update.mutate({ requirement, patch: { priority } })}
+              />
+            </dd>
+          </>
+        ) : null}
         <dt className="text-subtle-foreground">{text.assignee}</dt>
         <dd className="m-0">
           <AssigneeMenu

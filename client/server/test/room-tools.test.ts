@@ -335,8 +335,9 @@ describe("房间工具", () => {
     expect(names).not.toContain("suduo_notes_read");
     expect(names).not.toContain("suduo_notes_save");
     expect(names).not.toContain("suduo_comment_submit");
-    expect(names).not.toContain("suduo_artifact_publish");
-    expect(names).toContain("suduo_artifact_fetch");
+    // 确认版停用：查看 / 拉取 / 发布确认版的工具都已撤下。
+    expect(names.filter((name) => name.startsWith("suduo_artifact"))).toEqual([]);
+    expect(names).toContain("suduo_attachment_view");
   });
 
   it("Content-Disposition 文件名解析", () => {

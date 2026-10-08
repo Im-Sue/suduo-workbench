@@ -137,18 +137,10 @@ export const conversation = {
     },
     /** 发评论、发布确认版的确认卡：对外且不能撤回，只能点按钮确认。 */
     tool: {
-      noFiles: "没有列出要发布的文件。",
-      unknownSize: "大小未知",
-      noNote: "没有填写发布说明。",
-      note: "发布说明",
       sending: "正在发出…",
-      publishing: "正在发布…",
       sendWarning: "发出后不能撤回",
-      publishWarning: "发布后全组可见，不能撤回",
       send: "发出",
       dontSend: "不发",
-      publish: "发布",
-      dontPublish: "不发布",
     },
   },
   /** 消息流。 */

@@ -25,6 +25,7 @@ import type {
   UpdateRequirementRequest,
 } from "@suduo/cloud-contracts";
 import {
+  CLOUD_FEATURES,
   REQUIREMENTS_V2_SCHEMAS,
   ROOM_SSE_EVENT_NAME,
   type RoomEventDto,
@@ -51,6 +52,8 @@ import { singleMultipartFile } from "./multipart.js";
 import { registerAgentRunRoutes } from "./routes/agent-runs-routes.js";
 import { registerAgentRoutes } from "./routes/agents-routes.js";
 import { registerRoomRoutes } from "./routes/rooms-routes.js";
+import { registerCommentFileRoutes } from "./routes/comment-files-routes.js";
+import type { CommentFileService } from "../application/comment-file-service.js";
 
 interface AuthTokenClaims {
   sub: string;
@@ -76,6 +79,8 @@ export interface HttpServerDependencies {
   events: RequirementsEventHub;
   /** 项目聊天房间与共享 Agent；不给时不注册房间路由，`/v2/events` 只推需求事件。 */
   rooms?: RoomsModule;
+  /** 评论文件（需求附件评论文件与优先级 4.2）；不给时不注册评论文件路由。 */
+  commentFiles?: CommentFileService;
 }
 
 const PUBLIC_ROUTES = new Set([
@@ -97,6 +102,7 @@ export async function buildHttpServer(
     attachmentStorage,
     events,
     rooms,
+    commentFiles,
   } = dependencies;
   const liveEventResponses = new Set<ServerResponse>();
   const server = Fastify({
@@ -179,6 +185,8 @@ export async function buildHttpServer(
         service: "suduo-requirements-service",
         status: "ok",
         version: config.version ?? "dev",
+        // 评论文件路由只在注入了 commentFiles 时注册：没注册就不声明，客户端据此隐藏入口。
+        features: CLOUD_FEATURES.filter((feature) => feature !== "comment_files" || commentFiles !== undefined),
         database: { status: "ok", schemaVersion },
         uptimeMs: Math.round(process.uptime() * 1_000),
       };
@@ -632,6 +640,10 @@ export async function buildHttpServer(
       } satisfies AttachmentMutationResponse);
     },
   );
+
+  if (commentFiles !== undefined) {
+    registerCommentFileRoutes(server, commentFiles, events);
+  }
 
   if (rooms !== undefined) {
     registerRoomRoutes(server, rooms);

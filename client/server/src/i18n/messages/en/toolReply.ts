@@ -16,8 +16,6 @@ export const toolReply = {
     comments: (label: string) => `the comments on ${label}`,
     attachmentList: (label: string) => `the attachment list of ${label}`,
     attachmentContent: (fileName: string) => `the content of attachment “${fileName}”`,
-    confirmedVersions: (label: string) => `the confirmed versions of ${label}`,
-    versionFiles: (version: number) => `the file list of confirmed version v${String(version)}`,
     file: (fileName: string) => `the file “${fileName}”`,
   },
   args: {
@@ -29,14 +27,13 @@ export const toolReply = {
   },
   files: {
     body: (version: number) => `requirement-description-v${String(version)}.md`,
-    confirmedVersionDir: (version: number) => `confirmed-version-v${String(version)}`,
     fallbackName: "attachment",
     empty: (fileName: string) => `Couldn't look up the file “${fileName}”: the requirements service returned empty content.`,
     saveFailed: (fileName: string, reason: string) => `The file “${fileName}” wasn't saved: ${reason}.`,
   },
   get: {
-    status: (status: string, assignee: string, version: number) =>
-      `- Status: ${status}; Assignee: ${assignee}; Current version: v${String(version)}`,
+    status: (status: string, priority: string, assignee: string, version: number) =>
+      `- Status: ${status}; Priority: ${priority}; Assignee: ${assignee}; Current version: v${String(version)}`,
     startVersion: (version: number) => ` (v${String(version)} when work started)`,
     created: (createdBy: string, createdAt: string, updatedBy: string, updatedAt: string) =>
       `- Created: ${createdBy}, ${createdAt}; Last edited: ${updatedBy}, ${updatedAt}`,
@@ -73,6 +70,7 @@ export const toolReply = {
     summaryChanged: "edited the description (see the current description above)",
     statusChanged: (from: string, to: string) => `changed the status from “${from}” to “${to}”`,
     assigneeChanged: (from: string, to: string) => `changed the assignee from “${from}” to “${to}”`,
+    priorityChanged: (from: string, to: string) => `changed the priority from “${from}” to “${to}”`,
     updated: "updated the requirement",
     join: (parts: readonly string[]) => parts.join(", "),
   },
@@ -85,41 +83,25 @@ export const toolReply = {
     clipped: (length: number) =>
       `… (This comment has ${characters(length)}; the rest is cut off. For the full text, ask the user to view it on the requirement page.)`,
     publishNote: " (publish note for a confirmed version)",
+    filesHeading: (count: number) =>
+      `${plural("en", count, { one: "1 file attached", other: `${String(count)} files attached` })} (view them with suduo_attachment_view, passing the file ID as attachmentId):`,
     system: {
       artifactPublished: (versionNumber: number, fileCount: number) =>
         `Published confirmed version ${String(versionNumber)} with ${files(fileCount)}.`,
+      commentFiles: (fileCount: number) => `(no text, just ${files(fileCount)} attached)`,
     },
   },
   attachments: {
     none: (label: string) => `${label} has no attachments.`,
     header: (label: string, count: number) =>
-      `Attachments of ${label} (${plural("en", count, { one: "1 attachment", other: `${String(count)} attachments` })}; view their content with suduo_attachment_view):`,
+      `Attachments of ${label} (${plural("en", count, { one: "1 attachment", other: `${String(count)} attachments` })}, newest first; ` +
+      "where content overlaps, the newer one wins; where it doesn't, they complement each other; if unsure, ask the user. View their content with suduo_attachment_view):",
     notFound: (label: string, id: string) =>
       `${label} has no attachment with ID ${id} (it may have been deleted, or it belongs to another requirement). First check the attachment list with suduo_requirement_attachments.`,
     head: (fileName: string, contentType: string, size: string, uploader: string, time: string) =>
       `Attachment “${fileName}” (${contentType}, ${size}, uploaded by ${uploader} at ${time})`,
     savedLong: (path: string) => `The content is long, so it was saved in the project at ${path}. Read that file directly.`,
     saved: (path: string) => `Saved in the project at ${path}. You can read that file directly.`,
-  },
-  artifacts: {
-    none: (label: string) => `No confirmed version of ${label} has been published yet.`,
-    header: (label: string, count: number) => `Confirmed versions of ${label} (${String(count)}, newest first):`,
-    version: (version: number, publisher: string, time: string, fileCount: number) =>
-      `## v${String(version)} · ${publisher} · ${time} (${files(fileCount)})`,
-    filesUnavailable:
-      "- Couldn't look up the file list (the requirements service is unavailable right now). You can try again later.",
-    file: (fileName: string, size: string) => `- ${fileName} (${size})`,
-    more: (count: number) =>
-      plural("en", count, {
-        one: "1 earlier version isn't listed.",
-        other: `${String(count)} earlier versions aren't listed.`,
-      }),
-    fetchHint: "To read the files, use suduo_artifact_fetch to save a version locally.",
-    invalidVersion: "version must be a positive integer, e.g. 2.",
-    noSuchVersion: (label: string, version: number, existing: readonly string[]) =>
-      `${label} has no confirmed version v${String(version)} (existing: ${existing.join(", ") || "none"}).`,
-    fetched: (label: string, version: number, publisher: string, time: string, dir: string) =>
-      `Saved confirmed version v${String(version)} of ${label} (${publisher}, ${time}) to ${dir}/:`,
   },
   notes: {
     none: (label: string, path: string) => `${label} has no conclusion notes on this computer yet (${path}).`,
@@ -137,33 +119,14 @@ export const toolReply = {
     commentEmpty: "The comment can't be empty.",
     commentTooLong: (limit: number, length: number) =>
       `A comment can be at most ${characters(limit)}; this one is ${characters(length)}. Shorten it before sending.`,
-    noFiles: "Give at least one file to publish: paths (files in the project) or attachmentIds (existing attachments).",
-    fileNotFound: (path: string) =>
-      `Couldn't find the file ${path} in the project (the path must be relative to the project folder and must be a file).`,
-    attachmentNotFound: (label: string, id: string) => `${label} has no attachment with ID ${id}.`,
-    requirementSessionOnly: "Only a session created from a requirement can post comments or publish confirmed versions.",
+    requirementSessionOnly: "Only a session created from a requirement can post comments.",
     requirementTitleOnly: (title: string) => `requirement “${title}”`,
     commentSent: (label: string, author: string, time: string, id: string) =>
       `Posted the comment to ${label} (${author}, ${time}, comment ID ${id}).`,
     incomplete: "The confirmation card is incomplete, so nothing was done.",
-    changedFile: (path: string, confirmedSize: string, currentSize: string) =>
-      `${path} (${confirmedSize} when confirmed, ${currentSize} when published)`,
-    uploadedFile: (fileName: string, id: string) => `${fileName} (attachment ID ${id})`,
-    published: (label: string, version: number, fileCount: number, time: string) =>
-      `Published confirmed version v${String(version)} of ${label} (${files(fileCount)}, ${time}).`,
-    changedAfterConfirm: (changed: readonly string[]) =>
-      `\nNote: these files changed after the user confirmed, and the latest content was published. Tell the user: ${changed.join("; ")}.`,
-    uploadedNotPublished: (uploaded: readonly string[]) =>
-      `\nFiles already uploaded as requirement attachments, but the confirmed version wasn't published: ${uploaded.join("; ")}. ` +
-      "These attachments stay on the requirement; when you retry, you can put their attachment IDs in attachmentIds to publish them directly without uploading again.",
-    projectFileMissing: (path: string) =>
-      `The project file ${path} can no longer be found (it may have been moved or deleted after it was confirmed), so the confirmed version wasn't published.`,
-    notSent: (kind: "comment" | "artifact", reason: string) =>
-      kind === "comment" ? `Couldn't post the comment: ${reason}.` : `Couldn't publish the confirmed version: ${reason}.`,
-    unconfirmed: (kind: "comment" | "artifact", reason: string) =>
-      kind === "comment"
-        ? `The result of posting the comment is unconfirmed: ${reason}. Ask the user to check on the requirement page whether it was posted. Don't post it again before they check.`
-        : `The result of publishing the confirmed version is unconfirmed: ${reason}. Ask the user to check on the requirement page whether it was published. Don't publish it again before they check.`,
+    notSent: (_kind: "comment", reason: string) => `Couldn't post the comment: ${reason}.`,
+    unconfirmed: (_kind: "comment", reason: string) =>
+      `The result of posting the comment is unconfirmed: ${reason}. Ask the user to check on the requirement page whether it was posted. Don't post it again before they check.`,
   },
   dispatch: {
     failed: (reason: string) => `SuDuo ran into an error while running the tool: ${reason}`,
@@ -173,7 +136,9 @@ export const toolReply = {
     roomToolsUnavailable: "Room tools are unavailable right now.",
     unknownTool: (tool: string) => `SuDuo has no tool named ${tool}.`,
     declinedComment: "The user didn't approve, so the comment wasn't posted.",
-    declinedPublish: "The user didn't approve, so the confirmed version wasn't published.",
+    retired: (tool: string) =>
+      `${tool} has been retired: SuDuo no longer has confirmed versions, and all requirement materials are attachments. ` +
+      "List them with suduo_requirement_attachments (newest first) and view their content with suduo_attachment_view.",
     sessionUnlinked: "The session is no longer linked to a SuDuo project, so nothing was done.",
     runFailed: (reason: string) => `An error occurred while running it: ${reason}`,
     image: "(image)",

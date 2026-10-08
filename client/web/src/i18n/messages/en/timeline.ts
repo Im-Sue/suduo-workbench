@@ -175,8 +175,6 @@ export const timeline = {
     },
     duplicatePending: (at: string) => `This session already has a confirmation card with the same content (${at})`,
     duplicateSent: (at: string) => `This session already sent the same content at ${at}`,
-    projectFile: (ref: string) => `Project file ${ref}`,
-    existingAttachment: "Existing attachment",
     attachments: (ids: readonly string[]) =>
       `${plural("en", ids.length, { one: "Attachment", other: "Attachments" })} ${ids.join(", ")}`,
     version: (version: number) => `v${String(version)}`,

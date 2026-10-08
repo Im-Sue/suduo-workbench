@@ -15,6 +15,13 @@ export const common = {
     completed: "Done",
     on_hold: "On hold",
   },
+  requirementPriority: {
+    urgent: "Urgent",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+  },
+  noPriority: "No priority",
   time: {
     justNow: "just now",
     minutesAgo: (minutes: number) => `${String(minutes)} min ago`,

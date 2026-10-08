@@ -1,22 +1,20 @@
 import type {
-  ArtifactVersionDetailDto,
   AttachmentDto,
-  AttachmentMutationResponse,
   AuditEntryDto,
   CommentDto,
+  CommentFileDto,
   CreateCommentRequest,
-  ListArtifactVersionsResponse,
   ListAttachmentsResponse,
   ListAuditQuery,
   ListAuditResponse,
   ListCommentsResponse,
   ListRequirementActivityResponse,
   ProjectDto,
-  PublishArtifactVersionRequest,
   RequirementActivityEntryDto,
   RequirementDetailDto,
   UserSummaryDto,
 } from "@suduo/cloud-contracts";
+import { ApiError } from "../../src/application/api-error.js";
 import type { RequirementToolsRemote } from "../../src/application/session-tools/requirement-tools.js";
 import type { SessionContextRemote } from "../../src/application/session-tools/session-context.js";
 
@@ -100,8 +98,9 @@ export class FakeRequirementsRemote implements RequirementToolsRemote, SessionCo
   readonly comments = new Map<string, CommentDto[]>();
   readonly attachments = new Map<string, AttachmentDto[]>();
   readonly attachmentContent = new Map<string, Buffer>();
-  readonly versions = new Map<string, ArtifactVersionDetailDto[]>();
-  readonly versionFileContent = new Map<string, Buffer>();
+  /** 评论文件（按编号）与内容。 */
+  readonly commentFiles = new Map<string, CommentFileDto>();
+  readonly commentFileContent = new Map<string, Buffer>();
   /** 活动时间线，最新在前（与远程接口一致）。 */
   readonly activity = new Map<string, RequirementActivityEntryDto[]>();
   audit: AuditEntryDto[] = [];
@@ -117,8 +116,6 @@ export class FakeRequirementsRemote implements RequirementToolsRemote, SessionCo
   };
   readonly fail: Partial<Record<RemoteMethod, unknown>> = {};
   readonly calls: Array<{ method: RemoteMethod; args: unknown[] }> = [];
-  /** 上传附件时收到的 multipart 正文（按调用顺序）。 */
-  readonly uploads: Array<{ requirementId: string; contentType: string; body: string }> = [];
   private sequence = 0;
 
   constructor(requirement: RequirementDetailDto = requirementFixture()) {
@@ -184,34 +181,23 @@ export class FakeRequirementsRemote implements RequirementToolsRemote, SessionCo
     return new Response(new Uint8Array(content));
   }
 
-  async listArtifactVersions(requirementId: string): Promise<ListArtifactVersionsResponse> {
-    this.enter("listArtifactVersions", [requirementId]);
-    return {
-      items: (this.versions.get(requirementId) ?? []).map((version) => {
-        const { files, ...summary } = version;
-        void files;
-        return summary;
-      }),
-    };
-  }
-
-  async getArtifactVersion(versionId: string): Promise<ArtifactVersionDetailDto> {
-    this.enter("getArtifactVersion", [versionId]);
-    for (const list of this.versions.values()) {
-      const found = list.find((version) => version.id === versionId);
-      if (found) {
-        return found;
-      }
+  async getCommentFile(fileId: string): Promise<CommentFileDto> {
+    this.enter("getCommentFile", [fileId]);
+    const file = this.commentFiles.get(fileId);
+    if (!file) {
+      throw new ApiError(404, "NOT_FOUND", "comment file not found");
     }
-    throw new Error("version not found: " + versionId);
+    return file;
   }
 
-  async downloadArtifactVersionFile(versionId: string, fileId: string, signal: AbortSignal): Promise<Response> {
-    void signal;
-    this.enter("downloadArtifactVersionFile", [versionId, fileId]);
-    const content = this.versionFileContent.get(fileId);
+  async downloadCommentFile(
+    fileId: string,
+    options: { disposition?: "inline" | "attachment"; signal: AbortSignal },
+  ): Promise<Response> {
+    this.enter("downloadCommentFile", [fileId, options.disposition ?? null]);
+    const content = this.commentFileContent.get(fileId);
     if (!content) {
-      throw new Error("version file missing: " + fileId);
+      throw new Error("comment file content missing: " + fileId);
     }
     return new Response(new Uint8Array(content));
   }
@@ -236,58 +222,12 @@ export class FakeRequirementsRemote implements RequirementToolsRemote, SessionCo
       id: "comment-new-" + String(this.sequence),
       requirementId,
       artifactVersionId: null,
-      body: input.body,
+      body: input.body ?? "",
       author: DEV,
       createdAt: "2026-09-30T06:00:00.000Z",
     };
   }
 
-  async uploadAttachment(input: {
-    requirementId: string;
-    body: AsyncIterable<Uint8Array>;
-    contentType: string;
-    contentLength?: string;
-    attachmentSize?: string;
-    idempotencyKey: string;
-    signal: AbortSignal;
-  }): Promise<AttachmentMutationResponse> {
-    this.enter("uploadAttachment", [{ requirementId: input.requirementId, attachmentSize: input.attachmentSize }]);
-    const chunks: Buffer[] = [];
-    for await (const chunk of input.body) {
-      chunks.push(Buffer.from(chunk));
-    }
-    this.uploads.push({
-      requirementId: input.requirementId,
-      contentType: input.contentType,
-      body: Buffer.concat(chunks).toString("utf8"),
-    });
-    this.sequence += 1;
-    return {
-      attachment: attachmentFixture({
-        id: "att-uploaded-" + String(this.sequence),
-        fileName: "uploaded",
-        contentType: "application/octet-stream",
-        requirementId: input.requirementId,
-      }),
-      requirementVersion: 3,
-    };
-  }
-
-  async publishArtifactVersion(
-    requirementId: string,
-    input: PublishArtifactVersionRequest,
-  ): Promise<ArtifactVersionDetailDto> {
-    this.enter("publishArtifactVersion", [requirementId, input]);
-    return {
-      id: "version-new",
-      requirementId,
-      versionNumber: 3,
-      publishedBy: DEV,
-      publishedAt: "2026-09-30T06:00:00.000Z",
-      fileCount: input.attachmentIds.length,
-      files: [],
-    };
-  }
 }
 
 /** 远程分页的最小实现：cursor 是起始下标，limit 默认 50。 */

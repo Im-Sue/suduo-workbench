@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** 需求详情：详情页、材料与确认版、发布确认版、活动、本机代码目录与本机会话、材料上传。 */
+/** 需求详情：详情页、附件、活动、本机代码目录与本机会话、附件上传。 */
 export const requirementDetail = {
   page: {
     /** 地址里的编号认不出来时，原样引用用户输入的那段。 */
@@ -50,6 +50,31 @@ export const requirementDetail = {
     sendFailed: (message: string) => `没能发出：${message}`,
     tooLong: "评论最多 4000 字",
     submit: "发表评论",
+    /** 评论带文件（需求附件评论文件与优先级 4.2）：点发送时才上传。 */
+    addFiles: "添加文件",
+    dropToAttach: "松开即可附到评论",
+    pendingFiles: "待发的文件",
+    removeFile: (fileName: string) => `移除「${fileName}」`,
+    fileProgress: (fileName: string) => `「${fileName}」上传进度`,
+    fileFailed: "没传上去",
+    willRetry: "再点发送会重新上传",
+    fileTooLarge: (fileName: string) => `「${fileName}」超过 300 MB`,
+    tooManyFiles: (limit: number) => `一条评论最多带 ${String(limit)} 个文件`,
+    uploadFailed: "有文件没传上去，评论还没发出。可以直接再点发送重试，或移除那个文件。",
+    uploading: "正在上传文件…",
+    /** 发评论被拒、查下来文件已经挂在评论上（多半是上次其实发出去了、只是响应没回来）。 */
+    alreadySent: "刚才这条评论其实已经发出，已刷新活动。",
+    someAlreadySent: "有的文件已经随别的评论发出，已从待发列表移除；其余内容还在，可以再发。",
+    /** 评论里文件的「存为附件」：复制一份到附件区，原评论不变。 */
+    saveAsAttachment: "存为附件",
+    saveAsAttachmentLabel: (fileName: string) => `把「${fileName}」存为附件`,
+    savedAsAttachment: (fileName: string) => `已把「${fileName}」存为附件`,
+    saveAsAttachmentFailed: (fileName: string) => `没能把「${fileName}」存为附件`,
+    /** 速览里的一行概要：只带文件、没写文字的评论。 */
+    filesOnly: (count: number) => `附了 ${String(count)} 个文件`,
+    /** 发送中占位里的文件名、选文件时的多条说明。 */
+    joinNames: (names: readonly string[]) => names.join("、"),
+    joinReasons: (reasons: readonly string[]) => reasons.join("；"),
   },
   activity: {
     heading: "活动",
@@ -89,9 +114,11 @@ export const requirementDetail = {
     assigneeRemoved: "取消了负责人",
     assigneeClaimed: "认领了这条需求",
     assigneeChangedTo: (name: string) => `把负责人改为 ${name}`,
+    priorityChanged: "修改了优先级",
+    priorityChangedFromTo: (from: string, to: string) => `把优先级从「${from}」改为「${to}」`,
     commented: "发表了评论",
-    uploaded: (fileName: string | null) => `上传了「${fileName ?? "材料"}」`,
-    deleted: (fileName: string | null) => `删除了「${fileName ?? "材料"}」`,
+    uploaded: (fileName: string | null) => `上传了「${fileName ?? "附件"}」`,
+    deleted: (fileName: string | null) => `删除了「${fileName ?? "附件"}」`,
     published: "发布了确认版",
     publishedVersion: (versionNumber: number, fileCount: number) =>
       `发布了确认版 · 第 ${String(versionNumber)} 版（${String(fileCount)} 个文件）`,
@@ -106,6 +133,7 @@ export const requirementDetail = {
     label: "需求属性",
     status: "状态",
     assignee: "负责人",
+    priority: "优先级",
     unassigned: "未指派",
     assigneeButton: (name: string) => `负责人：${name}，点击修改`,
     number: "编号",
@@ -129,28 +157,23 @@ export const requirementDetail = {
     untitled: "未命名会话",
     more: (count: number) => `还有 ${String(count)} 个会话`,
   },
+  /** 附件区（需求附件评论文件与优先级 4.1）：按时间倒序平铺；确认版停用，历史版本只读。 */
   materials: {
-    heading: "材料",
-    panelHeading: "材料与确认版",
-    versionBadge: (versionNumber: number) => `确认版 · 第 ${String(versionNumber)} 版`,
-    previewLoadFailed: "暂时读不到材料",
-    empty: "还没有材料",
-    more: (count: number) => `还有 ${String(count)} 份，打开完整页查看`,
+    heading: "附件",
+    panelHeading: "附件",
+    previewLoadFailed: "暂时读不到附件",
+    empty: "还没有附件",
+    more: (count: number) => `还有 ${String(count)} 个，打开完整页查看`,
     upload: "上传",
-    publish: "发布确认版",
-    publishNeedsMaterials: "先上传材料，再把它们发布成确认版",
-    publishLoadingVersions: "正在读取已有版本",
-    versionsLoadFailed: (message: string) => `没能读取确认版：${message}`,
     /** 「谁 发布于 什么时候」，人名与时间是渲染好的组件。 */
     publishedBy: (parts: { who: ReactNode; time: ReactNode }): ReactNode[] => [parts.who, " 发布于 ", parts.time],
-    others: "其他材料",
-    loadFailed: (message: string) => `没能读取材料：${message}`,
-    listLabel: "材料",
+    loadFailed: (message: string) => `没能读取附件：${message}`,
+    listLabel: "附件",
     deleteFile: (fileName: string) => `删除「${fileName}」`,
     deleteFailed: (fileName: string) => `没能删除「${fileName}」`,
     deleteConfirm: {
       title: (fileName: string) => `删除「${fileName}」？`,
-      description: "删除后团队成员都看不到这份材料，也无法恢复。已发布的确认版不受影响。",
+      description: "删除后团队成员都看不到这个附件，也无法恢复。",
       confirm: "删除",
     },
     dropToUpload: "松开即可上传",
@@ -158,9 +181,11 @@ export const requirementDetail = {
     imagePreview: "图片预览",
     imageUnavailable: "这张图片没法在线预览，可以下载后查看。",
     download: "下载",
-    history: "历史版本",
-    allVersions: "全部确认版",
-    versionItem: (versionNumber: number, latest: boolean) => `第 ${String(versionNumber)} 版${latest ? "（最新）" : ""}`,
+    /** 附件区底部收起的一行。 */
+    history: (count: number) => `历史确认版（${String(count)}）`,
+    historyHint: "确认版已停用。以前发布的版本保留在这里，只能查看和下载。",
+    versionItem: (versionNumber: number) => `第 ${String(versionNumber)} 版`,
+    versionLoadFailed: (message: string) => `没能读取这一版的文件：${message}`,
     previewFile: (fileName: string) => `预览「${fileName}」`,
     previewInNewTab: (fileName: string) => `在新标签页预览「${fileName}」`,
     downloadFile: (fileName: string) => `下载「${fileName}」`,
@@ -176,25 +201,6 @@ export const requirementDetail = {
     progress: (percent: number) => `上传进度 ${String(percent)}%`,
     failed: (error: string) => `${error}，其他文件不受影响`,
     tooLarge: "超过 300 MB，无法上传",
-    tooMany: (limit: number) => `每个需求最多 ${String(limit)} 个材料，先删掉一些再传`,
-  },
-  publish: {
-    title: (versionNumber: number) => `发布确认版 · 第 ${String(versionNumber)} 版`,
-    description: "确认版是团队对齐后的材料组合，发布后全组可见，不能修改。",
-    publishedMeanwhile: (who: string, published: number, next: number) =>
-      `${who} 刚刚发布了第 ${String(published)} 版。继续发布会成为第 ${String(next)} 版。`,
-    included: (count: number) => `包含的材料（${String(count)}）`,
-    new: "新",
-    selectAtLeastOne: "至少选一份材料",
-    tooManyFiles: (limit: number) => `一个版本最多 ${String(limit)} 个文件`,
-    noteLabel: "这一版改了什么",
-    noteHint: "可不填；会显示在活动里，方便大家了解变化。",
-    notePlaceholder: "例如：补充导出上限与保留期",
-    failed: (message: string) => `没能发布：${message}`,
-    cancel: "取消",
-    submit: (versionNumber: number) => `发布第 ${String(versionNumber)} 版`,
-    retry: "重试发布",
-    published: (versionNumber: number) => `已发布确认版 · 第 ${String(versionNumber)} 版`,
-    maybePublished: "刚才那次发布可能已经成功，确认版列表已刷新，请先看一眼再决定是否重发",
+    tooMany: (limit: number) => `每个需求最多 ${String(limit)} 个附件，先删掉一些再传`,
   },
 };

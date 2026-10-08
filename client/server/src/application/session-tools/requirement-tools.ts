@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { createWriteStream, openAsBlob } from "node:fs";
-import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -9,7 +9,6 @@ import type { Locale, SuDuoToolConfirmationDto } from "@suduo/client-contracts";
 import {
   formatRequirementNumber,
   parseRequirementNumberQuery,
-  type ArtifactVersionDetailDto,
   type AttachmentDto,
   type CommentSystemContent,
   type RequirementActivityEntryDto,
@@ -17,7 +16,6 @@ import {
 } from "@suduo/cloud-contracts";
 import { ApiError } from "../api-error.js";
 import type { RequirementsRemoteClient } from "../../infrastructure/requirements-v2/remote-client.js";
-import { guardExistingPath } from "../../infrastructure/workspace/path-guard.js";
 import {
   TOOL_TEXT_LIMIT,
   failure,
@@ -30,7 +28,6 @@ import {
 } from "./format.js";
 import {
   assertDirectoryInsideProject,
-  childDir,
   materialsDir,
   replaceUnsafePathCharacters,
   readNotes,
@@ -47,13 +44,10 @@ export type RequirementToolsRemote = Pick<
   | "listComments"
   | "listAttachments"
   | "downloadAttachment"
-  | "listArtifactVersions"
-  | "getArtifactVersion"
-  | "downloadArtifactVersionFile"
+  | "getCommentFile"
+  | "downloadCommentFile"
   | "listRequirementActivity"
   | "createComment"
-  | "uploadAttachment"
-  | "publishArtifactVersion"
 >;
 
 /** 一次工具调用所在会话的上下文（由本机库派生，不信任模型给的需求 ID）。 */
@@ -131,7 +125,12 @@ export class RequirementTools {
         f.evidenceNote,
         "",
         `# ${f.requirementLabel(requirement)}`,
-        text.get.status(f.statusLabel(requirement.status), f.userName(requirement.assignee), requirement.version) +
+        text.get.status(
+          f.statusLabel(requirement.status),
+          f.priorityLabel(requirement.priority),
+          f.userName(requirement.assignee),
+          requirement.version,
+        ) +
           (this.isCurrent(ctx, requirement) ? text.get.startVersion(ctx.requirement!.startVersion) : ""),
         text.get.created(
           f.userName(requirement.createdBy),
@@ -203,6 +202,14 @@ export class RequirementTools {
             (comment.artifactVersionId === null ? "" : text.comments.publishNote),
           body,
         );
+        // 评论带的文件：给出编号，模型用 suduo_attachment_view 打开（规则同附件）。
+        const files = comment.files ?? [];
+        if (files.length > 0) {
+          lines.push(
+            text.comments.filesHeading(files.length),
+            ...files.map((file) => `- ${file.id} · ${file.fileName} · ${file.contentType} · ${formatBytes(file.sizeBytes)}`),
+          );
+        }
       });
       lines.push("", text.comments.navigation(nextCursor));
       return textResult(lines.join("\n"));
@@ -214,7 +221,8 @@ export class RequirementTools {
     const text = f.t.toolReply;
     return this.guard(f, async () => {
       const requirement = await this.target(ctx, args["number"]);
-      const attachments = await this.attachmentsOf(f, requirement);
+      // 最新在前（需求附件评论文件与优先级 R1）：在这里排，连较早的需求服务（升序返回）也一样。
+      const attachments = newestFirst(await this.attachmentsOf(f, requirement));
       if (attachments.length === 0) {
         return textResult(text.attachments.none(f.requirementLabel(requirement)));
       }
@@ -236,7 +244,11 @@ export class RequirementTools {
     return this.guard(f, async () => {
       const attachmentId = requireString(f, args["attachmentId"], "attachmentId");
       const requirement = await this.target(ctx, args["number"]);
-      const attachment = (await this.attachmentsOf(f, requirement)).find((item) => item.id === attachmentId);
+      // 先在附件里找，找不到再看是不是这条需求的评论文件（需求附件评论文件与优先级 4.4）。
+      const found = (await this.attachmentsOf(f, requirement)).find((item) => item.id === attachmentId);
+      const attachment: ViewableFile | null = found
+        ? { ...found, open: (signal) => this.remote.downloadAttachment(found.id, signal) }
+        : await this.commentFileOf(f, requirement, attachmentId);
       if (!attachment) {
         return failure(text.attachments.notFound(f.requirementLabel(requirement), attachmentId));
       }
@@ -249,7 +261,7 @@ export class RequirementTools {
       );
       const kind = attachmentKind(attachment);
       if (kind === "image" && attachment.sizeBytes <= INLINE_IMAGE_LIMIT) {
-        const bytes = await this.download(f, attachment.id, attachment.fileName);
+        const bytes = await this.download(f, attachment);
         return {
           success: true,
           contentItems: [
@@ -259,7 +271,7 @@ export class RequirementTools {
         };
       }
       if (kind === "text" && attachment.sizeBytes <= INLINE_TEXT_LIMIT) {
-        const bytes = await this.download(f, attachment.id, attachment.fileName);
+        const bytes = await this.download(f, attachment);
         const content = bytes.toString("utf8");
         if (content.length <= INLINE_TEXT_CHARS) {
           return textResult([head, f.evidenceNote, "", content].join("\n"));
@@ -271,98 +283,11 @@ export class RequirementTools {
       const dir = materialsDir(await resolveRequirementDir(ctx.projectRoot, requirement));
       const saved = await this.saveStream(
         f,
-        () => this.remote.downloadAttachment(attachment.id, AbortSignal.timeout(30 * 60_000)),
+        () => attachment.open(AbortSignal.timeout(30 * 60_000)),
         dir,
         attachment.fileName,
       );
       return textResult(`${head}\n${text.attachments.saved(saved)}`);
-    });
-  }
-
-  async artifactVersions(ctx: ToolSessionContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const f = toolFormat(ctx.locale);
-    const text = f.t.toolReply;
-    return this.guard(f, async () => {
-      const requirement = await this.target(ctx, args["number"]);
-      const versions = await this.remote.listArtifactVersions(requirement.id).catch((error: unknown) => {
-        throw new ToolFailure(f.unavailable(text.what.confirmedVersions(f.requirementLabel(requirement)), error));
-      });
-      if (versions.items.length === 0) {
-        return textResult(text.artifacts.none(f.requirementLabel(requirement)));
-      }
-      const lines = [text.artifacts.header(f.requirementLabel(requirement), versions.items.length)];
-      const ordered = [...versions.items].sort((a, b) => b.versionNumber - a.versionNumber);
-      for (const version of ordered.slice(0, 10)) {
-        lines.push(
-          "",
-          text.artifacts.version(
-            version.versionNumber,
-            f.userName(version.publishedBy),
-            formatTime(version.publishedAt),
-            version.fileCount,
-          ),
-        );
-        const detail = await this.remote.getArtifactVersion(version.id).catch(() => null);
-        if (detail === null) {
-          lines.push(text.artifacts.filesUnavailable);
-        } else {
-          lines.push(...detail.files.map((file) => text.artifacts.file(file.fileName, formatBytes(file.sizeBytes))));
-        }
-      }
-      if (ordered.length > 10) {
-        lines.push("", text.artifacts.more(ordered.length - 10));
-      }
-      lines.push("", text.artifacts.fetchHint);
-      return textResult(lines.join("\n"));
-    });
-  }
-
-  async artifactFetch(ctx: ToolSessionContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const f = toolFormat(ctx.locale);
-    const text = f.t.toolReply;
-    return this.guard(f, async () => {
-      const versionNumber = Number(args["version"]);
-      if (!Number.isSafeInteger(versionNumber) || versionNumber < 1) {
-        return failure(text.artifacts.invalidVersion);
-      }
-      const requirement = await this.target(ctx, args["number"]);
-      const versions = await this.remote.listArtifactVersions(requirement.id).catch((error: unknown) => {
-        throw new ToolFailure(f.unavailable(text.what.confirmedVersions(f.requirementLabel(requirement)), error));
-      });
-      const version = versions.items.find((item) => item.versionNumber === versionNumber);
-      if (!version) {
-        const existing = versions.items.map((item) => `v${item.versionNumber}`);
-        return failure(text.artifacts.noSuchVersion(f.requirementLabel(requirement), versionNumber, existing));
-      }
-      const detail: ArtifactVersionDetailDto = await this.remote.getArtifactVersion(version.id).catch((error: unknown) => {
-        throw new ToolFailure(f.unavailable(text.what.versionFiles(versionNumber), error));
-      });
-      const base = materialsDir(await resolveRequirementDir(ctx.projectRoot, requirement));
-      const dir = childDir(base, text.files.confirmedVersionDir(versionNumber));
-      const saved: string[] = [];
-      const usedNames = new Set<string>();
-      for (const file of detail.files) {
-        saved.push(
-          await this.saveStream(
-            f,
-            () => this.remote.downloadArtifactVersionFile(version.id, file.id, AbortSignal.timeout(30 * 60_000)),
-            dir,
-            uniqueName(file.fileName, usedNames, text.files.fallbackName),
-          ),
-        );
-      }
-      return textResult(
-        [
-          text.artifacts.fetched(
-            f.requirementLabel(requirement),
-            versionNumber,
-            f.userName(version.publishedBy),
-            formatTime(version.publishedAt),
-            dir.relativePath,
-          ),
-          ...saved.map((path) => `- ${path}`),
-        ].join("\n"),
-      );
     });
   }
 
@@ -443,55 +368,8 @@ export class RequirementTools {
     });
   }
 
-  /** 发布确认版的确认卡内容：项目文件逐个检查存在，已有附件逐个对上 ID。 */
-  async preparePublish(
-    ctx: ToolSessionContext,
-    args: Record<string, unknown>,
-  ): Promise<SuDuoToolConfirmationDto | ToolResult> {
-    const f = toolFormat(ctx.locale);
-    const text = f.t.toolReply;
-    return this.guardPrepare(f, async () => {
-      const paths = stringArray(args["paths"]);
-      const attachmentIds = stringArray(args["attachmentIds"]);
-      if (paths.length === 0 && attachmentIds.length === 0) {
-        return failure(text.write.noFiles);
-      }
-      const requirement = await this.ownRequirement(ctx);
-      const files: NonNullable<SuDuoToolConfirmationDto["publish"]>["files"] = [];
-      for (const path of paths) {
-        const guarded = await guardExistingPath(ctx.projectRoot, path).catch(() => null);
-        const info = guarded ? await stat(guarded.absolutePath).catch(() => null) : null;
-        if (!guarded || !info?.isFile()) {
-          return failure(text.write.fileNotFound(path));
-        }
-        files.push({ name: basename(guarded.absolutePath), sizeBytes: info.size, source: "path", ref: guarded.relativePath });
-      }
-      if (attachmentIds.length > 0) {
-        const attachments = await this.attachmentsOf(f, requirement);
-        for (const id of attachmentIds) {
-          const attachment = attachments.find((item) => item.id === id);
-          if (!attachment) {
-            return failure(text.write.attachmentNotFound(f.requirementLabel(requirement), id));
-          }
-          files.push({ name: attachment.fileName, sizeBytes: attachment.sizeBytes, source: "attachment", ref: attachment.id });
-        }
-      }
-      const note = typeof args["note"] === "string" && args["note"].trim() !== "" ? args["note"].trim() : null;
-      return {
-        tool: "artifact_publish",
-        requirement: confirmationRequirement(requirement),
-        publish: { files, note },
-        duplicateOf: null,
-      };
-    });
-  }
-
-  /** 用户确认后执行。`operationKey` 用审批 ID，重放不会多发确认版。 */
-  async executeWrite(
-    ctx: ToolSessionContext,
-    confirmation: SuDuoToolConfirmationDto,
-    operationKey: string,
-  ): Promise<ToolResult> {
+  /** 用户确认后执行。写工具只剩发评论（确认版已停用）；历史上的发布确认卡不再执行。 */
+  async executeWrite(ctx: ToolSessionContext, confirmation: SuDuoToolConfirmationDto): Promise<ToolResult> {
     const f = toolFormat(ctx.locale);
     const text = f.t.toolReply;
     if (confirmation.tool === "comment_submit") {
@@ -510,49 +388,7 @@ export class RequirementTools {
         return writeFailure(f, "comment", error);
       }
     }
-    const publish = confirmation.publish;
-    if (!publish) {
-      return failure(text.write.incomplete);
-    }
-    const uploaded: string[] = [];
-    try {
-      const attachmentIds: string[] = [];
-      const changedAfterConfirm: string[] = [];
-      for (const file of publish.files) {
-        if (file.source === "attachment") {
-          attachmentIds.push(file.ref);
-          continue;
-        }
-        // 确认之后文件又被改过：照常发布用户确认的这个文件的当前内容，但在结果里说清（ADR-0004：检测并告知）。
-        const current = await stat(join(ctx.projectRoot, file.ref)).catch(() => null);
-        if (current !== null && file.sizeBytes !== null && current.size !== file.sizeBytes) {
-          changedAfterConfirm.push(text.write.changedFile(file.ref, formatBytes(file.sizeBytes), formatBytes(current.size)));
-        }
-        const attachmentId = await this.uploadProjectFile(f, ctx, confirmation.requirement.id, file.ref);
-        attachmentIds.push(attachmentId);
-        uploaded.push(text.write.uploadedFile(file.name, attachmentId));
-      }
-      const version = await this.remote.publishArtifactVersion(confirmation.requirement.id, {
-        operationKey,
-        attachmentIds,
-        ...(publish.note === null ? {} : { note: publish.note }),
-      });
-      return textResult(
-        text.write.published(
-          confirmationLabel(f, confirmation),
-          version.versionNumber,
-          version.fileCount,
-          formatTime(version.publishedAt),
-        ) + (changedAfterConfirm.length === 0 ? "" : text.write.changedAfterConfirm(changedAfterConfirm)),
-      );
-    } catch (error) {
-      const result = error instanceof ToolFailure ? error.result : writeFailure(f, "artifact", error);
-      if (uploaded.length === 0) {
-        return result;
-      }
-      // 部分文件已经上传成需求附件：说清楚，免得用户重试时再传一遍（ADR-0004：告知现状与选项）。
-      return failure(`${textOfResult(result)}${text.write.uploadedNotPublished(uploaded)}`);
-    }
+    return failure(text.write.incomplete);
   }
 
   // ───────────────────────────── 内部 ─────────────────────────────
@@ -667,11 +503,25 @@ export class RequirementTools {
     return lines;
   }
 
-  private async download(f: ToolFormat, attachmentId: string, fileName: string): Promise<Buffer> {
-    const response = await this.remote.downloadAttachment(attachmentId, AbortSignal.timeout(5 * 60_000)).catch((error: unknown) => {
-      throw new ToolFailure(f.unavailable(f.t.toolReply.what.attachmentContent(fileName), error));
+  private async download(f: ToolFormat, file: ViewableFile): Promise<Buffer> {
+    const response = await file.open(AbortSignal.timeout(5 * 60_000)).catch((error: unknown) => {
+      throw new ToolFailure(f.unavailable(f.t.toolReply.what.attachmentContent(file.fileName), error));
     });
     return Buffer.from(await response.arrayBuffer());
+  }
+
+  /** 这条需求的评论文件；不存在（404）或属于别的需求时为 null，其他失败是「查不到」。 */
+  private async commentFileOf(f: ToolFormat, requirement: RequirementDetailDto, fileId: string): Promise<ViewableFile | null> {
+    let file;
+    try {
+      file = await this.remote.getCommentFile(fileId);
+    } catch (error) {
+      if (error instanceof ApiError && (error.statusCode === 404 || error.statusCode === 400)) return null;
+      throw new ToolFailure(f.unavailable(f.t.toolReply.what.attachmentContent(fileId), error));
+    }
+    if (file.requirementId !== requirement.id) return null;
+    // 内联下载：云端按扩展名给出真实类型；不能内联的类型照常给字节。
+    return { ...file, open: (signal) => this.remote.downloadCommentFile(file.id, { disposition: "inline", signal }) };
   }
 
   /** 流式下载到 `dir/fileName`（先写临时文件再改名，重复拉取直接覆盖）；返回相对项目目录的路径。 */
@@ -718,35 +568,11 @@ export class RequirementTools {
     return join(dir.relativePath, safeName);
   }
 
-  private async uploadProjectFile(
-    f: ToolFormat,
-    ctx: ToolSessionContext,
-    requirementId: string,
-    relativePath: string,
-  ): Promise<string> {
-    const guarded = await guardExistingPath(ctx.projectRoot, relativePath).catch(() => {
-      throw new ToolFailure(failure(f.t.toolReply.write.projectFileMissing(relativePath)));
-    });
-    const size = (await stat(guarded.absolutePath)).size;
-    const form = new FormData();
-    form.set("file", await openAsBlob(guarded.absolutePath), basename(guarded.absolutePath));
-    // 借 Request 生成 multipart 正文与边界，文件按需从磁盘读，不整个读进内存。
-    const request = new Request("http://suduo.local/upload", { method: "POST", body: form });
-    const contentType = request.headers.get("content-type");
-    if (!request.body || !contentType) {
-      // 不变式：正常走不到（FormData 总能生成正文），开发者报错直接写英文。
-      throw new Error("Couldn't build the upload body");
-    }
-    const response = await this.remote.uploadAttachment({
-      requirementId,
-      body: request.body as unknown as AsyncIterable<Uint8Array>,
-      contentType,
-      attachmentSize: String(size),
-      idempotencyKey: randomUUID(),
-      signal: AbortSignal.timeout(30 * 60_000),
-    });
-    return response.attachment.id;
-  }
+}
+
+/** 附件按上传时间从新到旧（同一时刻按 id 倒序，结果稳定）。 */
+export function newestFirst<T extends { createdAt: string; id: string }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
 }
 
 function confirmationRequirement(requirement: RequirementDetailDto): SuDuoToolConfirmationDto["requirement"] {
@@ -766,7 +592,7 @@ function confirmationLabel(f: ToolFormat, confirmation: SuDuoToolConfirmationDto
 }
 
 /** 远程写失败：4xx 说明远程没接受；其他情况可能已经送达，提醒核对、不要重发。 */
-function writeFailure(f: ToolFormat, kind: "comment" | "artifact", error: unknown): ToolResult {
+function writeFailure(f: ToolFormat, kind: "comment", error: unknown): ToolResult {
   if (error instanceof ApiError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408) {
     return failure(f.t.toolReply.write.notSent(kind, f.reasonOf(error)));
   }
@@ -782,7 +608,21 @@ function commentText(comment: { body: string; system?: CommentSystemContent }, f
   if (system?.kind === "artifact_published") {
     return f.t.toolReply.comments.system.artifactPublished(system.params.versionNumber, system.params.fileCount);
   }
+  if (system?.kind === "comment_files") {
+    return f.t.toolReply.comments.system.commentFiles(system.params.fileCount);
+  }
   return comment.body;
+}
+
+/** suduo_attachment_view 能打开的文件：需求附件或评论文件。 */
+interface ViewableFile {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBy: AttachmentDto["uploadedBy"];
+  createdAt: string;
+  open(signal: AbortSignal): Promise<Response>;
 }
 
 /** 活动时间线条目的一句话描述（「把状态从 A 改成 B」），按会话的语言。 */
@@ -811,6 +651,8 @@ export function describeActivity(entry: RequirementActivityEntryDto, locale: Loc
             return text.statusChanged(f.statusLabel(change.from), f.statusLabel(change.to));
           case "assignee":
             return text.assigneeChanged(f.userName(change.from), f.userName(change.to));
+          case "priority":
+            return text.priorityChanged(f.priorityLabel(change.from), f.priorityLabel(change.to));
           default:
             return text.updated;
         }
@@ -820,7 +662,7 @@ export function describeActivity(entry: RequirementActivityEntryDto, locale: Loc
   }
 }
 
-function attachmentKind(attachment: AttachmentDto): "image" | "text" | "other" {
+function attachmentKind(attachment: Pick<AttachmentDto, "contentType" | "fileName">): "image" | "text" | "other" {
   const type = attachment.contentType.toLowerCase().split(";")[0]?.trim() ?? "";
   if (INLINE_IMAGE_TYPES.has(type)) {
     return "image";
@@ -831,19 +673,6 @@ function attachmentKind(attachment: AttachmentDto): "image" | "text" | "other" {
   const dot = attachment.fileName.lastIndexOf(".");
   const extension = dot >= 0 ? attachment.fileName.slice(dot).toLowerCase() : "";
   return TEXT_EXTENSIONS.has(extension) ? "text" : "other";
-}
-
-/** 同一批里重名的文件改成「名字 (2).扩展名」，不互相覆盖。 */
-function uniqueName(fileName: string, used: Set<string>, fallback: string): string {
-  let candidate = safeFileName(fileName, fallback);
-  const dot = candidate.lastIndexOf(".");
-  const stem = dot > 0 ? candidate.slice(0, dot) : candidate;
-  const extension = dot > 0 ? candidate.slice(dot) : "";
-  for (let index = 2; used.has(candidate); index += 1) {
-    candidate = `${stem} (${index})${extension}`;
-  }
-  used.add(candidate);
-  return candidate;
 }
 
 /** `fallback`：清理后为空时的兜底名，按会话语言（`toolReply.files.fallbackName`）。 */
@@ -857,20 +686,9 @@ function safeFileName(fileName: string, fallback: string): string {
   return /^(CON|PRN|AUX|NUL|COM\d|LPT\d)$/u.test(stem) ? `_${cleaned}` : cleaned;
 }
 
-function textOfResult(result: ToolResult): string {
-  return result.contentItems.map((item) => (item.type === "inputText" ? item.text : "")).join("\n");
-}
-
-
 function requireString(f: ToolFormat, value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new ToolFailure(failure(f.t.toolReply.args.missing(name)));
   }
   return value;
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim())
-    : [];
 }

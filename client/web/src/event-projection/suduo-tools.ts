@@ -85,12 +85,6 @@ export function duplicateNotice(
   return confirmation.duplicateOf.pending === true ? text.duplicatePending(at) : text.duplicateSent(at);
 }
 
-/** 待发布文件的来源：项目里的文件（确认后先上传）或需求已有的附件。 */
-export function publishFileSource(file: ConfirmationFile, t: Messages = messagesFor(currentLocale())): string {
-  const text = t.timeline.suDuoTool;
-  return file.source === "path" ? text.projectFile(file.ref) : text.existingAttachment;
-}
-
 /** 时间线上工具步骤的标题：认识的 suduo 工具用动作名，其它显示「调用 原名」。 */
 export function dynamicToolTitle(tool: string, t: Messages = messagesFor(currentLocale())): string {
   const label = suDuoToolTitle(currentSuDuoToolName(tool), t);

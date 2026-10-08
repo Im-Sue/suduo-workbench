@@ -1,4 +1,4 @@
-import type { RequirementStatus } from "@suduo/cloud-contracts";
+import type { RequirementSort, RequirementStatus } from "@suduo/cloud-contracts";
 
 /**
  * 需求模块的查询键。按前缀组织，实时事件可以精确失效：
@@ -8,6 +8,10 @@ import type { RequirementStatus } from "@suduo/cloud-contracts";
 export interface RequirementListFilters {
   search?: string;
   assignee?: string;
+  /** 优先级筛选，逗号分隔（`urgent,none`），原样作为查询参数。 */
+  priority?: string;
+  /** 列内排序；缺省按最近更新（与需求服务的缺省一致）。 */
+  sort?: RequirementSort;
 }
 
 export const requirementKeys = {

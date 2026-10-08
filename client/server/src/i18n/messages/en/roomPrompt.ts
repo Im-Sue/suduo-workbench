@@ -28,7 +28,7 @@ export const roomPrompt = {
       "- When a tool can't look something up, state the reason truthfully. Don't describe it as “none”.",
     ],
     requirementToolRules: [
-      "- This room belongs to the requirement above: view its details, comments, attachments, and confirmed versions with suduo_requirement_get / suduo_requirement_comments / suduo_requirement_attachments / suduo_attachment_view / suduo_artifact_versions / suduo_artifact_fetch (leave out the number parameter to use this requirement).",
+      "- This room belongs to the requirement above: view its details, comments, and attachments with suduo_requirement_get / suduo_requirement_comments / suduo_requirement_attachments / suduo_attachment_view (leave out the number parameter to use this requirement).",
     ],
     requirementHeading: "## The requirement this room belongs to",
     requirementUnavailable: (label: string, reason: string) =>

@@ -27,6 +27,17 @@ export const requirements = {
     /** 按成员筛选、但成员列表还没取到名字时。 */
     someone: "指定成员",
     anyAssignee: "不按负责人筛选",
+    priority: "优先级",
+    /** 选中的档位用顿号连起来，如「优先级：紧急、高」。 */
+    priorityValue: (labels: readonly string[]) => `优先级：${labels.join("、")}`,
+    anyPriority: "不按优先级筛选",
+  },
+  /** 看板每列、列表每组内的排序方式（记在本机）。 */
+  sort: {
+    label: "排序方式",
+    value: (label: string) => `排序：${label}`,
+    priority: "优先级",
+    updated: "最近更新",
   },
   /** 筛选或搜索后一条都没有。 */
   noResult: {
@@ -71,15 +82,17 @@ export const requirements = {
     header: {
       number: "编号",
       title: "标题",
+      priority: "优先级",
       assignee: "负责人",
-      counts: "材料 · 评论 · 会话",
+      counts: "附件 · 评论 · 会话",
       updated: "更新",
     },
   },
   /** 看板卡片。 */
   card: {
-    description: (status: string, assignee: string) => `${status} · 负责人 ${assignee} · 按 1–7 修改状态`,
-    attachments: (count: number) => `${String(count)} 份材料`,
+    description: (status: string, assignee: string, priority: string | null = null) =>
+      `${status}${priority === null ? "" : ` · 优先级 ${priority}`} · 负责人 ${assignee} · 按 1–7 修改状态`,
+    attachments: (count: number) => `${String(count)} 个附件`,
     comments: (count: number) => `${String(count)} 条评论`,
     localSessions: (count: number) => `本机有 ${String(count)} 个会话`,
   },
@@ -98,6 +111,9 @@ export const requirements = {
   statusMenu: {
     triggerLabel: (label: string, pending: boolean) => `状态：${label}${pending ? "，正在保存" : "，点击修改"}`,
   },
+  priorityMenu: {
+    triggerLabel: (label: string, pending: boolean) => `优先级：${label}${pending ? "，正在保存" : "，点击修改"}`,
+  },
   /** 新建需求对话框。 */
   create: {
     title: "新建需求",
@@ -109,8 +125,8 @@ export const requirements = {
     titleRequired: "写一个标题，方便大家在看板上认出它",
     summaryLabel: "描述",
     summaryPlaceholder: "补充背景、目标或验收标准，支持 Markdown（可稍后再写）",
-    addMaterials: "添加材料",
-    pendingFiles: "待上传的材料",
+    addMaterials: "添加附件",
+    pendingFiles: "待上传的附件",
     removeFile: (name: string) => `移除 ${name}`,
     /** 选文件时预检不通过的说明：最多列三个，其余只给总数。 */
     rejectedItem: (name: string, reason: string) => `「${name}」${reason}`,
@@ -120,8 +136,8 @@ export const requirements = {
     createMore: "继续新建下一条",
     submit: "创建需求",
     created: (code: string, uploading: number) =>
-      `已创建 ${code}${uploading > 0 ? `，${String(uploading)} 份材料正在上传` : ""}`,
-    uploadFailed: (code: string, name: string) => `${code} 的材料「${name}」没能上传`,
+      `已创建 ${code}${uploading > 0 ? `，${String(uploading)} 个附件正在上传` : ""}`,
+    uploadFailed: (code: string, name: string) => `${code} 的附件「${name}」没能上传`,
     view: "查看",
   },
   /** 需求速览面板。 */
@@ -138,6 +154,7 @@ export const requirements = {
     loadFailed: (message: string) => `没能打开这条需求：${message}`,
     field: {
       assignee: "负责人",
+      priority: "优先级",
       created: "创建",
       updated: "更新",
     },

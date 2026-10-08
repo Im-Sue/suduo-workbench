@@ -2,6 +2,7 @@ import { AuthService } from "./application/auth-service.js";
 import { AttachmentService } from "./application/attachment-service.js";
 import { ArtifactVersionService } from "./application/artifact-version-service.js";
 import { CollaborationService } from "./application/collaboration-service.js";
+import { CommentFileService } from "./application/comment-file-service.js";
 import { RequirementsEventHub } from "./application/event-hub.js";
 import { ROOM_FILE_ROOT_MARKER } from "./application/rooms/constants.js";
 import { createRoomsModule } from "./application/rooms/module.js";
@@ -11,6 +12,7 @@ import { CollaborationRepository } from "./infrastructure/collaboration-reposito
 import { AttachmentRepository } from "./infrastructure/attachment-repository.js";
 import { AttachmentStorage } from "./infrastructure/attachment-storage.js";
 import { ArtifactVersionRepository } from "./infrastructure/artifact-version-repository.js";
+import { CommentFileRepository } from "./infrastructure/comment-file-repository.js";
 import type { Database } from "./infrastructure/database.js";
 import { LocalDiskBlobStore } from "./infrastructure/storage/local-disk-blob-store.js";
 import { UserRepository } from "./infrastructure/user-repository.js";
@@ -45,6 +47,13 @@ export async function createApplication(
   );
   await roomBlobStore.initialize();
   await attachments.initialize();
+  // 评论文件与房间文件共用一份存储（只增不删）；允许的类型取附件清单，保证「存为附件」一定能存。
+  const commentFiles = new CommentFileService(
+    new CommentFileRepository(database),
+    roomBlobStore,
+    attachments,
+    config.allowedAttachmentExtensions,
+  );
   try {
     let server: Awaited<ReturnType<typeof buildHttpServer>> | null = null;
     const rooms = createRoomsModule({
@@ -69,6 +78,7 @@ export async function createApplication(
       attachmentStorage,
       events: new RequirementsEventHub(),
       rooms,
+      commentFiles,
     });
     // 到期共享、掉线 Agent 的扫描：进程内定时，服务关闭时（onClose）停止。
     rooms.sweeper.start();

@@ -344,10 +344,12 @@ describe("产物版本 HTTP 路由", () => {
       id: systemCommentId,
       body: "Published confirmed version 4 with 2 files.",
       system: { kind: "artifact_published", params: { versionNumber: 4, fileCount: 2 } },
+      files: [],
     });
     expect(comments.find((comment) => comment?.id !== systemCommentId)).toEqual({
       id: expect.any(String),
       body: "looks good",
+      files: [],
     });
   });
 });

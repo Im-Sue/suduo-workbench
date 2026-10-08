@@ -182,7 +182,7 @@ export function DesignSystemPage() {
         <Section title="按钮">
           <Row label="变体">
             <Button variant="primary"><PlayIcon />开始会话</Button>
-            <Button variant="secondary">发布确认版</Button>
+            <Button variant="secondary">上传附件</Button>
             <Button variant="ghost">取消</Button>
             <Button variant="danger">删除附件</Button>
             <Button variant="danger-ghost">退出登录</Button>
@@ -279,7 +279,7 @@ export function DesignSystemPage() {
               <AlertDialogTrigger asChild><Button variant="danger-ghost"><Trash2Icon />删除附件</Button></AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogTitle>删除「字段映射.csv」？</AlertDialogTitle>
-                <AlertDialogDescription>删除后其他成员也看不到这个文件。已发布的确认版里的副本不受影响。</AlertDialogDescription>
+                <AlertDialogDescription>删除后团队成员都看不到这个附件，也无法恢复。</AlertDialogDescription>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
                   <AlertDialogAction>删除附件</AlertDialogAction>
@@ -381,7 +381,7 @@ export function DesignSystemPage() {
           <Row label="徽标">
             <Badge>3</Badge>
             <Badge variant="primary">推荐</Badge>
-            <Badge variant="success">确认版 · 第 2 版</Badge>
+            <Badge variant="success">已上传</Badge>
             <Badge variant="warning">等你确认</Badge>
             <Badge variant="danger">失败</Badge>
             <Badge variant="outline">项目会话</Badge>

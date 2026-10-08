@@ -20,8 +20,8 @@ export interface RoomsRouteDependencies {
 
 type Method = "GET" | "POST" | "PATCH";
 
-/** 远程文件响应里原样转给浏览器的头（Cache-Control 单独处理）。 */
-const FILE_RESPONSE_HEADERS = [
+/** 远程文件响应里原样转给浏览器的头（Cache-Control 单独处理）。评论文件下载也用它。 */
+export const FILE_RESPONSE_HEADERS = [
   "content-type",
   "content-length",
   "content-range",
@@ -32,8 +32,8 @@ const FILE_RESPONSE_HEADERS = [
   "x-attachment-sha256",
 ] as const;
 
-/** 上传时原样转给远程的请求头（Content-Type 单独处理）。 */
-const UPLOAD_FORWARD_HEADERS = ["content-length", "x-attachment-size", "x-file-size", "idempotency-key"] as const;
+/** 上传时原样转给远程的请求头（Content-Type 单独处理）。评论文件上传也用它。 */
+export const UPLOAD_FORWARD_HEADERS = ["content-length", "x-attachment-size", "x-file-size", "idempotency-key"] as const;
 
 export function registerRoomsRoutes(server: FastifyInstance, dependencies: RoomsRouteDependencies): void {
   const remote = dependencies.remote;

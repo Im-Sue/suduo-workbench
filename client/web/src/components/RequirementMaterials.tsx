@@ -9,6 +9,7 @@ import { RegionError } from "../feedback/components/index.js";
 import {
   formatBytes,
   inlineUrl,
+  newestFirst,
   previewKind,
   requirementCode,
 } from "../features/requirements/format.js";
@@ -42,7 +43,7 @@ export function requirementPageHref(context: SessionContextDto): string | null {
 /**
  * 会话右栏「需求」标签：关联需求的概要——编号、标题、状态、开工时与现在的版本、附件，以及去需求页的入口。
  * 数据来自会话上下文接口 + 需求详情 / 附件接口；任何一项查不到都说「查不到：原因」并给重试，不显示成「没有」。
- * 评论、确认版等完整内容在需求页；模型在会话里用 suduo 工具按需查看（ADR-0008）。
+ * 评论等完整内容在需求页；模型在会话里用 suduo 工具按需查看（ADR-0008）。
  */
 export function RequirementMaterials({
   context,
@@ -91,8 +92,9 @@ function RequirementSummary({ context, onNavigate }: { context: SessionContextDt
   const linked = context.requirement;
   const requirementId = linked?.remoteRequirementId ?? "";
   const [detail, retryDetail] = useRemote<RequirementDetailItemDto>(requirementId, () => api.getRequirement(requirementId));
+  // 最新在前，与需求页附件区一致。
   const [attachments, retryAttachments] = useRemote<RequirementsAttachmentDto[]>(requirementId, async () =>
-    (await api.listRequirementAttachments(requirementId)).items,
+    newestFirst((await api.listRequirementAttachments(requirementId)).items),
   );
   if (linked === null) return null;
 

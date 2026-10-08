@@ -168,6 +168,7 @@ export const rooms = {
     imagePreview: "Image preview",
     viewImage: (name: string) => `View image ${name}`,
     download: (name: string) => `Download ${name}`,
+    preview: (name: string) => `Preview ${name} in a new tab`,
     previewUnavailable: "This image can't be previewed here. Download it to view.",
     downloadAction: "Download",
     downloadOriginal: "Download original",

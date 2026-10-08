@@ -25,7 +25,7 @@ scope_source_roots: ["client/contracts", "cloud/contracts"]
 
 | 包 | 内容 | 使用方 |
 |---|---|---|
-| `@suduo/cloud-contracts` | 云端 `/v2` API：认证、项目、需求、评论、附件、产物版本、活动、统计、审计、房间（消息 / 文件 / Agent / 共享 / 任务）、分页、状态、错误、健康、限额与 schema | `cloud/server`、`client/server`、`client/web`、`client/contracts` |
+| `@suduo/cloud-contracts` | 云端 `/v2` API：认证、项目、需求（含优先级）、评论（含评论文件）、附件、产物版本（只读历史）、活动、统计、审计、房间（消息 / 文件 / Agent / 共享 / 任务）、分页、状态、错误、健康（含云端功能声明）、限额与 schema | `cloud/server`、`client/server`、`client/web`、`client/contracts` |
 | `@suduo/client-contracts` | 会话运行时（事件信封、运行时接口、JSON-RPC 传输、审批模式、版本常量、会话工具），以及只在本机 BFF 与前端之间的 `local`（本机字段、目录浏览、路径检查）、`workbench`（我的工作）、`attachment-preview`（附件在线预览白名单） | `client/server`、`client/web` |
 
 2026-10-02 之前两者是同一个包 `@zjwork/contracts`：根导出对应现在的客户端契约，`./requirements-v2` 子路径对应现在的云端契约（其中 local / workbench / attachment-preview 三份搬到了客户端）。

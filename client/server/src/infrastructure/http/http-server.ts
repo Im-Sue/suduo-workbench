@@ -43,7 +43,6 @@ import {
   AUDIT_RESOURCE_TYPES,
   type AuditResourceType,
   type ListAuditQuery,
-  type PublishArtifactVersionRequest,
   type ProjectStatsQuery,
 } from "@suduo/cloud-contracts";
 import {
@@ -107,7 +106,12 @@ import {
   registerSystemActivityRoutes,
   type SystemActivityRouteDependencies,
 } from "./routes/system-activity-routes.js";
-import { registerRoomsRoutes, type RoomsRouteDependencies } from "./routes/rooms-routes.js";
+import {
+  FILE_RESPONSE_HEADERS,
+  UPLOAD_FORWARD_HEADERS,
+  registerRoomsRoutes,
+  type RoomsRouteDependencies,
+} from "./routes/rooms-routes.js";
 import type { SessionListService } from "../../application/session-list-service.js";
 import { registerRequestLocale, requestLocaleOf } from "../../i18n/locale.js";
 
@@ -934,7 +938,7 @@ function registerRequirementsV2Routes(
     async (request) =>
       service.listRequirements(
         request.params.projectId,
-        requirementsCursorQuery(request.query, ["status", "search", "assignee", "creator"]),
+        requirementsCursorQuery(request.query, ["status", "search", "assignee", "creator", "priority", "sort"]),
       ),
   );
 
@@ -1033,17 +1037,6 @@ function registerRequirementsV2Routes(
     async (request) => service.listArtifactVersions(request.params.requirementId),
   );
 
-  server.post<{ Params: { requirementId: string } }>(
-    "/api/v2/requirements/:requirementId/artifact-versions",
-    async (request, reply) =>
-      reply.code(201).send(
-        await service.publishArtifactVersion(
-          request.params.requirementId,
-          requireObject<PublishArtifactVersionRequest>(request.body),
-        ),
-      ),
-  );
-
   server.get<{ Params: { versionId: string } }>(
     "/api/v2/artifact-versions/:versionId",
     async (request) => service.getArtifactVersion(request.params.versionId),
@@ -1067,6 +1060,80 @@ function registerRequirementsV2Routes(
         inline: request.query.disposition === "inline",
       });
     },
+  );
+
+  // 评论文件（需求附件评论文件与优先级 4.2）：上传流式转发、状态码原样交回；下载透传 Range 与内联（同房间文件）。
+  server.post<{ Params: { requirementId: string }; Body: Readable }>(
+    "/api/v2/requirements/:requirementId/comment-files",
+    async (request, reply) => {
+      const contentType = headerValue(request.headers["content-type"]);
+      if (!contentType?.toLowerCase().startsWith("multipart/form-data;")) {
+        if (request.body instanceof Readable) request.body.resume();
+        throw validation((t) => t.http.uploadMustBeMultipart);
+      }
+      if (!(request.body instanceof Readable)) {
+        throw validation((t) => t.http.uploadStreamInvalid);
+      }
+      const headers: Record<string, string> = {};
+      for (const name of UPLOAD_FORWARD_HEADERS) {
+        const value = headerValue(request.headers[name]);
+        if (value !== undefined) headers[name] = value;
+      }
+      const abort = new AbortController();
+      request.raw.once("aborted", () => abort.abort());
+      reply.raw.once("close", () => abort.abort());
+      const result = await service.uploadCommentFile({
+        requirementId: request.params.requirementId,
+        body: request.body,
+        contentType,
+        headers,
+        signal: abort.signal,
+      });
+      return reply.code(result.status).send(result.body);
+    },
+  );
+
+  server.get<{ Params: { fileId: string }; Querystring: { disposition?: unknown } }>(
+    "/api/v2/comment-files/:fileId/content",
+    async (request, reply) => {
+      const abort = new AbortController();
+      reply.raw.once("close", () => abort.abort());
+      const disposition = request.query.disposition;
+      const range = headerValue(request.headers["range"]);
+      const ifRange = headerValue(request.headers["if-range"]);
+      const ifNoneMatch = headerValue(request.headers["if-none-match"]);
+      const response = await service.downloadCommentFile(request.params.fileId, {
+        ...(range === undefined ? {} : { range }),
+        ...(ifRange === undefined ? {} : { ifRange }),
+        ...(ifNoneMatch === undefined ? {} : { ifNoneMatch }),
+        ...(disposition === "inline" || disposition === "attachment" ? { disposition } : {}),
+        signal: abort.signal,
+      });
+      reply.code(response.status);
+      for (const name of FILE_RESPONSE_HEADERS) {
+        const value = response.headers.get(name);
+        if (value !== null) reply.header(name, value);
+      }
+      // 远程内容在本机源下打开：不嗅探类型，脚本一律不跑。
+      reply.header("X-Content-Type-Options", "nosniff");
+      reply.header("Content-Security-Policy", "sandbox");
+      reply.header("Cache-Control", response.headers.get("cache-control") ?? "private, no-cache");
+      if (!response.body || response.status === 304) {
+        await response.body?.cancel().catch(() => undefined);
+        return reply.send();
+      }
+      return reply.send(Readable.fromWeb(response.body as NodeWebReadableStream<Uint8Array>));
+    },
+  );
+
+  server.get<{ Params: { fileId: string } }>(
+    "/api/v2/comment-files/:fileId",
+    async (request) => service.getCommentFile(request.params.fileId),
+  );
+
+  server.post<{ Params: { fileId: string } }>(
+    "/api/v2/comment-files/:fileId/save-as-attachment",
+    async (request, reply) => reply.code(201).send(await service.saveCommentFileAsAttachment(request.params.fileId)),
   );
 
   server.post<{ Params: { requirementId: string }; Body: Readable }>(

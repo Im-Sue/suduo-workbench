@@ -207,7 +207,7 @@ describe("审计项目归属与写入完备性", () => {
           requirementVersion = requirement.version;
           return [{
             action: "requirement.created", projectId: currentProject.id, resourceType: "requirement", resourceId: requirement.id,
-            before: null, after: { ...requirementAudit(requirement), assignee: null },
+            before: null, after: { ...requirementAudit(requirement), assignee: null, priority: null },
           }];
         },
       },
@@ -257,6 +257,23 @@ describe("审计项目归属与写入完备性", () => {
             action: "requirement.assignee_changed", projectId: requirement.projectId, resourceType: "requirement", resourceId: requirement.id,
             before: { assignee: null },
             after: { assignee: { id: actorId, displayName: "Audit User" } },
+          }];
+        },
+      },
+      "requirement.priority_changed": {
+        invoke: async () => {
+          const before = required(requirement, "需求");
+          const response = await server.inject({
+            method: "PATCH", url: `/v2/requirements/${before.id}`, headers: authorization(actorId),
+            payload: { priority: "high" },
+          });
+          expect(response.statusCode).toBe(200);
+          requirement = response.json<RequirementDto>();
+          expect(requirement.version).toBe(before.version);
+          return [{
+            action: "requirement.priority_changed", projectId: requirement.projectId, resourceType: "requirement", resourceId: requirement.id,
+            before: { priority: null },
+            after: { priority: "high" },
           }];
         },
       },
@@ -501,6 +518,9 @@ describe("审计项目归属与写入完备性", () => {
     expect(filtered.items).toHaveLength(13);
     expect(filtered.items.map((item) => item.action)).not.toContain(
       "requirement.assignee_changed",
+    );
+    expect(filtered.items.map((item) => item.action)).not.toContain(
+      "requirement.priority_changed",
     );
     await expect(pool.query(
       "SELECT 1 FROM audit_logs WHERE project_id = $1 AND action = 'requirement.assignee_changed'",

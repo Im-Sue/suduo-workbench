@@ -12,7 +12,11 @@ import {
   type RequirementListItemDto,
 } from "@suduo/client-contracts";
 import {
+  type CommentFileDto,
+  REQUIREMENT_PRIORITY_FILTER_NONE,
   parseRequirementNumberQuery,
+  parseRequirementPriorityFilter,
+  requirementPriorityRank,
   type CreateRequirementRequest,
   type RequirementStatus,
   type UpdateRequirementRequest,
@@ -56,6 +60,8 @@ export function columnQuery(projectId: string, status: RequirementStatus, filter
           limit: COLUMN_PAGE_SIZE,
           ...(filters.search === undefined || filters.search === "" ? {} : { search: filters.search }),
           ...(filters.assignee === undefined ? {} : { assignee: filters.assignee }),
+          ...(filters.priority === undefined ? {} : { priority: filters.priority }),
+          ...(filters.sort === undefined ? {} : { sort: filters.sort }),
           ...(pageParam === undefined ? {} : { cursor: pageParam }),
         },
         { signal },
@@ -64,6 +70,23 @@ export function columnQuery(projectId: string, status: RequirementStatus, filter
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     staleTime: 30_000,
   });
+}
+
+/**
+ * 一列各页拼起来。翻页之间有人改了排序依据（更新时间、优先级），同一条可能在相邻两页各出现一次：
+ * 只留第一次出现的那条，等实时事件让整列重取后自然校正。
+ */
+export function columnItems(data: { pages: readonly ListRequirementItemsResponse[] } | undefined): RequirementListItemDto[] {
+  const seen = new Set<string>();
+  const items: RequirementListItemDto[] = [];
+  for (const page of data?.pages ?? []) {
+    for (const item of page.items) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      items.push(item);
+    }
+  }
+  return items;
 }
 
 export function requirementQuery(requirementId: string) {
@@ -272,17 +295,61 @@ function columnStatusOf(queryKey: readonly unknown[]): RequirementStatus | null 
   return queryKey[3] === "column" ? (queryKey[4] as RequirementStatus) : null;
 }
 
-/** 把一条需求写进本项目所有看板列缓存：先从各列移除，再放到所属状态列的最前（服务端按更新时间倒序）。 */
+function columnFiltersOf(queryKey: readonly unknown[]): RequirementListFilters {
+  const filters = queryKey[5];
+  return typeof filters === "object" && filters !== null ? (filters as RequirementListFilters) : {};
+}
+
+/** 列带着优先级筛选时，改完不在筛选里的条目不再放回这一列。 */
+function matchesPriorityFilter(item: RequirementListItemDto, filter: string | undefined): boolean {
+  if (filter === undefined) return true;
+  const values = parseRequirementPriorityFilter(filter);
+  return values === null || values.includes(item.priority ?? REQUIREMENT_PRIORITY_FILTER_NONE);
+}
+
+/** 按优先级排序时 a 是否排在 b 前面：与需求服务一致，(优先级权重, 更新时间, id) 都从大到小。 */
+function sortsBefore(a: RequirementListItemDto, b: RequirementListItemDto): boolean {
+  const rankA = requirementPriorityRank(a.priority);
+  const rankB = requirementPriorityRank(b.priority);
+  if (rankA !== rankB) return rankA > rankB;
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt;
+  return a.id > b.id;
+}
+
+/**
+ * 把一条需求写进本项目所有看板列缓存：先从各列移除，再放进所属状态列。
+ * 按最近更新排的列放在最前（刚改过的就是最新的）；按优先级排的列放到它该在的位置，
+ * 落在已载入的最后一条之后且还有下一页时先不放，等重取（否则会出现在不该出现的位置）。
+ */
 export function placeInColumns(queryClient: QueryClient, item: RequirementListItemDto): void {
   const queries = queryClient.getQueriesData<ColumnData>({ queryKey: requirementKeys.project(item.projectId) });
   for (const [queryKey, data] of queries) {
     const status = columnStatusOf(queryKey);
     if (status === null || data === undefined) continue;
+    const filters = columnFiltersOf(queryKey);
     const pages = data.pages.map((page) => ({ ...page, items: page.items.filter((entry) => entry.id !== item.id) }));
-    if (status === item.status && pages[0] !== undefined) {
-      pages[0] = { ...pages[0], items: [item, ...pages[0].items] };
+    if (status === item.status && pages[0] !== undefined && matchesPriorityFilter(item, filters.priority)) {
+      if (filters.sort === "priority") {
+        insertByPriority(pages, item);
+      } else {
+        pages[0] = { ...pages[0], items: [item, ...pages[0].items] };
+      }
     }
     queryClient.setQueryData<ColumnData>(queryKey, { ...data, pages });
+  }
+}
+
+function insertByPriority(pages: ListRequirementItemsResponse[], item: RequirementListItemDto): void {
+  for (const [index, page] of pages.entries()) {
+    const position = page.items.findIndex((entry) => sortsBefore(item, entry));
+    if (position !== -1) {
+      pages[index] = { ...page, items: [...page.items.slice(0, position), item, ...page.items.slice(position)] };
+      return;
+    }
+  }
+  const last = pages.at(-1);
+  if (last !== undefined && last.nextCursor === null) {
+    pages[pages.length - 1] = { ...last, items: [...last.items, item] };
   }
 }
 
@@ -292,6 +359,7 @@ function patchItem(item: RequirementListItemDto, patch: UpdateRequirementRequest
     ...(patch.title === undefined ? {} : { title: patch.title }),
     ...(patch.summary === undefined ? {} : { summary: patch.summary }),
     ...(patch.status === undefined ? {} : { status: patch.status }),
+    ...(patch.priority === undefined ? {} : { priority: patch.priority }),
     ...(assignee === undefined ? {} : { assignee }),
     updatedAt: new Date().toISOString(),
   };
@@ -371,10 +439,21 @@ export function useCreateRequirement(projectId: string) {
   });
 }
 
+/** 发评论的变量：正文可以为空（只带文件时）；files 只给发送中的占位显示用。 */
+export interface CreateCommentVariables {
+  body: string;
+  fileIds: readonly string[];
+  files: readonly CommentFileDto[];
+}
+
 export function useCreateComment(requirementId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) => api.createRequirementComment(requirementId, { body }),
+    mutationFn: ({ body, fileIds }: CreateCommentVariables) =>
+      api.createRequirementComment(requirementId, {
+        ...(body === "" ? {} : { body }),
+        ...(fileIds.length === 0 ? {} : { fileIds: [...fileIds] }),
+      }),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: requirementKeys.activity(requirementId) });
       void queryClient.invalidateQueries({ queryKey: requirementKeys.detail(requirementId) });

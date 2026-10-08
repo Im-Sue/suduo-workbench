@@ -179,8 +179,6 @@ export const timeline = {
     },
     duplicatePending: (at: string) => `本会话还有一张相同内容的确认卡（${at}）`,
     duplicateSent: (at: string) => `本会话 ${at} 已发过相同内容`,
-    projectFile: (ref: string) => `项目文件 ${ref}`,
-    existingAttachment: "已有附件",
     attachments: (ids: readonly string[]) => `附件 ${ids.join("、")}`,
     version: (version: number) => `第 ${String(version)} 版`,
     quote: (text: string) => `「${text}」`,

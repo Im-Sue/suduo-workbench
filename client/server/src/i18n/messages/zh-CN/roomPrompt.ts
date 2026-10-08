@@ -29,7 +29,7 @@ export const roomPrompt = {
       "- 工具查不到时如实说明原因，不要说成「没有」。",
     ],
     requirementToolRules: [
-      "- 这个房间属于上面的需求：需求详情、评论、附件、确认版用 suduo_requirement_get / suduo_requirement_comments / suduo_requirement_attachments / suduo_attachment_view / suduo_artifact_versions / suduo_artifact_fetch 查看（参数 number 省略即为这条需求）。",
+      "- 这个房间属于上面的需求：需求详情、评论、附件用 suduo_requirement_get / suduo_requirement_comments / suduo_requirement_attachments / suduo_attachment_view 查看（参数 number 省略即为这条需求）。",
     ],
     requirementHeading: "## 这个房间所属的需求",
     /** `label` 是「REQ-12「标题」」。 */

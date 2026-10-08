@@ -8,13 +8,15 @@ export const toolSpec = {
   numberParam: "需求编号，如 REQ-12 或 12。需求会话里省略即为当前需求；项目会话里必填。",
 
   requirementGet:
-    "查询 SuDuo 需求：编号、标题、状态、负责人、版本和完整正文；当前需求还会给出开工时的版本和开工以后的变化（谁、何时、改了什么）。",
+    "查询 SuDuo 需求：编号、标题、状态、优先级、负责人、版本和完整正文；当前需求还会给出开工时的版本和开工以后的变化（谁、何时、改了什么）。",
   requirementComments: {
     description:
       "查看需求的评论（作者、时间、正文；确认版发布说明会标出），每次最多 20 条，结果开头和末尾都给出下一页的 cursor。",
     cursor: "上一页结果末尾给出的 cursor；第一页省略。",
   },
-  requirementAttachments: "列出需求的附件：附件 ID、文件名、类型、大小、上传人、时间。要看内容用 suduo_attachment_view。",
+  requirementAttachments:
+    "列出需求的附件（按上传时间从新到旧）：附件 ID、文件名、类型、大小、上传人、时间。附件是需求的资料（PRD、截图、第三方资料、压缩包等），" +
+    "内容重复时以较新的为准，不重复的互为补充，拿不准就问用户。要看内容用 suduo_attachment_view。",
   attachmentView: {
     /** `snippet` 是在 exec 里查看结果的示例代码（与语言无关，由 catalog 给出）。 */
     description: (snippet: string) =>
@@ -22,14 +24,7 @@ export const toolSpec = {
       "返回字符串：第一行是附件说明；图片附件随后每行一个 data:image/... 地址。在 exec 里这样查看：" +
       snippet +
       "不要用 text() 输出 data:image 地址。",
-    attachmentId: "附件 ID（来自附件清单）。",
-  },
-  artifactVersions: "列出需求的确认版（产物版本）：版本号、发布人、时间、每版的文件清单。",
-  artifactFetch: {
-    /** 目录名与 `toolReply.files.confirmedVersionDir` 一致（英文会话存到 confirmed-version-v<版本>）。 */
-    description:
-      "把某个确认版的全部文件保存到项目的 .suduo/requirements/<需求>/materials/确认版-v<版本>/（保留原文件名，重复拉取直接覆盖），返回保存目录和文件清单，之后可以直接读这些文件。",
-    version: "确认版版本号，如 2。",
+    attachmentId: "附件 ID（来自附件清单），或评论里附带文件的编号（来自 suduo_requirement_comments）。",
   },
   notesRead: "读取这条需求在本机的结论笔记（入口文件、已确认结论、待确认问题、关键决定）。笔记只在本机，不会自动共享。",
   notesSave: {
@@ -44,16 +39,6 @@ export const toolSpec = {
       "调用后会停住，等用户在 SuDuo 界面确认，可能要几十秒到几分钟：等待期间不要输出「仍在等待」之类的进度消息，在 exec 里把等待 / 让出时间设到允许的最大值，被让出后直接继续等，拿到结果再回复用户。" +
       "返回字符串：已发出（含评论信息）、用户未同意、或未能发出及原因。",
     body: "评论全文（Markdown，最多 4000 字）。",
-  },
-  artifactPublish: {
-    description:
-      "把文件发布为当前需求的一个新确认版（全组可见，不能撤回）。只在用户明确要求时调用。" +
-      "paths 是项目里的文件（相对项目目录的路径），确认后会先上传为需求附件再发布；attachmentIds 是需求已有的附件。" +
-      "调用后会停住，等用户在 SuDuo 界面确认：等待期间不要输出进度消息，在 exec 里把等待 / 让出时间设到最大，拿到结果再回复用户。" +
-      "返回字符串：已发布（含版本号）、用户未同意、或未能发布及原因。",
-    paths: "项目里要发布的文件路径。",
-    attachmentIds: "需求已有附件的 ID。",
-    note: "发布说明（可选）。",
   },
 
   /** 房间工具（房间任务会话专用）。 */

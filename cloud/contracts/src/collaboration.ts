@@ -1,4 +1,5 @@
 import type { UserSummaryDto } from "./auth.js";
+import type { RoomFileKind } from "./rooms.js";
 import type {
   RequirementsCursorPage,
   RequirementsCursorQuery,
@@ -11,11 +12,37 @@ export interface ArtifactPublishedCommentParams {
   fileCount: number;
 }
 
+/** comment_files：只带文件、没写文字的评论。正文存一句英文兜底（列出文件名），新客户端只显示文件。 */
+export interface CommentFilesCommentParams {
+  fileCount: number;
+}
+
 /**
  * 系统代写评论的类型 + 参数：前端按它用自己的语言渲染，正文 body 只作兜底（中英双语技术设计 §4.3）。
  * 以后加类型就往这个联合里加。
  */
-export type CommentSystemContent = { kind: "artifact_published"; params: ArtifactPublishedCommentParams };
+export type CommentSystemContent =
+  | { kind: "artifact_published"; params: ArtifactPublishedCommentParams }
+  | { kind: "comment_files"; params: CommentFilesCommentParams };
+
+/**
+ * 评论里的文件（需求附件评论文件与优先级 4.2）：只属于这条评论，不进附件区、不占附件额度。
+ * 先上传（commentId 为 null），发评论时带上编号挂到评论上；之后不能删、不能改挂。
+ */
+export interface CommentFileDto {
+  id: string;
+  requirementId: string;
+  /** 还没随评论发出时为 null。 */
+  commentId: string | null;
+  fileName: string;
+  contentType: string;
+  /** 决定显示成缩略图（image）、视频（video）还是文件卡（file）。 */
+  kind: RoomFileKind;
+  sizeBytes: number;
+  sha256: string;
+  uploadedBy: UserSummaryDto;
+  createdAt: string;
+}
 
 export interface CommentDto {
   id: string;
@@ -26,10 +53,15 @@ export interface CommentDto {
   createdAt: string;
   /** 系统代写的评论才有，前端按它渲染；用户写的评论没有这个字段。 */
   system?: CommentSystemContent;
+  /** 评论带的文件，按发送时的顺序。较早的需求服务不返回（按没有文件处理）。 */
+  files?: CommentFileDto[];
 }
 
+/** 正文与文件至少有一样；只带文件时正文可省略。 */
 export interface CreateCommentRequest {
-  body: string;
+  body?: string;
+  /** 先经 `POST /v2/requirements/:id/comment-files` 上传得到的编号，至多 `REQUIREMENT_COMMENT_MAX_FILES` 个。 */
+  fileIds?: string[];
 }
 
 export type ListCommentsQuery = RequirementsCursorQuery;
@@ -77,6 +109,12 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 export const REQUIREMENT_ASSIGNEE_CHANGED_ACTION = "requirement.assignee_changed";
 
 /**
+ * 需求优先级变更的审计动作，before / after 为 `{ priority: RequirementPriority | null }`。
+ * 同 `REQUIREMENT_ASSIGNEE_CHANGED_ACTION`，暂不并入 `AUDIT_ACTIONS`，只出现在需求活动时间线。
+ */
+export const REQUIREMENT_PRIORITY_CHANGED_ACTION = "requirement.priority_changed";
+
+/**
  * 房间与共享的审计动作（需求 suduo-v2-rooms-shared-agent-001）。
  *
  * 同 `REQUIREMENT_ASSIGNEE_CHANGED_ACTION`，暂不并入 `AUDIT_ACTIONS`（前端穷举文案表），
@@ -98,6 +136,7 @@ export type RoomAuditAction = (typeof ROOM_AUDIT_ACTIONS)[number];
 export const RECORDED_AUDIT_ACTIONS = [
   ...AUDIT_ACTIONS,
   REQUIREMENT_ASSIGNEE_CHANGED_ACTION,
+  REQUIREMENT_PRIORITY_CHANGED_ACTION,
   ...ROOM_AUDIT_ACTIONS,
 ] as const;
 
@@ -167,8 +206,8 @@ export interface RequirementsEventDto {
   projectId: string;
   requirementId?: string;
   /**
-   * 事件发生时需求的正文版本。`requirement.changed` 可能携带未变化的版本（例如只改负责人，
-   * 负责人是元数据、不递增正文版本），消费方不得按版本去重。
+   * 事件发生时需求的正文版本。`requirement.changed` 可能携带未变化的版本（例如只改负责人或优先级，
+   * 二者是元数据、不递增正文版本），消费方不得按版本去重。
    */
   requirementVersion?: number;
   occurredAt: string;

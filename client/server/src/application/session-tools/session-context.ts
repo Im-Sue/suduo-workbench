@@ -3,7 +3,6 @@ import { join, relative } from "node:path";
 import type { Locale, RuntimeToolSpec, SessionContextDto } from "@suduo/client-contracts";
 import {
   formatRequirementNumber,
-  type ArtifactVersionDto,
   type AttachmentDto,
   type RequirementActivityEntryDto,
   type RequirementDetailDto,
@@ -29,7 +28,7 @@ import {
   toolFormat,
   type ToolFormat,
 } from "./format.js";
-import { describeActivity, type ToolSessionContext } from "./requirement-tools.js";
+import { describeActivity, newestFirst, type ToolSessionContext } from "./requirement-tools.js";
 import { readNotes, resolveRequirementDir } from "./requirement-dir.js";
 
 /** 新建线程时下发给 Codex 的开场内容：需求卡（developerInstructions）与工具清单。 */
@@ -40,7 +39,7 @@ export interface ThreadSetup {
 
 export type SessionContextRemote = Pick<
   RequirementsRemoteClient,
-  "getRequirement" | "getProject" | "listAttachments" | "listArtifactVersions" | "listRequirementActivity" | "listAudit"
+  "getRequirement" | "getProject" | "listAttachments" | "listRequirementActivity" | "listAudit"
 >;
 
 /** 需求卡里正文的上限，超出提示用工具看全文。 */
@@ -334,9 +333,8 @@ export class SessionContextService {
     const { requirement, projectRoot } = input;
     const f = toolFormat(input.locale);
     const card = f.t.prompt.card;
-    const [attachments, versions, notes, previous, agents] = await Promise.all([
+    const [attachments, notes, previous, agents] = await Promise.all([
       settle(this.deps.remote.listAttachments(requirement.id).then((r) => r.items)),
-      settle(this.deps.remote.listArtifactVersions(requirement.id).then((r) => r.items)),
       input.personal
         ? settle(
             resolveRequirementDir(projectRoot, requirement, { create: false }).then((dir) => readNotes(dir)),
@@ -351,6 +349,7 @@ export class SessionContextService {
     const heading = card.heading(
       f.requirementLabel(requirement),
       f.statusLabel(requirement.status),
+      requirement.priority === null || requirement.priority === undefined ? null : f.priorityLabel(requirement.priority),
       requirement.version,
       f.userName(requirement.assignee),
     );
@@ -366,7 +365,6 @@ export class SessionContextService {
       card.materials([
         card.commentCount(requirement.commentCount),
         describeAttachments(attachments, f),
-        describeVersions(versions, f),
       ]),
     ];
     if (previous.ok && previous.value !== null) {
@@ -546,22 +544,11 @@ function describeAttachments(result: Settled<AttachmentDto[]>, f: ToolFormat): s
   if (result.value.length === 0) {
     return card.noAttachments;
   }
-  const shown = result.value
+  // 最新在前：需求卡里只列 5 个，列的是最新上传的那几个（需求附件评论文件与优先级 R1）。
+  const shown = newestFirst(result.value)
     .slice(0, 5)
     .map((item) => card.attachmentItem(item.fileName, kindLabel(item.contentType, card.kind), formatBytes(item.sizeBytes)));
   return card.attachments(result.value.length, shown, result.value.length > 5);
-}
-
-function describeVersions(result: Settled<ArtifactVersionDto[]>, f: ToolFormat): string {
-  const card = f.t.prompt.card;
-  if (!result.ok) {
-    return card.versionsUnavailable(f.reasonOf(result.error));
-  }
-  if (result.value.length === 0) {
-    return card.noVersions;
-  }
-  const latest = [...result.value].sort((a, b) => b.versionNumber - a.versionNumber)[0]!;
-  return card.versions(result.value.length, latest.versionNumber, formatTime(latest.publishedAt));
 }
 
 function kindLabel(contentType: string, kind: PromptMessages["card"]["kind"]): string {

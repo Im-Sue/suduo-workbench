@@ -7,18 +7,22 @@ import { RegionError } from "../../../feedback/components/index.js";
 import { Markdown } from "../../../ui/markdown.js";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
+import { PriorityIcon } from "@/components/ui/priority-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RequirementRoomButton } from "../../rooms/sections/RequirementRoomButton.js";
+import { useCloudFeature } from "../cloud-features.js";
 import { requirementCode } from "../format.js";
 import { useRequirement, useUpdateRequirement } from "../queries.js";
 import { ActivityFeed } from "../sections/ActivityFeed.js";
 import { LocalSessions } from "../sections/LocalSessions.js";
 import { MaterialsPreview } from "../sections/Materials.js";
 import { AssigneeMenu } from "./AssigneeMenu.js";
+import { PriorityMenu } from "./PriorityMenu.js";
 import { StatusMenu } from "./StatusMenu.js";
 import { UserAvatar } from "./UserAvatar.js";
 import { formatDateTime, formatRelativeTime } from "../../../ui/format.js";
+import { requirementPriorityLabel } from "../../../ui/requirement-priority.js";
 import { useT } from "../../../i18n/provider.js";
 
 /**
@@ -49,6 +53,7 @@ export function RequirementPeek({
   const t = useT();
   const { requirement, detail } = useRequirement(requirementId);
   const update = useUpdateRequirement();
+  const priorityEnabled = useCloudFeature("requirement_priority");
   const bodyRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLElement>(null);
 
@@ -159,6 +164,33 @@ export function RequirementPeek({
                   </button>
                 </AssigneeMenu>
               </dd>
+              {priorityEnabled ? (
+                <>
+                  <dt className="text-subtle-foreground">{t.requirements.peek.field.priority}</dt>
+                  <dd className="m-0">
+                    <PriorityMenu
+                      priority={requirement.priority ?? null}
+                      pending={update.isPending && update.variables?.patch.priority !== undefined}
+                      onChange={(priority) => update.mutate({ requirement, patch: { priority } })}
+                      trigger={
+                        <button
+                          type="button"
+                          className="-mx-1.5 -my-0.5 inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={t.requirements.priorityMenu.triggerLabel(
+                            requirementPriorityLabel(requirement.priority, t),
+                            false,
+                          )}
+                        >
+                          <PriorityIcon priority={requirement.priority} aria-hidden="true" />
+                          <span className={requirement.priority == null ? "text-subtle-foreground" : undefined}>
+                            {requirementPriorityLabel(requirement.priority, t)}
+                          </span>
+                        </button>
+                      }
+                    />
+                  </dd>
+                </>
+              ) : null}
               <dt className="text-subtle-foreground">{t.requirements.peek.field.created}</dt>
               <dd className="m-0">
                 {requirement.createdBy.displayName} ·{" "}

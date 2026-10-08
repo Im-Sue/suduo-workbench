@@ -184,6 +184,7 @@ export const rooms = {
     imagePreview: "图片预览",
     viewImage: (name: string) => `查看图片 ${name}`,
     download: (name: string) => `下载 ${name}`,
+    preview: (name: string) => `在新标签页预览 ${name}`,
     previewUnavailable: "这张图片没法在线预览，可以下载后查看。",
     downloadAction: "下载",
     downloadOriginal: "下载原图",

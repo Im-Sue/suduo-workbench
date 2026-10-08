@@ -353,6 +353,151 @@ describe("描述与负责人", () => {
   });
 });
 
+describe("优先级", () => {
+  it("创建时可带优先级；设置、更换、清空不递增正文版本，写审计并发 SSE；同值不写", async () => {
+    const actor = await createUser("priority-owner", "甲");
+    const project = await createProject(actor, "优先级项目");
+    const omitted = await createRequirement(actor, project.id, { title: "无优先级" });
+    expect(omitted.priority).toBeNull();
+    const created = await createRequirement(actor, project.id, { title: "高", priority: "high" });
+    expect(created.priority).toBe("high");
+    const createdAudit = await auditRows(created.id, "requirement.created");
+    expect(createdAudit[0]?.after_json).toMatchObject({ priority: "high" });
+
+    publishedEvents.length = 0;
+    const raised = await patchRequirement(actor, created.id, { priority: "urgent" });
+    expect(raised.priority).toBe("urgent");
+    expect(raised.version).toBe(created.version);
+    expect(raised.updatedAt > created.updatedAt).toBe(true);
+    expect(publishedEvents).toEqual([
+      expect.objectContaining({
+        type: "requirement.changed",
+        requirementId: created.id,
+        requirementVersion: created.version,
+      }),
+    ]);
+
+    const cleared = await patchRequirement(actor, created.id, { priority: null });
+    expect(cleared.priority).toBeNull();
+
+    publishedEvents.length = 0;
+    const unchanged = await patchRequirement(actor, created.id, { priority: null });
+    expect(unchanged.updatedAt).toBe(cleared.updatedAt);
+    expect(publishedEvents).toEqual([]);
+
+    const audits = await auditRows(created.id, "requirement.priority_changed");
+    expect(audits.map((row) => [row.before_json, row.after_json])).toEqual([
+      [{ priority: "high" }, { priority: "urgent" }],
+      [{ priority: "urgent" }, { priority: null }],
+    ]);
+
+    const combined = await patchRequirement(actor, created.id, {
+      title: "同时改标题、负责人与优先级",
+      assigneeId: actor,
+      priority: "low",
+    });
+    expect(combined.version).toBe(created.version + 1);
+    expect(combined.priority).toBe("low");
+    expect(await auditRows(created.id, "requirement.updated")).toHaveLength(1);
+    expect(await auditRows(created.id, "requirement.assignee_changed")).toHaveLength(1);
+    expect(await auditRows(created.id, "requirement.priority_changed")).toHaveLength(3);
+
+    for (const priority of ["critical", "", 3]) {
+      const invalid = await server.inject({
+        method: "PATCH",
+        url: `/v2/requirements/${created.id}`,
+        headers: authorization(actor),
+        payload: { priority },
+      });
+      expect(invalid.statusCode, String(priority)).toBe(400);
+    }
+  });
+
+  it("活动时间线收录优先级变化；/v2/audit 过渡期不返回", async () => {
+    const actor = await createUser("priority-activity", "甲");
+    const project = await createProject(actor, "优先级活动项目");
+    const requirement = await createRequirement(actor, project.id, { title: "活动" });
+    await patchRequirement(actor, requirement.id, { priority: "medium" });
+    const activity = await listActivity(actor, requirement.id, 10);
+    expect(activity.items.find((entry) => entry.action === "requirement.priority_changed")?.changes).toEqual([
+      { field: "priority", from: null, to: "medium" },
+    ]);
+    const audit = await server.inject({
+      method: "GET",
+      url: `/v2/audit?projectId=${project.id}`,
+      headers: authorization(actor),
+    });
+    expect(audit.statusCode).toBe(200);
+    expect(
+      audit.json<{ items: Array<{ action: string }> }>().items.map((entry) => entry.action),
+    ).not.toContain("requirement.priority_changed");
+  });
+
+  it("按优先级筛选（含 none）与排序：从急到缓，同一档最近更新在前；缺省仍按最近更新", async () => {
+    const actor = await createUser("priority-sort", "甲");
+    const project = await createProject(actor, "优先级排序项目");
+    const low = await createRequirement(actor, project.id, { title: "低", priority: "low" });
+    const none = await createRequirement(actor, project.id, { title: "无" });
+    const urgentOld = await createRequirement(actor, project.id, { title: "紧急旧", priority: "urgent" });
+    const high = await createRequirement(actor, project.id, { title: "高", priority: "high" });
+    const urgentNew = await createRequirement(actor, project.id, { title: "紧急新", priority: "urgent" });
+
+    expect(ids(await listRequirements(actor, project.id, { sort: "priority" }))).toEqual([
+      urgentNew.id,
+      urgentOld.id,
+      high.id,
+      low.id,
+      none.id,
+    ]);
+    expect(ids(await listRequirements(actor, project.id, {}))).toEqual([
+      urgentNew.id,
+      high.id,
+      urgentOld.id,
+      none.id,
+      low.id,
+    ]);
+    expect(ids(await listRequirements(actor, project.id, { priority: "urgent,none", sort: "priority" }))).toEqual([
+      urgentNew.id,
+      urgentOld.id,
+      none.id,
+    ]);
+    expect(ids(await listRequirements(actor, project.id, { priority: "low" }))).toEqual([low.id]);
+
+    for (const query of ["priority=critical", "priority=urgent,", "sort=title"]) {
+      const invalid = await server.inject({
+        method: "GET",
+        url: `/v2/projects/${project.id}/requirements?${query}`,
+        headers: authorization(actor),
+      });
+      expect(invalid.statusCode, query).toBe(400);
+    }
+  });
+
+  it("游标与排序方式不符时返回 400，不悄悄翻错页", async () => {
+    const actor = await createUser("priority-cursor", "甲");
+    const project = await createProject(actor, "优先级游标项目");
+    for (const title of ["一", "二"]) {
+      await createRequirement(actor, project.id, { title });
+    }
+    const byUpdated = await listRequirements(actor, project.id, { limit: "1" });
+    const byPriority = await listRequirements(actor, project.id, { limit: "1", sort: "priority" });
+    expect(byUpdated.nextCursor).not.toBeNull();
+    expect(byPriority.nextCursor).not.toBeNull();
+    for (const query of [
+      { sort: "priority", cursor: byUpdated.nextCursor! },
+      { cursor: byPriority.nextCursor! },
+    ]) {
+      const response = await server.inject({
+        method: "GET",
+        url: `/v2/projects/${project.id}/requirements?${new URLSearchParams(query).toString()}`,
+        headers: authorization(actor),
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json<RequirementsV2ErrorResponse>().error.code).toBe("VALIDATION_ERROR");
+    }
+  });
+});
+
 describe("创建人筛选与新评论", () => {
   it("按创建人过滤：me 与用户 id，可与负责人筛选组合（我提的、还没人负责）", async () => {
     const actor = await createUser("creator-me", "我");
@@ -738,6 +883,36 @@ describe("游标分页保留微秒（同一时间戳多行 + limit=1 翻页不�
       requirements[0]!.id,
     ]);
     await expectStablePaging(actor, `/v2/projects/${project.id}/requirements`, {}, 4);
+  });
+
+  it("需求列表按优先级排序", async () => {
+    const actor = await createUser("cursor-priority", "游标优先级人");
+    const project = await createProject(actor, "游标优先级项目");
+    const requirements = [];
+    for (const [title, priority] of [
+      ["甲", "high"],
+      ["乙", "high"],
+      ["丙", "high"],
+      ["丁", "high"],
+      ["戊", null],
+      ["己", "urgent"],
+    ] as const) {
+      requirements.push(await createRequirement(actor, project.id, { title, priority }));
+    }
+    await pool.query("UPDATE requirements SET updated_at = $1 WHERE project_id = $2", [
+      SHARED_TIMESTAMP,
+      project.id,
+    ]);
+    await pool.query("UPDATE requirements SET updated_at = $1 WHERE id = $2", [
+      LATER_SAME_MILLISECOND,
+      requirements[0]!.id,
+    ]);
+    await expectStablePaging(actor, `/v2/projects/${project.id}/requirements`, { sort: "priority" }, 6);
+    // 优先级筛选与按优先级翻页一起用。
+    await expectStablePaging(actor, `/v2/projects/${project.id}/requirements`, { sort: "priority", priority: "high,none" }, 5);
+    const all = await listRequirements(actor, project.id, { sort: "priority" });
+    expect(all.items.map((item) => item.priority)).toEqual(["urgent", "high", "high", "high", "high", null]);
+    expect(all.items[1]!.id).toBe(requirements[0]!.id);
   });
 
   it("评论列表", async () => {

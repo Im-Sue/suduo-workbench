@@ -5,13 +5,14 @@ import {
 } from "@suduo/cloud-contracts";
 import { currentLocale } from "../../i18n/locale.js";
 import { messagesFor, type Messages } from "../../i18n/messages/index.js";
+import { requirementPriorityLabel } from "../../ui/requirement-priority.js";
 import { requirementStatusLabel } from "../../ui/requirement-status.js";
 
 /**
  * 活动时间线的文案（技术设计 §8）：主语是人，谓语写成完整的短句（字典 requirementDetail.activity），
  * 不出现枚举原值、版本号 v12（写「第 12 版」）。
  */
-export type ActivityKind = "created" | "edited" | "status" | "assignee" | "comment" | "material" | "artifact";
+export type ActivityKind = "created" | "edited" | "status" | "assignee" | "priority" | "comment" | "material" | "artifact";
 
 export interface ActivityPresentation {
   kind: ActivityKind;
@@ -56,6 +57,15 @@ export function presentActivity(
       if (change.to.id === entry.actor.id) return { kind: "assignee", text: text.assigneeClaimed, body: null };
       return { kind: "assignee", text: text.assigneeChangedTo(change.to.displayName), body: null };
     }
+    case "requirement.priority_changed": {
+      const change = entry.changes.find((item) => item.field === "priority");
+      if (change === undefined || change.field !== "priority") return { kind: "priority", text: text.priorityChanged, body: null };
+      return {
+        kind: "priority",
+        text: text.priorityChangedFromTo(requirementPriorityLabel(change.from, t), requirementPriorityLabel(change.to, t)),
+        body: null,
+      };
+    }
     case "comment.created":
       return { kind: "comment", text: text.commented, body: entry.comment == null ? null : commentText(entry.comment, t) };
     case "attachment.created":
@@ -88,5 +98,7 @@ export function commentText(
   if (system?.kind === "artifact_published") {
     return t.requirementDetail.activity.systemComment.artifactPublished(system.params.versionNumber, system.params.fileCount);
   }
+  // 只带文件、没写文字的评论：存下的正文是给旧客户端看的英文兜底，这里不显示文字，只显示文件。
+  if (system?.kind === "comment_files") return "";
   return comment.body;
 }

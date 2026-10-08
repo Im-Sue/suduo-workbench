@@ -600,8 +600,6 @@ describe("RoomAgentRunner", () => {
       "suduo_requirement_comments",
       "suduo_requirement_attachments",
       "suduo_attachment_view",
-      "suduo_artifact_versions",
-      "suduo_artifact_fetch",
     ]);
     const instructions = context.runtime.threads[0]!.developerInstructions ?? "";
     expect(instructions).toContain("房间「REQ-1 讨论」");
