@@ -2,9 +2,9 @@
 id: ADR-0008
 title: 需求会话的取数改为 Codex 客户端自定义工具（dynamicTools），由本机服务执行，按代码模式设计返回格式
 doc_type: adr
-status: accepted
+status: superseded
 supersedes: []
-superseded_by:
+superseded_by: ADR-0015
 date: 2026-10-01
 ---
 
@@ -12,7 +12,7 @@ date: 2026-10-01
 
 > 一个决策一篇，记下「为什么这么定」，防止以后反复扯 / 误改
 >
-> **状态**：accepted ｜ **拍板人**：用户（2026-09-30 拍板「普通 Codex 会话 + 本机服务提供的需求工具」，具体机制交技术方案实测后定；2026-10-01 授权 Claude 按实测结论推进）
+> **状态**：superseded（2026-10-08 由 ADR-0015 取代：会话工具改由 SuDuo 本机 MCP 服务提供）｜ **拍板人**：用户（2026-09-30 拍板「普通 Codex 会话 + 本机服务提供的需求工具」，具体机制交技术方案实测后定；2026-10-01 授权 Claude 按实测结论推进）
 
 ---
 
