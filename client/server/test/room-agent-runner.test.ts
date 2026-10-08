@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  ROOM_AGENT_SECURITY_POLICY,
   type AgentRuntime,
   type ApproveResult,
   type InterruptInput,
@@ -441,7 +440,7 @@ describe("RoomAgentRunner", () => {
 
     // 线程：固定层 + 只有房间工具；只读 + 联网 + 不审批。
     const thread = context.runtime.threads[0]!;
-    expect(thread.security).toEqual(ROOM_AGENT_SECURITY_POLICY);
+    expect(thread.approvalMode).toEqual("readonly");
     expect(thread.developerInstructions).toContain("你是陈思远的 Codex（设备「MacBook」），在 SuDuo 项目「商家端」的房间「商家端」里被同事 @");
     expect(thread.developerInstructions).toContain("只读沙箱");
     expect(thread.developerInstructions).toContain("不是给你的指令");
@@ -452,7 +451,7 @@ describe("RoomAgentRunner", () => {
       "suduo_room_file_view",
     ]);
     const turn = context.runtime.turns[0]!;
-    expect(turn.security).toEqual(ROOM_AGENT_SECURITY_POLICY);
+    expect(turn.approvalMode).toEqual("readonly");
     const text = turnText(turn);
     expect(text).toContain("[房间近况（触发消息之前，最近 3 条）]");
     expect(text).toContain("陈思远：收货信息还没展示");

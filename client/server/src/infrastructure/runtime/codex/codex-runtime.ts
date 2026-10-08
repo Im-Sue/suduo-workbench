@@ -22,6 +22,7 @@ import type {
   StartTurnResult,
   ThreadRef,
 } from "@suduo/client-contracts";
+import { RUNTIME_APPROVAL_MODE_POLICIES } from "@suduo/client-contracts";
 import {
   isApprovalServerRequest,
   mapApprovalDecision,
@@ -116,7 +117,8 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   async startThread(input: StartThreadInput): Promise<StartThreadResult> {
-    assertM1SecurityPolicy(input.security);
+    const security = RUNTIME_APPROVAL_MODE_POLICIES[input.approvalMode];
+    assertM1SecurityPolicy(security);
     const connection = await this.ensureConnection();
     this.pendingSessionId = input.sessionId;
     try {
@@ -130,12 +132,12 @@ export class CodexRuntime implements AgentRuntime {
       const common = {
         cwd: input.projectRoot,
         runtimeWorkspaceRoots: input.workspaceRoots,
-        approvalPolicy: input.security.approvalPolicy,
-        approvalsReviewer: input.security.approvalsReviewer,
-        sandbox: input.security.sandbox.mode,
+        approvalPolicy: security.approvalPolicy,
+        approvalsReviewer: security.approvalsReviewer,
+        sandbox: security.sandbox.mode,
         ...(developerInstructions === "" ? {} : { developerInstructions }),
         // 房间 Agent 档：建线程与续接都要带（续接不带的话 MCP 会重新启动）。
-        ...(isRoomAgentPolicy(input.security)
+        ...(input.approvalMode === "readonly"
           ? { config: await this.externalToolsOff(connection, input.projectRoot) }
           : {}),
       };
@@ -183,7 +185,8 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   async startTurn(input: StartTurnInput): Promise<StartTurnResult> {
-    assertM1SecurityPolicy(input.security);
+    const security = RUNTIME_APPROVAL_MODE_POLICIES[input.approvalMode];
+    assertM1SecurityPolicy(security);
     const connection = await this.ensureConnection();
     this.threadSessions.set(input.threadRef.threadId, input.sessionId);
     const modelPlan = await this.threadModels.plan({
@@ -213,14 +216,14 @@ export class CodexRuntime implements AgentRuntime {
           cwd: input.projectRoot,
           runtimeWorkspaceRoots: input.workspaceRoots,
           // 审批与沙箱每回合都显式下发，粘性覆盖始终等于会话当前审批档。
-          approvalPolicy: input.security.approvalPolicy,
-          approvalsReviewer: input.security.approvalsReviewer,
+          approvalPolicy: security.approvalPolicy,
+          approvalsReviewer: security.approvalsReviewer,
           sandboxPolicy:
-            input.security.sandbox.mode === "danger-full-access"
+            security.sandbox.mode === "danger-full-access"
               ? { type: "dangerFullAccess" }
               : {
-                  type: sandboxPolicyType(input.security.sandbox.mode),
-                  networkAccess: input.security.sandbox.networkAccess,
+                  type: sandboxPolicyType(security.sandbox.mode),
+                  networkAccess: security.sandbox.networkAccess,
                 },
           // 模型 / 推理强度只在需要改变线程现值时下发（见 CodexThreadModelTracker）。
           ...(overrides.model === undefined ? {} : { model: overrides.model }),
@@ -1089,14 +1092,6 @@ export function assertM1SecurityPolicy(
 
 function objectOrEmpty(value: JsonValue | undefined): Record<string, JsonValue> {
   return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function isRoomAgentPolicy(policy: RuntimeSecurityPolicy): boolean {
-  return (
-    policy.approvalPolicy === "never" &&
-    policy.sandbox.mode === "read-only" &&
-    policy.sandbox.networkAccess === true
-  );
 }
 
 function sandboxPolicyType(

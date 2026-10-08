@@ -6,7 +6,7 @@ import type {
 import type { SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRecord } from "../infrastructure/db/repositories/session-thread-repository.js";
 import { ApiError, IndeterminateOperationError } from "./api-error.js";
-import { sessionSecurityPolicy } from "./approval-mode-cap.js";
+import { sessionRuntimeApprovalMode } from "./approval-mode-cap.js";
 import type { WorkspaceContext } from "./workspace-context.js";
 
 export class RuntimeSupervisor {
@@ -34,7 +34,7 @@ export class RuntimeSupervisor {
         sessionId: input.session.id,
         projectRoot: input.workspace.executionRoot,
         workspaceRoots: [input.workspace.executionRoot],
-        security: sessionSecurityPolicy(input.session, this.approvalModeEnvironment),
+        approvalMode: sessionRuntimeApprovalMode(input.session, this.approvalModeEnvironment),
         ...(input.developerInstructions === undefined
           ? {}
           : { developerInstructions: input.developerInstructions }),
@@ -99,7 +99,7 @@ export class RuntimeSupervisor {
           sessionId: input.session.id,
           projectRoot: input.workspace.executionRoot,
           workspaceRoots: [input.workspace.executionRoot],
-          security: sessionSecurityPolicy(input.session, this.approvalModeEnvironment),
+          approvalMode: sessionRuntimeApprovalMode(input.session, this.approvalModeEnvironment),
           ...(setup?.developerInstructions === undefined
             ? {}
             : { developerInstructions: setup.developerInstructions }),
@@ -159,7 +159,7 @@ export class RuntimeSupervisor {
         threadRef: input.binding.threadRef,
         projectRoot: input.workspace.executionRoot,
         workspaceRoots: [input.workspace.executionRoot],
-        security: sessionSecurityPolicy(input.session, this.approvalModeEnvironment),
+        approvalMode: sessionRuntimeApprovalMode(input.session, this.approvalModeEnvironment),
       });
       this.readyThreads.add(key);
     } catch (error) {

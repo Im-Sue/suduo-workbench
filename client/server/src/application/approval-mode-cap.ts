@@ -1,9 +1,7 @@
 import {
-  APPROVAL_MODE_POLICIES,
-  ROOM_AGENT_SECURITY_POLICY,
   cliLocale,
   type ApprovalMode,
-  type RuntimeSecurityPolicy,
+  type RuntimeApprovalMode,
 } from "@suduo/client-contracts";
 import { messagesFor } from "../i18n/messages/index.js";
 import type { SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
@@ -43,15 +41,15 @@ export function effectiveApprovalMode(
 }
 
 /**
- * 会话实际下发给 Codex 的安全档：房间任务会话固定为「房间 Agent」档（只读 + 联网 + 不审批，
- * ADR-0009）；其余会话按审批模式（受部署上限约束）取 ask / auto / full 三档之一。
+ * 会话实际下发给运行时的审批档：房间任务会话固定为「只读」（ADR-0009；Codex 换算为只读沙箱 + 联网 +
+ * 不审批）；其余会话按审批模式（受部署上限约束）取 ask / auto / full 三档之一。
  */
-export function sessionSecurityPolicy(
+export function sessionRuntimeApprovalMode(
   session: Pick<SessionRecord, "approvalMode"> & { kind?: SessionRecord["kind"] },
   env: NodeJS.ProcessEnv = process.env,
-): RuntimeSecurityPolicy {
+): RuntimeApprovalMode {
   if (session.kind === "room_task") {
-    return ROOM_AGENT_SECURITY_POLICY;
+    return "readonly";
   }
-  return APPROVAL_MODE_POLICIES[effectiveApprovalMode(session, env)];
+  return effectiveApprovalMode(session, env);
 }

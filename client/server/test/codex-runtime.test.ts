@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  M1_RUNTIME_SECURITY_POLICY,
-  ROOM_AGENT_SECURITY_POLICY,
   type CodexTransportFactory,
   type JsonRpcId,
   type JsonValue,
@@ -21,7 +19,7 @@ describe("T4 CodexRuntime", () => {
       sessionId: "session-1",
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: M1_RUNTIME_SECURITY_POLICY,
+      approvalMode: "ask" as const,
     });
     await runtime.startTurn({
       sessionId: "session-1",
@@ -35,7 +33,7 @@ describe("T4 CodexRuntime", () => {
       ],
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: M1_RUNTIME_SECURITY_POLICY,
+      approvalMode: "ask" as const,
     });
 
     expect(connection.notifications).toEqual([
@@ -81,7 +79,7 @@ describe("T4 CodexRuntime", () => {
       sessionId: "session-room",
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: ROOM_AGENT_SECURITY_POLICY,
+      approvalMode: "readonly" as const,
     };
     await runtime.startThread({ ...base, mode: "create" });
     await runtime.startThread({
@@ -99,7 +97,7 @@ describe("T4 CodexRuntime", () => {
     expect(connection.requests.find((request) => request.method === "config/read")?.params).toMatchObject({ cwd: "/tmp/project" });
 
     // 普通会话不带覆盖。
-    await runtime.startThread({ ...base, sessionId: "session-normal", security: M1_RUNTIME_SECURITY_POLICY, mode: "create" });
+    await runtime.startThread({ ...base, sessionId: "session-normal", approvalMode: "ask" as const, mode: "create" });
     expect(asObject(connection.requests.filter((request) => request.method === "thread/start").at(-1)?.params)["config"]).toBeUndefined();
 
     connection.failConfigRead = true;
@@ -114,7 +112,7 @@ describe("T4 CodexRuntime", () => {
       sessionId: "session-1",
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: M1_RUNTIME_SECURITY_POLICY,
+      approvalMode: "ask" as const,
     });
     connection.inbound = [
       { kind: "notification", method: "configWarning", params: { summary: "Codex is ignoring 1 unrecognized configuration settings.", details: null } },
@@ -154,7 +152,7 @@ describe("T4 CodexRuntime", () => {
       sessionId: "session-1",
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: M1_RUNTIME_SECURITY_POLICY,
+      approvalMode: "ask" as const,
     });
     connection.inbound = [
       { kind: "server-request", id: 61, method: "mcpServer/elicitation/request", params: { threadId: "thread-1" } },
@@ -196,7 +194,7 @@ describe("T4 CodexRuntime", () => {
       sessionId: "session-1",
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: M1_RUNTIME_SECURITY_POLICY,
+      approvalMode: "ask" as const,
     });
     connection.inbound = [
       {
@@ -272,7 +270,7 @@ describe("T4 CodexRuntime", () => {
       threadRef,
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: M1_RUNTIME_SECURITY_POLICY,
+      approvalMode: "ask" as const,
     });
     await runtime.interrupt({
       sessionId: "session-1",

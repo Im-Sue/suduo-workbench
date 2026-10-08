@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  M1_RUNTIME_SECURITY_POLICY,
   type CodexTransportFactory,
   type JsonRpcId,
   type JsonValue,
@@ -470,7 +469,7 @@ describe("Codex 运行时回给 Codex 的文字", () => {
       sessionId,
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: M1_RUNTIME_SECURITY_POLICY,
+      approvalMode: "ask",
       developerInstructions: "# SuDuo",
     });
 

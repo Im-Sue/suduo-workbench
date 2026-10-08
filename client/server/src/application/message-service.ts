@@ -23,7 +23,7 @@ import type {
 import { ApiError, IndeterminateOperationError } from "./api-error.js";
 import type { RuntimeSupervisor } from "./runtime-supervisor.js";
 import { WorkspaceContextResolver } from "./workspace-context.js";
-import { sessionSecurityPolicy } from "./approval-mode-cap.js";
+import { sessionRuntimeApprovalMode } from "./approval-mode-cap.js";
 import type { SkillRootsProvider } from "./skill-roots.js";
 
 export class MessageService {
@@ -124,8 +124,8 @@ export class MessageService {
         input: runtimeInput,
         projectRoot: project.rootPath,
         workspaceRoots: [project.rootPath],
-        // 房间任务会话固定为房间 Agent 档（只读 + 联网 + 不审批）；其余按会话审批档。
-        security: sessionSecurityPolicy(session, this.approvalModeEnvironment),
+        // 房间任务会话固定为只读档（Codex 换算为只读 + 联网 + 不审批）；其余按会话审批档。
+        approvalMode: sessionRuntimeApprovalMode(session, this.approvalModeEnvironment),
         // 审批档每回合都显式下发；模型 / 推理强度只在需要改变时由 runtime 下发
         // （null = 跟随全局默认，粘性覆盖的回退由 runtime 负责）。
         model: session.model,

@@ -1,3 +1,4 @@
+import type { RuntimeApprovalMode } from "./config.js";
 import type {
   JsonValue,
   RuntimeEventDraft,
@@ -24,7 +25,8 @@ export interface StartThreadBase {
   sessionId: string;
   projectRoot: string;
   workspaceRoots: string[];
-  security: RuntimeSecurityPolicy;
+  /** 会话的审批档；各适配器换算成自己的机制（Codex 见 `RUNTIME_APPROVAL_MODE_POLICIES`）。 */
+  approvalMode: RuntimeApprovalMode;
   /** 附加给模型的系统级指令（如需求会话的需求卡）；runtime 负责与自身指令合并。 */
   developerInstructions?: string;
   /**
@@ -91,7 +93,8 @@ export interface StartTurnInput {
   input: RuntimeInput[];
   projectRoot: string;
   workspaceRoots: string[];
-  security: RuntimeSecurityPolicy;
+  /** 每回合显式下发的审批档。 */
+  approvalMode: RuntimeApprovalMode;
   /**
    * 会话级模型。undefined = 调用方不管理（不下发，保持旧行为）；null = 跟随全局默认；
    * 字符串 = 显式指定。Codex 的回合覆盖对「本回合及后续回合」粘性生效，

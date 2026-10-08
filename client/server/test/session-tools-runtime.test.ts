@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  M1_RUNTIME_SECURITY_POLICY,
   type AgentRuntime,
   type ApproveResult,
   type CodexTransportFactory,
@@ -480,7 +479,7 @@ function createInput() {
     sessionId: "session-1",
     projectRoot: "/tmp/project",
     workspaceRoots: ["/tmp/project"],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask" as const,
   };
 }
 

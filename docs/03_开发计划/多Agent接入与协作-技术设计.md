@@ -122,7 +122,7 @@ updated: 2026-10-08
 
 | 档位 | Codex | Claude Code（SDK） | ACP（配置表 + SuDuo 客户端策略） |
 |---|---|---|---|
-| 只读 | `never` + 只读沙箱 + 可联网 | `dontAsk` + `allowedTools` 只放行只读工具（Read、Grep、Glob、WebSearch、WebFetch、TodoWrite、SuDuo 只读工具）；`canUseTool` 其余一律拒绝；`settingSources: []`（不加载用户与项目设置，避免其 allow 规则先于 `canUseTool` 放行写入、避免带上所有者的 MCP）+ `disallowedTools` 列出写入类工具（S0 验证） | 最严格模式；`request_permission` 写入 / 执行类一律拒绝；`fs/write_text_file` 返回错误 |
+| 只读 | `never` + 只读沙箱 + 可联网 | `dontAsk` + `strictMcpConfig: true`（只用 SuDuo 传入的 MCP，claude.ai 账号连接器也被排除，S0 实测）+ `allowedTools` 只放行只读工具（Read、Grep、Glob、WebSearch、WebFetch、TodoWrite、SuDuo 只读工具）；`canUseTool` 其余一律拒绝；`settingSources: []`（不加载用户与项目设置，避免其 allow 规则先于 `canUseTool` 放行写入、避免带上所有者的 MCP）+ `disallowedTools` 列出写入类工具（S0 验证） | 最严格模式；`request_permission` 写入 / 执行类一律拒绝；`fs/write_text_file` 返回错误 |
 | 写前询问 | 现「询问」组合（`on-request` + 只读沙箱 + 不联网，写入与越权需审批） | `default` | 「询问」模式；权限请求交给用户 |
 | 自动 | 现「自动」组合（`on-request` + 可写工作区 + 不联网） | `acceptEdits` | 「自动」模式；读与工作目录内编辑自动允许，执行类交给用户 |
 | 完全访问 | 现「完全访问」组合（`never` + 完全访问 + 联网） | `bypassPermissions` | 「完全访问」模式；自动选允许一次 |
@@ -199,7 +199,7 @@ updated: 2026-10-08
 | handoff_read | ✓ | ✓ | ✓ | ✓ | — |
 | handoff_submit | ✓ | — | — | — | — |
 
-委派深度 1 由这张表实现：只有主会话拿到委派工具。工具名的前缀规则（是否保留 `suduo_`）按 S0 实测各 Agent 的 MCP 命名后定。
+委派深度 1 由这张表实现：只有主会话拿到委派工具。工具名**不带** `suduo_` 前缀（S0 实测：各 Agent 会自己加服务名前缀——Codex 记为服务 `suduo` + 工具名，Claude 为 `mcp__suduo__<工具>`，OpenCode 为 `suduo_<工具>`）；老线程的 dynamicTools 仍用原名。
 
 ### 2.10 委派（P2）
 
@@ -294,7 +294,7 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 
 ### 4.3 需求工具（MCP）
 
-守卫 → 令牌 → 角色与 scope → `tools/list` / `tools/call`；写工具（comment_submit）挂起等确认，取消或断开转草稿（`tool_drafts`）。
+守卫 → 令牌 → 角色与 scope → `tools/list` / `tools/call`；写工具（comment_submit）挂起等确认；**服务端自己计时**——在给该 Agent 配置的工具超时到达前（留 30 秒余量）仍未确认，就把确认卡转为草稿（`tool_drafts`）并回复 Agent「已存为草稿，等用户在界面确认」；收到 MCP 取消通知或连接断开时同样转草稿（S0：Codex 超时时既不断开也不发取消，只能靠服务端计时）。
 
 ### 4.4 委派时序
 
@@ -328,7 +328,7 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 | 单元 | 各适配器翻译器（S0 录制真实 CLI 的夹具）；调度器（上限、排队、插队、取消、级联、重启恢复）；ContextService 分层读取与上限；工具角色矩阵；WorktreeManager（临时仓库：创建、准备命令失败、采用 merge / 冲突、清理）；密钥匹配 |
 | 运行时一致性 | 与通道无关的场景对三种运行时各跑一遍：Codex（`fake-codex.mjs`）、ACP（新 `fake-acp-agent.mjs`，可脚本化）、Claude（可注入的假查询工厂）。场景含：回合、增量、审批三种决策、中断、需求工具、写工具确认与草稿、续接、档位策略 |
 | 协作一致性 | 跨通道组合：Claude 发起委派给 ACP、ACP 委派给 Codex、Codex 评审 Claude 会话、三家并行试做；断言条目、卡片、审批来源、结果交回、停止级联 |
-| MCP 服务 | 守卫（无令牌、错令牌、外源 Origin）、角色矩阵、图片返回、写工具确认 / 拒绝 / 取消转草稿、`delegate_wait` 到点返回 |
+| MCP 服务 | 守卫（无令牌、错令牌、外源 Origin）、角色矩阵、图片返回、写工具确认 / 拒绝 / 到点或取消转草稿、`delegate_wait` 到点返回 |
 | 前端 | 统一条目渲染（含 `notice`、`suduo*` 卡片、未知条目兜底）；审批坞按 options 与来源；Agent 面板；开工对话框（含并行试做）；运行面板；评审面板；试做比较；会话树 |
 | 云端 | 共享对象发布 / 撤回 / 大小上限；项目规范版本；协作记录；`agents.kind` 放开与老值兼容 |
 | gate | gate-a / b / c 按 Agent 参数化：Codex 全量防退化；新增一条用假 Agent 跑通需求「模拟示例」1–9 步的端到端场景；Claude 与 ACP 真实冒烟在装好对应 CLI 的机器上发布前手动跑 |
@@ -443,7 +443,7 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 | 时间线与服务端解析改动面大 | 条目模型以 Codex 为基线；S1 / S5 后 gate-c 全量；老会话回放用例 |
 | 老 Codex 线程续接后仍发 `item/tool/call` | Codex 适配器保留 dynamicTools 处理到线程自然结束 |
 | 调度器接入所有回合，可能引入新的卡顿 | S1 先以宽松上限接入，行为与现在一致；S8 再启用默认上限 |
-| MCP 工具超时 | 长超时 + 取消转草稿；`delegate_wait` 有上限返回 |
+| MCP 工具超时 | 长超时（Codex `tool_timeout_sec`、Claude `MCP_TOOL_TIMEOUT`）+ 服务端在超时前转草稿；`delegate_wait` 有上限返回 |
 | Codex 按线程注入 MCP 不可行 | 退到全局登记 + 按线程覆盖请求头；再不行 Codex 保留 dynamicTools（ADR-0015） |
 | ACP Agent 怪癖 | 配置表 `quirks` + Tutti 记录的对策（日志行容忍、取消宽限后结束进程、审批等入参齐全、权限应答异步、回合外迟到消息丢弃、「始终允许」文案写明） |
 | Claude SDK 已知坑 | 后台子任务时以空闲状态判回合结束；`getContextUsage` 加超时；鉴权失败尽快判失败并回灌；合并用户 settings 里的 env |
@@ -461,7 +461,7 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 |---|---|
 | S0 | 实测报告记入第十二节；配置表各条目参数有实测依据；Codex MCP 注入方式、Claude 查询生命周期、`delegate_wait` 上限、各 Agent 提交工具可靠性有结论 |
 | S1 | 契约编译通过；Codex 行为零变化（gate-c 全量通过）；`/api/v1/agents` 列出并检测八家；会话记录 agent_id 与角色；所有回合经调度器准入 |
-| S2 | Codex 新会话通过 MCP 调需求工具（含图片、发评论确认、取消转草稿）；老线程 dynamicTools 照常；守卫与角色矩阵测试全过 |
+| S2 | Codex 新会话通过 MCP 调需求工具（含图片、发评论确认、到点转草稿）；老线程 dynamicTools 照常；守卫与角色矩阵测试全过 |
 | S3 | Claude Code 开工、增量、审批三种决策、中断、需求工具、续接可用；四档权限生效 |
 | S4 | 至少四家 ACP 真实冒烟通过；假 Agent 一致性测试全过 |
 | S5 | 开工可选 Agent；时间线对三种通道一致；Agent 面板正确；中英文案无残留「Codex」（Codex 专属处除外） |
@@ -477,4 +477,49 @@ POST /api/v1/sessions | /api/v2/requirements/:id/sessions | /api/v2/projects/:id
 
 ## 十二、实施记录
 
-（待用户确认需求与本设计后开始，按分片记录。）
+### S0 实测（2026-10-08）
+
+驱动脚本与依赖在 `/Volumes/Sue-SSD/Dev/tmp/suduo/agent-probe/`（`package.json` 锁版本：Claude Agent SDK 0.3.293、ACP SDK 1.7.0、MCP SDK 1.32.1、OpenCode 1.18.35、Qwen Code 0.25.0、Gemini CLI 0.63.0、Copilot CLI 1.0.93）。本机 `claude` 2.1.284、捆绑 Codex 0.159.2。
+
+**Codex（`codex-mcp-probe.mjs`，中转站模型）**
+
+| 项 | 结果 | 对设计的影响 |
+|---|---|---|
+| `thread/start` 的 `config` 覆盖里写 `mcp_servers.suduo`（url + `http_headers` 里的 Bearer） | ✅ 能调用；同一进程两个线程各用各的令牌（TA / TB 不串） | 共享进程方案成立，不需要每会话一个 Codex 进程 |
+| 新进程 `thread/resume` 时换令牌 | ✅ 新令牌生效 | 「续接时重签」成立 |
+| 默认工具审批 | ❌ 不配时调用失败：「MCP tool call requires approval, but approval policy is never」 | SuDuo 的 MCP 配 `default_tools_approval_mode = "approve"`（取值有 auto / prompt / writes / approve）；写操作的确认由 SuDuo 确认卡负责 |
+| `tool_timeout_sec = 600` 下挂起 75 秒 | ✅ 正常返回 | 写工具确认可以挂起等用户 |
+| `tool_timeout_sec = 30` 下挂起 45 秒 | 30 秒超时失败；**Codex 不断开连接、不发取消通知** | 服务端感知不到 Agent 超时，改为**服务端自己计时**：在配置的超时到达前主动回复「已存为草稿，等用户在界面确认」 |
+| MCP 请求的 Origin 头 | 不带 | `/mcp` 独立守卫的设计成立 |
+
+**ACP（`acp-probe.mjs`）**
+
+| Agent | 握手能力 | 登录方式 | 未登录时 `session/new` | 备注 |
+|---|---|---|---|---|
+| Gemini CLI 0.63（`--acp`） | loadSession、图片、HTTP MCP | Google、API Key、Vertex、网关 | 报「Gemini API key is missing or not configured」 | `--experimental-acp` 已废弃 |
+| Qwen Code 0.25（`--acp`） | loadSession、resume、list、图片、HTTP MCP | OpenAI 兼容 API Key | 报「Authentication required」 | |
+| Copilot CLI 1.0.93（`--acp`） | loadSession、close、list、图片、HTTP MCP | `copilot-login`（`_meta` 标 terminal-auth） | 报「Authentication required」 | npm 安装要连同平台包（可选依赖）一起装 |
+| OpenCode 1.18.35（`acp`） | loadSession、resume、close、fork、list、图片、HTTP MCP | opencode 登录 | **能建会话**，带免费模型（`opencode/big-pickle` 等）；配置项 model、mode（build / plan） | 见下 |
+
+OpenCode 完整回合：SuDuo MCP 工具调用成功（带会话令牌，Agent 侧工具名 `suduo_probe_echo`）；**自己写文件，不走 `fs/write_text_file`，build 模式下也不发权限请求** → 「写前询问 / 只读」须在启动时经 `OPENCODE_CONFIG_CONTENT` 注入权限规则（编辑、执行设为 ask / deny），plan 模式作只读辅助；有 `usage_update`；`session/cancel` 后立即返回 `stopReason: cancelled`。
+
+结论：四家都支持 HTTP MCP 与 loadSession，ADR-0015 在 ACP 侧成立；「未登录」统一由 `session/new` 的鉴权错误识别为 `auth_required`。
+
+**Claude Code（`claude-sdk-probe.mjs`、`claude-stream-probe.mjs`，用户本机订阅登录）**
+
+| 项 | 结果 | 对设计的影响 |
+|---|---|---|
+| SDK 0.3.293 + `pathToClaudeCodeExecutable` 指向自装 `claude` 2.1.284 | ✅ `apiKeySource: none`，用本机订阅 | 方案成立；打包排除 SDK 的平台二进制 |
+| `claude auth status` | 退出码 0，输出 JSON：`loggedIn`、`authMethod`、`apiProvider`、`subscriptionType` 及邮箱、组织等 | 解析器**只取** `loggedIn`、`authMethod`、`apiProvider`，邮箱与组织不读不存 |
+| HTTP MCP（Bearer） | ✅ 工具名 `mcp__suduo__<工具>`；模型先用 ToolSearch 加载延迟工具再调用 | 工具说明里写清工具名 |
+| `default` 档 | ✅ MCP 工具与 Write 都进 `canUseTool` | 审批映射成立 |
+| 只读档（`settingSources: []` + `dontAsk` + `disallowedTools` 写入类） | ✅ 写工具不可用 | 成立；`allowedTools` 的裸工具名会绕过 `canUseTool`（SDK 警告），只放只读工具 |
+| 不加载设置时的 MCP | ⚠️ 仍挂上 claude.ai 账号的连接器 | 只读、评审、讨论任务加 `strictMcpConfig: true`（✅ 实测只剩 SuDuo 的 MCP），满足 ADR-0009 |
+| 中断 | `interrupt()` 返回后，本回合结果为 `error_during_execution`；启动完成前就中断时迭代器还会抛错 | 适配器：发过中断 → 记为 interrupted，并忽略随后的抛错 |
+| 长寿命流式查询 | ✅ 同一查询连续 4 个回合，会话 ID 不变；第 3 回合中途中断后第 4 回合照常 | 采用「每会话一条长寿命查询」，不必每回合重建 |
+
+**未实测（留待后续分片）**：Cursor CLI、Kimi Code（本机未装，配置按官方说明）；Gemini、Qwen、Copilot 的完整回合（需用户登录）；Windows 上的 worktree 与可执行文件解析；各 Agent 调用 `*_submit` 类工具的可靠性（随 S9 / S11 实测）。
+
+### S1 契约与地基（进行中）
+
+- **S1-1（已完成）**：运行时接口以 `approvalMode: RuntimeApprovalMode` 取代 Codex 专有的 `security`；`RuntimeApprovalMode` = 用户三档 + `readonly`，Codex 适配器用 `RUNTIME_APPROVAL_MODE_POLICIES` 换算，房间任务显式传 `readonly`，删除按组合猜房间档的逻辑。**偏差**：用户可选的「只读」档（数据库 `approval_mode` 放宽、界面选择器）移到 S5 与界面一起做，S1 不动会话表的这一列。质量门：client typecheck、lint 通过；受影响 7 组测试 84 项通过。

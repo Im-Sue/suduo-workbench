@@ -11,7 +11,6 @@ import { fileURLToPath } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
 import {
   CODEX_VERSION,
-  M1_RUNTIME_SECURITY_POLICY,
   type ApprovalDecision,
   type EventEnvelope,
   type JsonValue,
@@ -170,7 +169,7 @@ try {
     sessionId: session.id,
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   const binding = threads.attach({
     sessionId: session.id,
@@ -188,7 +187,7 @@ try {
     input: [{ type: "text", text: "请只回复一句：gate stream ok。" }],
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   await collector.waitFor(
     (event) =>
@@ -218,7 +217,7 @@ try {
     ],
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   const acceptedApproval = await decideNextApproval({
     runtime: firstRuntime,
@@ -252,7 +251,7 @@ try {
     ],
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   const declinedApproval = await decideNextApproval({
     runtime: firstRuntime,
@@ -285,7 +284,7 @@ try {
     ],
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   await collector.waitFor(
     (event) =>
@@ -331,7 +330,7 @@ try {
     threadRef: binding.threadRef,
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   if (
     resumed.primaryThread.threadRef.threadId !== binding.threadRef.threadId
@@ -350,7 +349,7 @@ try {
     input: [{ type: "text", text: "请只回复一句：resume gate ok。" }],
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   await collector.waitFor(
     (event) =>
@@ -367,7 +366,7 @@ try {
     sessionId: toolSession.id,
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
     dynamicTools: GATE_TOOLS,
   });
   threads.attach({
@@ -408,7 +407,7 @@ try {
     ],
     projectRoot,
     workspaceRoots: [projectRoot],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask",
   });
   await collector.waitFor(
     (event) =>

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  APPROVAL_MODE_POLICIES,
   ROOM_AGENT_SECURITY_POLICY,
   type AgentRuntime,
   type ApproveResult,
@@ -18,7 +17,7 @@ import {
   type StartTurnInput,
   type StartTurnResult,
 } from "@suduo/client-contracts";
-import { sessionSecurityPolicy } from "../src/application/approval-mode-cap.js";
+import { sessionRuntimeApprovalMode } from "../src/application/approval-mode-cap.js";
 import { EventBroker } from "../src/application/event-broker.js";
 import { EventLedger } from "../src/application/event-ledger.js";
 import { MessageService } from "../src/application/message-service.js";
@@ -152,17 +151,17 @@ describe("房间任务会话", () => {
     try {
       const task = await context.sessionService.create(context.project.id, { title: "房间任务" }, {}, { kind: "room_task", locale: "zh-CN" });
       const normal = await context.sessionService.create(context.project.id, { title: "普通" }, {}, { locale: "zh-CN" });
-      expect(context.runtime.threads[0]!.security).toEqual(ROOM_AGENT_SECURITY_POLICY);
-      expect(context.runtime.threads[1]!.security).toEqual(APPROVAL_MODE_POLICIES.ask);
+      expect(context.runtime.threads[0]!.approvalMode).toEqual("readonly");
+      expect(context.runtime.threads[1]!.approvalMode).toEqual("ask");
 
       await context.messages.send(task.id, { content: [{ type: "text", text: "你好" }] }, "key-1");
       await context.messages.send(normal.id, { content: [{ type: "text", text: "你好" }] }, "key-2");
-      expect(context.runtime.turns[0]!.security).toEqual(ROOM_AGENT_SECURITY_POLICY);
-      expect(context.runtime.turns[1]!.security).toEqual(APPROVAL_MODE_POLICIES.ask);
+      expect(context.runtime.turns[0]!.approvalMode).toEqual("readonly");
+      expect(context.runtime.turns[1]!.approvalMode).toEqual("ask");
 
       // 会话自己的审批档（哪怕被改成 full）不影响房间任务会话。
-      expect(sessionSecurityPolicy({ approvalMode: "full", kind: "room_task" })).toEqual(ROOM_AGENT_SECURITY_POLICY);
-      expect(sessionSecurityPolicy({ approvalMode: "auto" })).toEqual(APPROVAL_MODE_POLICIES.auto);
+      expect(sessionRuntimeApprovalMode({ approvalMode: "full", kind: "room_task" })).toEqual("readonly");
+      expect(sessionRuntimeApprovalMode({ approvalMode: "auto" })).toEqual("auto");
     } finally {
       context.database.close();
     }
@@ -182,7 +181,7 @@ describe("房间任务会话", () => {
       sessionId: "s-1",
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: ROOM_AGENT_SECURITY_POLICY,
+      approvalMode: "readonly",
     });
     await runtime.startTurn({
       sessionId: "s-1",
@@ -191,7 +190,7 @@ describe("房间任务会话", () => {
       input: [{ type: "text", text: "hi" }],
       projectRoot: "/tmp/project",
       workspaceRoots: ["/tmp/project"],
-      security: ROOM_AGENT_SECURITY_POLICY,
+      approvalMode: "readonly",
     });
     expect(connection.requests.find((request) => request.method === "thread/start")?.params).toMatchObject({
       approvalPolicy: "never",
