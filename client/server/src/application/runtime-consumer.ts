@@ -43,6 +43,15 @@ export async function consumeRuntimeUntilAborted(input: {
           }
           continue;
         }
+        if (event.type === "runtime.connection-closed" || event.type === "approval.withdrawn") {
+          // 一个会话的 Agent 连接关了 / Agent 撤回了审批请求：只作废相应的卡（ADR-0017 故障隔离），不进账本。
+          try {
+            routeApprovalLifecycle(input.approvals, event);
+          } catch (error) {
+            input.onError?.(error);
+          }
+          continue;
+        }
         try {
           input.ingestor.ingest(event);
         } catch (error) {
@@ -106,4 +115,14 @@ async function declineToolCall(runtime: AgentRuntime, event: RuntimeEventDraft):
       contentItems: [{ type: "inputText", text: "The SuDuo tool service is unavailable, so this call wasn't run." }],
     })
     .catch(() => undefined);
+}
+
+function routeApprovalLifecycle(approvals: ApprovalService, event: RuntimeEventDraft): void {
+  const payload = event.payload !== null && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload : {};
+  if (event.type === "runtime.connection-closed" && typeof payload["connectionId"] === "string") {
+    approvals.orphanConnection(payload["connectionId"]);
+  }
+  if (event.type === "approval.withdrawn" && typeof payload["approvalRef"] === "string") {
+    approvals.orphanWithdrawn(payload["approvalRef"], typeof payload["reason"] === "string" ? payload["reason"] : "withdrawn by the agent");
+  }
 }

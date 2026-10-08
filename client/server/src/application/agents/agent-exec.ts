@@ -16,19 +16,29 @@ export type AgentExec = (
 ) => Promise<AgentExecResult>;
 
 /**
- * 会让子进程 claude 拒绝启动或误以为自己是嵌套会话的变量（开发者常在 Claude Code 里跑 SuDuo，参照 Tutti）。
- * 同时去掉父进程 Claude Code 传下来的会话标识，避免串到用户正在用的那个会话。
+ * 父进程 Claude Code 传下来的会话标识与进程间通信变量：留着会让子进程 claude 误以为自己是嵌套会话、
+ * 串到用户正在用的那个会话（开发者常在 Claude Code 里跑 SuDuo，参照 Tutti）。只去掉这些；用户自己的
+ * 配置（CLAUDE_CODE_USE_BEDROCK、CLAUDE_CODE_USE_VERTEX、CLAUDE_CODE_MAX_OUTPUT_TOKENS 等）原样保留。
  */
+const PARENT_SESSION_VARIABLES = new Set([
+  "CLAUDECODE",
+  "CLAUDE_PID",
+  "CLAUDE_EFFORT",
+  "CLAUDE_AGENT_SDK_VERSION",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_SESSION_ATTENDED",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+  "CLAUDE_CODE_SSE_PORT",
+]);
+
 export function agentChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = { ...env };
   for (const key of Object.keys(next)) {
-    if (
-      key === "CLAUDECODE" ||
-      key === "CLAUDE_PID" ||
-      key === "CLAUDE_EFFORT" ||
-      key === "CLAUDE_AGENT_SDK_VERSION" ||
-      key.startsWith("CLAUDE_CODE_")
-    ) {
+    if (PARENT_SESSION_VARIABLES.has(key)) {
       delete next[key];
     }
   }
@@ -42,7 +52,8 @@ export const execAgentCommand: AgentExec = (file, args, options) =>
   new Promise((resolve) => {
     const windowsScript = process.platform === "win32" && /\.(cmd|bat)$/i.test(file);
     const command = windowsScript ? "cmd.exe" : file;
-    const commandArgs = windowsScript ? ["/d", "/s", "/c", [quoteWindows(file), ...args.map(quoteWindows)].join(" ")] : [...args];
+    // cmd.exe 的 /s 会去掉整行首尾各一个引号：整行外面再包一层，路径里有空格也不会被拆开。
+    const commandArgs = windowsScript ? ["/d", "/s", "/c", `"${[quoteWindows(file), ...args.map(quoteWindows)].join(" ")}"`] : [...args];
     execFile(
       command,
       commandArgs,

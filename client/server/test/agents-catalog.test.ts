@@ -69,7 +69,7 @@ function service(options: {
 const byId = (agents: AgentDto[], id: string) => agents.find((agent) => agent.id === id)!;
 
 describe("Agent 配置表", () => {
-  it("内置配置表通过校验，首批八家都在，只有 Codex 是捆绑且已可驱动", () => {
+  it("内置配置表通过校验，首批八家都在，只有 Codex 是捆绑的；八家都已可驱动（S3 Claude、S4 ACP）", () => {
     expect(() => validateAgentCatalog(AGENT_CATALOG)).not.toThrow();
     expect(AGENT_CATALOG.map((agent) => agent.id)).toEqual([
       "claude-code",
@@ -82,7 +82,7 @@ describe("Agent 配置表", () => {
       "kimi-code",
     ]);
     expect(AGENT_CATALOG.filter((agent) => agent.bundled).map((agent) => agent.id)).toEqual(["codex"]);
-    expect(AGENT_CATALOG.filter((agent) => agent.runtimeAvailable).map((agent) => agent.id)).toEqual(["codex"]);
+    expect(AGENT_CATALOG.filter((agent) => !agent.runtimeAvailable)).toEqual([]);
   });
 
   it("重复 id、ACP 缺启动参数都启动失败", () => {
@@ -116,8 +116,17 @@ describe("版本与登录状态解析", () => {
   });
 
   it("子进程环境去掉 Claude Code 的嵌套标记与会话标识，其余保留", () => {
-    const env = agentChildEnv({ PATH: "/bin", CLAUDECODE: "1", CLAUDE_CODE_ENTRYPOINT: "vscode", CLAUDE_PID: "1", HTTPS_PROXY: "http://p" });
-    expect(env).toEqual({ PATH: "/bin", HTTPS_PROXY: "http://p" });
+    const env = agentChildEnv({
+      PATH: "/bin",
+      CLAUDECODE: "1",
+      CLAUDE_CODE_ENTRYPOINT: "vscode",
+      CLAUDE_CODE_MESSAGING_TOKEN: "t",
+      CLAUDE_PID: "1",
+      HTTPS_PROXY: "http://p",
+      CLAUDE_CODE_USE_BEDROCK: "1",
+    });
+    // 用户自己的 Claude Code 配置保留
+    expect(env).toEqual({ PATH: "/bin", HTTPS_PROXY: "http://p", CLAUDE_CODE_USE_BEDROCK: "1" });
   });
 });
 
@@ -163,7 +172,7 @@ describe("Agent 状态检测", () => {
     const codex = byId(agents, "codex");
     expect(codex).toMatchObject({ status: "ready", version: "0.159.2", bundled: true, runtimeAvailable: true });
     const gemini = byId(agents, "gemini");
-    expect(gemini).toMatchObject({ status: "not_installed", reasonCode: "binary_not_found", runtimeAvailable: false });
+    expect(gemini).toMatchObject({ status: "not_installed", reasonCode: "binary_not_found", runtimeAvailable: true });
     expect(gemini.actions.map((action) => action.kind)).toEqual(["copy_install_command", "recheck", "open_homepage"]);
     expect(gemini.actions[0]!.command).toBe("npm install -g @google/gemini-cli");
     // Kimi 没有核实过的安装命令：只给官网
@@ -224,6 +233,23 @@ describe("Agent 状态检测", () => {
     expect(byId((await agents.list()).agents, "claude-code").status).toBe("auth_required");
     now += 11 * 60_000;
     expect(byId((await agents.list()).agents, "claude-code").status).toBe("ready");
+  });
+
+  it("ACP Agent 的登录失败一直记着（检测命令看不出），直到正常开出会话或用户重新检测（多 Agent S4）", async () => {
+    let now = 1_000_000;
+    const agents = service({
+      exec: fakeExec({ "/g/gemini --version": { exitCode: 0, stdout: "0.63.0\n", stderr: "", timedOut: false, spawnError: null } }),
+      found: { gemini: "/g/gemini" },
+      now: () => now,
+    });
+    expect(byId((await agents.list()).agents, "gemini").status).toBe("installed");
+    agents.markAuthRequired("gemini");
+    now += 11 * 60_000;
+    expect(byId((await agents.list()).agents, "gemini").status).toBe("auth_required");
+    agents.markAuthOk("gemini");
+    expect(byId((await agents.list()).agents, "gemini").status).toBe("installed");
+    agents.markAuthRequired("gemini");
+    expect((await agents.recheck("gemini")).status).toBe("installed");
   });
 
   it("设置：默认 Agent 与开关、路径覆盖；未知 Agent 报 404", async () => {

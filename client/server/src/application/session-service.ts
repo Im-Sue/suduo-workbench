@@ -141,7 +141,8 @@ export class SessionService {
         ...setup,
       });
     } catch (error) {
-      this.transitionState(session, "error", {
+      // Agent 没装或没登录：会话根本没开始，不留一条出错的会话（用户修好后重开即可）。
+      this.transitionState(session, isAgentNotReady(error) ? "deleted" : "error", {
         error: asJsonError(error),
       });
       throw error;
@@ -237,7 +238,8 @@ export class SessionService {
         ...input.setup,
       });
     } catch (error) {
-      this.transitionState(session, "error", {
+      // Agent 没装或没登录：会话根本没开始，不留一条出错的会话（用户修好后重开即可）。
+      this.transitionState(session, isAgentNotReady(error) ? "deleted" : "error", {
         error: asJsonError(error),
       });
       throw error;
@@ -567,4 +569,8 @@ function requireRecord<T>(record: T | null, message: ErrorText): T {
     throw new ApiError(404, "NOT_FOUND", message);
   }
   return record;
+}
+
+function isAgentNotReady(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "AGENT_NOT_READY";
 }

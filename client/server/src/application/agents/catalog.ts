@@ -48,7 +48,7 @@ export interface AgentDescriptor {
 const COMMON_ACP: Pick<AgentDescriptor, "channel" | "bundled" | "runtimeAvailable" | "versionArgs" | "auth" | "defaultConcurrency"> = {
   channel: "acp",
   bundled: false,
-  runtimeAvailable: false,
+  runtimeAvailable: true,
   versionArgs: ["--version"],
   auth: "acp-session-probe",
   defaultConcurrency: 2,
@@ -65,7 +65,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     vendor: "Anthropic",
     channel: "claude-sdk",
     bundled: false,
-    runtimeAvailable: false,
+    runtimeAvailable: true,
     binaryNames: ["claude"],
     launchArgs: [],
     versionArgs: ["--version"],

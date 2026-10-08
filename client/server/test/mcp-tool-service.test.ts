@@ -223,6 +223,15 @@ describe("会话工具服务的 MCP 一侧", () => {
     expect(approvals.getById(card.id)?.status).toBe("orphaned");
   });
 
+  it("Agent 撤回审批请求：只作废待确认的那张（多 Agent S3）", async () => {
+    const { session, service, approvalService, approvals, pendingCard } = setup({ draftAfterMs: 30 });
+    await service.callTool(grant(session.id), "comment_submit", { body: "撤回" }, live());
+    const card = await pendingCard();
+    expect(approvalService.orphanWithdrawn("no-such-ref", "x")).toBe(0);
+    expect(approvalService.orphanWithdrawn(card.runtimeApprovalRef, "withdrawn")).toBe(1);
+    expect(approvals.getById(card.id)?.status).toBe("orphaned");
+  });
+
   it("Agent 取消这次调用：同样转草稿", async () => {
     const { session, service, pendingCard, text } = setup();
     const controller = new AbortController();
@@ -353,6 +362,15 @@ describe("监督器选择工具通道", () => {
     await supervisor.ensureReady({ session, workspace, binding });
     expect(runtime.inputs).toHaveLength(1);
     expect(runtime.inputs[0]).toMatchObject({ mode: "resume", toolServer: { url: "http://127.0.0.1:8787/mcp" } });
+  });
+
+  it("续接时把运行时记在线程元数据里的说明带回去（Claude 的系统提示追加不进会话记录）", async () => {
+    const runtime = new ThreadRuntime(true);
+    const registry = new RuntimeRegistry();
+    registry.register(runtime);
+    const supervisor = new RuntimeSupervisor(registry, {}, { tokens: new ToolTokenRegistry(), url: () => "http://127.0.0.1:8787/mcp" });
+    await supervisor.ensureReady({ session, workspace, binding: { threadRef: THREAD_REF, metadata: { suDuoInstructions: "需求卡" } } as never });
+    expect(runtime.inputs[0]).toMatchObject({ mode: "resume", developerInstructions: "需求卡" });
   });
 
   it("运行时不支持或工具服务没在监听：沿用 dynamicTools；老线程续接不注入", async () => {

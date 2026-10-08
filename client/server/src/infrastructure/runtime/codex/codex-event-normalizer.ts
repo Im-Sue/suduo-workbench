@@ -6,6 +6,9 @@ import {
   type ThreadRef,
   type TurnRef,
 } from "@suduo/client-contracts";
+import { mcpContentItem, slimToolContentItems, suDuoInternalToolName } from "../suduo-tool-item.js";
+
+export { OMITTED_IMAGE_URL } from "../suduo-tool-item.js";
 
 const EVENT_TYPE_BY_NATIVE_METHOD: Readonly<Record<string, string>> = {
   "thread/started": "thread.started",
@@ -282,19 +285,6 @@ function integerOrNull(value: JsonValue | undefined): JsonValue {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
-/** 时间线里自定义工具结果的文本上限；完整结果模型已经拿到，账本只留可读摘要。 */
-const DYNAMIC_TOOL_TEXT_LIMIT = 4_000;
-/**
- * 图片 data URL 不进事件账本（一张截图就是几 MB）。占位只是数据标记：界面按 inputImage 显示自己语言的「（图片）」，
- * Codex 拿到的是原图，所以写英文、不随会话语言变。
- */
-export const OMITTED_IMAGE_URL = "[image omitted]";
-/**
- * 账本里工具结果截断后接的标记。这一层只认线程、拿不到会话语言，界面又会照原文显示它，
- * 所以只用与语言无关的省略号（工具结果本身已按会话语言写）。
- */
-const DYNAMIC_TOOL_TEXT_CLIPPED = "\n…";
-
 /**
  * 经 SuDuo 本机 MCP 工具服务（ADR-0015）的调用，Codex 记为 mcpToolCall（服务 suduo）。账本里 SuDuo 工具调用
  * 只有一种形状（ADR-0014：SuDuo 自己的 item 模型），所以换成与 dynamicTools 通道相同的 dynamicToolCall：
@@ -323,7 +313,7 @@ function adoptSuDuoMcpItem(method: string, params: Record<string, JsonValue>): R
       type: "dynamicToolCall",
       id: item["id"] ?? null,
       namespace: null,
-      tool: "suduo_" + item["tool"],
+      tool: suDuoInternalToolName(item["tool"]),
       arguments: item["arguments"] ?? null,
       status,
       contentItems,
@@ -331,17 +321,6 @@ function adoptSuDuoMcpItem(method: string, params: Record<string, JsonValue>): R
       durationMs: item["durationMs"] ?? null,
     },
   };
-}
-
-function mcpContentItem(entry: JsonValue): JsonValue {
-  const content = asObject(entry);
-  if (content["type"] === "text" && typeof content["text"] === "string") {
-    return { type: "inputText", text: content["text"] };
-  }
-  if (content["type"] === "image" && typeof content["data"] === "string" && typeof content["mimeType"] === "string") {
-    return { type: "inputImage", imageUrl: `data:${content["mimeType"]};base64,${content["data"]}` };
-  }
-  return { type: "inputText", text: JSON.stringify(entry) };
 }
 
 /**
@@ -359,22 +338,6 @@ function sanitizeDynamicToolItem(
   if (item["type"] !== "dynamicToolCall" || !Array.isArray(item["contentItems"])) {
     return params;
   }
-  const contentItems = item["contentItems"].map((entry): JsonValue => {
-    const content = asObject(entry);
-    if (content["type"] === "inputImage") {
-      return { type: "inputImage", imageUrl: OMITTED_IMAGE_URL };
-    }
-    if (content["type"] === "inputText" && typeof content["text"] === "string") {
-      const text = content["text"];
-      return {
-        type: "inputText",
-        text:
-          text.length > DYNAMIC_TOOL_TEXT_LIMIT
-            ? text.slice(0, DYNAMIC_TOOL_TEXT_LIMIT) + DYNAMIC_TOOL_TEXT_CLIPPED
-            : text,
-      };
-    }
-    return entry;
-  });
+  const contentItems = slimToolContentItems(item["contentItems"]);
   return { ...params, item: { ...item, contentItems } };
 }

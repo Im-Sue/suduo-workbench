@@ -13,6 +13,8 @@ export const session = {
   runtimeUnsupported: "Only runtimeId=codex-local is supported",
   agentIdNotString: "agentId must be a string",
   agentUnavailable: (agentId: string) => `This version of SuDuo can't start sessions with ${agentId} yet`,
+  agentNotInstalled: (name: string) => `${name} isn't installed on this computer. Install it, or set its path in Agent settings`,
+  agentAuthRequired: (name: string) => `${name} isn't signed in. Sign in from Agent settings (using its own sign-in), then start the session`,
   requirementRefStoreUnavailable: "Storage for requirement sessions is unavailable",
   threadMappingWriteFailed: "The runtime thread was created, but saving its local mapping failed",
   requirementRefWriteFailed: "The runtime thread was created, but saving its link to the requirement failed",

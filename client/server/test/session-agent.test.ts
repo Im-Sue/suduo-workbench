@@ -10,6 +10,7 @@ import { openBetterSqlite3Database } from "../src/infrastructure/db/better-sqlit
 import { runMigrations } from "../src/infrastructure/db/migration-runner.js";
 import { ProjectRepository } from "../src/infrastructure/db/repositories/project-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
+import { AgentNotReadyError } from "../src/infrastructure/runtime/agent-not-ready.js";
 import { RuntimeRegistry, agentIdOf } from "../src/infrastructure/runtime/runtime-registry.js";
 import { createMinimalHttpContext, postJson } from "./helpers/minimal-http-context.js";
 
@@ -110,5 +111,33 @@ describe("创建会话按 Agent 找运行时", () => {
 
     const wrongType = await postJson(base, `/api/v1/projects/${projectId}/sessions`, "s4", { agentId: 7 });
     expect(wrongType.status).toBe(400);
+  });
+});
+
+describe("Agent 没装或没登录（多 Agent S4）", () => {
+  const contexts: Array<ReturnType<typeof createMinimalHttpContext>> = [];
+  afterEach(async () => {
+    for (const context of contexts.splice(0)) await context.close();
+  });
+
+  class NotReadyRuntime extends FakeRuntime {
+    override async startThread(): Promise<StartThreadResult> {
+      throw new AgentNotReadyError("codex", "Codex", "auth_required", "Authentication required");
+    }
+  }
+
+  it("开会话报 400 AGENT_NOT_READY，说清怎么修，带 agentId 与原因；不留出错的会话", async () => {
+    const context = createMinimalHttpContext(new NotReadyRuntime("codex-local", "codex"));
+    contexts.push(context);
+    const base = await context.listen();
+    const project = await postJson(base, "/api/v1/projects", "project-key", { rootPath: context.projectRoot, name: "p" });
+    const projectId = ((await project.json()) as { id: string }).id;
+    const response = await postJson(base, `/api/v1/projects/${projectId}/sessions`, "s1", {});
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string; message: string; details: Record<string, unknown> } };
+    expect(body.error).toMatchObject({ code: "AGENT_NOT_READY", details: { agentId: "codex", reason: "auth_required" } });
+    expect(body.error.message).toContain("还没登录");
+    const listed = (await (await fetch(`${base}/api/v1/projects/${projectId}/sessions`, { headers: { origin: base } })).json()) as { items: unknown[] };
+    expect(listed.items).toEqual([]);
   });
 });

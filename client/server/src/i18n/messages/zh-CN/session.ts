@@ -14,6 +14,8 @@ export const session = {
   agentIdNotString: "agentId 必须是字符串",
   /** 配置表里有、但这个版本还接不上它，或者没有这家 Agent。 */
   agentUnavailable: (agentId: string) => `这个版本的 SuDuo 还不能用 ${agentId} 开工`,
+  agentNotInstalled: (name: string) => `本机没有找到 ${name}：请先安装，或在 Agent 设置里填写它的路径`,
+  agentAuthRequired: (name: string) => `${name} 还没登录：请先在 Agent 设置里登录（用它自己的登录方式），再开会话`,
   requirementRefStoreUnavailable: "V2 会话引用存储不可用",
   /** 结果不确定（409 IDEMPOTENCY_INDETERMINATE）：线程已在 Codex 建好，本机记录没写进去。 */
   threadMappingWriteFailed: "runtime thread 已创建，但本地映射写入失败",

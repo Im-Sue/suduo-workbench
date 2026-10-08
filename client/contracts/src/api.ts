@@ -24,6 +24,8 @@ export type ErrorCode =
   | "APPROVAL_ALREADY_DECIDED"
   | "RUNTIME_UNAVAILABLE"
   | "RUNTIME_REQUEST_FAILED"
+  /** 这家 Agent 没装或没登录（多 Agent，ADR-0014 / ADR-0016）；details 带 agentId 与 reason。 */
+  | "AGENT_NOT_READY"
   | "SHUTDOWN_UNAVAILABLE";
 
 export interface ErrorResponse {

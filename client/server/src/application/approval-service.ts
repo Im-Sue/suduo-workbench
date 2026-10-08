@@ -233,6 +233,18 @@ export class ApprovalService {
     return count;
   }
 
+  /** Agent 撤回了还没决定的审批请求（回合被中断等，如 Claude 的 canUseTool 被取消）：卡片作废。 */
+  orphanWithdrawn(runtimeApprovalRef: string, reason: string): number {
+    let count = 0;
+    for (const approval of this.approvals.listPendingOrDeciding()) {
+      if (approval.runtimeApprovalRef === runtimeApprovalRef && approval.status === "pending") {
+        this.ledger.orphanApproval({ approval, reason, ...this.approvalRefs(approval) });
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   /** 与 approval.resolved 同一套推导：线程取绑定，回合取审批请求里的 turnId。 */
   private approvalRefs(approval: ApprovalRecord): {
     threadRef: ThreadRef | null;

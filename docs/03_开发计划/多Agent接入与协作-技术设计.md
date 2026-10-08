@@ -551,3 +551,42 @@ OpenCode 完整回合：SuDuo MCP 工具调用成功（带会话令牌，Agent �
   9. 回复文字里的工具名替换也会改到需求正文、评论、附件文字里恰好出现的 `suduo_<工具名>`：只影响给模型看的文字，不落盘（笔记工具不经工具返回正文），接受。
   10. 用户自己的 Codex 配置里已有名为 suduo 的 MCP 服务时会与线程级配置合并冲突：概率极低，接受，记在这里。
 - **复核后重测**：client typecheck、lint 通过，全量测试 1646 项通过（server 711、web 887、desktop 36、contracts 12）；真实链路重跑（新需求会话读需求 → 发评论确认 → 落云端；重启后续接按清单重签令牌、工具可用）通过。gate-c 全量（官方 Lima 虚拟机，含复核后的修正）19 步全过（`GATE_EXIT=0`）：新 Codex 会话已默认走 MCP，老线程照常；虚拟机里 Codex 继承了宿主代理，本机直连的修正在这里同样生效。
+
+### S3 Claude Code 运行时（已完成）
+
+- **实现**：`infrastructure/runtime/claude/`——`claude-runtime.ts`（每个会话一条长寿命流式查询；建线程不启动进程，首个回合才启动；已有记录用 `resume`、否则用线程 ID 作 `sessionId` 新开，线程 ID 前后一致；一次只跑一个回合，后来的排队；中断、审批、撤回、进程断开都只影响这个会话）、`claude-translator.ts`（SDK 消息 → 现有条目：文字与思考按流式增量，Bash / Read / Grep / Glob / LS → `commandExecution`（查看、搜索、列目录按 Codex 的 commandActions 形状），Edit / MultiEdit / Write → `fileChange`（片段 diff），SuDuo 工具 → `dynamicToolCall`，其他 MCP → `mcpToolCall`，TodoWrite → 计划面板，Task → 协作代理，压缩 → `contextCompaction`；用量与回合结局按 Codex 形状；子 Agent 内部消息不展开；ToolSearch 不显示）、`claude-permissions.ts`（四档映射，见 2.4；SuDuo 工具服务整个放行，发评论走 SuDuo 自己的确认卡）。SDK 0.3.293 精确锁定，用到时才加载；各平台自带的 claude 二进制经 `ignoredOptionalDependencies` 不装（ADR-0016 只驱动用户本机的 claude）。
+- **审批**：`canUseTool` → 确认卡（中立字段 + 沿用 Codex 审批的 request 字段，现有审批坞照常显示）；同意 / 本会话同意（Claude 建议的规则一律改记到 session，不写用户设置文件）/ 拒绝（条目记 declined）/ 拒绝并停止（同时中断回合）。Claude 撤回请求（回合被中断等）发 `approval.withdrawn`，查询结束发 `runtime.connection-closed`，消费循环据此作废相应的卡、不进账本（ADR-0017 故障隔离）。`AskUserQuestion` 的选择题界面还没有，先自动拒绝并让它在回复里直接问（S5 做界面）。
+- **接口**：`POST /api/v2/requirements/:id/sessions`、`/api/v2/projects/:id/sessions` 的请求体可带 `agentId`（不传为 Codex；没接上的 Agent 报 400）。配置表 Claude Code 标为已可驱动；`AgentCatalogService.executablePath` 供运行时找 claude（用户填的路径优先）。
+- **顺手修正（S1-2 遗留）**：`agentChildEnv` 原来去掉所有 `CLAUDE_CODE_*`，会连带去掉用户自己的配置（`CLAUDE_CODE_USE_BEDROCK`、`CLAUDE_CODE_USE_VERTEX` 等）→ 改为只去掉父会话传下来的标识与进程间通信变量（明确清单）。
+- **端到端实测**（分支构建 18788 + 本机云端 + 本机订阅登录的 claude 2.1.284）：需求会话经 MCP 读需求、发评论确认、落云端；询问档的写命令与 Write 弹确认卡，同意、拒绝（记 declined）都对；同一查询连续多回合；中断记为 interrupted，之后照常；重启本机服务后续接，记得之前的对话，SuDuo 工具换新令牌照常可用；自动档改文件不问、完全访问不问。实测发现并修正：活着的查询切不到 `bypassPermissions`（启动时没允许）→ 完全访问与只读一样按「启动参数不同」重启查询（续接，历史不丢）；控制请求被拒时改为重启查询，不让这次发送失败。驱动脚本 `/Volumes/Sue-SSD/Dev/tmp/suduo/s3-*.mjs`。
+- **留给后续分片**：Claude 的模型列表（`supportedModels`）与推理强度、按 Agent 区分的模型选择（S5）；用户可选的「只读」档（S5，只读参数已单测、S0 实测过）；开会话前按 Agent 状态拦截并给修复入口（S5）；桌面应用把 SDK 打进 esbuild 包后的启动验证（S12）；限流、重试提示（`api_retry` 等）。
+- 质量门见 S4 之后的「S3 / S4 独立复核」。
+
+### S4 标准 ACP 运行时（已完成）
+
+- **实现**：`infrastructure/runtime/acp/`——`acp-runtime.ts`（每家 Agent 一个运行时实例；每个 SuDuo 会话一个 Agent 进程，会话之间互不影响；**建线程即建会话**：启动进程、`initialize`、`session/new`，线程 ID 就是 Agent 的会话 ID，没登录在这一步就报出来；闲置 10 分钟关进程，用到时再启动并 `session/load`（或 `session/resume`）续接，续接时回放的历史不进账本；进程崩了只影响这个会话，下个回合重新拉起并续接）、`acp-translator.ts`（`session/update` → 现有条目：文字与思考按「换了种更新就算结束」切分，execute / read / search / edit / fetch 按 Codex 形状，SuDuo 工具 → `dynamicToolCall`（认出各家写法：`suduo_<工具>`、`mcp__suduo__<工具>`、`suduo/<工具>`、`<工具> (suduo MCP Server)`），其他工具显示成「调用 <Agent> · 工具」，计划、用量、提示照转）、`acp-profiles.ts`（档位 → 会话模式按偏好选：只读 plan、询问 default、自动 auto-edit、完全访问 yolo；OpenCode 用 plan / build 并在启动时经 `OPENCODE_CONFIG_CONTENT` 注入权限规则，改档位重启进程）。ACP 官方 TypeScript 库 `@agentclientprotocol/sdk` 1.7.0（Apache-2.0）精确锁定，用到时才加载。
+- **审批**：`session/request_permission` 先按档位策略答（只读：查看类放行、写与执行拒绝；完全访问：放行；自动：查看与编辑放行），其余成确认卡，选项就是 Agent 给的选项（allow_once / allow_always / reject_once / reject_always）加「停止」；中断时先把等着的权限请求答成 cancelled 并作废卡片（ACP 要求）。SuDuo 不代读写文件、不提供终端（`clientCapabilities` 全关），由 Agent 自己做，权限请求照常交给 SuDuo。SuDuo 的说明放在会话第一条消息前（ACP 没有系统提示参数）。
+- **没装 / 没登录**：运行时抛 `AgentNotReadyError`，监督器转成 `400 AGENT_NOT_READY`（说明怎么修，details 带 agentId 与 reason，给 S5 做修复入口），这次建的会话直接退场（标为 deleted），不留出错的会话。ACP 的登录状态没有不留痕迹的检查办法（检查要建会话），所以「需要登录」在运行中确认后一直记着，直到这家 Agent 正常开出会话、或用户登录后点「重新检测」；Claude 有 `claude auth status`，照旧按检测结果。
+- **端到端实测**（分支构建 18788）：OpenCode（免费模型）需求会话经 MCP 读需求、发评论确认、落云端；询问档的写命令、拒绝（记 declined）、改文件都按 OpenCode 自己的权限请求出卡并正确回包。Gemini CLI、Qwen Code、Copilot CLI 本机未登录：开会话 1–3 秒内得到 `400 AGENT_NOT_READY`（「还没登录，请先在 Agent 设置里登录」），状态变为需要登录；Cursor 未安装得到「没有找到」。**这三家登录后的完整回合需要用户先用各自的官方方式登录后再测**（SuDuo 不代登录，ADR-0016）；Cursor、Kimi 需要安装。测试用假 Agent 进程（`test/fixtures/fake-acp-agent.mjs`，SDK 的 Agent 端）覆盖握手、说明、权限三种答法、中断、崩溃续接、闲置续接、令牌重签、OpenCode 权限规则。
+- **偏差与遗留**：TD 原计划的进程池（多个会话共用一个进程）改为每会话一个进程（隔离简单、cwd 与 MCP 配置天然按会话分开；闲置回收控制占用）。ACP Agent 的工具超时各家不同，SuDuo 写工具的转草稿时刻目前统一按 600 秒（Agent 若更早超时，卡片仍留作草稿）。只读能力：OpenCode 可做到（权限规则 + plan），其余四家要等登录后实测再标（配置表 readOnlyCapable 暂为 false，房间不能共享它们）。OpenCode 首次 `--version` 检测超时（首启慢），待 S12 调检测超时。
+
+### S3 / S4 独立复核与处理
+
+复核（subagent，读代码对照两个 SDK 的类型与源码）确认的问题，均已修正并补测试：
+
+1. **【高】中断被当成完成**：两个翻译器发的是 `turn.completed` + status interrupted，而队列、运行状态、时间线都只认 `turn.interrupted`（Codex 的归一化就是这样）→ 用户点停止后界面显示「已完成」、排队的下一条自动发出。改为发 `turn.interrupted`；真实链路复验 Claude 与 OpenCode 都是 interrupted，之后照常。
+2. **【高】ACP 续接期间点停止，消息仍发给 Agent**（Agent 在时间线外干活，自动 / 完全访问档下会悄悄改文件），紧接着的回合还会并发起第二个进程 → 每个等待之后检查回合是否还是当前回合；同一会话只允许一个启动续接在跑。
+3. **【中高】中断不认识的回合静默成功**（本机服务重启前没收尾的回合永远「运行中」）→ 抛「no active turn」，中断服务据此补终态；拿掉排队中的回合时给它一个 `turn.interrupted`。
+4. **【中】Claude 重启后丢说明**：系统提示追加不进 Claude 的会话记录 → 建线程时把说明记在线程元数据（`suDuoInstructions`），续接时监督器带回去。真实复验：重启后不调工具也能答出需求编号与标题。
+5. **【中】Claude 没有闲置回收**（每个会话常驻一个 claude 进程）→ 与 ACP 一样闲置 10 分钟关查询，下个回合续接。
+6. **【中】Claude 查询启动期间点停止再发消息，会并发起两条查询** → 同一会话只启动一条，并发的回合等同一个。
+7. **【中，Windows】`.cmd` 路径有空格时起不来**（`cmd /s /c` 去引号）→ 整行外再包一层引号（ACP 运行时与 S1 的检测命令都改了）；Windows 上结束进程用 `taskkill /T` 连同子进程。
+8. **【中】Claude「本会话同意」会收下切换模式的建议**，会话悄悄进 acceptEdits 而 SuDuo 仍显示「询问」→ 只收规则与目录建议；只有切换模式建议时不给「本会话同意」。
+9. **【低中】改档位立刻作用于正在跑的回合** → 档位与模型改为回合真正开始时生效（与 Codex 按回合下发一致），ACP 的权限策略也按回合开始时的档位答。
+10. **【低】ACP 回合中的报错只要带「key」「login」就当成没登录** → 回合中只认协议的 auth_required 错误码；启动与建会话时仍按说明文字判断。
+11. **【低】ACP Agent 不支持经 HTTP 接 MCP 时工具静默缺失** → 发一条提示（suduo-tools-unavailable）。
+12. 通用模式偏好里「询问」档不再选名为 ask 的模式（Cursor 的 ask 是只读问答）。自动档只放行工作目录里的编辑。
+
+**记下、暂不改**：Claude 的询问 / 自动 / 完全访问档加载用户与项目设置（`settingSources: user, project, local`），项目里自带的 `.claude/settings.json` 的放行规则与 hooks 可以不经 SuDuo 确认卡执行——这也是 CLAUDE.md 等项目说明能生效的前提，与用户在终端里用 Claude Code 打开这个仓库时一致；只读档不加载任何设置。S5 在开工对话框里说明这一点。其余推测项（后台任务自行产生 result、Windows 下孙进程是否随 stdin 关闭退出）待真实使用中观察。
+
+质量门：client typecheck、lint 通过，全量测试 1670 项通过（server 749、web 887、desktop 36、contracts 12）；gate-c 全量在复核修正前、修正后各跑一次，19 步都全过（`GATE_EXIT=0`）。

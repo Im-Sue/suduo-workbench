@@ -1266,6 +1266,33 @@ describe("Gate B HTTP", () => {
     }
   });
 
+  it("创建需求会话可指定 Agent（多 Agent S3）：没接上的 Agent 报 400，其他字段与非字符串报 400", async () => {
+    const context = createContext();
+    try {
+      configureRequirementsRemote(context);
+      const mappingRoot = join(context.projectRoot, "requirement-session-mapping-agent");
+      mkdirSync(mappingRoot);
+      addWorkspaceMapping(context, SESSION_PROJECT_ID, mappingRoot);
+      const post = (payload: unknown) =>
+        context.server.inject({
+          method: "POST",
+          url: `/api/v2/requirements/${SESSION_REQUIREMENT_ID}/sessions`,
+          headers: { host: context.host, origin: `http://${context.host}` },
+          payload: payload as Record<string, unknown>,
+        });
+      const created = await post({ agentId: "codex" });
+      expect(created.statusCode).toBe(201);
+      expect(created.json<{ agentId: string }>().agentId).toBe("codex");
+      // 测试上下文只注册了 Codex 运行时
+      expect((await post({ agentId: "claude-code" })).statusCode).toBe(400);
+      expect((await post({ agentId: 1 })).statusCode).toBe(400);
+      expect((await post({ title: "x" })).statusCode).toBe(400);
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
   it("创建需求会话：线程带需求卡与 suduo 工具，登记开工版本，不再生成快照与现状文件", async () => {
     const context = createContext();
     try {

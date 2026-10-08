@@ -1269,10 +1269,10 @@ function registerRequirementsV2Routes(
   server.post<{ Params: { requirementId: string } }>(
     "/api/v2/requirements/:requirementId/sessions",
     async (request, reply) => {
-      requireEmptyObject(request.body);
+      const agentId = optionalAgentId(request.body);
       return reply
         .code(201)
-        .send(await service.createRequirementSession(request.params.requirementId, request.locale));
+        .send(await service.createRequirementSession(request.params.requirementId, request.locale, agentId));
     },
   );
 
@@ -1286,10 +1286,10 @@ function registerRequirementsV2Routes(
   server.post<{ Params: { projectId: string } }>(
     "/api/v2/projects/:projectId/sessions",
     async (request, reply) => {
-      requireEmptyObject(request.body);
+      const agentId = optionalAgentId(request.body);
       return reply
         .code(201)
-        .send(await service.createProjectSession(request.params.projectId, request.locale));
+        .send(await service.createProjectSession(request.params.projectId, request.locale, agentId));
     },
   );
 }
@@ -1645,14 +1645,17 @@ function requireObject<T>(value: unknown): T {
   return value as T;
 }
 
-function requireEmptyObject(value: unknown): Record<string, never> {
-  const body = requireObject<Record<string, never>>(
-    value === undefined ? {} : value,
-  );
-  if (Object.keys(body).length > 0) {
+/** 开会话的请求体：只认可选的 agentId（多 Agent，ADR-0014）；不传为 Codex。 */
+function optionalAgentId(value: unknown): string | undefined {
+  const body = requireObject<Record<string, unknown>>(value === undefined || value === null ? {} : value);
+  const { agentId, ...rest } = body;
+  if (Object.keys(rest).length > 0) {
     throw validation((t) => t.http.bodyMustBeEmpty);
   }
-  return body;
+  if (agentId !== undefined && typeof agentId !== "string") {
+    throw validation((t) => t.session.agentIdNotString);
+  }
+  return agentId;
 }
 
 function parseIfMatch(value: string | string[] | undefined): number {

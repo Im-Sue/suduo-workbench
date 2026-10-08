@@ -49,6 +49,7 @@ export class AgentCatalogService {
   private readonly resolve: (names: readonly string[], options: ResolveExecutableOptions) => string | null;
   private readonly cache = new Map<string, CachedStatus>();
   private readonly inflight = new Map<string, Promise<AgentDto>>();
+  private readonly authFailures = new Set<string>();
 
   constructor(private readonly options: AgentCatalogServiceOptions) {
     this.catalog = options.catalog ?? AGENT_CATALOG;
@@ -73,7 +74,9 @@ export class AgentCatalogService {
     return { defaultAgentId: this.options.store.defaultAgentId(), agents };
   }
 
+  /** 重新检测（用户登录后点的）：之前运行中记下的登录失败也一并放下，下次用到时再确认。 */
   async recheck(agentId: string): Promise<AgentDto> {
+    this.authFailures.delete(agentId);
     return this.status(this.descriptor(agentId), true);
   }
 
@@ -114,7 +117,12 @@ export class AgentCatalogService {
   }
 
   /** 运行时发现鉴权失败时调用：把状态回灌为「需要登录」，不用等缓存过期。 */
+  /**
+   * 运行中 Agent 报了需要登录：记下来，直到它下次正常开出会话、或用户登录后点「重新检测」。
+   * ACP 的登录状态没有不留痕迹的检查办法（检查要建会话），只能这样在用到时确认。
+   */
   markAuthRequired(agentId: string): void {
+    this.authFailures.add(agentId);
     const cached = this.cache.get(agentId);
     if (!cached) {
       return;
@@ -130,6 +138,14 @@ export class AgentCatalogService {
     this.cache.set(agentId, { dto, expiresAt: this.now() + NOT_READY_TTL_MS });
   }
 
+  /** Agent 正常开出了会话：之前记的「需要登录」作废。 */
+  markAuthOk(agentId: string): void {
+    if (!this.authFailures.delete(agentId)) {
+      return;
+    }
+    this.cache.delete(agentId);
+  }
+
   private status(descriptor: AgentDescriptor, force: boolean): Promise<AgentDto> {
     const cached = this.cache.get(descriptor.id);
     if (!force && cached && cached.expiresAt > this.now()) {
@@ -140,7 +156,12 @@ export class AgentCatalogService {
       return running;
     }
     const check = this.detect(descriptor)
-      .then((dto) => {
+      .then((detected) => {
+        // 检测命令看不出登录状态的 Agent：用运行中记下的登录失败。
+        const dto: AgentDto =
+          descriptor.auth === "acp-session-probe" && this.authFailures.has(descriptor.id) && (detected.status === "installed" || detected.status === "ready")
+            ? { ...detected, status: "auth_required", reasonCode: "not_logged_in", actions: this.actionsFor(descriptor, "auth_required") }
+            : detected;
         const ready = dto.status === "ready" || dto.status === "installed";
         this.cache.set(descriptor.id, { dto, expiresAt: this.now() + (ready ? READY_TTL_MS : NOT_READY_TTL_MS) });
         return dto;
@@ -150,12 +171,20 @@ export class AgentCatalogService {
     return check;
   }
 
+  /** 这家 Agent 的可执行文件（用户填的路径优先，其次 PATH 与常见安装目录）；找不到为 null。运行时启动时也用它。 */
+  executablePath(agentId: string): string | null {
+    const descriptor = this.descriptor(agentId);
+    if (descriptor.bundled) {
+      return this.options.codexBin;
+    }
+    const setting = this.options.store.entry(descriptor.id);
+    return this.resolve(descriptor.binaryNames, { override: setting.binOverride, env: this.env, platform: this.platform });
+  }
+
   private async detect(descriptor: AgentDescriptor): Promise<AgentDto> {
     const setting = this.options.store.entry(descriptor.id);
     const env = agentChildEnv(this.env);
-    const executablePath = descriptor.bundled
-      ? this.options.codexBin
-      : this.resolve(descriptor.binaryNames, { override: setting.binOverride, env: this.env, platform: this.platform });
+    const executablePath = this.executablePath(descriptor.id);
     const base = (status: AgentStatus, reasonCode: AgentStatusReasonCode | null, extra: Partial<AgentDto> = {}): AgentDto => {
       const dto: AgentDto = {
         id: descriptor.id,

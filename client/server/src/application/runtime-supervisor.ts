@@ -9,6 +9,7 @@ import {
   type StartThreadResult,
 } from "@suduo/client-contracts";
 import type { ToolTokenRegistry } from "../infrastructure/mcp/tool-tokens.js";
+import { AgentNotReadyError } from "../infrastructure/runtime/agent-not-ready.js";
 import type { SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRecord } from "../infrastructure/db/repositories/session-thread-repository.js";
 import { ApiError, IndeterminateOperationError } from "./api-error.js";
@@ -98,6 +99,9 @@ export class RuntimeSupervisor {
       });
       return tools.mcpTools === null ? started : markToolChannel(started, tools.mcpTools);
     } catch (error) {
+      if (error instanceof AgentNotReadyError) {
+        throw agentNotReady(error);
+      }
       throw new IndeterminateOperationError(
         (t) => t.session.threadCreateIndeterminate,
         { cause: error },
@@ -221,6 +225,8 @@ export class RuntimeSupervisor {
       // 下次用到时再来（不抛错：抛错会让发消息那条路改为重建线程、丢掉历史）。
       return;
     }
+    // 说明不进 Agent 自己会话记录的运行时（Claude 的系统提示追加）把说明记在线程元数据里，续接时带回去。
+    const instructions = recordedInstructions(input.binding.metadata);
     try {
       await runtime.startThread({
         mode: "resume",
@@ -230,6 +236,7 @@ export class RuntimeSupervisor {
         workspaceRoots: [input.workspace.executionRoot],
         approvalMode: sessionRuntimeApprovalMode(input.session, this.approvalModeEnvironment),
         ...(toolServer === null ? {} : { toolServer }),
+        ...(instructions === null ? {} : { developerInstructions: instructions }),
       });
       this.readyThreads.add(key);
     } catch (error) {
@@ -260,6 +267,13 @@ export function toolServerTools(metadata: JsonValue): string[] | null {
   return Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : null;
 }
 
+/** 运行时记在线程元数据里的 SuDuo 说明（Claude 运行时用 suDuoInstructions 键）。 */
+function recordedInstructions(metadata: JsonValue): string | null {
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = metadata["suDuoInstructions"];
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
 export function usesToolServer(metadata: JsonValue): boolean {
   return toolServerTools(metadata) !== null;
 }
@@ -278,4 +292,15 @@ function markToolChannel(result: StartThreadResult, toolNames: string[]): StartT
     primaryThread: mark(result.primaryThread),
     threads: result.threads.map((thread) => (thread.threadRef.threadId === primaryId ? mark(thread) : thread)),
   };
+}
+
+/** Agent 没装或没登录：400 说明原因（前置条件不满足），details 带 agentId 与 reason 给界面做修复入口。 */
+export function agentNotReady(error: AgentNotReadyError): ApiError {
+  return new ApiError(
+    400,
+    "AGENT_NOT_READY",
+    (t) => (error.reason === "auth_required" ? t.session.agentAuthRequired(error.agentName) : t.session.agentNotInstalled(error.agentName)),
+    { agentId: error.agentId, reason: error.reason },
+    { cause: error },
+  );
 }

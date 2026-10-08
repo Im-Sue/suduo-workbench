@@ -23,6 +23,8 @@ import { SettingsService } from "./application/settings-service.js";
 import { ModelProviderService } from "./application/model-provider-service.js";
 import { McpService } from "./application/mcp-service.js";
 import { ProxyConnectivityService } from "./application/proxy-connectivity-service.js";
+import { agentChildEnv } from "./application/agents/agent-exec.js";
+import { AGENT_CATALOG } from "./application/agents/catalog.js";
 import { applyProxySettings } from "./application/proxy-settings.js";
 import { SkillAdminService } from "./application/skill-admin-service.js";
 import type { SkillRootsProvider } from "./application/skill-roots.js";
@@ -53,6 +55,8 @@ import { terminalOpener } from "./application/agents/terminal-login.js";
 import { MCP_ENDPOINT_PATH } from "./infrastructure/mcp/mcp-endpoint.js";
 import { ToolTokenRegistry } from "./infrastructure/mcp/tool-tokens.js";
 import { LoopbackGuard } from "./infrastructure/http/loopback-guard.js";
+import { AcpRuntime } from "./infrastructure/runtime/acp/acp-runtime.js";
+import { ClaudeRuntime, CLAUDE_AGENT_ID } from "./infrastructure/runtime/claude/claude-runtime.js";
 import { CodexRuntime } from "./infrastructure/runtime/codex/codex-runtime.js";
 import { RuntimeRegistry } from "./infrastructure/runtime/runtime-registry.js";
 import { StdioCodexTransport } from "./infrastructure/transport/stdio-codex-transport.js";
@@ -204,6 +208,32 @@ export function createSuDuoApplication(
   });
   const registry = new RuntimeRegistry();
   registry.register(runtime);
+  // Claude Code（ADR-0014）：经官方 Agent SDK 驱动用户本机的 claude；环境同 Codex（不带 CODEX_HOME），代理设置同步生效。
+  const inheritedAgentEnvironment = runtimeEnvironment(undefined);
+  const agentEnvironment = { ...inheritedAgentEnvironment };
+  applyProxySettings(agentEnvironment, inheritedAgentEnvironment, settingsService.proxySettings());
+  const claudeRuntime = new ClaudeRuntime({
+    resolveExecutable: () => agentCatalog.executablePath(CLAUDE_AGENT_ID),
+    env: () => agentChildEnv(agentEnvironment) as Record<string, string>,
+    onAuthRequired: () => agentCatalog.markAuthRequired(CLAUDE_AGENT_ID),
+  });
+  registry.register(claudeRuntime);
+  // 标准 ACP 的各家 Agent（ADR-0014）：每家一个运行时实例，每个会话一个 Agent 进程。
+  const acpRuntimes = AGENT_CATALOG.filter((agent) => agent.channel === "acp" && agent.runtimeAvailable).map((agent) => {
+    const acpRuntime = new AcpRuntime({
+      agentId: agent.id,
+      agentName: agent.displayName,
+      launch: () => {
+        const file = agentCatalog.executablePath(agent.id);
+        return file === null ? null : { file, args: agent.launchArgs };
+      },
+      env: () => agentChildEnv(agentEnvironment) as Record<string, string>,
+      onAuthRequired: () => agentCatalog.markAuthRequired(agent.id),
+      onReady: () => agentCatalog.markAuthOk(agent.id),
+    });
+    registry.register(acpRuntime);
+    return acpRuntime;
+  });
   // SuDuo 本机 MCP 工具服务（ADR-0015）：令牌只在内存；地址取本机服务实际监听的端口（还没监听时为 null，退回 dynamicTools）。
   const toolTokens = new ToolTokenRegistry();
   let httpServer: FastifyInstance | null = null;
@@ -215,6 +245,8 @@ export function createSuDuoApplication(
   };
   const supervisor = new RuntimeSupervisor(registry, process.env, { tokens: toolTokens, url: toolServerUrl });
   settingsService.setProxySettingsChangedHandler(async () => {
+    // Claude 下次启动查询时生效（已在跑的查询不重启）。
+    applyProxySettings(agentEnvironment, inheritedAgentEnvironment, settingsService.proxySettings());
     applyProxySettings(
       codexEnvironment,
       inheritedCodexEnvironment,
@@ -609,6 +641,8 @@ export function createSuDuoApplication(
       consumerAbort.abort();
       workspaceWatcher.close();
       await Promise.allSettled([server.close()]);
+      claudeRuntime.close();
+      for (const acpRuntime of acpRuntimes) acpRuntime.close();
       await Promise.allSettled([
         runtime.close(),
         ...consumers,
