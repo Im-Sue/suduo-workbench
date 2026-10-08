@@ -8,7 +8,7 @@ Your team also needs a SuDuo server; see the [deployment guide](../cloud/DEPLOYM
 
 ## Desktop app (trial)
 
-The desktop app includes everything the client needs, so you don't need Node.js, pnpm or git. It's a trial: it isn't signed yet and doesn't update itself.
+The desktop app includes everything the client needs, so you don't need Node.js or pnpm (git is only used for checkpoints and branch status). It's a trial: it isn't signed yet and doesn't update itself.
 
 1. Download the installer for your computer from the [latest release](https://github.com/Im-Sue/suduo-workbench/releases/latest). `SHA256SUMS.txt` in the same release lists the checksums.
 

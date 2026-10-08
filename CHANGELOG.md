@@ -2,6 +2,12 @@
 
 [中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+### Fixed
+
+- In a requirement's attachment list, the names of PDFs and other files that open in a new tab showed as blue underlined links. They now look like the other file names and are underlined only on hover.
+
 ## 0.10.0 — 2026-10-07
 
 Adds requirement priorities and files in comments, makes attachments a plain list again, and keeps project folder links apart for each server.

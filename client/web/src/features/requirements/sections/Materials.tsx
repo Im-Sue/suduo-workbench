@@ -402,7 +402,11 @@ function FileRow({
   const Icon = fileIconFor(name);
   // 能预览的文件，点文件名本身也能预览（图片在当前页放大，PDF 等在新标签页打开），不只靠右边的小眼睛。
   const nameClass = "min-w-0 flex-1 truncate text-left text-small";
-  const nameLinkClass = cn(nameClass, "cursor-pointer rounded-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring");
+  // PDF 等用 <a>：继承文字颜色、平时不加下划线，和图片的按钮看起来一样（没有全局的链接样式重置）。
+  const nameLinkClass = cn(
+    nameClass,
+    "cursor-pointer rounded-xs text-inherit no-underline outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring",
+  );
   return (
     <div className="group/file flex h-9 items-center gap-2.5 rounded-sm border border-border px-2.5 hover:bg-muted">
       <Icon className="size-4 shrink-0 text-subtle-foreground" aria-hidden="true" />
