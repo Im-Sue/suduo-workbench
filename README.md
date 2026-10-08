@@ -56,8 +56,9 @@ SuDuo (速舵) is where a development team keeps its requirements and discussion
 **Requirements**
 
 - Board and list views, seven statuses, assignees and `REQ-n` numbers
-- Requirement pages with Markdown, comments, attachments and a full activity history
-- Confirmed versions: publish the agreed set of materials so everyone builds from the same files
+- Requirement pages with Markdown, comments, attachments (newest first) and a full activity history
+- Priorities (urgent, high, medium, low) that order the board and the list
+- Files in comments, kept with the comment; save one as an attachment when it belongs to the requirement
 - Overview of status distribution, flow over time and requirements that have stalled
 - My work: what needs your answer, your requirements, your sessions and recent activity
 
@@ -145,7 +146,7 @@ SuDuo's interface is available in English and Simplified Chinese. It follows you
 
 ## Status
 
-SuDuo is in early access. The latest release is 0.9.0, which adds the desktop app for macOS and Windows as a trial.
+SuDuo is in early access. The latest release is 0.10.0, which adds requirement priorities and files in comments. The desktop app for macOS and Windows (from 0.9.0) is a trial.
 
 - The desktop app isn't signed yet and doesn't update itself; download each new version from the releases page. Running from source still works.
 - The server has no administrator or invitation system yet: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
@@ -159,7 +160,7 @@ See the [changelog](CHANGELOG.md) and [releases](https://github.com/Im-Sue/suduo
 <summary><b>Does my code go to the server?</b></summary>
 <br>
 
-No. Codex runs on your computer, in your folder. The server only receives what you post there yourself: requirements, comments, messages, the files you attach and the confirmed versions you publish (which can include files from your project folder). If you share your agent into a room, its answers and what it did are posted in that room and can include code.
+No. Codex runs on your computer, in your folder. The server only receives what you post there yourself: requirements, comments, messages, the files you attach to requirements and comments, and the confirmed versions published with earlier versions of SuDuo (which can include files from your project folder). If you share your agent into a room, its answers and what it did are posted in that room and can include code.
 
 </details>
 
@@ -175,7 +176,7 @@ No. Codex keeps its own configuration in `~/.codex` and talks to your model prov
 <summary><b>Do I need to install Codex separately?</b></summary>
 <br>
 
-No. The desktop app includes the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.9.0), and `pnpm install` installs the same version when you run from source. Either way it uses the same `~/.codex` as a Codex CLI you may already have.
+No. The desktop app includes the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.10.0), and `pnpm install` installs the same version when you run from source. Either way it uses the same `~/.codex` as a Codex CLI you may already have.
 
 </details>
 

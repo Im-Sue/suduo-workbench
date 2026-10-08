@@ -101,7 +101,7 @@ Stop SuDuo first (`Ctrl+C` in the window running `pnpm start`; on Windows `pnpm 
 
 ```bash
 git fetch --tags
-git checkout v0.9.0     # the release your team uses
+git checkout v0.10.0    # the release your team uses
 pnpm install
 pnpm start              # rebuilds automatically
 ```

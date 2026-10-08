@@ -8,7 +8,12 @@ import { messagesFor } from "../../../src/i18n/messages/index.js";
 
 // gate-c 固定按中文界面跑（技术设计 §五）：状态名取中文字典，与前端 `common.requirementStatus` 一致。
 const REQUIREMENT_STATUS_LABELS: Readonly<Record<RequirementStatus, string>> = messagesFor("zh-CN").common.requirementStatus;
-import { GATE_C_FIXTURE_COMMENT_AT, GATE_C_FIXTURE_IDS, GATE_C_FIXTURE_NUMBERS } from "../requirements-service-fixture.js";
+import {
+  GATE_C_FIXTURE_COMMENT_AT,
+  GATE_C_FIXTURE_IDS,
+  GATE_C_FIXTURE_NUMBERS,
+  GATE_C_HISTORY_PUBLISH_NOTE,
+} from "../requirements-service-fixture.js";
 import { capture, completeStartSessionDialog } from "./helpers.js";
 import type { GateCStep, GateCStepContext } from "./types.js";
 
@@ -335,7 +340,7 @@ async function verifyDetailAttachmentsAndRealtime(
     throw new Error("历史确认版里不应有删除按钮");
   }
   await activity.getByText("发布了确认版 · 第 1 版", { exact: false }).waitFor();
-  await activity.getByText("历史发布说明", { exact: true }).waitFor();
+  await activity.getByText(GATE_C_HISTORY_PUBLISH_NOTE, { exact: true }).waitFor();
   console.info("[requirements-attachments] 附件区无发布入口；历史确认版第 1 版只读可见，活动里的发布记录照常。");
 
   const publisher = await context.browserContext.newPage();

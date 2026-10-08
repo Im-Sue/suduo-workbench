@@ -125,6 +125,8 @@ const HISTORY_PUBLISHED_AT = "2026-08-24T00:00:00.000Z";
 export const GATE_C_FIXTURE_COMMENT_AT = MATERIALS_AT;
 
 const PUBLISH_MATERIAL_NAME = "发布材料.txt";
+/** 确认版停用前那一版的发布说明（人写的内容，英文界面原样显示）。 */
+export const GATE_C_HISTORY_PUBLISH_NOTE = "历史发布说明";
 const DELETABLE_MATERIAL_NAME = "待删除材料.txt";
 const ORDINARY_COMMENT_BODY = "这是一条普通评论，应继续按普通评论显示。";
 const ROOM_WELCOME_BODY = "欢迎来到项目讨论：这条消息是 Gate C 夹具预置的。";
@@ -239,6 +241,7 @@ export const GATE_C_FIXTURE_HUMAN_TEXTS: readonly string[] = [
   PUBLISH_MATERIAL_NAME,
   DELETABLE_MATERIAL_NAME,
   ORDINARY_COMMENT_BODY,
+  GATE_C_HISTORY_PUBLISH_NOTE,
   ROOM_WELCOME_BODY,
 ];
 
@@ -347,7 +350,7 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
   // 确认版停用前发布过的一版（只读历史）：版本、发布说明评论（并入发布条目，不单独成条）与活动。
   {
     const publishMaterial = attachments.get(GATE_C_FIXTURE_IDS.attachment1)!;
-    const historyNote = "历史发布说明";
+    const historyNote = GATE_C_HISTORY_PUBLISH_NOTE;
     artifactVersions.push({
       id: GATE_C_FIXTURE_IDS.artifactVersion1,
       requirementId: targetRequirementId,
