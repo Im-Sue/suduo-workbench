@@ -23,7 +23,7 @@ A self-hosted requirements workspace for teams that build with the Codex CLI.
 
 <br>
 
-![A requirement in SuDuo: the description, discussion and activity on the left; status, the local code folder and local sessions on the right; "Start session" at the top](.github/assets/screenshot-requirement-en.png)
+![A requirement in SuDuo: the description, attachments, discussion and activity on the left; status, priority, the local code folder and local sessions on the right; "Start session" at the top](.github/assets/screenshot-requirement-en.png)
 
 <p align="center"><sub>SuDuo is available in English and Simplified Chinese; see <a href="#language">Language</a>.</sub></p>
 

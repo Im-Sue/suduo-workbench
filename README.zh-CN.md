@@ -23,7 +23,7 @@
 
 > 本页为中文版。若与英文版 [README.md](README.md) 有出入，以英文版为准。
 
-![SuDuo 的需求详情页：左边是需求描述、讨论和活动记录，右边是状态、本机代码目录和本机会话，右上角是「开始会话」](.github/assets/screenshot-requirement.png)
+![SuDuo 的需求详情页：左边是需求描述、附件、讨论和活动记录，右边是状态、优先级、本机代码目录和本机会话，右上角是「开始会话」](.github/assets/screenshot-requirement.png)
 
 ## 速舵是什么
 
