@@ -64,21 +64,26 @@ export interface AgentDto {
   channel: AgentChannel;
   /** 随 SuDuo 捆绑（目前只有 Codex）。 */
   bundled: boolean;
+  /** 这个版本的 SuDuo 能否驱动它开工（接入通道已实现）；为 false 时只显示检测结果。 */
+  runtimeAvailable: boolean;
   enabled: boolean;
   status: AgentStatus;
   reasonCode: AgentStatusReasonCode | null;
   /** 原因的补充（如读到的版本号、退出码），不含凭据。 */
   reasonDetail: string | null;
   version: string | null;
+  /** 低于它无法使用；null 表示不设门槛。 */
   minVersion: string | null;
+  /** SuDuo 实测过的版本，只用于提示（ADR-0004：不拦截）。 */
+  verifiedVersion: string | null;
   executablePath: string | null;
   actions: AgentActionDto[];
   capabilities: AgentCapability[];
   /** 能做到「只读」（ADR-0014 第 9 条）；做不到的不能被共享进讨论。 */
   readOnlyCapable: boolean;
   homepageUrl: string;
-  /** 该厂商的使用条款（ADR-0016：只提示、不限制）。 */
-  termsUrl: string;
+  /** 该厂商的使用条款（ADR-0016：只提示、不限制）；没有可靠链接时为 null。 */
+  termsUrl: string | null;
   /** 最近一次检测时间（毫秒）；从未检测为 null。 */
   checkedAt: number | null;
 }

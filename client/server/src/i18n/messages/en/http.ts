@@ -20,6 +20,10 @@ export const http = {
   restoreHashRequired: "A hash is required to restore",
   skillNameRequired: "A Skill name is required",
   mustBeBoolean: (field: string) => `${field} must be a boolean`,
+  /** Multiple agents (ADR-0014). */
+  agentNotFound: (id: string) => `There's no agent called ${id}`,
+  agentBinOverrideInvalid: "binOverride must be a path string or null",
+  agentLoginUnsupported: (name: string) => `${name} manages its own sign-in; SuDuo doesn't provide one`,
   skillSourceInvalid: 'source must be "zip" or "folder"',
   openModeInvalid: "mode must be one of open, reveal, vscode, or terminal",
   lineInvalid: "line must be a positive whole number",

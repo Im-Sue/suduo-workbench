@@ -93,6 +93,7 @@ import {
   registerProxySettingsRoutes,
   type ProxySettingsRouteDependencies,
 } from "./routes/proxy-settings-routes.js";
+import { registerAgentsRoutes, type AgentsRouteDependencies } from "./routes/agents-routes.js";
 import {
   registerMcpRoutes,
   type McpRouteDependencies,
@@ -119,6 +120,7 @@ export interface HttpServerDependencies
   extends CodexStatusRouteDependencies,
     ModelProviderRouteDependencies,
     ProxySettingsRouteDependencies,
+    AgentsRouteDependencies,
     McpRouteDependencies,
     LocalDirectoryRouteDependencies,
     SystemActivityRouteDependencies {
@@ -251,6 +253,7 @@ export function buildHttpServer(
   registerModelProviderRoutes(server, dependencies);
   registerCodexConfigFileRoutes(server, dependencies);
   registerProxySettingsRoutes(server, dependencies);
+  registerAgentsRoutes(server, dependencies);
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }

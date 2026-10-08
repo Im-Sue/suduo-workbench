@@ -23,6 +23,10 @@ export const http = {
   skillNameRequired: "必须提供 skill name",
   /** field 是接口字段名。 */
   mustBeBoolean: (field: string) => `${field} 必须是布尔值`,
+  /** 多 Agent（ADR-0014）。 */
+  agentNotFound: (id: string) => `没有叫 ${id} 的 Agent`,
+  agentBinOverrideInvalid: "binOverride 必须是路径字符串或 null",
+  agentLoginUnsupported: (name: string) => `${name} 的登录在它自己的设置里管理，SuDuo 不提供登录入口`,
   skillSourceInvalid: 'source 必须为 "zip" 或 "folder"',
   openModeInvalid: "mode 必须为 open/reveal/vscode/terminal 之一",
   lineInvalid: "line 必须是正整数",

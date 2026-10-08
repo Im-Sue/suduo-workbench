@@ -47,6 +47,9 @@ import { ProjectRepository } from "./infrastructure/db/repositories/project-repo
 import { SessionRepository } from "./infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "./infrastructure/db/repositories/session-thread-repository.js";
 import { buildHttpServer } from "./infrastructure/http/http-server.js";
+import { AgentCatalogService } from "./application/agents/agent-catalog-service.js";
+import { AgentSettingsStore, agentSettingsPathFor } from "./application/agents/agent-settings-store.js";
+import { terminalOpener } from "./application/agents/terminal-login.js";
 import { LoopbackGuard } from "./infrastructure/http/loopback-guard.js";
 import { CodexRuntime } from "./infrastructure/runtime/codex/codex-runtime.js";
 import { RuntimeRegistry } from "./infrastructure/runtime/runtime-registry.js";
@@ -175,9 +178,13 @@ export function createSuDuoApplication(
   const ingestor = new RuntimeEventIngestor(threads, ledger, codexGlobalState);
 
   const codexHome = prepareCodexHome(options.codexHome ?? process.env["CODEX_HOME"]).path;
-  const settingsService = new SettingsService(
-    options.settingsFile ?? resolve(homedir(), ".suduo-settings.json"),
-  );
+  const settingsFile = options.settingsFile ?? resolve(homedir(), ".suduo-settings.json");
+  const settingsService = new SettingsService(settingsFile);
+  // 多 Agent（ADR-0014）：本机 Agent 的检测与设置；只用各家 CLI 自己的命令，不读凭据（ADR-0016）。
+  const agentCatalog = new AgentCatalogService({
+    store: new AgentSettingsStore(agentSettingsPathFor(settingsFile)),
+    codexBin: options.codexBin,
+  });
   const inheritedCodexEnvironment = runtimeEnvironment(codexHome);
   const codexEnvironment = { ...inheritedCodexEnvironment };
   applyProxySettings(
@@ -518,6 +525,8 @@ export function createSuDuoApplication(
     workspaceWatcher,
     git: gitService,
     settings: settingsService,
+    agents: agentCatalog,
+    openTerminal: terminalOpener(),
     modelProvider: modelProviderService,
     mcp: mcpService,
     proxyConnectivity,
