@@ -141,3 +141,38 @@ describe("Agent 没装或没登录（多 Agent S4）", () => {
     expect(listed.items).toEqual([]);
   });
 });
+
+describe("开会话时选审批档与模型；只读档（多 Agent S5）", () => {
+  const contexts: Array<ReturnType<typeof createMinimalHttpContext>> = [];
+  afterEach(async () => {
+    for (const context of contexts.splice(0)) await context.close();
+  });
+
+  it("建会话带审批档、模型、推理强度；只读能选能切回；做不到只读的 Agent 报 400", async () => {
+    const codex = new FakeRuntime("codex-local", "codex");
+    const context = createMinimalHttpContext(codex);
+    contexts.push(context);
+    const base = await context.listen();
+    const project = await postJson(base, "/api/v1/projects", "project-key", { rootPath: context.projectRoot, name: "p" });
+    const projectId = ((await project.json()) as { id: string }).id;
+
+    const created = await postJson(base, `/api/v1/projects/${projectId}/sessions`, "s1", { approvalMode: "readonly", model: "gpt-x", reasoningEffort: "high" });
+    expect(created.status, await created.clone().text()).toBe(201);
+    const session = (await created.json()) as { id: string; approvalMode: string; model: string; reasoningEffort: string };
+    expect(session).toMatchObject({ approvalMode: "readonly", model: "gpt-x", reasoningEffort: "high" });
+
+    const patch = (body: unknown, key: string) =>
+      fetch(`${base}/api/v1/sessions/${session.id}`, { method: "PATCH", headers: { origin: base, "idempotency-key": key, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const back = await patch({ approvalMode: "auto" }, "p1");
+    expect(((await back.json()) as { approvalMode: string }).approvalMode).toBe("auto");
+    const again = await patch({ approvalMode: "readonly" }, "p2");
+    expect(((await again.json()) as { approvalMode: string }).approvalMode).toBe("readonly");
+    expect((await patch({ approvalMode: "nope" }, "p3")).status).toBe(400);
+
+    const sessions = new SessionRepository(context.database);
+    const gemini = sessions.create({ projectId, title: "g", agentId: "gemini" });
+    const refused = await fetch(`${base}/api/v1/sessions/${gemini.id}`, { method: "PATCH", headers: { origin: base, "idempotency-key": "p4", "content-type": "application/json" }, body: JSON.stringify({ approvalMode: "readonly" }) });
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: { message: string } }).error.message).toContain("Gemini CLI");
+  });
+});

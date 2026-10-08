@@ -157,6 +157,10 @@ export const settingsAgent = {
     loadFailed: (message: string) => `没能读取本机设置：${message}`,
     /** 审批档的用户词表（需求 §5.1）。 */
     modes: {
+      readonly: {
+        label: "只读",
+        description: "只看不改：读文件、搜索、联网查资料，不改这台电脑上的文件。",
+      },
       ask: {
         label: "每步确认",
         description: "运行命令、修改文件前都先问你。最稳妥，也最常被打断。",

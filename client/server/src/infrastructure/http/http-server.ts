@@ -37,6 +37,7 @@ import type {
   OpenFileRequest,
   RemoveSkillRequest,
   SetSkillEnabledRequest,
+  SessionStartOptions,
   UpdateSessionRequest,
   UpdateSettingsRequest,
 } from "@suduo/client-contracts";
@@ -266,7 +267,7 @@ export function buildHttpServer(
   registerModelProviderRoutes(server, dependencies);
   registerCodexConfigFileRoutes(server, dependencies);
   registerProxySettingsRoutes(server, dependencies);
-  registerAgentsRoutes(server, dependencies);
+  registerAgentsRoutes(server, { ...dependencies, codexModelOptions: () => dependencies.modelProvider.listModelOptions() });
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }
@@ -1269,10 +1270,9 @@ function registerRequirementsV2Routes(
   server.post<{ Params: { requirementId: string } }>(
     "/api/v2/requirements/:requirementId/sessions",
     async (request, reply) => {
-      const agentId = optionalAgentId(request.body);
       return reply
         .code(201)
-        .send(await service.createRequirementSession(request.params.requirementId, request.locale, agentId));
+        .send(await service.createRequirementSession(request.params.requirementId, request.locale, sessionStartOptions(request.body)));
     },
   );
 
@@ -1286,10 +1286,9 @@ function registerRequirementsV2Routes(
   server.post<{ Params: { projectId: string } }>(
     "/api/v2/projects/:projectId/sessions",
     async (request, reply) => {
-      const agentId = optionalAgentId(request.body);
       return reply
         .code(201)
-        .send(await service.createProjectSession(request.params.projectId, request.locale, agentId));
+        .send(await service.createProjectSession(request.params.projectId, request.locale, sessionStartOptions(request.body)));
     },
   );
 }
@@ -1645,17 +1644,22 @@ function requireObject<T>(value: unknown): T {
   return value as T;
 }
 
-/** 开会话的请求体：只认可选的 agentId（多 Agent，ADR-0014）；不传为 Codex。 */
-function optionalAgentId(value: unknown): string | undefined {
+/** 开会话的请求体（多 Agent，ADR-0014）：Agent、审批档、模型、推理强度，都可不传；取值由会话服务校验。 */
+function sessionStartOptions(value: unknown): SessionStartOptions {
   const body = requireObject<Record<string, unknown>>(value === undefined || value === null ? {} : value);
-  const { agentId, ...rest } = body;
+  const { agentId, approvalMode, model, reasoningEffort, ...rest } = body;
   if (Object.keys(rest).length > 0) {
-    throw validation((t) => t.http.bodyMustBeEmpty);
+    throw validation((t) => t.http.sessionStartFieldsOnly);
   }
   if (agentId !== undefined && typeof agentId !== "string") {
     throw validation((t) => t.session.agentIdNotString);
   }
-  return agentId;
+  return {
+    ...(agentId === undefined ? {} : { agentId }),
+    ...(approvalMode === undefined ? {} : { approvalMode: approvalMode as NonNullable<SessionStartOptions["approvalMode"]> }),
+    ...(model === undefined ? {} : { model: model as NonNullable<SessionStartOptions["model"]> | null }),
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort: reasoningEffort as NonNullable<SessionStartOptions["reasoningEffort"]> | null }),
+  };
 }
 
 function parseIfMatch(value: string | string[] | undefined): number {

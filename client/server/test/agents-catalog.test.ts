@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentDto, AgentRuntime, StartThreadResult, StartTurnResult } from "@suduo/client-contracts";
 import {
   AgentCatalogService,
@@ -235,6 +235,15 @@ describe("Agent 状态检测", () => {
     expect(byId((await agents.list()).agents, "claude-code").status).toBe("ready");
   });
 
+  it("不等检测的列表：先回「检测中」并在后台检测，检测完再取就是结果（多 Agent S5）", async () => {
+    const exec = fakeExec({ "/bundled/codex --version": ok("codex-cli 0.159.2\n") });
+    const agents = service({ exec });
+    const first = agents.listNow();
+    expect(byId(first.agents, "codex").status).toBe("checking");
+    expect(byId(first.agents, "codex").actions).toEqual([]);
+    await vi.waitFor(() => expect(byId(agents.listNow().agents, "codex").status).toBe("ready"));
+  });
+
   it("ACP Agent 的登录失败一直记着（检测命令看不出），直到正常开出会话或用户重新检测（多 Agent S4）", async () => {
     let now = 1_000_000;
     const agents = service({
@@ -309,6 +318,13 @@ describe("Agent 接口", () => {
     const login = await context.server.inject({ method: "POST", url: "/api/v1/agents/gemini/login", headers: { ...writeHeaders, "idempotency-key": randomUUID() }, payload: {} });
     expect(login.json()).toEqual({ opened: true, command: "gemini" });
     expect(opened).toEqual(["gemini"]);
+
+    // 会话级模型选择器按 Agent 取选项：Claude 用别名，ACP 先不给，不认识的 Agent 404（多 Agent S5）
+    const claudeModels = await context.server.inject({ method: "GET", url: "/api/v1/agents/claude-code/models", headers: { host: HOST } });
+    expect((claudeModels.json() as { models: string[] }).models).toEqual(["opus", "sonnet", "haiku"]);
+    const geminiModels = await context.server.inject({ method: "GET", url: "/api/v1/agents/gemini/models", headers: { host: HOST } });
+    expect(geminiModels.json()).toEqual({ models: [], items: [] });
+    expect((await context.server.inject({ method: "GET", url: "/api/v1/agents/nope/models", headers: { host: HOST } })).statusCode).toBe(404);
 
     const missing = await context.server.inject({ method: "POST", url: "/api/v1/agents/nope/recheck", headers: { ...writeHeaders, "idempotency-key": randomUUID() }, payload: {} });
     expect(missing.statusCode).toBe(404);

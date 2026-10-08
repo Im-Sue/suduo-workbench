@@ -768,10 +768,11 @@ export function SessionRuntime(props: {
   const decideApproval = async (
     approval: ApprovalDto,
     decision: ApprovalDecisionInput,
+    optionId?: string,
   ) => {
     try {
       // 审批记录由事件（approval.resolved）进时间线，这里只刷新待处理列表。
-      await api.decideApproval(approval.id, decision);
+      await (optionId === undefined ? api.decideApproval(approval.id, decision) : api.decideApproval(approval.id, decision, optionId));
       await refreshApprovals(props.sessionId, setApprovals);
     } catch (cause) {
       reportError(cause, "action");
@@ -1146,7 +1147,8 @@ export function SessionRuntime(props: {
                       ) : null
                     }
                     modelSlot={
-                      session ? (
+                      // 不支持切换模型的 Agent 不出现模型选择（需求 4.3 / R8）。
+                      session && session.agent?.capabilities.includes("model_switch") !== false ? (
                         <SessionModelSwitcher
                           session={session}
                           provider={modelProvider}

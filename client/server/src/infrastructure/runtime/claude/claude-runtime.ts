@@ -79,6 +79,8 @@ interface ClaudeSession {
   toolServer: RuntimeToolServer | null;
   /** undefined = 不管（用 Claude 自己的默认）；null = 跟随默认；字符串 = 指定。 */
   model: string | null | undefined;
+  /** 推理强度，语义同 model。 */
+  effort: string | null | undefined;
   query: Query | null;
   input: InputQueue | null;
   connectionId: string;
@@ -102,6 +104,7 @@ interface QueuedTurn {
   message: SDKUserMessage;
   approvalMode: RuntimeApprovalMode;
   model: string | null | undefined;
+  effort: string | null | undefined;
 }
 
 /**
@@ -138,6 +141,7 @@ export class ClaudeRuntime implements AgentRuntime {
       developerInstructions: input.developerInstructions,
       toolServer: input.toolServer ?? null,
       model: undefined,
+      effort: undefined,
       query: null,
       input: null,
       connectionId: "",
@@ -179,6 +183,7 @@ export class ClaudeRuntime implements AgentRuntime {
       message: { type: "user", message: { role: "user", content: await contentBlocks(input.input) }, parent_tool_use_id: null },
       approvalMode: input.approvalMode,
       model: input.model,
+      effort: input.reasoningEffort,
     };
     if (session.activeTurnId === null) {
       this.dispatch(session, turn);
@@ -276,6 +281,8 @@ export class ClaudeRuntime implements AgentRuntime {
     session.approvalMode = turn.approvalMode;
     const modelChanged = turn.model !== undefined && turn.model !== session.model;
     if (modelChanged) session.model = turn.model;
+    const effortChanged = turn.effort !== undefined && turn.effort !== session.effort;
+    if (effortChanged) session.effort = turn.effort;
     const live = session.query;
     if (live === null || session.queryMode === null) return;
     if (!sameQueryShape(session.queryMode, turn.approvalMode)) {
@@ -288,6 +295,9 @@ export class ClaudeRuntime implements AgentRuntime {
     }
     if (modelChanged) {
       await this.control(session, (query) => query.setModel(turn.model ?? undefined));
+    }
+    if (effortChanged) {
+      await this.control(session, (query) => query.applyFlagSettings({ effortLevel: claudeEffort(session.effort) }));
     }
   }
 
@@ -358,6 +368,7 @@ export class ClaudeRuntime implements AgentRuntime {
       mcpServers: this.mcpServers(session),
       canUseTool: this.canUseTool(session, connectionId),
       ...(typeof session.model === "string" ? { model: session.model } : {}),
+      ...(claudeEffort(session.effort) === null ? {} : { effort: claudeEffort(session.effort)! }),
       stderr: (data: string) => {
         session.stderr.push(data);
         if (session.stderr.length > 40) session.stderr.shift();
@@ -592,6 +603,25 @@ export function describePermission(
 }
 
 const FILE_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+
+/** SuDuo 的推理强度 → Claude 的（low / medium / high / xhigh / max）；跟随默认为 null。 */
+export function claudeEffort(effort: string | null | undefined): "low" | "medium" | "high" | "xhigh" | "max" | null {
+  switch (effort) {
+    case "none":
+    case "minimal":
+    case "low":
+      return "low";
+    case "medium":
+    case "high":
+    case "xhigh":
+    case "max":
+      return effort;
+    case "ultra":
+      return "max";
+    default:
+      return null;
+  }
+}
 
 /**
  * 「本会话同意」能带回给 Claude 的建议：只要规则与目录，改记到 session。不收切换模式的建议

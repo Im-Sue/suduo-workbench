@@ -1,7 +1,8 @@
 import { CheckIcon, CircleIcon, MessageSquareIcon, MessageSquarePlusIcon, RotateCwIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SessionDto } from "@suduo/client-contracts";
+import { Link } from "@tanstack/react-router";
+import type { SessionDto, SessionStartOptions } from "@suduo/client-contracts";
 import { api, ApiClientError, type RequirementsSessionReferenceDto } from "../../../api/client.js";
 import { invalidateMappingCaches } from "../../../app/mapping-cache.js";
 import { classifyFailure } from "../../../feedback/classify.js";
@@ -21,13 +22,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { DirectoryPicker } from "./DirectoryPicker.js";
+import { localAgentsQuery, preferredAgent, rememberAgent } from "../../agents/queries.js";
+import { needsAgentChoice, StartOptions } from "../../agents/StartOptions.js";
 import { formatRelativeTime } from "../../../ui/format.js";
 import { useT } from "../../../i18n/provider.js";
 import type { Messages } from "../../../i18n/messages/index.js";
 
 /**
  * 分步的「开始会话」（需求 §4.4 / 技术设计 §6.3）：
- * 检查 → （已有会话时）选「继续 / 新开」→ （未关联目录、或目录已不可用时）选代码目录 → 准备（显示耗时，失败可重试）→ 就绪即进入。
+ * 检查 → （已有会话时）选「继续 / 新开」→ （未关联目录、或目录已不可用时）选代码目录 →（能用的 Agent 不止一家时）
+ * 选 Agent、权限、模型 → 准备（显示耗时，失败可重试）→ 就绪即进入。
  * 准备中关掉对话框不会中断：会话建好后用提示告知，并给「进入」。
  */
 export type LaunchRequest =
@@ -38,8 +42,9 @@ type Step =
   | { name: "checking" }
   | { name: "choose"; existing: RequirementsSessionReferenceDto[] }
   | { name: "directory"; initialPath: string; notice: DirectoryNotice | null }
+  | { name: "options" }
   | { name: "preparing"; startedAt: number; rootPath: string | null }
-  | { name: "failed"; failure: Failure; retry: "check" | "create" };
+  | { name: "failed"; failure: Failure; retry: "check" | "create"; agentNotReady: boolean };
 
 const SLOW_AFTER_MS = 15_000;
 
@@ -92,6 +97,10 @@ export function StartSessionDialog({
   // open：对话框开着；cancelled：用户放弃，后续不再推进；detached：准备中被关掉，建好后由调用方告知。
   const ended = useRef<"open" | "cancelled" | "detached">("open");
   const rootPath = useRef<string | null>(null);
+  const queryClient = useQueryClient();
+  // 开工选项：选项步里随选随更新；不用选时为 null（按默认开工）。
+  const [startOptions, setStartOptions] = useState<(SessionStartOptions & { agentId: string }) | null>(null);
+  const chosen = useRef<SessionStartOptions | null>(null);
 
   const update = useCallback((next: Step) => {
     if (ended.current !== "open") return;
@@ -145,13 +154,15 @@ export function StartSessionDialog({
             const problem = directoryProblem(inspection);
             update(
               problem === null
-                ? { name: "failed", failure, retry }
+                ? { name: "failed", failure, retry, agentNotReady: false }
                 : { name: "directory", initialPath: "", notice: { reason: problem, path } },
             );
           });
         return;
       }
-      update({ name: "failed", failure, retry });
+      const agentNotReady = cause instanceof ApiClientError && cause.code === "AGENT_NOT_READY";
+      // Agent 没装或没登录：重试回到选 Agent 那一步（换一家，或修好后再开）。
+      update({ name: "failed", failure, retry: agentNotReady ? "check" : retry, agentNotReady });
     },
     [close, onBackgroundFailed, t, update],
   );
@@ -160,16 +171,43 @@ export function StartSessionDialog({
     if (ended.current !== "open") return;
     update({ name: "preparing", startedAt: Date.now(), rootPath: rootPath.current });
     try {
+      const start = chosen.current ?? {};
       const session =
         request.kind === "project"
-          ? await api.createRequirementsProjectSession(request.remoteProjectId)
-          : await api.createRequirementsSession(request.requirementId);
+          ? await api.createRequirementsProjectSession(request.remoteProjectId, start)
+          : await api.createRequirementsSession(request.requirementId, start);
+      if (start.agentId !== undefined) rememberAgent(start.agentId);
       // await 期间用户可能已把对话框转到后台；重新读取，不用进入函数时的收窄结果。
       onReady(session, readEnded(ended) === "detached");
     } catch (cause) {
       fail(cause, "create");
     }
   }, [fail, onReady, request, update]);
+
+  /** 能用的 Agent 不止一家时先让人选；只有一家就直接用它开工。 */
+  const chooseOrCreate = useCallback(async () => {
+    // 不重试：拿不到列表就按默认 Agent 开工（服务端照样会说清楚这家 Agent 能不能用）。
+    let agents = await queryClient.fetchQuery({ ...localAgentsQuery, retry: false }).catch(() => null);
+    if (agents !== null && agents.agents.some((agent) => agent.runtimeAvailable && agent.status === "checking")) {
+      // 还有没检测完的（刚启动）：等它们检测完再决定问不问，最多等 20 秒，等不到就按现有结果。
+      const detected = await Promise.race([
+        api.listLocalAgentsDetected().catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 20_000)),
+      ]);
+      if (detected !== null) {
+        agents = detected;
+        queryClient.setQueryData(localAgentsQuery.queryKey, detected);
+      }
+    }
+    if (readEnded(ended) !== "open") return;
+    if (agents !== null && needsAgentChoice(agents.agents)) {
+      update({ name: "options" });
+      return;
+    }
+    const only = agents === null ? null : preferredAgent(agents.agents, agents.defaultAgentId);
+    chosen.current = only === null ? null : { agentId: only.id };
+    await create();
+  }, [create, queryClient, update]);
 
   const check = useCallback(async () => {
     update({ name: "checking" });
@@ -200,11 +238,11 @@ export function StartSessionDialog({
           return;
         }
       }
-      await create();
+      await chooseOrCreate();
     } catch (cause) {
       fail(cause, "check");
     }
-  }, [create, fail, request, update]);
+  }, [chooseOrCreate, fail, request, update]);
 
   const started = useRef(false);
   useEffect(() => {
@@ -230,7 +268,7 @@ export function StartSessionDialog({
               ended.current = "cancelled";
               onReady(session, false);
             }}
-            onCreate={() => void create()}
+            onCreate={() => void chooseOrCreate()}
             onCancel={close}
           />
         ) : null}
@@ -245,6 +283,25 @@ export function StartSessionDialog({
               void check();
             }}
           />
+        ) : null}
+        {step.name === "options" ? (
+          <>
+            <StartOptions onChange={setStartOptions} onNavigate={close} />
+            <DialogFooter>
+              <Button variant="secondary" onClick={close}>{t.feedback.dialog.close}</Button>
+              <Button
+                variant="primary"
+                disabled={startOptions === null}
+                data-testid="start-options-confirm"
+                onClick={() => {
+                  chosen.current = startOptions;
+                  void create();
+                }}
+              >
+                {t.agents.picker.start}
+              </Button>
+            </DialogFooter>
+          </>
         ) : null}
         {step.name === "preparing" ? (
           <PreparingBody
@@ -261,6 +318,13 @@ export function StartSessionDialog({
               message={t.requirements.startSession.failed(step.failure.message)}
             />
             <DialogFooter>
+              {step.agentNotReady ? (
+                <Button variant="ghost" asChild>
+                  <Link to="/settings/$section" params={{ section: "agents" }} onClick={close}>
+                    {t.agents.picker.openSettings}
+                  </Link>
+                </Button>
+              ) : null}
               <Button variant="secondary" onClick={close}>{t.feedback.dialog.close}</Button>
               <Button variant="primary" onClick={() => void (step.retry === "check" ? check() : create())}>
                 <RotateCwIcon />

@@ -165,7 +165,8 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     install: { unix: "curl -fsSL https://opencode.ai/install | bash", windows: "npm install -g opencode-ai" },
     homepageUrl: "https://opencode.ai",
     termsUrl: null,
-    capabilities: ["image_input", "plan", "token_usage", "model_switch", "session_resume", "mcp_http"],
+    // 模型在 ACP 会话的配置项里，SuDuo 还没接切换（S5 之后）：先不声明 model_switch，界面不出现模型选择。
+    capabilities: ["image_input", "plan", "token_usage", "session_resume", "mcp_http"],
     readOnlyCapable: false,
   },
   {

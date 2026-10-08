@@ -1,4 +1,5 @@
 import type {
+  ApprovalDecision,
   ApprovalDto,
   ApprovalKind,
   JsonValue,
@@ -35,7 +36,48 @@ import { messagesFor, type Messages } from "../../i18n/messages/index.js";
  * 按钮是「发出 / 不发」「发布 / 不发布」。它们对外且不能撤回（ADR-0004 红线），所以只能点按钮确认，
  * 回车不会替你发出；Esc 仍是「不发」。
  */
-export type ApprovalDecisionInput = "accept" | "acceptForSession" | "decline" | "cancel";
+export type ApprovalDecisionInput = ApprovalDecision;
+
+/** 卡上的一个选项：决策 + Agent 原生的选项 id（决定时带回去；没有选项的老卡为 undefined，按决策回）。 */
+export interface ApprovalChoice {
+  id: string | undefined;
+  decision: ApprovalDecision;
+  /** Agent 给这个选项起的名字（ACP 常有，如「按服务器始终允许」）；有就优先显示。 */
+  label?: string;
+}
+
+/**
+ * 审批卡的按钮来自卡上的选项（ADR-0014 中立字段：Codex 四种、Claude 视建议给不给「本会话同意」、ACP 是 Agent 自己的选项）。
+ * 主按钮是同意，旁边是拒绝，其余收进更多。没有选项的老卡沿用原来的四种。
+ */
+export function approvalChoices(request: JsonValue): { accept: ApprovalChoice | null; decline: ApprovalChoice | null; more: ApprovalChoice[] } {
+  const payload = request !== null && typeof request === "object" && !Array.isArray(request) ? request : {};
+  const raw = Array.isArray(payload["options"]) ? payload["options"] : null;
+  const options: ApprovalChoice[] =
+    raw === null
+      ? LEGACY_CHOICES
+      : raw.flatMap((entry) =>
+          entry !== null && typeof entry === "object" && !Array.isArray(entry) && typeof entry["id"] === "string" && isDecision(entry["decision"])
+            ? [{ id: entry["id"], decision: entry["decision"], ...(typeof entry["label"] === "string" && entry["label"] !== "" ? { label: entry["label"] } : {}) }]
+            : [],
+        );
+  const accept = options.find((option) => option.decision === "accept") ?? null;
+  const decline = options.find((option) => option.decision === "decline") ?? null;
+  return { accept, decline, more: options.filter((option) => option !== accept && option !== decline) };
+}
+
+const LEGACY_CHOICES: ApprovalChoice[] = [
+  { id: undefined, decision: "accept" },
+  { id: undefined, decision: "acceptForSession" },
+  { id: undefined, decision: "decline" },
+  { id: undefined, decision: "cancel" },
+];
+
+const DECISIONS: readonly ApprovalDecision[] = ["accept", "acceptForSession", "acceptAlways", "decline", "declineAlways", "cancel"];
+
+function isDecision(value: unknown): value is ApprovalDecision {
+  return typeof value === "string" && (DECISIONS as readonly string[]).includes(value);
+}
 
 export function ApprovalDock({
   approvals,
@@ -45,7 +87,7 @@ export function ApprovalDock({
   displayPath = (path) => path,
 }: {
   approvals: ApprovalDto[];
-  onDecide(approval: ApprovalDto, decision: ApprovalDecisionInput): Promise<void>;
+  onDecide(approval: ApprovalDto, decision: ApprovalDecisionInput, optionId?: string): Promise<void>;
   /** 文件改动审批要改的文件（从同一 item 的改动卡取；v2 审批请求本身不带文件列表）。 */
   changesFor?(approval: ApprovalDto): FileChangeEntry[];
   /** 在检查面板查看还没写入的改动。 */
@@ -59,11 +101,11 @@ export function ApprovalDock({
   const [deciding, setDeciding] = useState<ApprovalDecisionInput | null>(null);
   const dockRef = useRef<HTMLElement>(null);
 
-  const decide = (decision: ApprovalDecisionInput) => {
+  const decide = (decision: ApprovalDecisionInput, optionId?: string) => {
     // 已经在执行的卡（刷新后看到 deciding）不再接受决定，键盘也一样。
     if (current === undefined || deciding !== null || current.status === "deciding") return;
     setDeciding(decision);
-    void onDecide(current, decision).finally(() => setDeciding(null));
+    void (optionId === undefined ? onDecide(current, decision) : onDecide(current, decision, optionId)).finally(() => setDeciding(null));
   };
   const decideRef = useRef(decide);
   decideRef.current = decide;
@@ -89,13 +131,15 @@ export function ApprovalDock({
       const onNothing = target === document.body || target === document.documentElement;
       if (!onDock && !onNothing) return;
       if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"]') !== null) return;
+      const choices = approvalChoices(current.request);
       if (event.key === "Enter") {
-        if (externalWrite) return;
+        if (externalWrite || choices.accept === null) return;
         event.preventDefault();
-        decideRef.current("accept");
+        decideRef.current("accept", choices.accept.id);
       } else if (event.key === "Escape") {
+        if (choices.decline === null && !externalWrite) return;
         event.preventDefault();
-        decideRef.current("decline");
+        decideRef.current("decline", choices.decline?.id);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -133,6 +177,7 @@ export function ApprovalDock({
   const pending = current.kind === "file-change" ? (changesFor?.(current) ?? []) : [];
   const legacyFiles = current.kind === "file-change" && pending.length === 0 ? approvalFiles(current.request) : [];
   const busy = deciding !== null;
+  const choices = approvalChoices(current.request);
 
   return (
     <section
@@ -192,53 +237,66 @@ export function ApprovalDock({
         ) : null}
       </div>
       <footer className="flex items-center gap-2 px-3.5 py-3">
-        <span className="invisible text-caption text-subtle-foreground group-focus/dock:visible" aria-hidden="true">
-          {text.keyHint({ approve: <Kbd key="approve">⏎</Kbd>, decline: <Kbd key="decline">Esc</Kbd> })}
-        </span>
+        {choices.accept === null || choices.decline === null ? null : (
+          <span className="invisible text-caption text-subtle-foreground group-focus/dock:visible" aria-hidden="true">
+            {text.keyHint({ approve: <Kbd key="approve">⏎</Kbd>, decline: <Kbd key="decline">Esc</Kbd> })}
+          </span>
+        )}
         <div className="flex-1" />
-        <Button variant="secondary" size="sm" loading={deciding === "decline"} disabled={busy} data-testid="approval-decline" onClick={() => decide("decline")}>
-          {text.decline}
-        </Button>
-        <div className="flex">
-          <Button
-            variant="primary"
-            size="sm"
-            className="rounded-r-none"
-            loading={deciding === "accept" || deciding === "acceptForSession"}
-            disabled={busy}
-            data-testid="approval-accept"
-            onClick={() => decide("accept")}
-          >
-            {text.approve}
+        {choices.decline === null ? null : (
+          <Button variant="secondary" size="sm" loading={deciding === "decline"} disabled={busy} data-testid="approval-decline" onClick={() => decide("decline", choices.decline?.id)}>
+            {text.decline}
           </Button>
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="primary"
-                size="sm"
-                className="rounded-l-none border-l border-primary-foreground/25 px-1.5"
-                aria-label={text.moreOptions}
-                disabled={busy}
-                data-testid="approval-more"
-              >
-                <ChevronDownIcon />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuItem data-testid="approval-accept-session" onSelect={() => decide("acceptForSession")}>
-                <span className="flex flex-col">
-                  <span>{text.acceptForSession.title}</span>
-                  <span className="text-caption text-subtle-foreground">{text.acceptForSession.description}</span>
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem data-testid="approval-cancel" variant="danger" onSelect={() => decide("cancel")}>
-                <span className="flex flex-col">
-                  <span>{text.cancel.title}</span>
-                  <span className="text-caption text-subtle-foreground">{text.cancel.description}</span>
-                </span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        )}
+        <div className="flex">
+          {choices.accept === null ? null : (
+            <Button
+              variant="primary"
+              size="sm"
+              className={choices.more.length === 0 ? undefined : "rounded-r-none"}
+              loading={deciding === "accept" || deciding === "acceptForSession" || deciding === "acceptAlways"}
+              disabled={busy}
+              data-testid="approval-accept"
+              onClick={() => decide("accept", choices.accept?.id)}
+            >
+              {text.approve}
+            </Button>
+          )}
+          {choices.more.length === 0 ? null : (
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className={choices.accept === null ? "px-1.5" : "rounded-l-none border-l border-primary-foreground/25 px-1.5"}
+                  aria-label={text.moreOptions}
+                  disabled={busy}
+                  data-testid="approval-more"
+                >
+                  <ChevronDownIcon />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                {choices.more.map((choice) => {
+                  const fallback = choiceLabel(choice.decision, t);
+                  const label = { title: choice.label ?? fallback.title, description: fallback.description };
+                  return (
+                    <DropdownMenuItem
+                      key={choice.id ?? choice.decision}
+                      data-testid={CHOICE_TEST_ID[choice.decision]}
+                      {...(choice.decision === "cancel" || choice.decision === "declineAlways" ? { variant: "danger" as const } : {})}
+                      onSelect={() => decide(choice.decision, choice.id)}
+                    >
+                      <span className="flex flex-col">
+                        <span>{label.title}</span>
+                        <span className="text-caption text-subtle-foreground">{label.description}</span>
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </footer>
     </section>
@@ -371,4 +429,32 @@ function approvalReason(payload: JsonValue): string | null {
 function approvalCwd(payload: JsonValue): string | null {
   const cwd = requestOf(payload)["cwd"];
   return typeof cwd === "string" && cwd !== "" ? cwd : null;
+}
+
+const CHOICE_TEST_ID: Record<ApprovalDecision, string> = {
+  accept: "approval-accept",
+  acceptForSession: "approval-accept-session",
+  acceptAlways: "approval-accept-always",
+  decline: "approval-decline",
+  declineAlways: "approval-decline-always",
+  cancel: "approval-cancel",
+};
+
+/** 更多菜单里各选项的说法（Codex 原有两种沿用会话页字典，ACP 的两种在 agents 字典）。 */
+function choiceLabel(decision: ApprovalDecision, t: Messages): { title: string; description: string } {
+  const text = t.conversation.approval;
+  switch (decision) {
+    case "acceptForSession":
+      return text.acceptForSession;
+    case "acceptAlways":
+      return t.agents.approval.acceptAlways;
+    case "declineAlways":
+      return t.agents.approval.declineAlways;
+    case "cancel":
+      return text.cancel;
+    case "accept":
+      return { title: text.approve, description: "" };
+    case "decline":
+      return { title: text.decline, description: "" };
+  }
 }

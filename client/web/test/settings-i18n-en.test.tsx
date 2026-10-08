@@ -97,6 +97,7 @@ describe("设置页：英文界面", () => {
       "Account",
       "Requirements service",
       "Local folders",
+      "AI agents",
       "Model service",
       "Execution and safety",
       "Skills",

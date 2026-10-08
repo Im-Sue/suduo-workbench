@@ -3,6 +3,7 @@ export const http = {
   /** 请求体不是 JSON 对象（各路由共用）。 */
   bodyMustBeObject: "请求体必须是 JSON object",
   bodyMustBeEmpty: "此接口不接受请求体字段",
+  sessionStartFieldsOnly: "开会话只接受 agentId、approvalMode、model、reasoningEffort 这几项",
   idempotencyKeyRequired: "写请求必须携带 Idempotency-Key",
   ifMatchRequired: "PATCH 必须携带 If-Match",
   ifMatchFormat: 'If-Match 格式必须为 "<version>"',

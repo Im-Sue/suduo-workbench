@@ -3,9 +3,9 @@ import type { PausedReason } from "../../../session/queue.js";
 /** 会话工作台：输入框、审批档切换、检查面板（改动 / 需求 / 环境）、文件查看器、打开方式菜单、上传的本地报错。 */
 export const workbench = {
   composer: {
-    messageLabel: "给 Codex 的消息",
+    messageLabel: "给 Agent 的消息",
     placeholder: {
-      default: "描述要交给 Codex 的工作；/ 选 skill，@ 引用文件",
+      default: "描述要交给 Agent 的工作；/ 选 skill，@ 引用文件",
       withSkill: (skill: string) => `已选 ${skill}，补充说明后发送…`,
       running: "正在工作：Enter 并入这一轮，Tab 排到之后",
     },
@@ -48,11 +48,11 @@ export const workbench = {
     context: {
       used: "上下文已用",
       title: (percent: number, used: string, limit: string) =>
-        `上下文已用 ${String(percent)}%（${used} / ${limit}）。接近上限时 Codex 会自动压缩较早的对话。`,
+        `上下文已用 ${String(percent)}%（${used} / ${limit}）。接近上限时 Agent 会自动压缩较早的对话。`,
     },
     /** 输入框上方的运行状态行。 */
     run: {
-      working: "Codex 正在工作",
+      working: "Agent 正在工作",
       running: "运行中",
       waiting: (count: number) => `等你确认 · ${String(count)} 项`,
       review: "去看看",
@@ -89,15 +89,16 @@ export const workbench = {
     title: "审批档（本会话，切换后下个回合生效）",
     menuLabel: "审批档 · 本会话 · 下个回合生效",
     descriptions: {
+      readonly: "只看不改：读文件、搜索、联网查资料，不改这台电脑上的文件",
       ask: "每一步写文件、执行命令都需要你批准（最稳）",
       auto: "项目目录内直接执行，越界操作才询问（推荐日常）",
-      full: "不设限、不询问，Codex 可访问本机任意文件与网络",
+      full: "不设限、不询问，Agent 可访问本机任意文件与网络",
     },
     lockedReason: "本机部署设置了审批上限，不能选择完全访问；需要的话请联系管理员。",
     locked: "已被部署上限锁定，请联系管理员",
     fullConfirm: {
       title: "切换到完全访问？",
-      description: "这个会话将不再弹出任何审批，Codex 可以不受限制地访问本机文件与网络。下个回合生效。",
+      description: "这个会话将不再弹出任何审批，Agent 可以不受限制地访问本机文件与网络。下个回合生效。",
       confirm: "切换到完全访问",
     },
   },
@@ -116,7 +117,7 @@ export const workbench = {
   /** 检查面板「改动」标签。 */
   changes: {
     emptyTitle: "还没有改动",
-    emptyDescription: "Codex 新建、修改或删除文件后会列在这里，点开可以看改动对比。",
+    emptyDescription: "Agent 新建、修改或删除文件后会列在这里，点开可以看改动对比。",
     summary: (count: number) => `相对会话开始前 · ${String(count)} 个文件`,
     /** 分组标题，也是文件查看器头部的标记。 */
     kind: {
@@ -163,7 +164,7 @@ export const workbench = {
       restore: "还原",
       restoreTitle: "还原到此检查点",
       /** 运行中不可还原的原因（ADR-0004 不可逆字节损失红线；后续提交可从 reflog 找回，所以不说「无法撤回」）。 */
-      restoreRunning: "回合进行中不可还原：会以检查点覆盖 Codex 正在写入的文件，可能丢失未提交改动",
+      restoreRunning: "回合进行中不可还原：会以检查点覆盖 Agent 正在写入的文件，可能丢失未提交改动",
       autoSave: "回合前自动存档",
       autoSaveFailed: (error: string) => `上次自动存档失败：${error}`,
     },

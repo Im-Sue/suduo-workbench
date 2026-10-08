@@ -105,13 +105,13 @@ export const conversation = {
   approval: {
     label: "Waiting for you",
     question: {
-      command: "Codex wants to run a command",
-      fileChange: "Codex wants to edit files",
-      permissions: "Codex wants to change permissions",
-      other: "Codex needs your approval to continue",
-      stdin: "Codex wants to send input to a running command",
+      command: "The agent wants to run a command",
+      fileChange: "The agent wants to edit files",
+      permissions: "The agent wants to change permissions",
+      other: "The agent needs your approval to continue",
+      stdin: "The agent wants to send input to a running command",
     },
-    editFiles: (count: number) => `Codex wants to edit ${files(count)}`,
+    editFiles: (count: number) => `The agent wants to edit ${files(count)}`,
     position: (total: number) => `1 of ${String(total)}`,
     cwd: (cwd: string) => `In ${cwd}`,
     viewPatch: (path: string) => `View changes to ${path}`,
@@ -125,7 +125,7 @@ export const conversation = {
     },
     cancel: {
       title: "Decline and stop",
-      description: "Stop Codex's current turn",
+      description: "Stop the agent's current turn",
     },
     tool: {
       sending: "Sending…",
@@ -235,7 +235,7 @@ export const conversation = {
     fallbackSession: "Session",
     body: {
       completed: "This turn is done.",
-      approval: "Codex is waiting for your approval to continue.",
+      approval: "The agent is waiting for your approval to continue.",
       error: "This turn didn't finish. Go back to the session to see why.",
     },
   },
@@ -283,7 +283,7 @@ export const conversation = {
     empty: {
       title: "Ready",
       description: (keys: { skill: ReactNode; file: ReactNode }): ReactNode[] => [
-        "Describe the work for Codex. Type ",
+        "Describe the work for the agent. Type ",
         keys.skill,
         " to pick a Skill, or ",
         keys.file,

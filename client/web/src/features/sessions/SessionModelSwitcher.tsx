@@ -86,8 +86,8 @@ export function SessionModelSwitcher({
 
   const load = (open: boolean) => {
     if (!open || items !== null) return;
-    void api
-      .codexModels()
+    // Codex 用 model/list；其他 Agent 按自己的选项（多 Agent S5）。
+    void (session.agentId === "codex" ? api.codexModels() : api.agentModels(session.agentId))
       .then((result) =>
         setItems(
           result.items ??
@@ -118,7 +118,8 @@ export function SessionModelSwitcher({
   // 旧服务端的会话没有这两个字段：按「跟随默认」处理。
   const sessionModel = session.model ?? null;
   const sessionEffort = session.reasoningEffort ?? null;
-  const defaultModel = provider?.model ?? items?.find((item) => item.isDefault)?.model ?? null;
+  // 设置页里的全局默认只对 Codex 有意义；其他 Agent 的「默认」由它自己决定。
+  const defaultModel = (session.agentId === "codex" ? provider?.model : null) ?? items?.find((item) => item.isDefault)?.model ?? null;
   const effectiveModel = sessionModel ?? defaultModel;
   const selected = items?.find((item) => item.model === effectiveModel || item.id === effectiveModel);
   const efforts = offeredEfforts(

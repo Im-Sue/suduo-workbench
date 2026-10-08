@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ApprovalMode, SessionDto } from "@suduo/client-contracts";
+import type { ApprovalMode, RuntimeApprovalMode, SessionDto } from "@suduo/client-contracts";
 import { CheckIcon, ChevronDownIcon, ShieldIcon } from "lucide-react";
 import { ConfirmDialog } from "../feedback/components/index.js";
 import { useT } from "../i18n/provider.js";
@@ -23,7 +23,7 @@ export function ApprovalModeSwitcher(props: {
   session: SessionDto;
   approvalModeLocked?: boolean;
   maxApprovalMode?: ApprovalMode;
-  onChange(mode: ApprovalMode): Promise<void>;
+  onChange(mode: RuntimeApprovalMode): Promise<void>;
 }) {
   const t = useT();
   const text = t.workbench.approvalMode;
@@ -31,12 +31,16 @@ export function ApprovalModeSwitcher(props: {
   const [confirmFull, setConfirmFull] = useState(false);
   const [switching, setSwitching] = useState(false);
 
-  const run = (mode: ApprovalMode) => {
+  // 只读档只给做得到的 Agent（需求 4.3，R8：做不到的不出现）。
+  const choices: readonly RuntimeApprovalMode[] =
+    props.session.agent?.readOnlyCapable === true || props.session.approvalMode === "readonly" ? ["readonly", ...MODES] : MODES;
+
+  const run = (mode: RuntimeApprovalMode) => {
     setSwitching(true);
     void props.onChange(mode).finally(() => setSwitching(false));
   };
 
-  const apply = (mode: ApprovalMode) => {
+  const apply = (mode: RuntimeApprovalMode) => {
     if (mode === props.session.approvalMode) return;
     if (mode === "full") {
       setConfirmFull(true);
@@ -66,7 +70,7 @@ export function ApprovalModeSwitcher(props: {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" side="top" className="w-72">
           <DropdownMenuLabel>{text.menuLabel}</DropdownMenuLabel>
-          {MODES.map((mode) => {
+          {choices.map((mode) => {
             const blocked = props.approvalModeLocked === true && mode === "full" && props.maxApprovalMode !== "full";
             return (
               <DropdownMenuItem

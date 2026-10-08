@@ -5,8 +5,9 @@ import type {
   ThreadRef,
   TurnRef,
 } from "./events.js";
-import type { ApprovalMode, ReasoningEffort } from "./config.js";
+import type { ApprovalMode, ReasoningEffort, RuntimeApprovalMode } from "./config.js";
 import type { CheckpointKind, Locale } from "./i18n.js";
+import type { AgentCapability } from "./agents.js";
 
 export type ErrorCode =
   | "VALIDATION_ERROR"
@@ -90,8 +91,8 @@ export interface SessionDto {
   state: "starting" | "active" | "error" | "archived" | "deleted";
   /** 会话用途只用于展示和快捷入口，不形成业务任务或独立状态。 */
   purpose: SessionPurpose;
-  /** 会话级审批模式，切换后下个回合生效。 */
-  approvalMode: ApprovalMode;
+  /** 会话级审批模式（含只读，多 Agent S5），切换后下个回合生效。 */
+  approvalMode: RuntimeApprovalMode;
   /**
    * 会话级模型，切换后下个回合生效；null = 跟随全局默认
    * （Codex config.toml 的 model，未配置时为 model/list 的默认模型）。
@@ -109,11 +110,19 @@ export interface SessionDto {
   kind: SessionKind;
   /** 会话用的 Agent（ADR-0014）；老会话为 codex。 */
   agentId: string;
+  /** 这家 Agent 的名字与能力（配置表里的静态信息，界面据此显示名字、隐藏做不到的入口）；旧服务端不返回。 */
+  agent?: SessionAgentDto;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number | null;
   version: number;
   threads: ThreadBindingDto[];
+}
+
+export interface SessionAgentDto {
+  displayName: string;
+  readOnlyCapable: boolean;
+  capabilities: AgentCapability[];
 }
 
 export type SessionPurpose =
@@ -124,12 +133,24 @@ export type SessionPurpose =
   | "fe_connect"
   | "test";
 
-export interface CreateSessionRequest {
+/**
+ * 开会话时的选择（需求 4.2）：用哪家 Agent、审批档、模型与推理强度。都可不传：Agent 为 codex，
+ * 审批档为设置里的默认档，模型与推理强度跟随默认。也是 POST /api/v2/requirements/:id/sessions、
+ * /api/v2/projects/:id/sessions 的请求体。
+ */
+export interface SessionStartOptions {
+  /** 用哪家 Agent 开工（ADR-0014）；不传为 codex。 */
+  agentId?: string;
+  /** 只读要这家 Agent 做得到（配置表 readOnlyCapable）；受部署上限约束。 */
+  approvalMode?: RuntimeApprovalMode;
+  model?: string | null;
+  reasoningEffort?: ReasoningEffort | null;
+}
+
+export interface CreateSessionRequest extends SessionStartOptions {
   title?: string;
   /** 旧字段：只接受 codex-local；新调用方用 agentId。 */
   runtimeId?: string;
-  /** 用哪家 Agent 开工（ADR-0014）；不传为 codex。 */
-  agentId?: string;
   purpose?: SessionPurpose;
 }
 
@@ -145,7 +166,8 @@ export type ListSessionsResponse = CursorPage<SessionDto>;
 export interface UpdateSessionRequest {
   title?: string;
   state?: "active" | "archived";
-  approvalMode?: ApprovalMode;
+  /** 含只读（这家 Agent 做得到时）。 */
+  approvalMode?: RuntimeApprovalMode;
   purpose?: SessionPurpose;
   /** 显式模型（1–128 位，字母数字与 . _ : / -）；null = 恢复跟随全局默认。 */
   model?: string | null;

@@ -6,6 +6,7 @@ import type {
   RequirementDetailItemDto,
   RequirementListItemDto,
   RequirementLocalFields,
+  SessionStartOptions,
 } from "@suduo/client-contracts";
 import type {
   AuthSessionDto,
@@ -419,7 +420,8 @@ export class RequirementsV2Service {
   }
 
   /** `locale`：会话的语言（创建请求的语言），需求卡、规则与工具说明按它写。 */
-  async createRequirementSession(requirementId: string, locale: Locale, agentId?: string) {
+  async createRequirementSession(requirementId: string, locale: Locale, start: SessionStartOptions = {}) {
+    this.sessions.checkStartOptions(start);
     const sessionContext = this.sessionContext;
     if (!sessionContext) {
       throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.remote.requirementSessionUnavailable);
@@ -444,7 +446,7 @@ export class RequirementsV2Service {
         auditAnchor,
         requirementNumber: requirementNumberOf(requirement),
         setup,
-        ...(agentId === undefined ? {} : { agentId }),
+        start,
       });
       this.onSessionCreated?.(session.id);
       return session;
@@ -452,7 +454,8 @@ export class RequirementsV2Service {
   }
 
   /** `locale`：会话的语言（创建请求的语言）：没给标题时的默认名、项目卡与工具说明按它写。 */
-  async createProjectSession(remoteProjectId: string, locale: Locale, agentId?: string) {
+  async createProjectSession(remoteProjectId: string, locale: Locale, start: SessionStartOptions = {}) {
+    this.sessions.checkStartOptions(start);
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
       const localProject = await this.requireValidatedLocalProject(remoteProjectId);
@@ -462,7 +465,7 @@ export class RequirementsV2Service {
           projectRoot: localProject.rootPath,
           remoteProjectId,
         })) ?? {};
-      const session = await this.sessions.create(localProject.id, { purpose: "general", ...(agentId === undefined ? {} : { agentId }) }, setup, {
+      const session = await this.sessions.create(localProject.id, { purpose: "general", ...start }, setup, {
         locale,
         remoteProjectId,
       });

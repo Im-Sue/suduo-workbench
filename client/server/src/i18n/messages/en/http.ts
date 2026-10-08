@@ -3,6 +3,7 @@ import type { ServerMessages } from "../zh-CN/index.js";
 export const http = {
   bodyMustBeObject: "Request body must be a JSON object",
   bodyMustBeEmpty: "This endpoint doesn't accept fields in the request body",
+  sessionStartFieldsOnly: "Starting a session accepts only agentId, approvalMode, model, and reasoningEffort",
   idempotencyKeyRequired: "Write requests must include an Idempotency-Key header",
   ifMatchRequired: "PATCH requests must include an If-Match header",
   ifMatchFormat: 'If-Match must be in the form "<version>"',

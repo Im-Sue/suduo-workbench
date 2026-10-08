@@ -1,0 +1,78 @@
+/** 多 Agent（ADR-0014，需求「多 Agent 接入与本机工具服务」4.1–4.3）：AI Agent 设置、开工选 Agent、审批选项。 */
+export const agents = {
+  section: {
+    description:
+      "SuDuo 用你这台电脑上装好、登录好的 AI Agent 开工。登录都在各家自己的工具里完成，SuDuo 不读取、不保存你的账号、令牌或密钥。",
+    defaultTitle: "新会话默认用",
+    defaultDescription: "开工时默认选它；上次用过的 Agent 会优先。",
+    listTitle: "本机的 Agent",
+    listLabel: "AI Agent 列表",
+    recheckAll: "重新检测全部",
+    termsNote: "服务地区与使用条款以各家官方为准。",
+    channel: {
+      "codex-app-server": "SuDuo 自带",
+      "claude-sdk": "官方接口",
+      acp: "标准协议",
+    },
+    channelHint: "通过开放的 Agent Client Protocol 连接",
+    status: {
+      checking: "检测中",
+      ready: "就绪",
+      installed: "已安装",
+      not_installed: "未安装",
+      auth_required: "需要登录",
+      version_unsupported: "版本过低",
+      error: "检测失败",
+    },
+    installedHint: "登录状态在第一次开工时确认",
+    reason: {
+      binary_not_found: "这台电脑上没有找到它",
+      version_unreadable: "读不到版本号",
+      version_below_minimum: "版本低于最低要求",
+      auth_check_failed: "没能确认登录状态",
+      not_logged_in: "还没登录",
+      check_timeout: "检测超时",
+      check_failed: "检测出错",
+      disabled: "已停用",
+    },
+    minVersion: (version: string) => `需要 ${version} 或更高`,
+    version: (version: string) => `版本 ${version}`,
+    defaultBadge: "默认",
+    setDefault: "设为默认",
+    actions: {
+      copy_install_command: "复制安装命令",
+      open_terminal_login: "在终端中登录",
+      recheck: "重新检测",
+      open_homepage: "官网",
+      open_terms: "使用条款",
+    },
+    copied: "安装命令已复制，到终端里粘贴运行。",
+    loginOpened: "已打开终端，按提示登录完成后点「重新检测」。",
+    loginManual: (command: string) => `在终端里运行「${command}」，登录完成后点「重新检测」。`,
+  },
+  picker: {
+    agent: "Agent",
+    manage: "管理 Agent",
+    permission: "权限",
+    model: "模型",
+    modelDefault: "默认",
+    effort: "推理强度",
+    effortDefault: "默认",
+    start: "开工",
+    unavailable: (status: string) => `（${status}）`,
+    projectSettingsNote: "Claude Code 会加载这个仓库自带的 .claude 设置（包括放行规则与 hooks），和你在终端里打开它时一样。",
+    openSettings: "打开 AI Agent 设置",
+  },
+  /** 审批卡上 Agent 给的选项（Codex 只有前两种与拒绝、停止）。 */
+  approval: {
+    acceptAlways: {
+      title: "始终同意",
+      description: "以后同类操作都不再问（由这家 Agent 记住，可能写进它自己的设置）。",
+    },
+    declineAlways: {
+      title: "始终拒绝",
+      description: "以后同类操作都直接拒绝（由这家 Agent 记住）。",
+    },
+  },
+  badge: (name: string) => `Agent：${name}`,
+};

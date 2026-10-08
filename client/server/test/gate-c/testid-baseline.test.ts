@@ -46,7 +46,11 @@ test("the repository's dynamic data-testid attributes do not create baseline dri
   // settings-approval-${mode}、settings-group-${id}、状态条 status-item-${key} 两处、
   // mcp-transport-${type}）换成 3 处（settings-nav-${id}、settings-group-${id}、
   // settings-approval-${mode}）；状态条并入诊断页，连接方式改用分段控件。
-  expect(scan.dynamicEntries).toHaveLength(9);
+  // 9 -> 13：多 Agent S5 新增 4 处动态 testid，均为带运行时值的写法：审批坞更多菜单按卡上的选项出项
+  // （CHOICE_TEST_ID[choice.decision]，取值仍是 approval-accept-session / approval-cancel 等固定名）、
+  // 开工选项里每家 Agent 一项（start-agent-${id}）、AI Agent 设置里每家一行与「设为默认」
+  // （agent-row-${id}、agent-set-default-${id}）。
+  expect(scan.dynamicEntries).toHaveLength(13);
   expect(comparison.missingFromSource).toEqual([]);
   expect(comparison.missingFromBaseline).toEqual([]);
 });

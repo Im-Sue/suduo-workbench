@@ -104,6 +104,8 @@ export interface SuDuoApplicationOptions {
   sseHeartbeatMs?: number;
   sseReplayPageSize?: number;
   runtimeRestartMaxMs?: number;
+  /** 启动后在后台检测各家 Agent（默认开；测试关掉，免得真去跑本机的 CLI）。 */
+  prewarmAgents?: boolean;
   fsWatchDebounceMs?: number;
   fsPollIntervalMs?: number;
   fsForcePolling?: boolean;
@@ -191,6 +193,10 @@ export function createSuDuoApplication(
     store: new AgentSettingsStore(agentSettingsPathFor(settingsFile)),
     codexBin: options.codexBin,
   });
+  // 启动后在后台检测一遍各家 Agent：开工对话框与 AI Agent 设置打开时就有结果（不阻塞启动）。
+  const prewarm =
+    options.prewarmAgents === false ? null : setTimeout(() => void agentCatalog.list().catch(() => undefined), 2_000);
+  prewarm?.unref();
   const inheritedCodexEnvironment = runtimeEnvironment(codexHome);
   const codexEnvironment = { ...inheritedCodexEnvironment };
   applyProxySettings(
@@ -641,6 +647,7 @@ export function createSuDuoApplication(
       consumerAbort.abort();
       workspaceWatcher.close();
       await Promise.allSettled([server.close()]);
+      if (prewarm !== null) clearTimeout(prewarm);
       claudeRuntime.close();
       for (const acpRuntime of acpRuntimes) acpRuntime.close();
       await Promise.allSettled([

@@ -8,6 +8,7 @@ const quotedList = (items: readonly string[]) =>
 export const settings = {
   sections: {
     appearance: "Appearance",
+    agents: "AI agents",
     notifications: "Notifications",
     account: "Account",
     service: "Requirements service",

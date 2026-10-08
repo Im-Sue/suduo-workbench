@@ -7,7 +7,7 @@ import type { JsonValue, RuntimeEventDraft, ThreadRef } from "@suduo/client-cont
 import { OMITTED_IMAGE_URL } from "../src/infrastructure/runtime/suduo-tool-item.js";
 import { snippetDiff } from "../src/infrastructure/runtime/snippet-diff.js";
 import { claudePermissionOptions, sameQueryShape } from "../src/infrastructure/runtime/claude/claude-permissions.js";
-import { ClaudeRuntime, describePermission, sessionRules, type ClaudeSdk } from "../src/infrastructure/runtime/claude/claude-runtime.js";
+import { ClaudeRuntime, claudeEffort, describePermission, sessionRules, type ClaudeSdk } from "../src/infrastructure/runtime/claude/claude-runtime.js";
 import { ClaudeTurnTranslator, type TranslatedEvent } from "../src/infrastructure/runtime/claude/claude-translator.js";
 
 /** 多 Agent S3：Claude Code 运行时（ADR-0014，技术设计 2.4、4.1、4.2；S0 实测）。 */
@@ -226,6 +226,9 @@ class FakeQuery {
       },
       setModel: async (model?: string) => {
         this.calls.push("setModel:" + String(model));
+      },
+      applyFlagSettings: async (settings: Record<string, unknown>) => {
+        this.calls.push("applyFlagSettings:" + JSON.stringify(settings));
       },
       setMcpServers: async () => {
         this.calls.push("setMcpServers");
@@ -482,5 +485,18 @@ describe("Claude 运行时", () => {
     expect(((context.ofType("approval.requested")[0]!.payload as Record<string, JsonValue>)["options"] as Array<Record<string, JsonValue>>).map((option) => option["id"])).toEqual(["accept", "decline", "cancel"]);
     context.queries[0]!.emit(success);
     await vi.waitFor(() => expect(context.queries[0]!.calls).toContain("close"));
+  });
+
+  it("推理强度：启动时带上，回合间改了就实时下发；SuDuo 的档位换算成 Claude 的（多 Agent S5）", async () => {
+    expect([claudeEffort("minimal"), claudeEffort("medium"), claudeEffort("ultra"), claudeEffort(null), claudeEffort(undefined)]).toEqual(["low", "medium", "max", null, null]);
+    const context = setup();
+    const threadRef = await started(context);
+    await context.runtime.startTurn({ ...turnInput(threadRef, "一"), reasoningEffort: "high" });
+    await vi.waitFor(() => expect(context.queries).toHaveLength(1));
+    expect(context.queries[0]!.options).toMatchObject({ effort: "high" });
+    context.queries[0]!.emit(success);
+    await vi.waitFor(() => expect(context.ofType("turn.completed")).toHaveLength(1));
+    await context.runtime.startTurn({ ...turnInput(threadRef, "二"), reasoningEffort: "low" });
+    await vi.waitFor(() => expect(context.queries[0]!.calls).toContain('applyFlagSettings:{"effortLevel":"low"}'));
   });
 });

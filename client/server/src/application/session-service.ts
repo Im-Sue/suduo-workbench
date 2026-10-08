@@ -6,14 +6,17 @@ import {
   type ListSessionsQuery,
   type Locale,
   type ReasoningEffort,
+  type RuntimeApprovalMode,
   type RuntimeToolSpec,
   type SessionDto,
+  type SessionStartOptions,
   type SessionPurpose,
   type UpdateSessionRequest,
 } from "@suduo/client-contracts";
 import type { DatabasePort } from "../infrastructure/db/database-port.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import type {
+  CreateSessionInput,
   SessionKind,
   SessionRecord,
   SessionRepository,
@@ -34,6 +37,7 @@ import {
 import { messagesFor } from "../i18n/messages/index.js";
 import { sessionDto } from "./dto.js";
 import { paginate } from "./pagination.js";
+import { findAgentDescriptor } from "./agents/catalog.js";
 import { effectiveApprovalMode } from "./approval-mode-cap.js";
 import type { RuntimeSupervisor } from "./runtime-supervisor.js";
 import { WorkspaceContextResolver } from "./workspace-context.js";
@@ -108,6 +112,7 @@ export class SessionService {
     }
     const agentId = input.agentId ?? DEFAULT_AGENT_ID;
     const runtimeId = this.supervisor.runtimeIdForAgent(agentId);
+    const start = this.startOptions(agentId, input);
     const projectSessionRefs = this.projectSessionRefs;
     const remoteProjectId = options.remoteProjectId;
     if (remoteProjectId !== undefined && projectSessionRefs === null) {
@@ -119,10 +124,7 @@ export class SessionService {
         projectId,
         title: normalizeTitle(input.title ?? messagesFor(options.locale).session.defaultTitle),
         purpose,
-        approvalMode: effectiveApprovalMode(
-          { approvalMode: this.defaultApprovalMode() },
-          this.approvalModeEnvironment,
-        ),
+        ...start,
         ...(options.kind === undefined ? {} : { kind: options.kind }),
         locale: options.locale,
         agentId,
@@ -196,8 +198,8 @@ export class SessionService {
       requirementNumber?: number | null;
       /** 需求卡与工具。 */
       setup: SessionThreadSetup;
-      /** 用哪家 Agent 开工（ADR-0014）；不传为 codex。 */
-      agentId?: string;
+      /** 开会话时的选择（Agent、审批档、模型、推理强度）。 */
+      start?: SessionStartOptions;
     },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
@@ -208,18 +210,19 @@ export class SessionService {
     if (!requirementSessionRefs) {
       throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.session.requirementRefStoreUnavailable);
     }
-    const agentId = input.agentId ?? DEFAULT_AGENT_ID;
+    if (input.start?.agentId !== undefined && typeof input.start.agentId !== "string") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentIdNotString);
+    }
+    const agentId = input.start?.agentId ?? DEFAULT_AGENT_ID;
     const runtimeId = this.supervisor.runtimeIdForAgent(agentId);
+    const start = this.startOptions(agentId, input.start ?? {});
     const session = this.sessions.create({
       projectId,
       title: normalizeTitle(input.title),
       locale: input.locale,
       agentId,
       purpose: "general",
-      approvalMode: effectiveApprovalMode(
-        { approvalMode: this.defaultApprovalMode() },
-        this.approvalModeEnvironment,
-      ),
+      ...start,
     });
     const reference = {
       sessionId: session.id,
@@ -344,17 +347,8 @@ export class SessionService {
         (t) => t.session.stateInvalid,
       );
     }
-    if (
-      input.approvalMode !== undefined &&
-      input.approvalMode !== "ask" &&
-      input.approvalMode !== "auto" &&
-      input.approvalMode !== "full"
-    ) {
-      throw new ApiError(
-        400,
-        "VALIDATION_ERROR",
-        (t) => t.session.approvalModeInvalid,
-      );
+    if (input.approvalMode !== undefined) {
+      this.validateApprovalMode(session.agentId, input.approvalMode);
     }
     if (input.purpose !== undefined) {
       validatePurpose(input.purpose);
@@ -463,6 +457,50 @@ export class SessionService {
       );
     }
     return primaries[0] as (typeof primaries)[number];
+  }
+
+  /** 开会话前先校验选择（Agent 能用、审批档、模型、推理强度），免得做完远程准备才报错。没有副作用。 */
+  checkStartOptions(start: SessionStartOptions): void {
+    if (start.agentId !== undefined && typeof start.agentId !== "string") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentIdNotString);
+    }
+    const agentId = start.agentId ?? DEFAULT_AGENT_ID;
+    this.supervisor.runtimeIdForAgent(agentId);
+    this.startOptions(agentId, start);
+  }
+
+  /**
+   * 开会话时的审批档、模型、推理强度（需求 4.2）。不传的审批档用设置里的默认档；
+   * 只读要这家 Agent 做得到；受部署上限约束（超了报 409，同改档）。
+   */
+  private startOptions(agentId: string, input: SessionStartOptions): Pick<CreateSessionInput, "approvalMode" | "model" | "reasoningEffort"> {
+    const requested = input.approvalMode;
+    if (requested !== undefined) {
+      this.validateApprovalMode(agentId, requested);
+      if (effectiveApprovalMode({ approvalMode: requested }, this.approvalModeEnvironment) !== requested) {
+        throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.approvalModeLocked);
+      }
+    }
+    const model = input.model === undefined ? null : normalizeSessionModel(input.model);
+    const reasoningEffort = input.reasoningEffort === undefined ? null : normalizeSessionReasoningEffort(input.reasoningEffort);
+    return {
+      approvalMode: requested ?? effectiveApprovalMode({ approvalMode: this.defaultApprovalMode() }, this.approvalModeEnvironment),
+      ...(model === null ? {} : { model }),
+      ...(reasoningEffort === null ? {} : { reasoningEffort }),
+    };
+  }
+
+  /** 审批档的取值；只读要这家 Agent 做得到（配置表 readOnlyCapable，需求 4.3 / R8）。 */
+  private validateApprovalMode(agentId: string, mode: unknown): asserts mode is RuntimeApprovalMode {
+    if (mode !== "readonly" && mode !== "ask" && mode !== "auto" && mode !== "full") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.approvalModeInvalid);
+    }
+    if (mode === "readonly") {
+      const agent = findAgentDescriptor(agentId);
+      if (agent !== undefined && !agent.readOnlyCapable) {
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentReadOnlyUnsupported(agent.displayName), { agentId });
+      }
+    }
   }
 
   private transitionState(

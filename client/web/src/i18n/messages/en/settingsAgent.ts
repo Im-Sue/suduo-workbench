@@ -169,6 +169,10 @@ export const settingsAgent = {
     loading: "Loading execution and safety settings",
     loadFailed: (message: string) => `Couldn't load local settings: ${message}`,
     modes: {
+      readonly: {
+        label: "Read-only",
+        description: "Look, don't touch: reads files, searches, and looks things up online, but never changes files on this computer.",
+      },
       ask: {
         label: "Ask every step",
         description: "Asks you before running any command or changing any file. Safest, but interrupts you the most.",

@@ -60,6 +60,7 @@ describe("G 应用层代理热生效", () => {
       codexBin: "fixture-codex",
       runtimeTransport: transport,
       webRoot: root,
+      prewarmAgents: false,
     });
     try {
       await application.runtime.modelList({ limit: 1 });

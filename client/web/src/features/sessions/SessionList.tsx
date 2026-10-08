@@ -314,6 +314,11 @@ function SessionRow({
               {number === null || roomTask !== null ? null : (
                 <span className="shrink-0 rounded-xs bg-muted px-1 font-mono text-muted-foreground">{formatRequirementNumber(number)}</span>
               )}
+              {item.agentId === "codex" ? null : (
+                <span className="shrink-0 rounded-xs bg-muted px-1 text-muted-foreground" title={t.agents.badge(item.agent?.displayName ?? item.agentId)} data-testid="session-row-agent">
+                  {item.agent?.displayName ?? item.agentId}
+                </span>
+              )}
               <span className="min-w-0 truncate">{preview ?? projectName}</span>
             </span>
           </button>

@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 290,
+  "total": 299,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -98,6 +98,13 @@
     "web/src/components/TablePreview.tsx": [
       "sheet-table"
     ],
+    "web/src/features/agents/StartOptions.tsx": [
+      "start-agent",
+      "start-effort",
+      "start-model",
+      "start-options",
+      "start-permission"
+    ],
     "web/src/features/my-work/MyWorkPage.tsx": [
       "session-activity",
       "setup-checklist",
@@ -138,6 +145,7 @@
       "requirement-peek"
     ],
     "web/src/features/requirements/components/StartSessionDialog.tsx": [
+      "start-options-confirm",
       "start-session-dialog"
     ],
     "web/src/features/requirements/RequirementDetailPage.tsx": [
@@ -268,8 +276,6 @@
     ],
     "web/src/features/sessions/ApprovalDock.tsx": [
       "approval-accept",
-      "approval-accept-session",
-      "approval-cancel",
       "approval-card",
       "approval-decline",
       "approval-more",
@@ -279,6 +285,7 @@
     ],
     "web/src/features/sessions/SessionHeader.tsx": [
       "rename-session",
+      "session-agent",
       "session-status",
       "session-title",
       "session-title-input",
@@ -288,6 +295,7 @@
       "new-session",
       "session-room-task",
       "session-row",
+      "session-row-agent",
       "session-search",
       "sessions-empty",
       "sessions-rail"
@@ -341,6 +349,11 @@
     "web/src/features/settings/sections/AccountSection.tsx": [
       "settings-current-user",
       "settings-logout"
+    ],
+    "web/src/features/settings/sections/AgentsSection.tsx": [
+      "agents-default",
+      "agents-list",
+      "agents-recheck-all"
     ],
     "web/src/features/settings/sections/AppearanceSection.tsx": [
       "settings-density",

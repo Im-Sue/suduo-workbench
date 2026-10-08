@@ -3,6 +3,13 @@ import { currentLocale, withLocaleParam } from "../i18n/locale.js";
 import { messagesFor } from "../i18n/messages/index.js";
 import { markRequestNetworkFailure, markRequestReachedServer } from "./connectivity.js";
 import type {
+  AgentDto,
+  AgentListDto,
+  AgentLoginResultDto,
+  AgentSettingsDto,
+  ApprovalDecision,
+  SessionStartOptions,
+  UpdateAgentSettingsRequest,
   McpServerDto,
   ApprovalDto,
   AttachmentDto,
@@ -476,16 +483,16 @@ export const api = {
       { method: "DELETE", expectedStatus: 204 },
     ),
 
-  createRequirementsSession: (requirementId: string) =>
+  createRequirementsSession: (requirementId: string, start: SessionStartOptions = {}) =>
     request<SessionDto>(
       `/api/v2/requirements/${encodeURIComponent(requirementId)}/sessions`,
-      { method: "POST", body: {} },
+      { method: "POST", body: { ...start } },
     ),
 
-  createRequirementsProjectSession: (projectId: string) =>
+  createRequirementsProjectSession: (projectId: string, start: SessionStartOptions = {}) =>
     request<SessionDto>(
       `/api/v2/projects/${encodeURIComponent(projectId)}/sessions`,
-      { method: "POST", body: {} },
+      { method: "POST", body: { ...start } },
     ),
 
   listRequirementsSessions: (projectId: string) =>
@@ -605,13 +612,11 @@ export const api = {
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/approvals?status=${status}`,
     ),
 
-  decideApproval: (
-    approvalId: string,
-    decision: "accept" | "acceptForSession" | "decline" | "cancel",
-  ) =>
+  /** optionId：卡上带选项（ADR-0014 中立字段）时，用户点的那个选项。 */
+  decideApproval: (approvalId: string, decision: ApprovalDecision, optionId?: string) =>
     request<ApprovalDto>(
       `/api/v1/approvals/${encodeURIComponent(approvalId)}/decision`,
-      { method: "POST", body: { decision } },
+      { method: "POST", body: { decision, ...(optionId === undefined ? {} : { optionId }) } },
     ),
 
   listFiles: (projectId: string, path = "") =>
@@ -693,6 +698,20 @@ export const api = {
     }),
 
   codexModels: () => request<CodexModelsResponse>("/api/v1/codex/models"),
+
+  // ── 多 Agent（ADR-0014）：本机 Agent 的列表、检测、登录与设置；会话级模型选项按 Agent 取。
+  /** 不等检测：没检测完的标 checking，轮询补上。 */
+  listLocalAgents: () => request<AgentListDto>("/api/v1/agents?wait=false"),
+  /** 等各家检测完再回（开工对话框要据此决定问不问选哪家）。 */
+  listLocalAgentsDetected: () => request<AgentListDto>("/api/v1/agents"),
+  recheckAgent: (agentId: string) =>
+    request<AgentDto>(`/api/v1/agents/${encodeURIComponent(agentId)}/recheck`, { method: "POST", body: {} }),
+  loginAgent: (agentId: string) =>
+    request<AgentLoginResultDto>(`/api/v1/agents/${encodeURIComponent(agentId)}/login`, { method: "POST", body: {} }),
+  agentSettings: () => request<AgentSettingsDto>("/api/v1/settings/agents"),
+  updateAgentSettings: (body: UpdateAgentSettingsRequest) =>
+    request<AgentSettingsDto>("/api/v1/settings/agents", { method: "PUT", body }),
+  agentModels: (agentId: string) => request<CodexModelsResponse>(`/api/v1/agents/${encodeURIComponent(agentId)}/models`),
 
   /** pr3 建的全局状态投影 SSE；pr10 的顶部状态条订阅它。EventSource 带不了请求头，界面语言放在地址上。 */
   codexStatusUrl: () => withLocaleParam("/api/v1/codex/status"),

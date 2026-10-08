@@ -95,6 +95,13 @@ export class CodexRuntime implements AgentRuntime {
   private readonly sessionLocale: ((sessionId: string) => Locale | null) | null;
   private readonly platform: NodeJS.Platform;
   private readonly threadSessions = new Map<string, string>();
+  /**
+   * 这条连接上已加载的线程，与它们建线程 / 续接时的参数（多 Agent S5）。Codex 对已加载的线程再 resume
+   * 不会套用新的线程级配置（实测：令牌、关掉 MCP 都不生效），要先 thread/unsubscribe 让它卸载再 resume。
+   */
+  private readonly loadedThreads = new Map<string, { connectionId: string; input: StartThreadInput; readonly: boolean }>();
+  /** 被我们卸载、还没续接成功的线程（续接失败时下个回合再续）：线程 id → 连接 id 与续接参数。 */
+  private readonly unloadedThreads = new Map<string, { connectionId: string; input: StartThreadInput }>();
   private readonly pendingApprovals = new Map<string, PendingNativeApproval>();
   /** 还没回包的客户端自定义工具调用（ADR-0008），按 callRef 索引。 */
   private readonly pendingToolCalls = new Map<string, PendingToolCall>();
@@ -124,6 +131,14 @@ export class CodexRuntime implements AgentRuntime {
     const security = RUNTIME_APPROVAL_MODE_POLICIES[input.approvalMode];
     assertM1SecurityPolicy(security);
     const connection = await this.ensureConnection();
+    if (input.mode === "resume" && this.loadedThreads.get(input.threadRef.threadId)?.connectionId === connection.connectionId) {
+      // 这条连接上已加载：先卸载，新的令牌与 MCP 开关才会生效。
+      await connection.request("thread/unsubscribe", { threadId: input.threadRef.threadId }, { timeoutMs: 10_000 }).catch((error: unknown) => {
+        console.warn(JSON.stringify({ event: "codex.thread_unsubscribe_failed", threadId: input.threadRef.threadId, message: String(error) }));
+      });
+      this.loadedThreads.delete(input.threadRef.threadId);
+      this.unloadedThreads.set(input.threadRef.threadId, { connectionId: connection.connectionId, input });
+    }
     this.pendingSessionId = input.sessionId;
     try {
       // 上层业务指令（如需求包摘要）与本机环境指令（Windows 编码，按会话的语言）合并下发。
@@ -167,6 +182,8 @@ export class CodexRuntime implements AgentRuntime {
       const threadId = requireString(thread["id"], "thread.id");
       const threadRef = this.threadRef(threadId);
       this.threadSessions.set(threadId, input.sessionId);
+      this.loadedThreads.set(threadId, { connectionId: connection.connectionId, input, readonly: input.approvalMode === "readonly" });
+      this.unloadedThreads.delete(threadId);
       // thread/start|resume 回报线程当前生效的模型与推理强度，作为粘性覆盖判断的起点。
       this.threadModels.recordThreadStart({
         connectionId: connection.connectionId,
@@ -192,7 +209,21 @@ export class CodexRuntime implements AgentRuntime {
   async startTurn(input: StartTurnInput): Promise<StartTurnResult> {
     const security = RUNTIME_APPROVAL_MODE_POLICIES[input.approvalMode];
     assertM1SecurityPolicy(security);
-    const connection = await this.ensureConnection();
+    let connection = await this.ensureConnection();
+    const loaded = this.loadedThreads.get(input.threadRef.threadId);
+    const unloaded = this.unloadedThreads.get(input.threadRef.threadId);
+    const reload =
+      loaded !== undefined && loaded.connectionId === connection.connectionId && loaded.readonly !== (input.approvalMode === "readonly")
+        ? loaded.input
+        : unloaded !== undefined && unloaded.connectionId === connection.connectionId
+          ? unloaded.input
+          : null;
+    if (reload !== null) {
+      // 跨了只读：所有者的 MCP 与连接器在只读时要关、回来要开，这是线程级配置，只能卸载后重新续接才生效。
+      // 上次卸载后续接失败的线程也在这里续上。
+      await this.startThread({ ...reload, mode: "resume", threadRef: input.threadRef, approvalMode: input.approvalMode });
+      connection = await this.ensureConnection();
+    }
     this.threadSessions.set(input.threadRef.threadId, input.sessionId);
     const modelPlan = await this.threadModels.plan({
       connectionId: connection.connectionId,

@@ -6,6 +6,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMocks = vi.hoisted(() => ({
+  agentModels: vi.fn(),
+  getSettings: vi.fn(),
+  listLocalAgents: vi.fn(),
+  listLocalAgentsDetected: vi.fn(),
   createRequirementsProjectSession: vi.fn(),
   createRequirementsSession: vi.fn(),
   getSession: vi.fn(),
@@ -145,6 +149,31 @@ async function settle(rounds = 8): Promise<void> {
   }
 }
 
+function localAgent(id: string, displayName: string, usable: boolean) {
+  return {
+    id,
+    displayName,
+    vendor: "v",
+    channel: id === "codex" ? "codex-app-server" : id === "claude-code" ? "claude-sdk" : "acp",
+    bundled: id === "codex",
+    runtimeAvailable: true,
+    enabled: true,
+    status: usable ? "ready" : "auth_required",
+    reasonCode: null,
+    reasonDetail: null,
+    version: null,
+    minVersion: null,
+    verifiedVersion: null,
+    executablePath: null,
+    actions: [],
+    capabilities: [],
+    readOnlyCapable: id !== "gemini",
+    homepageUrl: "https://x.test",
+    termsUrl: null,
+    checkedAt: 1,
+  };
+}
+
 async function renderApp(path: string): Promise<HTMLDivElement> {
   window.history.replaceState({}, "", path);
   const node = await render(<AppRoot />);
@@ -164,6 +193,10 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   localStorage.clear();
   apiMocks.createRequirementsProjectSession.mockResolvedValue({ id: "s1", projectId: "local-1" });
+  // 默认只有 Codex 能用：开工不多问一步（多 Agent S5）。
+  apiMocks.listLocalAgents.mockResolvedValue({ defaultAgentId: "codex", agents: [localAgent("codex", "Codex", true)] });
+  apiMocks.agentModels.mockResolvedValue({ models: [], items: [] });
+  apiMocks.getSettings.mockResolvedValue({ defaultApprovalMode: "ask", approvalModeLocked: false });
   apiMocks.createRequirementsSession.mockResolvedValue({ id: "s1", projectId: "local-1" });
   apiMocks.getSession.mockResolvedValue({ id: "s1", projectId: "local-1" });
   apiMocks.listRequirements.mockResolvedValue({ items: [], nextCursor: null });
@@ -459,6 +492,48 @@ describe("应用壳：稳健性", () => {
     const node = await renderApp("/my");
     await act(async () => reportFailure({ status: 503, code: "UPSTREAM_UNAVAILABLE" }, { surface: "page", retry: () => undefined }));
     expect(node.querySelector('#main-content [data-testid="page-failure"]')).not.toBeNull();
+  });
+
+  it("能用的 Agent 不止一家：开工前先选 Agent 与权限，按选的建会话（多 Agent S5）", async () => {
+    apiMocks.listRequirementsMappings.mockResolvedValue({
+      items: [{ remoteProjectId: "p1", localProjectId: "local-1", rootPath: "/code/p1" }],
+    });
+    apiMocks.listLocalAgents.mockResolvedValue({
+      defaultAgentId: "claude-code",
+      agents: [localAgent("codex", "Codex", true), localAgent("claude-code", "Claude Code", true), localAgent("gemini", "Gemini CLI", false)],
+    });
+    apiMocks.createRequirementsProjectSession.mockResolvedValue({ id: "s7", projectId: "local-1" });
+    const node = await renderApp("/sessions");
+    const button = Array.from(node.querySelectorAll("button")).find((item) => item.textContent === "新建项目会话");
+    await act(async () => button?.click());
+    await settle(3);
+    expect(document.querySelector('[data-testid="start-options"]')).not.toBeNull();
+    expect(apiMocks.createRequirementsProjectSession).not.toHaveBeenCalled();
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="start-options-confirm"]')?.click());
+    await settle(3);
+    expect(apiMocks.createRequirementsProjectSession).toHaveBeenCalledWith("p1", { agentId: "claude-code", model: null, reasoningEffort: null });
+    expect(window.localStorage.getItem("suduo.lastAgentId")).toBe("claude-code");
+  });
+
+  it("刚启动、还在检测时等检测完再决定：最后只有一家能用就直接开工（gate-c 的情形）", async () => {
+    apiMocks.listRequirementsMappings.mockResolvedValue({
+      items: [{ remoteProjectId: "p1", localProjectId: "local-1", rootPath: "/code/p1" }],
+    });
+    apiMocks.listLocalAgents.mockResolvedValue({
+      defaultAgentId: "codex",
+      agents: [localAgent("codex", "Codex", true), { ...localAgent("claude-code", "Claude Code", true), status: "checking" }],
+    });
+    apiMocks.listLocalAgentsDetected.mockResolvedValue({
+      defaultAgentId: "codex",
+      agents: [localAgent("codex", "Codex", true), { ...localAgent("claude-code", "Claude Code", false), status: "not_installed" }],
+    });
+    apiMocks.createRequirementsProjectSession.mockResolvedValue({ id: "s8", projectId: "local-1" });
+    const node = await renderApp("/sessions");
+    const button = Array.from(node.querySelectorAll("button")).find((item) => item.textContent === "新建项目会话");
+    await act(async () => button?.click());
+    await settle(4);
+    expect(document.querySelector('[data-testid="start-options"]')).toBeNull();
+    expect(apiMocks.createRequirementsProjectSession).toHaveBeenCalledWith("p1", { agentId: "codex" });
   });
 
   it("连点发起项目会话只会创建一个会话", async () => {

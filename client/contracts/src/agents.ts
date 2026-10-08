@@ -16,6 +16,8 @@ export type AgentChannel = "codex-app-server" | "claude-sdk" | "acp";
  * - error：检测时出错（原因见 reasonCode）。
  */
 export type AgentStatus =
+  /** 还没检测完（列表先出、状态逐个补上，S5）。 */
+  | "checking"
   | "ready"
   | "installed"
   | "not_installed"

@@ -1,5 +1,6 @@
 import {
   BellIcon,
+  BotIcon,
   FolderGit2Icon,
   GlobeIcon,
   InfoIcon,
@@ -19,7 +20,7 @@ import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 
 /**
  * 设置分组（需求 §4.7）。分组即路由：`/settings/$section`。
- * 顺序与分段按「谁拥有这项设置」：本机与团队（通用）→ Codex → 排障与版本（其他）。
+ * 顺序与分段按「谁拥有这项设置」：本机与团队（通用，含本机的 AI Agent）→ Codex → 排障与版本（其他）。
  */
 export const SETTINGS_SECTION_IDS = [
   "appearance",
@@ -27,6 +28,7 @@ export const SETTINGS_SECTION_IDS = [
   "account",
   "service",
   "workspace",
+  "agents",
   "model",
   "execution",
   "skills",
@@ -54,6 +56,7 @@ const SECTION_LAYOUT: readonly Omit<SettingsSectionMeta, "title">[] = [
   { id: "account", icon: UserRoundIcon, band: "general" },
   { id: "service", icon: ServerIcon, band: "general" },
   { id: "workspace", icon: FolderGit2Icon, band: "general" },
+  { id: "agents", icon: BotIcon, band: "general" },
   { id: "model", icon: SparklesIcon, band: "codex" },
   { id: "execution", icon: ShieldCheckIcon, band: "codex" },
   { id: "skills", icon: PuzzleIcon, band: "codex" },

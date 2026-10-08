@@ -13,7 +13,8 @@ import { agentChildEnv, execAgentCommand, type AgentExec } from "./agent-exec.js
 import type { AgentSettingsStore } from "./agent-settings-store.js";
 import { resolveExecutable, type ResolveExecutableOptions } from "./resolver.js";
 
-const VERSION_TIMEOUT_MS = 8_000;
+/** Node 写的 CLI 冷启动慢，八家并行检测时更慢（OpenCode 冷启动单跑就要 3 秒）。 */
+const VERSION_TIMEOUT_MS = 20_000;
 const AUTH_TIMEOUT_MS = 12_000;
 /** 检测结果缓存：成功 10 分钟、不成功 1 分钟（技术设计 4.6）。 */
 const READY_TTL_MS = 10 * 60_000;
@@ -72,6 +73,48 @@ export class AgentCatalogService {
   async list(): Promise<AgentListDto> {
     const agents = await Promise.all(this.catalog.map((descriptor) => this.status(descriptor, false)));
     return { defaultAgentId: this.options.store.defaultAgentId(), agents };
+  }
+
+  /**
+   * 不等检测：有缓存给缓存，没有的标「检测中」并在后台开始检测（八家并行检测要好几秒，Node 写的 CLI 启动慢）。
+   * 界面先出列表，再轮询把状态补上。
+   */
+  listNow(): AgentListDto {
+    const agents = this.catalog.map((descriptor) => {
+      const cached = this.cache.get(descriptor.id);
+      if (cached !== undefined && cached.expiresAt > this.now()) {
+        return cached.dto;
+      }
+      void this.status(descriptor, false).catch(() => undefined);
+      return cached?.dto ?? this.placeholder(descriptor);
+    });
+    return { defaultAgentId: this.options.store.defaultAgentId(), agents };
+  }
+
+  private placeholder(descriptor: AgentDescriptor): AgentDto {
+    const setting = this.options.store.entry(descriptor.id);
+    return {
+      id: descriptor.id,
+      displayName: descriptor.displayName,
+      vendor: descriptor.vendor,
+      channel: descriptor.channel,
+      bundled: descriptor.bundled,
+      runtimeAvailable: descriptor.runtimeAvailable,
+      enabled: setting.enabled,
+      status: "checking",
+      reasonCode: null,
+      reasonDetail: null,
+      version: null,
+      minVersion: descriptor.minVersion,
+      verifiedVersion: descriptor.verifiedVersion,
+      executablePath: null,
+      actions: [],
+      capabilities: [...descriptor.capabilities],
+      readOnlyCapable: descriptor.readOnlyCapable,
+      homepageUrl: descriptor.homepageUrl,
+      termsUrl: descriptor.termsUrl,
+      checkedAt: null,
+    };
   }
 
   /** 重新检测（用户登录后点的）：之前运行中记下的登录失败也一并放下，下次用到时再确认。 */
@@ -221,7 +264,8 @@ export class AgentCatalogService {
       return base("not_installed", "binary_not_found", { reasonDetail: versionRun.spawnError });
     }
     if (versionRun.timedOut) {
-      return base("error", "check_timeout");
+      // 找到了、只是版本读得太慢：照样能用，标明没读到版本（告知，不拦，ADR-0004）。
+      return base("installed", "check_timeout");
     }
     const version = parseVersion(versionRun.stdout + "\n" + versionRun.stderr);
     if (version !== null && descriptor.minVersion !== null && compareVersions(version, descriptor.minVersion) < 0) {

@@ -28,14 +28,19 @@ export function maxApprovalMode(
   throw new Error(messagesFor(cliLocale(env)).cli.maxApprovalModeInvalid);
 }
 
-/** 会话原始值不落库改写；每次取策略时按当前部署上限实时 clamp。 */
-export function effectiveApprovalMode(
-  session: Pick<SessionRecord, "approvalMode">,
+/** 会话原始值不落库改写；每次取策略时按当前部署上限实时 clamp。只读低于所有档，不受上限影响。 */
+export function effectiveApprovalMode<T extends RuntimeApprovalMode>(
+  session: { approvalMode: T },
   env: NodeJS.ProcessEnv = process.env,
-): ApprovalMode {
+): T | ApprovalMode {
+  const mode = session.approvalMode;
+  if (mode === "readonly") {
+    return mode;
+  }
   const cap = maxApprovalMode(env);
-  if (cap === null || APPROVAL_MODE_RANK[session.approvalMode] <= APPROVAL_MODE_RANK[cap]) {
-    return session.approvalMode;
+  const rank = APPROVAL_MODE_RANK[mode as ApprovalMode];
+  if (cap === null || rank <= APPROVAL_MODE_RANK[cap]) {
+    return mode;
   }
   return cap;
 }

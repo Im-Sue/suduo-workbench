@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { isReasoningEffort, type JsonValue, type Locale, type ReasoningEffort } from "@suduo/client-contracts";
+import { isReasoningEffort, type JsonValue, type Locale, type ReasoningEffort, type RuntimeApprovalMode } from "@suduo/client-contracts";
 import type { DatabasePort } from "../database-port.js";
 import { parseJson, serializeJson } from "./repository-json.js";
 
@@ -10,7 +10,10 @@ export type SessionState =
   | "archived"
   | "deleted";
 
-export type SessionApprovalMode = "ask" | "auto" | "full";
+/** 会话的审批档（含用户可选的只读，迁移 021 以独立的 read_only 列存）。 */
+export type SessionApprovalMode = RuntimeApprovalMode;
+/** approval_mode 列能存的档（只读另存 read_only）。 */
+type StoredApprovalMode = "ask" | "auto" | "full";
 /** normal = 普通会话；room_task = 房间共享 Agent 的隐藏任务会话（迁移 016）。 */
 export type SessionKind = "normal" | "room_task";
 export type SessionPurpose =
@@ -60,6 +63,9 @@ export interface CreateSessionInput {
   now?: number;
   /** 会话用的 Agent；不传为 codex。 */
   agentId?: string;
+  /** 开会话时选的模型与推理强度；不传为跟随默认。 */
+  model?: string;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface SessionRow {
@@ -68,7 +74,9 @@ export interface SessionRow {
   title: string;
   state: SessionState;
   purpose: SessionPurpose;
-  approval_mode: SessionApprovalMode;
+  approval_mode: StoredApprovalMode;
+  /** 迁移 021 之前的库没有这一列。 */
+  read_only?: number;
   /** 迁移 016 之前的库没有这一列。 */
   kind?: SessionKind;
   /** 迁移 017 之前的库没有这一列。 */
@@ -99,12 +107,15 @@ export class SessionRepository {
     const roomTask = input.kind === "room_task";
     const english = input.locale === "en";
     const agentId = input.agentId !== undefined && input.agentId !== "codex" ? input.agentId : null;
+    // 只读会话才写 read_only 列（迁移 021 之前的库仍能建普通会话）。
+    const readOnly = input.approvalMode === "readonly";
+    const chosen = input.model !== undefined || input.reasoningEffort !== undefined;
     this.database
       .prepare(
         [
           "INSERT INTO sessions",
-          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"})`,
-          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"})`,
+          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"}${readOnly ? ", read_only" : ""}${chosen ? ", model, reasoning_effort" : ""})`,
+          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"}${readOnly ? ", 1" : ""}${chosen ? ", @model, @reasoningEffort" : ""})`,
         ].join(" "),
       )
       .run({
@@ -113,9 +124,10 @@ export class SessionRepository {
         title: input.title,
         state,
         purpose: input.purpose ?? "general",
-        approvalMode: input.approvalMode ?? "ask",
+        approvalMode: storedMode(input.approvalMode ?? "ask", "ask"),
         now,
         ...(agentId === null ? {} : { agentId }),
+        ...(chosen ? { model: input.model ?? null, reasoningEffort: input.reasoningEffort ?? null } : {}),
       });
     return requireSession(this.getById(id), id);
   }
@@ -220,7 +232,9 @@ export class SessionRepository {
     const now = options.now ?? Date.now();
     const title = input.title ?? current.title;
     const state = input.state ?? current.state;
-    const approvalMode = input.approvalMode ?? current.approvalMode;
+    // 切到只读时 approval_mode 留着原来的档（只写 read_only）；切到其他档时两列都写。
+    const approvalMode = input.approvalMode === undefined || input.approvalMode === "readonly" ? null : input.approvalMode;
+    const readOnly = input.approvalMode === undefined ? null : input.approvalMode === "readonly" ? 1 : 0;
     const purpose = input.purpose ?? current.purpose;
     const model = input.model === undefined ? current.model : input.model;
     const reasoningEffort =
@@ -234,7 +248,7 @@ export class SessionRepository {
         .prepare(
           [
             "UPDATE sessions SET",
-            "title = @title, state = @state, purpose = @purpose, approval_mode = @approvalMode,",
+            `title = @title, state = @state, purpose = @purpose,${approvalMode === null ? "" : " approval_mode = @approvalMode,"}${readOnly === null ? "" : " read_only = @readOnly,"}`,
             "model = @model, reasoning_effort = @reasoningEffort, updated_at = @now,",
             "last_activity_at = @now, archived_at = @archivedAt,",
             "deleted_at = NULL, error_json = @errorJson, version = version + 1",
@@ -247,7 +261,8 @@ export class SessionRepository {
           expectedVersion,
           title,
           state,
-          approvalMode,
+          ...(approvalMode === null ? {} : { approvalMode }),
+          ...(readOnly === null ? {} : { readOnly }),
           purpose,
           model,
           reasoningEffort,
@@ -335,6 +350,10 @@ function archivedAtForState(
   return current.state === "archived" ? current.archivedAt : now;
 }
 
+function storedMode(mode: SessionApprovalMode, fallback: StoredApprovalMode): StoredApprovalMode {
+  return mode === "readonly" ? fallback : mode;
+}
+
 export function mapSession(row: SessionRow): SessionRecord {
   return {
     id: row.id,
@@ -342,7 +361,7 @@ export function mapSession(row: SessionRow): SessionRecord {
     title: row.title,
     state: row.state,
     purpose: row.purpose,
-    approvalMode: row.approval_mode,
+    approvalMode: row.read_only === 1 ? "readonly" : row.approval_mode,
     kind: row.kind === "room_task" ? "room_task" : "normal",
     locale: row.locale === "en" ? "en" : "zh-CN",
     agentId: row.agent_id ?? "codex",
