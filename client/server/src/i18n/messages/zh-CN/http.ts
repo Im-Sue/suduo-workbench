@@ -31,7 +31,8 @@ export const http = {
   openModeInvalid: "mode 必须为 open/reveal/vscode/terminal 之一",
   lineInvalid: "line 必须是正整数",
   existingPathsInvalid: (limit: number) => `paths 必须是 1–1024 字的路径数组，最多 ${String(limit)} 条`,
-  decisionInvalid: "decision 必须是 accept/acceptForSession/decline/cancel 之一",
+  decisionInvalid: "decision 必须是 accept / acceptForSession / acceptAlways / decline / declineAlways / cancel 之一",
+  optionIdInvalid: "optionId 必须是字符串",
   upToInvalid: "upTo 必须是 ISO 时间字符串",
   /** 需求服务的文件、附件、事件响应没有内容流。 */
   remoteArtifactFileBodyMissing: "远程产物文件响应缺少内容流",

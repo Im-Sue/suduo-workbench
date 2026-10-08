@@ -62,6 +62,7 @@ export const session = {
   approvalNotFound: "审批不存在",
   approvalAlreadyDecided: "审批已经完成决策",
   approvalNotPending: "审批已过期或不再可决策",
+  approvalOptionInvalid: "这张审批卡没有这个选项",
   approvalConcurrentUpdate: "审批状态已被并发更新",
   approvalThreadLost: "审批 thread 映射已丢失",
   approvalDeliveryIndeterminate: "审批响应投递结果不确定",

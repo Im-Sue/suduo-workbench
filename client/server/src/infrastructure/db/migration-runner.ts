@@ -70,7 +70,12 @@ const SESSION_AGENT_GRAPH_URL = new URL(
   import.meta.url,
 );
 
-const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+const APPROVAL_DECISIONS_URL = new URL(
+  "./migrations/020_approval_decisions.sql",
+  import.meta.url,
+);
+
+const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
 
 export function loadM1Migrations(): Migration[] {
   return [
@@ -133,6 +138,11 @@ export function loadM1Migrations(): Migration[] {
       version: 19,
       name: "session_agent_graph",
       sql: readFileSync(SESSION_AGENT_GRAPH_URL, "utf8"),
+    },
+    {
+      version: 20,
+      name: "approval_decisions",
+      sql: readFileSync(APPROVAL_DECISIONS_URL, "utf8"),
     },
   ];
 }

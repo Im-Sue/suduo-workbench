@@ -11,6 +11,7 @@ import Fastify, {
   type FastifyRequest,
 } from "fastify";
 import {
+  APPROVAL_DECISIONS,
   isLocale,
   type HealthzResponse,
   type Locale,
@@ -798,13 +799,11 @@ export function buildHttpServer(
         request.body,
         async () => {
           const body = requireObject<DecideApprovalRequest>(request.body);
-          if (
-            body.decision !== "accept" &&
-            body.decision !== "acceptForSession" &&
-            body.decision !== "decline" &&
-            body.decision !== "cancel"
-          ) {
+          if (!(APPROVAL_DECISIONS as readonly string[]).includes(body.decision)) {
             throw validation((t) => t.http.decisionInvalid);
+          }
+          if (body.optionId !== undefined && typeof body.optionId !== "string") {
+            throw validation((t) => t.http.optionIdInvalid);
           }
           return {
             statusCode: 200,

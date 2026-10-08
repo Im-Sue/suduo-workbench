@@ -57,6 +57,7 @@ export const session = {
   approvalNotFound: "Approval not found",
   approvalAlreadyDecided: "This approval has already been decided",
   approvalNotPending: "This approval has expired or can no longer be decided",
+  approvalOptionInvalid: "This approval card doesn't offer that option",
   approvalConcurrentUpdate: "This approval was just updated by another request",
   approvalThreadLost: "The thread mapping for this approval is missing",
   approvalDeliveryIndeterminate: "Couldn't confirm whether your approval decision was delivered",

@@ -29,7 +29,8 @@ export const http = {
   lineInvalid: "line must be a positive whole number",
   existingPathsInvalid: (limit: number) =>
     `paths must be a list of up to ${String(limit)} paths, each 1–1024 characters long`,
-  decisionInvalid: "decision must be one of accept, acceptForSession, decline, or cancel",
+  decisionInvalid: "decision must be one of accept / acceptForSession / acceptAlways / decline / declineAlways / cancel",
+  optionIdInvalid: "optionId must be a string",
   upToInvalid: "upTo must be an ISO timestamp",
   remoteArtifactFileBodyMissing: "The server returned no content for the confirmed version file",
   remoteAttachmentBodyMissing: "The server returned no content for the attachment",

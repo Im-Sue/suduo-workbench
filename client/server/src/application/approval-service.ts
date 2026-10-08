@@ -1,5 +1,6 @@
 import type {
   ApprovalDecision,
+  ApprovalOption,
   ApprovalDto,
   DecideApprovalRequest,
   JsonValue,
@@ -88,6 +89,8 @@ export class ApprovalService {
         { status: approval.status },
       );
     }
+    // 卡上声明了可选决策（ADR-0014）：所选决策必须是其中之一，并带上 Agent 原生的选项 id。
+    const option = resolveApprovalOption(approval.requestPayload, input);
     if (!this.approvals.markDeciding(id, approval.version, input.decision)) {
       throw new ApiError(
         409,
@@ -127,6 +130,7 @@ export class ApprovalService {
         threadRef: binding.threadRef,
         approvalRef: deciding.runtimeApprovalRef,
         decision: input.decision,
+        ...(option === null ? {} : { optionId: option.id }),
       });
     } catch (error) {
       this.ledger.failApprovalDelivery({
@@ -281,4 +285,47 @@ function approvalTurnRef(
     }
   }
   return null;
+}
+
+const LEGACY_DECISIONS: readonly ApprovalDecision[] = ["accept", "acceptForSession", "decline", "cancel"];
+
+/**
+ * 找出这次决定对应的选项。卡上有 options（ADR-0014 中立字段）时，optionId 优先，否则按 decision 找第一个；
+ * 找不到报 400。没有 options 的老卡与 SuDuo 工具确认卡只认原来的四种决策。
+ */
+export function resolveApprovalOption(
+  requestPayload: JsonValue,
+  input: DecideApprovalRequest,
+): ApprovalOption | null {
+  const options = optionsOf(requestPayload);
+  if (options === null) {
+    if (!LEGACY_DECISIONS.includes(input.decision)) {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.approvalOptionInvalid);
+    }
+    return null;
+  }
+  const match = input.optionId !== undefined
+    ? options.find((option) => option.id === input.optionId && option.decision === input.decision)
+    : options.find((option) => option.decision === input.decision);
+  if (!match) {
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.approvalOptionInvalid);
+  }
+  return match;
+}
+
+function optionsOf(payload: JsonValue): ApprovalOption[] | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const raw = payload["options"];
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const options: ApprovalOption[] = [];
+  for (const entry of raw) {
+    if (entry !== null && typeof entry === "object" && !Array.isArray(entry) && typeof entry["id"] === "string" && typeof entry["decision"] === "string") {
+      options.push({ id: entry["id"], decision: entry["decision"] as ApprovalDecision });
+    }
+  }
+  return options;
 }

@@ -1,3 +1,4 @@
+import type { ApprovalDecision } from "./runtime.js";
 import type {
   EventEnvelope,
   JsonValue,
@@ -288,11 +289,8 @@ export type ApprovalStatus =
   | "orphaned"
   | "delivery_failed";
 
-export type ApprovalRecordDecision =
-  | "accept"
-  | "acceptForSession"
-  | "decline"
-  | "cancel";
+/** 审批记录上的决策；与运行时决策同一组取值（多 Agent 后多了 acceptAlways / declineAlways）。 */
+export type ApprovalRecordDecision = ApprovalDecision;
 
 export interface ApprovalDto {
   id: string;
@@ -315,8 +313,20 @@ export interface ListApprovalsQuery extends CursorQuery {
 export type ListApprovalsResponse = CursorPage<ApprovalDto>;
 
 export interface DecideApprovalRequest {
-  decision: "accept" | "acceptForSession" | "decline" | "cancel";
+  decision: ApprovalDecision;
+  /** 选项 id（审批载荷里 options[].id）；不传时按 decision 找第一个匹配的选项。 */
+  optionId?: string;
 }
+
+/** 接口接受的全部决策值。 */
+export const APPROVAL_DECISIONS = [
+  "accept",
+  "acceptForSession",
+  "acceptAlways",
+  "decline",
+  "declineAlways",
+  "cancel",
+] as const satisfies readonly ApprovalDecision[];
 
 export interface InterruptRequest {
   threadRef?: ThreadRef;
