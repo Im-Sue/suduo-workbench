@@ -12,6 +12,7 @@ const apiMocks = vi.hoisted(() => ({
   inspectLocalDir: vi.fn(),
   listLocalDirs: vi.fn(),
   listRequirementsMappings: vi.fn(),
+  listRequirementsProjects: vi.fn(),
   listRequirementsSessions: vi.fn(),
   listUsers: vi.fn(),
   requirementsSettings: vi.fn(),
@@ -103,7 +104,7 @@ beforeEach(() => {
   apiMocks.createRequirementsSession.mockResolvedValue(session("s-new", "新会话"));
   apiMocks.createRequirementsProjectSession.mockResolvedValue(session("s-project"));
   apiMocks.listLocalDirs.mockResolvedValue({ path: "/Users/me", parent: "/Users", home: "/Users/me", entries: [], truncated: false, recent: [] });
-  apiMocks.inspectLocalDir.mockResolvedValue({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main" });
+  apiMocks.inspectLocalDir.mockResolvedValue({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main", linkedRemoteProjectIds: [] });
   apiMocks.saveRequirementsMapping.mockResolvedValue(mapping);
   // 缺省：没配云端，云端功能（优先级）一律不显示。
   apiMocks.requirementsSettings.mockResolvedValue({ configured: false });
@@ -179,6 +180,39 @@ describe("开始会话对话框", () => {
     expect(onReady).toHaveBeenCalledWith(expect.objectContaining({ id: "s-project" }), false);
   });
 
+  it("选的目录已关联给别的项目：说出项目名，不拦保存（一个目录可以关联多个项目）", async () => {
+    apiMocks.listRequirementsMappings.mockResolvedValueOnce({ items: [] });
+    apiMocks.inspectLocalDir.mockResolvedValue({
+      path: "/code/shared",
+      exists: true,
+      isDirectory: true,
+      readable: true,
+      writable: true,
+      isGitRepo: true,
+      branch: "main",
+      // 自己（p1）不算；p-gone 当前看不到。
+      linkedRemoteProjectIds: ["p-api", "p1", "p-gone"],
+    });
+    apiMocks.listRequirementsProjects.mockResolvedValue({ items: [{ id: "p-api", name: "后端" }], nextCursor: null });
+    await render(
+      <StartSessionDialog
+        request={{ kind: "project", remoteProjectId: "p1" }}
+        subject="前端"
+        onClose={() => undefined}
+        onReady={() => undefined}
+      />,
+    );
+    await act(async () => button("手动输入路径")?.click());
+    const input = document.body.querySelector<HTMLInputElement>("#directory-manual");
+    await act(async () => typeInto(input!, "/code/shared"));
+    await settle();
+    expect(document.body.textContent).toContain("这个目录也关联给了「后端」、另一个项目，这些项目的会话都会在这里运行");
+    await act(async () => button("使用这个目录")?.click());
+    await settle();
+    expect(apiMocks.saveRequirementsMapping).toHaveBeenCalledWith("p1", "/code/shared");
+    expect(apiMocks.createRequirementsProjectSession).toHaveBeenCalledTimes(1);
+  });
+
   it("检查中关掉对话框：不会在后台继续建会话", async () => {
     let resolveMappings: (value: unknown) => void = () => undefined;
     apiMocks.listRequirementsMappings.mockReturnValueOnce(new Promise((resolve) => (resolveMappings = resolve)));
@@ -233,7 +267,7 @@ describe("开始会话对话框", () => {
   });
 
   it("关联的目录已被删除：检查时就回到选目录，不先去建会话", async () => {
-    apiMocks.inspectLocalDir.mockResolvedValueOnce({ path: "/code/p1", exists: false, isDirectory: false, readable: false, writable: false, isGitRepo: false, branch: null });
+    apiMocks.inspectLocalDir.mockResolvedValueOnce({ path: "/code/p1", exists: false, isDirectory: false, readable: false, writable: false, isGitRepo: false, branch: null, linkedRemoteProjectIds: [] });
     await render(
       <StartSessionDialog
         request={{ kind: "requirement", remoteProjectId: "p1", requirementId: "r1" }}
@@ -252,8 +286,8 @@ describe("开始会话对话框", () => {
       new ApiClientError(400, "VALIDATION_ERROR", "rootPath 必须是存在且具备读取、写入与执行权限的本机目录"),
     );
     apiMocks.inspectLocalDir
-      .mockResolvedValueOnce({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main" })
-      .mockResolvedValueOnce({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: false, isGitRepo: true, branch: "main" });
+      .mockResolvedValueOnce({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main", linkedRemoteProjectIds: [] })
+      .mockResolvedValueOnce({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: false, isGitRepo: true, branch: "main", linkedRemoteProjectIds: [] });
     await render(
       <StartSessionDialog
         request={{ kind: "project", remoteProjectId: "p1" }}
@@ -272,7 +306,7 @@ describe("开始会话对话框", () => {
     );
     let resolveInspect: (value: unknown) => void = () => undefined;
     apiMocks.inspectLocalDir
-      .mockResolvedValueOnce({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main" })
+      .mockResolvedValueOnce({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main", linkedRemoteProjectIds: [] })
       .mockReturnValueOnce(new Promise((resolve) => (resolveInspect = resolve)));
     const onClose = vi.fn();
     const onBackgroundFailed = vi.fn();
@@ -287,7 +321,7 @@ describe("开始会话对话框", () => {
     );
     await act(async () => button("在后台继续")?.click());
     expect(onClose).toHaveBeenCalledWith(true);
-    await act(async () => resolveInspect({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main" }));
+    await act(async () => resolveInspect({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main", linkedRemoteProjectIds: [] }));
     await settle();
     expect(onBackgroundFailed).toHaveBeenCalledTimes(1);
   });

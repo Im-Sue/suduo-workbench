@@ -26,7 +26,6 @@ export const workspace = {
     rootPathNotAbsolute: "rootPath 必须是无 NUL 的绝对路径",
     rootPathNotAccessible: "rootPath 必须是存在且具备读取、写入与执行权限的本机目录",
     projectRemoved: "本机工作目录对应的项目已被移除",
-    linkedElsewhere: "该本机工作目录已映射给另一个远程项目",
     missing: "该远程项目尚未配置本机工作目录",
     invalid: "本机工作目录映射已失效，请重新配置",
     changed: "本机工作目录映射已变化，请重新配置",

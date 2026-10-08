@@ -13,6 +13,7 @@ import { ProjectRepository } from "../src/infrastructure/db/repositories/project
 import { RequirementSessionRefRepository } from "../src/infrastructure/db/repositories/requirement-session-ref-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
 import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import {
   DEV,
   FakeRequirementsRemote,
@@ -45,10 +46,11 @@ function setup() {
   const projects = new ProjectRepository(database);
   const sessions = new SessionRepository(database);
   const mappings = new WorkspaceMappingRepository(database);
+  const projectRefs = new ProjectSessionRefRepository(database);
   const refs = new RequirementSessionRefRepository(database);
   const project = projects.create({ name: "商家端", rootPath: root, rootPathKey: root });
   const remote = new FakeRequirementsRemote();
-  const service = new SessionContextService({ sessions, projects, mappings, refs, remote });
+  const service = new SessionContextService({ sessions, projects, projectRefs, refs, remote });
   const requirementSession = (options: {
     now?: number;
     anchor?: "known" | "unavailable";
@@ -76,7 +78,7 @@ function setup() {
     }
     return session;
   };
-  return { root, database, projects, sessions, mappings, refs, project, remote, service, requirementSession };
+  return { root, database, projects, sessions, mappings, projectRefs, refs, project, remote, service, requirementSession };
 }
 
 function lines(text: string): string[] {
@@ -304,7 +306,7 @@ describe("工具清单", () => {
 
 describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
   it("describe 的三种 kind：requirement / project / none；会话不存在 404", () => {
-    const { projects, sessions, mappings, service, requirementSession, project } = setup();
+    const { projects, sessions, mappings, projectRefs, service, requirementSession, project } = setup();
     const createdAt = Date.parse("2026-09-29T01:00:00.000Z");
     const requirement = requirementSession({ now: createdAt });
     expect(service.describe(requirement.id)).toEqual({
@@ -331,7 +333,7 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
       remoteProjectId: null,
       requirement: null,
     });
-    mappings.save({ remoteProjectId: "proj-1", localProjectId: project.id });
+    projectRefs.create({ sessionId: plain.id, remoteProjectId: "proj-1" });
     expect(service.describe(plain.id)).toEqual({
       sessionId: plain.id,
       kind: "project",
@@ -339,7 +341,8 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
       remoteProjectId: "proj-1",
       requirement: null,
     });
-    // 需求会话即使项目已映射，仍是 requirement。
+    // 需求会话即使目录已映射，仍是 requirement。
+    mappings.save({ remoteProjectId: "proj-1", localProjectId: project.id, serverOrigin: "https://a.example" });
     expect(service.describe(requirement.id).kind).toBe("requirement");
 
     expect(() => service.describe("missing")).toThrow(ApiError);
@@ -347,7 +350,7 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
   });
 
   it("toolContext：开工时刻优先用已知审计水位线，否则用本机创建时间；项目会话 requirement=null；未关联为 null", () => {
-    const { root, sessions, mappings, service, requirementSession, project } = setup();
+    const { root, sessions, projectRefs, service, requirementSession, project } = setup();
     const known = requirementSession({ anchor: "known", anchorAt: "2026-09-26T00:00:00.000Z", now: Date.parse("2026-09-26T00:10:00.000Z") });
     expect(service.toolContext(known.id)).toEqual({
       sessionId: known.id,
@@ -364,7 +367,7 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
 
     const plain = sessions.create({ projectId: project.id, title: "普通会话" });
     expect(service.toolContext(plain.id)).toBeNull();
-    mappings.save({ remoteProjectId: "proj-remote", localProjectId: project.id });
+    projectRefs.create({ sessionId: plain.id, remoteProjectId: "proj-remote" });
     expect(service.toolContext(plain.id)).toEqual({
       sessionId: plain.id,
       locale: "zh-CN",
@@ -376,7 +379,7 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
   });
 
   it("rebuildSetup：新版需求会话重新给卡（不把自己当上一次）；旧版重建时也给卡并改成新版；未关联返回 null；需求查不到给最小卡", async () => {
-    const { remote, sessions, mappings, service, requirementSession, project, refs } = setup();
+    const { remote, sessions, projectRefs, service, requirementSession, project, refs } = setup();
     const current = requirementSession({ anchor: "known" });
     const rebuilt = await service.rebuildSetup(current.id);
     expect(rebuilt?.developerInstructions.startsWith("# SuDuo 需求会话\n")).toBe(true);
@@ -397,10 +400,34 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
 
     const plain = sessions.create({ projectId: project.id, title: "普通会话" });
     expect(await service.rebuildSetup(plain.id)).toBeNull();
-    mappings.save({ remoteProjectId: "proj-1", localProjectId: project.id });
+    projectRefs.create({ sessionId: plain.id, remoteProjectId: "proj-1" });
     const projectCard = await service.rebuildSetup(plain.id);
     expect(projectCard?.developerInstructions.startsWith("# SuDuo 项目会话")).toBe(true);
     expect(projectCard?.dynamicTools).toHaveLength(6);
+  });
+
+  it("项目会话的所属项目按建时记下的算，不随目录关联或服务器变化；目录关联不会给普通会话安上项目", () => {
+    const { root, sessions, mappings, projectRefs, service, project } = setup();
+    const owned = sessions.create({ projectId: project.id, title: "A 项目的会话" });
+    projectRefs.create({ sessionId: owned.id, remoteProjectId: "proj-a" });
+    const plain = sessions.create({ projectId: project.id, title: "普通会话" });
+
+    // 同一目录先后关联给服务器 A 的项目、服务器 B 的项目，再一起关联给 B 的另一个项目。
+    mappings.save({ remoteProjectId: "proj-a", localProjectId: project.id, serverOrigin: "https://a.example" });
+    mappings.save({ remoteProjectId: "proj-b", localProjectId: project.id, serverOrigin: "https://b.example" });
+    mappings.save({ remoteProjectId: "proj-b2", localProjectId: project.id, serverOrigin: "https://b.example" });
+    mappings.remove("proj-a");
+
+    expect(service.describe(owned.id)).toMatchObject({ kind: "project", remoteProjectId: "proj-a" });
+    expect(service.toolContext(owned.id)).toEqual({
+      sessionId: owned.id,
+      locale: "zh-CN",
+      projectRoot: root,
+      remoteProjectId: "proj-a",
+      requirement: null,
+    });
+    expect(service.describe(plain.id)).toMatchObject({ kind: "none", remoteProjectId: null });
+    expect(service.toolContext(plain.id)).toBeNull();
   });
 
   it("captureAnchor：known / empty / unavailable", async () => {

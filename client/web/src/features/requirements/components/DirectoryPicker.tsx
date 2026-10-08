@@ -7,10 +7,12 @@ import {
   FolderIcon,
   HistoryIcon,
   KeyboardIcon,
+  Link2Icon,
   XCircleIcon,
 } from "lucide-react";
 import { useDeferredValue, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, type LocalDirInspectionDto } from "../../../api/client.js";
+import { projectsQuery } from "../../../app/queries.js";
 import { classifyFailure } from "../../../feedback/classify.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,15 +27,19 @@ import type { Messages } from "../../../i18n/messages/index.js";
  * 浏览器拿不到本机绝对路径，所以由本机服务列目录；也支持直接输入路径。
  * 选中后即时检查：能否读写、是否 Git 仓库、当前分支。
  * 键盘：↑↓ 移动，Enter / 空格选中，→ 进入子目录，← 回上一级（列表只占一个 Tab 位）。
+ * 目录已关联给其他项目时只提示、不拦（一个目录可以关联多个项目，ADR-0004）。
  */
 export function DirectoryPicker({
   value,
   onChange,
   onValidityChange,
+  remoteProjectId,
 }: {
   value: string;
   onChange(path: string): void;
   onValidityChange?(valid: boolean): void;
+  /** 正在给哪个项目选目录：这个项目自己的关联不算「也关联给了」。 */
+  remoteProjectId?: string;
 }) {
   const t = useT();
   const text = t.requirements.directoryPicker;
@@ -55,6 +61,9 @@ export function DirectoryPicker({
     retry: false,
   });
   const verdict = judge(deferredValue === "" ? undefined : inspection.data, t);
+  const otherProjectIds = deferredValue === "" ? [] : otherLinkedProjects(inspection.data, remoteProjectId);
+  // 只有真要显示「也关联给了」时才取项目名。
+  const projects = useQuery({ ...projectsQuery, enabled: otherProjectIds.length > 0 });
 
   useEffect(() => {
     onValidityChange?.(verdict.tone === "ok" || verdict.tone === "warn");
@@ -272,8 +281,25 @@ export function DirectoryPicker({
           {manual ? text.browse : text.manual}
         </Button>
       </div>
+
+      {otherProjectIds.length > 0 && !inspection.isFetching ? (
+        <p className="m-0 flex items-start gap-1.5 text-small text-subtle-foreground">
+          <Link2Icon className="mt-0.5 size-4 shrink-0" />
+          {text.alsoLinked(
+            otherProjectIds.map((id) => projects.data?.find((project) => project.id === id)?.name ?? null),
+          )}
+        </p>
+      ) : null}
     </div>
   );
+}
+
+/** 这个目录还关联着哪些别的项目（不算正在选目录的这个项目）。 */
+export function otherLinkedProjects(
+  inspection: LocalDirInspectionDto | undefined,
+  remoteProjectId: string | undefined,
+): string[] {
+  return (inspection?.linkedRemoteProjectIds ?? []).filter((id) => id !== remoteProjectId);
 }
 
 const TONE_CLASS = { idle: "text-subtle-foreground", ok: "text-success", warn: "text-warning", error: "text-danger" } as const;

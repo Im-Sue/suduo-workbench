@@ -244,6 +244,7 @@ function mappingRecord(remoteProjectId: string, localProjectId: string): Workspa
   return {
     remoteProjectId,
     localProjectId,
+    serverOrigin: "https://requirements.example",
     createdAt: 1,
     updatedAt: 1,
     lastValidatedAt: 1,

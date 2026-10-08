@@ -61,10 +61,12 @@ import { SessionToolService } from "./application/session-tools/session-tool-ser
 import { MyWorkbenchService } from "./application/my-workbench-service.js";
 import {
   LocalDirectoryService,
+  linkedRemoteProjectIds,
   mappedWorkspaceRoots,
 } from "./application/local-directory-service.js";
 import { RequirementSessionRefRepository } from "./infrastructure/db/repositories/requirement-session-ref-repository.js";
 import { WorkspaceMappingRepository } from "./infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "./infrastructure/db/repositories/project-session-ref-repository.js";
 import { RequirementsCredentialStore } from "./infrastructure/requirements-v2/credential-store.js";
 import { RequirementsRemoteClient } from "./infrastructure/requirements-v2/remote-client.js";
 import { RequirementsSettingsStore } from "./infrastructure/requirements-v2/settings-store.js";
@@ -131,6 +133,7 @@ export function createSuDuoApplication(
   const idempotencyRecords = new IdempotencyRepository(database);
   const workspaceMappings = new WorkspaceMappingRepository(database);
   const requirementSessionRefs = new RequirementSessionRefRepository(database);
+  const projectSessionRefs = new ProjectSessionRefRepository(database);
   const roomTasks = new RoomTaskSessionRepository(database);
   const v2DataDirectory =
     options.v2DataDirectory ?? resolve(dirname(options.databasePath), "requirements-v2");
@@ -139,6 +142,29 @@ export function createSuDuoApplication(
     options.requirementsServiceUrl,
   );
   const requirementsCredentials = new RequirementsCredentialStore(v2DataDirectory);
+  /**
+   * 当前连着的服务器：目录关联按它区分（迁移 018）。配置文件读不了时当作未配置——
+   * 列表类查询为空，不拖垮选目录、我的工作等页面；设置页另有报错。
+   */
+  const currentServerOrigin = (): string | null => {
+    try {
+      return requirementsSettings.getBaseUrl();
+    } catch {
+      return null;
+    }
+  };
+  {
+    // 升级前的存量关联没有服务器信息，记为当前服务器（绝大多数人没换过服务器）。
+    const origin = currentServerOrigin();
+    if (origin !== null) {
+      workspaceMappings.adoptUnscoped(origin);
+    }
+  }
+  const currentServerMappings = {
+    list: () => workspaceMappings.list(currentServerOrigin()),
+    listByLocalProjectId: (localProjectId: string) =>
+      workspaceMappings.listByLocalProjectId(currentServerOrigin(), localProjectId),
+  };
   const requirementsRemote = new RequirementsRemoteClient(
     requirementsSettings,
     requirementsCredentials,
@@ -208,7 +234,7 @@ export function createSuDuoApplication(
   const sessionContext = new SessionContextService({
     sessions,
     projects,
-    mappings: workspaceMappings,
+    projectRefs: projectSessionRefs,
     refs: requirementSessionRefs,
     remote: requirementsRemote,
     roomTasks,
@@ -231,6 +257,7 @@ export function createSuDuoApplication(
         }
       },
     },
+    projectSessionRefs,
   );
   const sessionTools = new SessionToolService({
     runtimes: registry,
@@ -263,7 +290,7 @@ export function createSuDuoApplication(
     sessions,
     events,
     projects,
-    mappings: workspaceMappings,
+    mappings: currentServerMappings,
     remote: requirementsRemote,
   });
   const approvalService = new ApprovalService(
@@ -505,7 +532,8 @@ export function createSuDuoApplication(
     ...(options.runMode === undefined ? {} : { runMode: options.runMode }),
     ...(options.instanceId === undefined ? {} : { instanceId: options.instanceId }),
     localDirectories: new LocalDirectoryService({
-      recentRoots: () => mappedWorkspaceRoots(workspaceMappings, projects),
+      recentRoots: () => mappedWorkspaceRoots(currentServerMappings, projects),
+      linkedRemoteProjectIds: (path) => linkedRemoteProjectIds(currentServerMappings, projects, path),
     }),
     codexHome,
     skillAdmin,

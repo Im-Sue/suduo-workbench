@@ -211,7 +211,7 @@ beforeEach(() => {
     items: [{ session: { id: "s1", title: "", lastActivityAt: null, updatedAt: Date.parse("2026-09-29T11:00:00.000Z") }, requirement: { remoteRequirementId: REQ_ID } }],
   });
   apiMocks.listRequirementsMappings.mockResolvedValue({ items: [{ remoteProjectId: "proj-1", rootPath: "/Users/alex/code/shop" }] });
-  apiMocks.inspectLocalDir.mockResolvedValue({ exists: true, readable: true, writable: true, isGitRepo: true, branch: "main" });
+  apiMocks.inspectLocalDir.mockResolvedValue({ exists: true, readable: true, writable: true, isGitRepo: true, branch: "main", linkedRemoteProjectIds: [] });
   apiMocks.markRequirementRead.mockResolvedValue(undefined);
   apiMocks.listUsers.mockResolvedValue({ items: [ALEX, SAM] });
 });

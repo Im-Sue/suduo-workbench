@@ -94,4 +94,9 @@ export interface LocalPathInspectionDto {
   isGitRepo: boolean;
   /** 当前分支名；非仓库或处于分离 HEAD 时为 null。 */
   branch: string | null;
+  /**
+   * 当前服务器上已关联到这个目录的远程项目 ID（一个目录可以关联多个项目，选目录时据此告知）。
+   * 不存在或不是目录时为空。
+   */
+  linkedRemoteProjectIds: string[];
 }

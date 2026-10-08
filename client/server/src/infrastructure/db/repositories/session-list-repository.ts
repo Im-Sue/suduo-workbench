@@ -51,7 +51,7 @@ interface SessionListRow extends SessionRow {
   ref_remote_requirement_id: string | null;
   ref_requirement_number: number | null;
   ref_requirement_title: string | null;
-  mapping_remote_project_id: string | null;
+  project_ref_remote_project_id: string | null;
   room_remote_project_id: string | null;
   room_id: string | null;
   room_name: string | null;
@@ -66,7 +66,7 @@ const VIEW_STATES: Readonly<Record<SessionListView, readonly string[]>> = {
 };
 
 /**
- * 跨项目会话列表的只读查询：一次 SQL 把会话、项目、需求快照、项目映射与预览列拼好，
+ * 跨项目会话列表的只读查询：一次 SQL 把会话、项目、需求快照、所属项目与预览列拼好，
  * 不扫事件表。排序 = COALESCE(last_activity_at, created_at) DESC, id ASC，与游标一致。
  */
 export class SessionListRepository {
@@ -102,7 +102,7 @@ export class SessionListRepository {
         name: row.project_name,
         rootPath: row.project_root_path,
         state: row.project_state,
-        remoteProjectId: row.ref_remote_project_id ?? row.mapping_remote_project_id,
+        remoteProjectId: row.ref_remote_project_id ?? row.project_ref_remote_project_id,
       },
       requirement:
         row.ref_remote_requirement_id === null
@@ -133,7 +133,8 @@ export class SessionListRepository {
 /**
  * 列表 SQL。有游标时先用范围条件让 idx_sessions_list_recent 直接定位到游标处
  * （SEARCH 而不是从索引头 SCAN），再在同刻内按 id 决胜；排序与游标比较口径一致。
- * 按远程项目过滤时，会话所属项目 = 房间任务的房间项目 → 需求会话的需求项目 → 代码目录映射。
+ * 按远程项目过滤时，会话所属项目 = 房间任务的房间项目 → 需求会话的需求项目 → 项目会话建时记下的项目
+ * （迁移 018 起不再按代码目录关联反查：一个目录可关联多个项目，换服务器后旧关联也还在）。
  */
 export function sessionListSql(withCursor: boolean, withRemoteProject = false): string {
   return [
@@ -143,18 +144,18 @@ export function sessionListSql(withCursor: boolean, withRemoteProject = false): 
     "r.remote_requirement_id AS ref_remote_requirement_id,",
     "r.requirement_number AS ref_requirement_number,",
     "r.requirement_title AS ref_requirement_title,",
-    "m.remote_project_id AS mapping_remote_project_id,",
+    "ps.remote_project_id AS project_ref_remote_project_id,",
     "rt.remote_project_id AS room_remote_project_id, rt.room_id AS room_id, rt.room_name AS room_name,",
     "rt.thread_root_id AS room_thread_root_id, rt.last_run_id AS room_last_run_id",
     "FROM sessions s",
     "JOIN projects p ON p.id = s.project_id",
     "LEFT JOIN v2_requirement_session_refs r ON r.session_id = s.id",
-    "LEFT JOIN v2_project_workspace_mappings m ON m.local_project_id = s.project_id",
+    "LEFT JOIN v2_project_session_refs ps ON ps.session_id = s.id",
     "LEFT JOIN room_task_sessions rt ON rt.session_id = s.id",
     "WHERE s.state IN (SELECT value FROM json_each(@states))",
     "AND s.kind = @kind",
     ...(withRemoteProject
-      ? ["AND COALESCE(rt.remote_project_id, r.remote_project_id, m.remote_project_id) = @remoteProjectId"]
+      ? ["AND COALESCE(rt.remote_project_id, r.remote_project_id, ps.remote_project_id) = @remoteProjectId"]
       : []),
     ...(withCursor
       ? [

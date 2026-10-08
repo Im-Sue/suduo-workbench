@@ -244,7 +244,7 @@ describe("我的工作：各块的说明按请求语言", () => {
         events: { listRunStatusEventsForSessions: () => [] },
         projects: { getById: () => null },
         mappings: {
-          list: () => [{ remoteProjectId: "remote-project", localProjectId: "gone", createdAt: 1, updatedAt: 1, lastValidatedAt: 1 }],
+          list: () => [{ remoteProjectId: "remote-project", localProjectId: "gone", serverOrigin: "https://requirements.example", createdAt: 1, updatedAt: 1, lastValidatedAt: 1 }],
         },
         remote: {
           getProjectStats: async () => {

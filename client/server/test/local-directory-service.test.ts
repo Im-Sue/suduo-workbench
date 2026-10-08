@@ -18,6 +18,7 @@ import { LOCAL_DIRECTORY_ENTRY_LIMIT } from "@suduo/client-contracts";
 import { ApiError } from "../src/application/api-error.js";
 import {
   LocalDirectoryService,
+  linkedRemoteProjectIds,
   mappedWorkspaceRoots,
 } from "../src/application/local-directory-service.js";
 
@@ -171,6 +172,7 @@ describe("路径即时校验", () => {
       writable: false,
       isGitRepo: false,
       branch: null,
+      linkedRemoteProjectIds: [],
     });
 
     writeFileSync(join(root, "file.txt"), "x");
@@ -191,6 +193,7 @@ describe("路径即时校验", () => {
       writable: true,
       isGitRepo: false,
       branch: null,
+      linkedRemoteProjectIds: [],
     });
 
     mkdirSync(join(root, "repo", ".git"), { recursive: true });
@@ -324,6 +327,45 @@ describe("最近使用目录", () => {
       { list: () => [{ localProjectId: "p3" }, { localProjectId: "p2" }, { localProjectId: "p1" }, { localProjectId: "gone" }] },
       { getById: (id) => projects.get(id) ?? null },
     )).toEqual(["/work/three", "/work/one"]);
+  });
+});
+
+describe("目录已关联的项目", () => {
+  it("按根目录比较键找本机项目，列出它的全部关联；本机项目已移除或没登记时为空", () => {
+    const projects = new Map([
+      ["/work/shared", { id: "p1", state: "active" }],
+      ["/work/removed", { id: "p2", state: "removed" }],
+    ]);
+    const mappings = {
+      listByLocalProjectId: (localProjectId: string) =>
+        localProjectId === "p1"
+          ? [{ remoteProjectId: "proj-web" }, { remoteProjectId: "proj-api" }]
+          : [{ remoteProjectId: "proj-old" }],
+    };
+    const lookup = { getByRootPathKey: (key: string) => projects.get(key) ?? null };
+    expect(linkedRemoteProjectIds(mappings, lookup, "/work/shared")).toEqual(["proj-web", "proj-api"]);
+    expect(linkedRemoteProjectIds(mappings, lookup, "/work/removed")).toEqual([]);
+    expect(linkedRemoteProjectIds(mappings, lookup, "/work/other")).toEqual([]);
+  });
+
+  it("目录检查带上已关联的项目；文件与不存在的路径为空", async () => {
+    const root = temporaryRoot();
+    const realRoot = realpathSync(root);
+    mkdirSync(join(root, "shared"));
+    writeFileSync(join(root, "note.txt"), "x");
+    const asked: string[] = [];
+    const service = new LocalDirectoryService({
+      recentRoots: () => [],
+      linkedRemoteProjectIds: (path) => {
+        asked.push(path);
+        return ["proj-web", "proj-api"];
+      },
+    });
+    expect((await service.inspect({ path: join(root, "shared") })).linkedRemoteProjectIds).toEqual(["proj-web", "proj-api"]);
+    // 按真实路径问（与保存关联时的比较键一致）。
+    expect(asked).toEqual([join(realRoot, "shared")]);
+    expect((await service.inspect({ path: join(root, "note.txt") })).linkedRemoteProjectIds).toEqual([]);
+    expect((await service.inspect({ path: join(root, "missing") })).linkedRemoteProjectIds).toEqual([]);
   });
 });
 

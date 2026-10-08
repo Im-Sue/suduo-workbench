@@ -15,7 +15,7 @@ import type {
   RequirementSessionRefRepository,
 } from "../../infrastructure/db/repositories/requirement-session-ref-repository.js";
 import type { SessionRepository } from "../../infrastructure/db/repositories/session-repository.js";
-import type { WorkspaceMappingRepository } from "../../infrastructure/db/repositories/workspace-mapping-repository.js";
+import type { ProjectSessionRefRepository } from "../../infrastructure/db/repositories/project-session-ref-repository.js";
 import type {
   RoomTaskSessionRecord,
   RoomTaskSessionRepository,
@@ -113,7 +113,8 @@ export class SessionContextService {
     private readonly deps: {
       sessions: SessionRepository;
       projects: ProjectRepository;
-      mappings: WorkspaceMappingRepository;
+      /** 项目会话建时记下的所属项目（迁移 018）；不再按目录关联反查。 */
+      projectRefs: Pick<ProjectSessionRefRepository, "getBySessionId">;
       refs: RequirementSessionRefRepository;
       remote: SessionContextRemote;
       /** 房间任务会话的话题登记（迁移 016）；不传时没有房间任务会话。 */
@@ -176,15 +177,15 @@ export class SessionContextService {
         },
       };
     }
-    const mapping = this.deps.mappings.getByLocalProjectId(project.id);
-    if (mapping === null) {
+    const projectRef = this.deps.projectRefs.getBySessionId(sessionId);
+    if (projectRef === null) {
       return null;
     }
     return {
       sessionId,
       locale: session.locale,
       projectRoot: project.rootPath,
-      remoteProjectId: mapping.remoteProjectId,
+      remoteProjectId: projectRef.remoteProjectId,
       requirement: null,
     };
   }
@@ -229,12 +230,12 @@ export class SessionContextService {
         },
       };
     }
-    const mapping = this.deps.mappings.getByLocalProjectId(session.projectId);
+    const projectRef = this.deps.projectRefs.getBySessionId(sessionId);
     return {
       sessionId,
-      kind: mapping === null ? "none" : "project",
-      contextMode: mapping === null ? null : "tools",
-      remoteProjectId: mapping?.remoteProjectId ?? null,
+      kind: projectRef === null ? "none" : "project",
+      contextMode: projectRef === null ? null : "tools",
+      remoteProjectId: projectRef?.remoteProjectId ?? null,
       requirement: null,
     };
   }

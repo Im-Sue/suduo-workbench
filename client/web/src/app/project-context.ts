@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { RequirementsProjectDto } from "../api/client.js";
 import { projectsQuery } from "./queries.js";
 
@@ -60,6 +60,19 @@ export function pickProject(
 
 export function useProjects() {
   return useQuery(projectsQuery);
+}
+
+/**
+ * 按远程项目 ID 取项目名，取不到时用给定的兜底（通常是本机项目名）。
+ * 一个本机目录可以关联多个项目，本机项目名只是第一个关联它的项目的名字，不能代表会话或关联属于哪个项目。
+ */
+export function useRemoteProjectName(): (remoteProjectId: string | null, fallback: string | null) => string | null {
+  const projects = useProjects();
+  return useCallback(
+    (remoteProjectId, fallback) =>
+      (remoteProjectId === null ? undefined : projects.data?.find((project) => project.id === remoteProjectId)?.name) ?? fallback,
+    [projects.data],
+  );
 }
 
 /** 当前项目：路由参数优先，否则上次使用的项目。项目列表未加载完时返回 null。 */

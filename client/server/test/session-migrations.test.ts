@@ -10,6 +10,8 @@ import { ProjectRepository } from "../src/infrastructure/db/repositories/project
 import { SessionListRepository } from "../src/infrastructure/db/repositories/session-list-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "../src/infrastructure/db/repositories/session-thread-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
+import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
 
 function upgradeFrom(version: number) {
   const database = openBetterSqlite3Database(":memory:");
@@ -31,11 +33,87 @@ function upgradeFrom(version: number) {
   return { database, projectId: project.id };
 }
 
+describe("018 目录关联按服务器区分、会话记住所属项目", () => {
+  it("v17 本机库升级：普通会话按当时的关联补记所属项目，需求 / 房间任务 / 没关联的会话不补；关联保留、服务器待认领、目录可再关联", () => {
+    const { database, projectId } = upgradeFrom(17);
+    try {
+      const projects = new ProjectRepository(database);
+      const unmapped = projects.create({ name: "未关联", rootPath: "/tmp/unmapped", rootPathKey: "/tmp/unmapped" });
+      const sessions = new SessionRepository(database);
+      sessions.create({ id: "plain-mapped", projectId, title: "普通", state: "active", now: 5 });
+      sessions.create({ id: "requirement-mapped", projectId, title: "需求", state: "active" });
+      sessions.create({ id: "room-mapped", projectId, title: "房间任务", state: "active", kind: "room_task" });
+      sessions.create({ id: "plain-unmapped", projectId: unmapped.id, title: "没关联", state: "active" });
+      database
+        .prepare(
+          [
+            "INSERT INTO v2_project_workspace_mappings",
+            "(remote_project_id, local_project_id, created_at, updated_at, last_validated_at)",
+            "VALUES ('proj-a', @projectId, 1, 2, 3)",
+          ].join(" "),
+        )
+        .run({ projectId });
+      database
+        .prepare(
+          [
+            "INSERT INTO v2_requirement_session_refs",
+            "(session_id, remote_project_id, remote_requirement_id, requirement_version, created_at)",
+            "VALUES ('requirement-mapped', 'proj-other', 'req-1', 1, 1)",
+          ].join(" "),
+        )
+        .run();
+      database
+        .prepare(
+          [
+            "INSERT INTO room_task_sessions",
+            "(agent_id, room_id, thread_root_id, session_id, remote_project_id, room_name, created_at)",
+            "VALUES ('agent-1', 'room-1', 'root-1', 'room-mapped', 'proj-a', '默认房间', 1)",
+          ].join(" "),
+        )
+        .run();
+
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([18]);
+
+      const refs = new ProjectSessionRefRepository(database);
+      expect(refs.getBySessionId("plain-mapped")).toEqual({ sessionId: "plain-mapped", remoteProjectId: "proj-a", createdAt: 5 });
+      expect(refs.getBySessionId("legacy-session")?.remoteProjectId).toBe("proj-a");
+      expect(refs.getBySessionId("requirement-mapped")).toBeNull();
+      expect(refs.getBySessionId("room-mapped")).toBeNull();
+      expect(refs.getBySessionId("plain-unmapped")).toBeNull();
+
+      const mappings = new WorkspaceMappingRepository(database);
+      expect(mappings.getByRemoteProjectId("proj-a")).toEqual({
+        remoteProjectId: "proj-a",
+        localProjectId: projectId,
+        serverOrigin: null,
+        createdAt: 1,
+        updatedAt: 2,
+        lastValidatedAt: 3,
+      });
+      // 启动时把存量记为当前服务器；只认领一次。
+      expect(mappings.list("https://a.example")).toEqual([]);
+      expect(mappings.adoptUnscoped("https://a.example")).toBe(1);
+      expect(mappings.adoptUnscoped("https://b.example")).toBe(0);
+      expect(mappings.list("https://a.example").map((mapping) => mapping.remoteProjectId)).toEqual(["proj-a"]);
+      expect(mappings.list("https://b.example")).toEqual([]);
+      // 一个目录可以再关联给另一个项目（唯一约束已去掉）。
+      mappings.save({ remoteProjectId: "proj-b", localProjectId: projectId, serverOrigin: "https://a.example" });
+      expect(
+        mappings.listByLocalProjectId("https://a.example", projectId).map((mapping) => mapping.remoteProjectId).sort(),
+      ).toEqual(["proj-a", "proj-b"]);
+      expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      expect(runMigrations(database, undefined, () => 3).appliedVersions).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+});
+
 describe("017 会话语言迁移", () => {
   it("v16 本机库升级后存量会话的语言为 zh-CN（它们都是中文说明建的）", () => {
     const { database } = upgradeFrom(16);
     try {
-      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([17]);
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([17, 18]);
       expect(new SessionRepository(database).getById("legacy-session")?.locale).toBe("zh-CN");
     } finally {
       database.close();
@@ -159,7 +237,7 @@ describe("014 会话列表元数据迁移", () => {
           sha: "a".repeat(64),
         });
 
-      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([14, 15, 16, 17]);
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([14, 15, 16, 17, 18]);
 
       const row = (id: string) =>
         database

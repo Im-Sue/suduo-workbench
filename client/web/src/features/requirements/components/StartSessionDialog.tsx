@@ -390,7 +390,7 @@ function DirectoryBody({
       <p className="m-0 text-small text-muted-foreground">
         {notice === null ? t.requirements.startSession.directory.intro : noticeText(notice, t)}
       </p>
-      <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} />
+      <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} remoteProjectId={remoteProjectId} />
       {error === null ? null : <InlineError kind={error.kind}>{error.message}</InlineError>}
       <DialogFooter>
         <Button variant="ghost" onClick={onCancel}>{t.feedback.dialog.cancel}</Button>

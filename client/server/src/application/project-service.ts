@@ -138,7 +138,8 @@ function normalizeName(value: string): string {
   return name;
 }
 
-function pathKey(path: string): string {
+/** 本机项目根目录的比较键（projects.root_path_key）：Windows 不区分大小写。 */
+export function pathKey(path: string): string {
   const key = normalize(path);
   return process.platform === "win32" ? key.toLocaleLowerCase("en-US") : key;
 }

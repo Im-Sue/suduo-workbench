@@ -12,7 +12,7 @@ import { runMigrations } from "../src/infrastructure/db/migration-runner.js";
 import { ProjectRepository } from "../src/infrastructure/db/repositories/project-repository.js";
 import { RequirementSessionRefRepository } from "../src/infrastructure/db/repositories/requirement-session-ref-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
-import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import {
   FakeRequirementsRemote,
   activityFixture,
@@ -71,11 +71,11 @@ function setup() {
   runMigrations(database);
   const projects = new ProjectRepository(database);
   const sessions = new SessionRepository(database);
-  const mappings = new WorkspaceMappingRepository(database);
+  const projectRefs = new ProjectSessionRefRepository(database);
   const refs = new RequirementSessionRefRepository(database);
   const project = projects.create({ name: "商家端", rootPath: root, rootPathKey: root });
   const remote = new FakeRequirementsRemote();
-  const service = new SessionContextService({ sessions, projects, mappings, refs, remote });
+  const service = new SessionContextService({ sessions, projects, projectRefs, refs, remote });
   const requirementSession = (options: { locale: "en" | "zh-CN"; now?: number; number?: number | null }) => {
     const session = sessions.create({ projectId: project.id, title: "需求会话", locale: options.locale });
     refs.create({
@@ -91,7 +91,7 @@ function setup() {
     });
     return session;
   };
-  return { root, sessions, mappings, project, remote, service, requirementSession };
+  return { root, sessions, projectRefs, project, remote, service, requirementSession };
 }
 
 describe("需求会话的开场（英文会话）", () => {
@@ -288,7 +288,7 @@ describe("项目会话与重建（英文会话）", () => {
   });
 
   it("重建沿用会话记下的语言：英文需求会话给英文卡；需求查不到给英文的最小开场（含回复语言规则）", async () => {
-    const { remote, service, requirementSession, sessions, mappings, project } = setup();
+    const { remote, service, requirementSession, sessions, projectRefs, project } = setup();
     const current = requirementSession({ locale: "en" });
     const rebuilt = await service.rebuildSetup(current.id);
     expect(rebuilt?.developerInstructions.startsWith(`# SuDuo requirement session\n\n${REPLY_EN}\n`)).toBe(true);
@@ -310,7 +310,7 @@ describe("项目会话与重建（英文会话）", () => {
     expect(lines(noNumber?.developerInstructions ?? "")[1]).toMatch(/^You're working on requirement “商家端-订单详情优化”\. /u);
 
     const plain = sessions.create({ projectId: project.id, title: "普通会话", locale: "en" });
-    mappings.save({ remoteProjectId: "proj-1", localProjectId: project.id });
+    projectRefs.create({ sessionId: plain.id, remoteProjectId: "proj-1" });
     const projectCard = await service.rebuildSetup(plain.id);
     expect(projectCard?.developerInstructions.startsWith("# SuDuo project session\n")).toBe(true);
     expect(projectCard?.dynamicTools).toEqual(sessionToolSpecs("project", "en"));
