@@ -2,6 +2,37 @@
 
 [中文](CHANGELOG.zh-CN.md)
 
+## 0.10.0 — 2026-10-07
+
+Adds requirement priorities and files in comments, makes attachments a plain list again, and keeps project folder links apart for each server.
+
+### Added
+
+- Requirement priority: urgent, high, medium, low or none (the default). Set it when creating a requirement, on the requirement page, on a board card or in the list. Board columns and the list sort by priority by default (then by last update); you can switch back to last updated, and filter by priority. It needs a server on 0.10.0 or later.
+- Files in comments: attach files or paste screenshots in the comment box. They're uploaded when you send, belong to that comment, and can be saved as attachments of the requirement. A comment can be just files. It needs a server on 0.10.0 or later.
+
+### Changed
+
+- Attachments are one list again, newest first: the place for the final PRD, third-party material, screenshots and archives. When files overlap, the newer one wins. Publishing new confirmed versions has stopped; earlier confirmed versions stay readable under “Past confirmed versions”, and older clients can still publish to the server.
+- The requirement tools Codex uses no longer publish confirmed versions; sessions that still call them get a reply saying the tool has been retired.
+- Requirements accept the same file types as room files (archives, videos, logs and more), up to 100 attachments each.
+- Project folder links are kept per server. Moving to another server no longer leaves your folders tied to the old server's projects, and you can unlink a folder without reaching the server.
+- One folder can be linked to several projects. When you choose a folder that other projects already use, SuDuo tells you which ones instead of refusing.
+- Project sessions remember which project they belong to (local database migration 018), so sessions and requirement context follow the project even when projects share a folder.
+
+### Upgrading
+
+- Upgrade the server first, then each client. Settings → About shows a hint while the two versions differ; a 0.10.0 client hides priorities and files in comments until the server supports them.
+- Cloud: `git fetch --tags && git checkout v0.10.0`, then `sudo ./scripts/suduo-cloud.sh upgrade`. It backs up first; database migrations 014 (priority) and 015 (comment files) run when the service starts. If `server/.env` still has the attachment extension list or the limit of 20 attachments that earlier versions wrote there unchanged, the script comments them out so the new defaults apply; values you changed are kept. See [cloud/DEPLOYMENT.md](cloud/DEPLOYMENT.md).
+- Client from source: `git fetch --tags && git checkout v0.10.0`, `pnpm install`, then `pnpm start`. Local database migration 018 runs when the local service starts; your existing folder links are kept and tied to the server you're connected to.
+- Desktop app: install the 0.10.0 installer from this release over the old version (on macOS, quit SuDuo from the menu bar first and replace it in Applications). Your data is kept.
+
+### Known limitations
+
+- The desktop app is a trial: it isn't signed yet (see the [client guide](client/README.md#desktop-app-trial) for opening it the first time) and doesn't update itself. The Intel Mac and Windows packages haven't been tested on real hardware yet.
+- Codex can't post comments with files yet.
+- The cloud has no administrator or invitation system: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
+
 ## 0.9.0 — 2026-10-07
 
 Adds a desktop app for macOS and Windows, as a trial. Download it from this release and open it; you don't need Node.js, pnpm or git. Running from source still works.
