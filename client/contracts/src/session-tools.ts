@@ -91,7 +91,7 @@ export interface SuDuoToolConfirmationDto {
 /** `GET /api/v1/sessions/:id/context`：会话关联的 SuDuo 上下文。 */
 export interface SessionContextDto {
   sessionId: string;
-  /** requirement = 从需求创建；project = 项目已关联远程项目；none = 未关联。 */
+  /** requirement = 从需求创建；project = 项目会话（建时记下了所属项目）；none = 不属于任何项目。 */
   kind: "requirement" | "project" | "none";
   /** tools = 新版（挂 suduo_* 工具）；legacy = 旧版（快照与现状文件，已不再刷新）；none 时为 null。 */
   contextMode: "tools" | "legacy" | null;

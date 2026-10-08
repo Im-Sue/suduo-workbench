@@ -222,6 +222,13 @@ export const requirements = {
     checking: "正在检查…",
     browse: "浏览目录",
     manual: "手动输入路径",
+    /** 目录已关联给其他项目（null = 当前看不到名字的项目，合并成「另外 N 个项目」）：只提示，不拦保存。 */
+    alsoLinked: (projects: readonly (string | null)[]) => {
+      const named = projects.filter((name) => name !== null).map((name) => `「${name}」`);
+      const unnamed = projects.length - named.length;
+      const parts = [...named, ...(unnamed === 0 ? [] : [unnamed === 1 ? "另一个项目" : `另外 ${String(unnamed)} 个项目`])];
+      return `这个目录也关联给了${parts.join("、")}，${projects.length === 1 ? "两个项目" : "这些项目"}的会话都会在这里运行`;
+    },
     verdict: {
       idle: "选中一个目录（双击或 → 进入子目录）",
       missing: "这个路径不存在",

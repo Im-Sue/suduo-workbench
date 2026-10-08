@@ -23,7 +23,7 @@ import { ProjectRepository } from "../src/infrastructure/db/repositories/project
 import { RequirementSessionRefRepository } from "../src/infrastructure/db/repositories/requirement-session-ref-repository.js";
 import { RoomTaskSessionRepository } from "../src/infrastructure/db/repositories/room-task-session-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
-import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import { CodexRuntime, windowsEncodingInstructions } from "../src/infrastructure/runtime/codex/codex-runtime.js";
 import { DEV, FakeRequirementsRemote, PM, requirementFixture } from "./helpers/fake-requirements-remote.js";
 
@@ -323,7 +323,7 @@ describe("房间开场：英文会话", () => {
     const context = new SessionContextService({
       sessions,
       projects,
-      mappings: new WorkspaceMappingRepository(database),
+      projectRefs: new ProjectSessionRefRepository(database),
       refs: new RequirementSessionRefRepository(database),
       remote: new FakeRequirementsRemote(requirementFixture()),
       roomTasks,

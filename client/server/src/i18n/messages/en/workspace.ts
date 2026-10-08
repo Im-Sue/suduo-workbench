@@ -23,7 +23,6 @@ export const workspace = {
     rootPathNotAbsolute: "rootPath must be an absolute path with no NUL characters",
     rootPathNotAccessible: "rootPath must be an existing local folder with read, write, and execute permissions",
     projectRemoved: "The project for this local folder was removed",
-    linkedElsewhere: "This local folder is already linked to another project",
     missing: "This project isn't linked to a local folder yet",
     invalid: "The local folder link is no longer valid. Link the folder again.",
     changed: "The local folder link has changed. Link the folder again.",

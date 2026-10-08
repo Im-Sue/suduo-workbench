@@ -33,7 +33,7 @@ import { RequirementSessionRefRepository } from "../src/infrastructure/db/reposi
 import { RoomTaskSessionRepository } from "../src/infrastructure/db/repositories/room-task-session-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "../src/infrastructure/db/repositories/session-thread-repository.js";
-import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import { RuntimeRegistry } from "../src/infrastructure/runtime/runtime-registry.js";
 import { FakeRequirementsRemote, PM, requirementFixture } from "./helpers/fake-requirements-remote.js";
 
@@ -148,7 +148,7 @@ function setup(options: { requirementRoom?: boolean } = {}) {
   const projects = new ProjectRepository(database);
   const sessions = new SessionRepository(database);
   const threads = new SessionThreadRepository(database);
-  const mappings = new WorkspaceMappingRepository(database);
+  const projectRefs = new ProjectSessionRefRepository(database);
   const refs = new RequirementSessionRefRepository(database);
   const roomTasks = new RoomTaskSessionRepository(database);
   const events = new EventRepository(database);
@@ -174,7 +174,7 @@ function setup(options: { requirementRoom?: boolean } = {}) {
   const runtime = new RecordingRuntime();
   const registry = new RuntimeRegistry();
   registry.register(runtime);
-  const context = new SessionContextService({ sessions, projects, mappings, refs, remote, roomTasks });
+  const context = new SessionContextService({ sessions, projects, projectRefs, refs, remote, roomTasks });
   const service = new SessionToolService({
     runtimes: registry,
     threads,

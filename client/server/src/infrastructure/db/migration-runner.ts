@@ -60,7 +60,12 @@ const SESSION_LOCALE_URL = new URL(
   import.meta.url,
 );
 
-const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17]);
+const WORKSPACE_MAPPING_SCOPE_URL = new URL(
+  "./migrations/018_workspace_mapping_scope.sql",
+  import.meta.url,
+);
+
+const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
 
 export function loadM1Migrations(): Migration[] {
   return [
@@ -113,6 +118,11 @@ export function loadM1Migrations(): Migration[] {
       version: 17,
       name: "session_locale",
       sql: readFileSync(SESSION_LOCALE_URL, "utf8"),
+    },
+    {
+      version: 18,
+      name: "workspace_mapping_scope",
+      sql: readFileSync(WORKSPACE_MAPPING_SCOPE_URL, "utf8"),
     },
   ];
 }

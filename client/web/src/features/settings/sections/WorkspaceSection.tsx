@@ -318,7 +318,7 @@ function MappingDialog({
             </Select>
           </div>
         ) : null}
-        <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} />
+        <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} remoteProjectId={projectId} />
         {hint === null ? null : <InlineError kind="validation">{hint}</InlineError>}
         {failure === null ? null : <InlineError kind={failure.kind}>{failure.message}</InlineError>}
         <DialogFooter>

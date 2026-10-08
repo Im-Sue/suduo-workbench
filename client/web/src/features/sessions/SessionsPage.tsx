@@ -5,7 +5,7 @@ import { MessagesSquareIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Group as PanelGroup, Panel, Separator as PanelSeparator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api } from "../../api/client.js";
-import { rememberProjectId, useCurrentProject } from "../../app/project-context.js";
+import { rememberProjectId, useCurrentProject, useRemoteProjectName } from "../../app/project-context.js";
 import { SessionRuntime } from "../../app/SessionRuntime.js";
 import { useSessionLauncher } from "../../app/shell/SessionLauncher.js";
 import type { LinkedRequirement } from "../../components/RequirementMaterials.js";
@@ -14,7 +14,6 @@ import { ConfirmDialog, RegionError } from "../../feedback/components/index.js";
 import { reportFailure } from "../../feedback/report.js";
 import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
-import { requirementKeys } from "../requirements/keys.js";
 import type { SessionLiveRunState } from "../../ui/session-status.js";
 import { SessionList } from "./SessionList.js";
 import { flattenSessions, sessionKeys, sessionListQuery, type SessionFilter, type SessionListData } from "./session-list.js";
@@ -31,6 +30,7 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
   const queryClient = useQueryClient();
   const launcher = useSessionLauncher();
   const { project, isLoading: projectLoading } = useCurrentProject();
+  const remoteProjectName = useRemoteProjectName();
   const projectId = project?.id;
   // 筛选写在 URL 的 filter 参数里（技术设计 §9.1）：可分享、可回退，打开会话时保留。
   const search = useSearch({ strict: false }) as { filter?: "running" | "needs-me" | "room-tasks" };
@@ -57,11 +57,13 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
   const [pendingDelete, setPendingDelete] = useState<SessionListItemDto | null>(null);
   const activeId = session?.id ?? null;
 
-  // 当前项目跟到打开的会话所属项目（本机目录映射是一对一的）；每个会话只跟一次，
+  // 当前项目跟到打开的会话所属项目：按会话建时记下的所属项目（会话上下文），不按目录反查——
+  // 一个目录可以关联多个项目，换过服务器后目录也可能关联着别的项目。每个会话只跟一次，
   // 之后在左上角换项目由切换器收起会话，不会被这里拉回去。
-  const mappings = useQuery({
-    queryKey: requirementKeys.mappings,
-    queryFn: () => api.listRequirementsMappings(),
+  const sessionContext = useQuery({
+    queryKey: sessionKeys.context(activeId ?? ""),
+    queryFn: () => api.getSessionContext(activeId ?? ""),
+    enabled: activeId !== null,
     staleTime: 60_000,
   });
   const followedSessionRef = useRef<string | null>(null);
@@ -70,11 +72,12 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
       followedSessionRef.current = null;
       return;
     }
-    if (mappings.data === undefined || followedSessionRef.current === session.id) return;
+    const context = sessionContext.data;
+    if (context === undefined || context.sessionId !== session.id || followedSessionRef.current === session.id) return;
     followedSessionRef.current = session.id;
-    const owner = mappings.data.items.find((item) => item.localProjectId === session.projectId)?.remoteProjectId;
-    if (owner !== undefined && owner !== projectId) rememberProjectId(owner);
-  }, [mappings.data, projectId, session]);
+    const owner = context.remoteProjectId;
+    if (owner !== null && owner !== projectId) rememberProjectId(owner);
+  }, [sessionContext.data, projectId, session]);
   const activeItem =
     activeId === null
       ? undefined
@@ -215,6 +218,7 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
           <div className="h-full min-w-0 overflow-hidden border-r border-border bg-background">
             <SessionList
               items={items}
+              projectName={(item) => remoteProjectName(item.project.remoteProjectId, item.project.name) ?? item.project.name}
               loading={projectLoading || (projectId !== undefined && list.isPending)}
               error={listError}
               hasMore={list.hasNextPage}

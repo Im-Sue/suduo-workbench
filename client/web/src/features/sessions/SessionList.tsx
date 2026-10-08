@@ -55,8 +55,14 @@ export function SessionList({
   onDelete,
   countItems,
   onOpenRoom,
+  projectName = (item) => item.project.name,
 }: {
   items: SessionListItemDto[];
+  /**
+   * 没有最后一句时行里显示的项目名；缺省用本机项目名。一个目录可以关联多个项目，
+   * 本机项目名只是第一个关联它的项目的名字，会话页传入按所属项目取的远程项目名。
+   */
+  projectName?(item: SessionListItemDto): string;
   /** 「运行中 / 需要我」计数用的列表（房间任务筛选下显示的是另一份列表）；缺省同 items。 */
   countItems?: SessionListItemDto[];
   /** 房间任务：回到讨论里对应的话题。 */
@@ -185,6 +191,7 @@ export function SessionList({
                   item={item}
                   status={statuses.get(item.id) ?? "idle"}
                   active={item.id === activeSessionId}
+                  projectName={projectName(item)}
                   renaming={renaming === item.id}
                   onOpen={() => onOpen(item)}
                   onStartRename={() => setRenaming(item.id)}
@@ -215,6 +222,7 @@ function SessionRow({
   item,
   status,
   active,
+  projectName,
   renaming,
   onOpen,
   onStartRename,
@@ -227,6 +235,7 @@ function SessionRow({
   item: SessionListItemDto;
   status: ReturnType<typeof rowStatus>;
   active: boolean;
+  projectName: string;
   renaming: boolean;
   onOpen(): void;
   onStartRename(): void;
@@ -305,7 +314,7 @@ function SessionRow({
               {number === null || roomTask !== null ? null : (
                 <span className="shrink-0 rounded-xs bg-muted px-1 font-mono text-muted-foreground">{formatRequirementNumber(number)}</span>
               )}
-              <span className="min-w-0 truncate">{preview ?? item.project.name}</span>
+              <span className="min-w-0 truncate">{preview ?? projectName}</span>
             </span>
           </button>
           <DropdownMenu modal={false}>

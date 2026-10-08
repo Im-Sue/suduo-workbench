@@ -48,6 +48,7 @@ import { RoomTaskSessionRepository } from "../src/infrastructure/db/repositories
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "../src/infrastructure/db/repositories/session-thread-repository.js";
 import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import { RuntimeRegistry } from "../src/infrastructure/runtime/runtime-registry.js";
 import { DEV, FakeRequirementsRemote, PM, requirementFixture } from "./helpers/fake-requirements-remote.js";
 
@@ -300,8 +301,15 @@ function setup(
   const remote = new FakeRoomRemote(requirementFixture());
   remote.rooms.set("room-1", roomFixture());
   const project = projects.create({ name: "商家端", rootPath: root, rootPathKey: root });
-  mappings.save({ remoteProjectId: "proj-1", localProjectId: project.id });
-  const context = new SessionContextService({ sessions, projects, mappings, refs, remote, roomTasks });
+  mappings.save({ remoteProjectId: "proj-1", localProjectId: project.id, serverOrigin: "https://requirements.example" });
+  const context = new SessionContextService({
+    sessions,
+    projects,
+    projectRefs: new ProjectSessionRefRepository(database),
+    refs,
+    remote,
+    roomTasks,
+  });
   let listener: ((signal: RemoteEventsSignal) => void) | null = null;
   const logs: Array<Record<string, unknown>> = [];
   const runner = new RoomAgentRunner({

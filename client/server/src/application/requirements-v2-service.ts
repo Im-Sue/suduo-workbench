@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { access, realpath, stat } from "node:fs/promises";
-import { basename, isAbsolute, normalize, win32 } from "node:path";
+import { basename, isAbsolute, win32 } from "node:path";
 import type {
   ListRequirementItemsResponse,
   RequirementDetailItemDto,
@@ -25,6 +25,7 @@ import type {
 import { REQUIREMENT_COMMENT_MAX_FILES, REQUIREMENT_PRIORITIES } from "@suduo/cloud-contracts";
 import type { Locale } from "@suduo/client-contracts";
 import { ApiError } from "./api-error.js";
+import { pathKey } from "./project-service.js";
 import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
 import type { SessionService } from "./session-service.js";
 import type { DatabasePort } from "../infrastructure/db/database-port.js";
@@ -84,7 +85,7 @@ export class RequirementsV2Service {
         session === null
           ? null
           : { user: session.user, expiresAt: session.expiresAt },
-      mappingCount: this.mappings.list().length,
+      mappingCount: this.mappings.list(baseUrl).length,
     };
   }
 
@@ -103,6 +104,8 @@ export class RequirementsV2Service {
       this.credentials.clear();
     }
     this.settings.setBaseUrl(normalized);
+    // 启动时没配地址的话，升级前的存量关联还没认领服务器：记为这次配上的服务器（启动时也做一次）。
+    this.mappings.adoptUnscoped(normalized);
     this.onRemoteConnectionChanged?.();
     return this.settingsView();
   }
@@ -340,7 +343,8 @@ export class RequirementsV2Service {
     if (!options.verify) {
       await this.remote.me();
     }
-    const items = this.mappings.list().flatMap((mapping) => {
+    // 只列当前服务器的关联：换过服务器时，别的服务器的关联留着，换回去原样生效。
+    const items = this.mappings.list(this.settings.getBaseUrl()).flatMap((mapping) => {
       const project = this.projects.getById(mapping.localProjectId);
       return project
         ? [
@@ -370,62 +374,45 @@ export class RequirementsV2Service {
     if (!input || typeof input.rootPath !== "string") {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.workspace.mapping.rootPathNotString);
     }
+    // 先定下服务器再查项目：中途换了地址的话，查项目会落到新服务器上而查不到，不会把旧服务器的项目记到新服务器名下。
+    const serverOrigin = this.requireConfiguredBaseUrl();
     const remoteProject = await this.remote.getProject(remoteProjectId);
     const rootPath = await validateWorkspacePath(input.rootPath);
     const rootPathKey = pathKey(rootPath);
-    const saved = await this.withMappingOperation(remoteProjectId, () => {
-      try {
-        return this.database.transaction(() => {
-          const existingProject = this.projects.getByRootPathKey(rootPathKey);
-          if (existingProject?.state === "removed") {
-            throw new ApiError(
-              409,
-              "WORKSPACE_MAPPING_CONFLICT",
-              (t) => t.workspace.mapping.projectRemoved,
-            );
-          }
-          const localProject =
-            existingProject ??
-            this.projects.create({
-              name: normalizedLocalProjectName(remoteProject.name, rootPath),
-              rootPath,
-              rootPathKey,
-            });
-          const byLocal = this.mappings.getByLocalProjectId(localProject.id);
-          if (byLocal && byLocal.remoteProjectId !== remoteProjectId) {
-            throw new ApiError(
-              409,
-              "WORKSPACE_MAPPING_CONFLICT",
-              (t) => t.workspace.mapping.linkedElsewhere,
-            );
-          }
-          return {
-            record: this.mappings.save({
-              remoteProjectId,
-              localProjectId: localProject.id,
-            }),
-            rootPath: localProject.rootPath,
-            name: localProject.name,
-          };
-        })();
-      } catch (error) {
-        if (isUniqueConstraint(error)) {
+    // 一个目录可以关联多个项目（选目录时告知，不拒绝，ADR-0004）：会话的所属项目建时就记下，不靠目录反查。
+    const saved = await this.withMappingOperation(remoteProjectId, () =>
+      this.database.transaction(() => {
+        const existingProject = this.projects.getByRootPathKey(rootPathKey);
+        if (existingProject?.state === "removed") {
           throw new ApiError(
             409,
             "WORKSPACE_MAPPING_CONFLICT",
-            (t) => t.workspace.mapping.linkedElsewhere,
-            undefined,
-            { cause: error },
+            (t) => t.workspace.mapping.projectRemoved,
           );
         }
-        throw error;
-      }
-    });
+        const localProject =
+          existingProject ??
+          this.projects.create({
+            name: normalizedLocalProjectName(remoteProject.name, rootPath),
+            rootPath,
+            rootPathKey,
+          });
+        return {
+          record: this.mappings.save({
+            remoteProjectId,
+            localProjectId: localProject.id,
+            serverOrigin,
+          }),
+          rootPath: localProject.rootPath,
+          name: localProject.name,
+        };
+      })(),
+    );
     return mappingView(saved.record, saved.rootPath, saved.name);
   }
 
+  /** 纯本机操作：不向服务器查项目，项目已删除、没有权限或离线时也能解除。 */
   async removeMapping(remoteProjectId: string): Promise<void> {
-    await this.remote.getProject(remoteProjectId);
     await this.withMappingOperation(remoteProjectId, () => {
       this.mappings.remove(remoteProjectId);
     });
@@ -474,7 +461,10 @@ export class RequirementsV2Service {
           projectRoot: localProject.rootPath,
           remoteProjectId,
         })) ?? {};
-      const session = await this.sessions.create(localProject.id, { purpose: "general" }, setup, { locale });
+      const session = await this.sessions.create(localProject.id, { purpose: "general" }, setup, {
+        locale,
+        remoteProjectId,
+      });
       this.onSessionCreated?.(session.id);
       return session;
     });
@@ -483,14 +473,15 @@ export class RequirementsV2Service {
   async listProjectSessions(remoteProjectId: string) {
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
-      const localProject = await this.requireValidatedLocalProject(remoteProjectId);
+      await this.requireValidatedLocalProject(remoteProjectId);
       const references = new Map(
         this.sessionRefs
           .listByRemoteProjectId(remoteProjectId)
           .map((reference) => [reference.sessionId, reference]),
       );
+      // 按会话记下的所属项目列，不按当前关联的目录：项目换过目录时，以前目录里的会话也在。
       return this.sessions
-        .list(localProject.id, { state: "active", limit: 100 })
+        .listForRemoteProject(remoteProjectId, { state: "active", limit: 100 })
         .items.map((session) => {
           const reference = references.get(session.id);
           return {
@@ -680,21 +671,8 @@ function validatePriority(value: unknown): asserts value is RequirementPriority 
   }
 }
 
-function pathKey(path: string): string {
-  const key = normalize(path);
-  return process.platform === "win32" ? key.toLocaleLowerCase("en-US") : key;
-}
-
 function normalizedLocalProjectName(remoteName: string, rootPath: string): string {
   return remoteName.trim().slice(0, 200) || basename(rootPath).slice(0, 200);
-}
-
-function isUniqueConstraint(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "SQLITE_CONSTRAINT_UNIQUE"
-  );
 }
 
 function mappingView(mapping: WorkspaceMappingRecord, rootPath: string, localProjectName: string) {

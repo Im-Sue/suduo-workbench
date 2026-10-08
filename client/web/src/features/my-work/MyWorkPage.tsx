@@ -18,7 +18,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../api/client.js";
 import { invalidateMappingCaches } from "../../app/mapping-cache.js";
-import { useCurrentProject } from "../../app/project-context.js";
+import { useCurrentProject, useRemoteProjectName } from "../../app/project-context.js";
 import { clearSetupPending, readSetupPending } from "../../app/pages/setup-pending.js";
 import { settingsQuery } from "../../app/queries.js";
 import { classifyFailure } from "../../feedback/classify.js";
@@ -313,6 +313,7 @@ function AttentionRow({
   const t = useT();
   const text = t.myWork.attention;
   const fallback = t.myWork.fallback;
+  const projectName = useRemoteProjectName();
   const row = (props: { icon: ReactNode; title: string; detail: string; action: string; onClick(): void; testId: string }) => (
     <li>
       <button
@@ -382,7 +383,7 @@ function AttentionRow({
     case "invalid_mapping":
       return row({
         icon: <FolderXIcon className="size-4 shrink-0 text-warning" aria-hidden="true" />,
-        title: text.invalidMapping.title(item.action.projectName ?? fallback.project),
+        title: text.invalidMapping.title(projectName(item.action.remoteProjectId, item.action.projectName) ?? fallback.project),
         detail: text.invalidMapping.detail,
         action: text.invalidMapping.action,
         onClick: () => onFixMapping(item.action),
@@ -618,6 +619,7 @@ function FixMappingDialog({
 }) {
   const t = useT();
   const text = t.myWork.fixMapping;
+  const projectName = useRemoteProjectName();
   const [path, setPath] = useState("");
   const [valid, setValid] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -644,9 +646,9 @@ function FixMappingDialog({
       <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>{text.title}</DialogTitle>
-          <DialogDescription>{text.description(action.projectName)}</DialogDescription>
+          <DialogDescription>{text.description(projectName(action.remoteProjectId, action.projectName))}</DialogDescription>
         </DialogHeader>
-        <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} />
+        <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} remoteProjectId={action.remoteProjectId} />
         {error === null ? null : <InlineError kind="validation">{error}</InlineError>}
         <DialogFooter>
           <Button variant="ghost" disabled={saving} onClick={onClose}>{text.cancel}</Button>

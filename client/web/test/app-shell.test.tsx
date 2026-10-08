@@ -168,7 +168,7 @@ beforeEach(() => {
   apiMocks.getSession.mockResolvedValue({ id: "s1", projectId: "local-1" });
   apiMocks.listRequirements.mockResolvedValue({ items: [], nextCursor: null });
   apiMocks.listRequirementsMappings.mockResolvedValue({ items: [] });
-  apiMocks.inspectLocalDir.mockResolvedValue({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main" });
+  apiMocks.inspectLocalDir.mockResolvedValue({ path: "/code/p1", exists: true, isDirectory: true, readable: true, writable: true, isGitRepo: true, branch: "main", linkedRemoteProjectIds: [] });
   apiMocks.listRequirementsProjects.mockResolvedValue({ items: [project], nextCursor: null });
   apiMocks.listProjectRooms.mockResolvedValue({ items: [] });
   apiMocks.loginRequirements.mockResolvedValue({ user, expiresAt: "2026-10-28T00:00:00.000Z" });

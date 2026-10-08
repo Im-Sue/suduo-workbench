@@ -232,7 +232,7 @@ function LocalDirectorySetting({ projectId }: { projectId: string }) {
       </div>
       {changing ? (
         <div className="flex flex-col gap-2">
-          <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} />
+          <DirectoryPicker value={path} onChange={setPath} onValidityChange={setValid} remoteProjectId={projectId} />
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={() => setChanging(false)}>{text.cancel}</Button>
             <Button size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={text.pickFirst} onClick={() => void save()}>

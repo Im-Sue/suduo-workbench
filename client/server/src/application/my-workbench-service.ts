@@ -30,10 +30,7 @@ import type {
   SessionRecord,
   SessionRepository,
 } from "../infrastructure/db/repositories/session-repository.js";
-import type {
-  WorkspaceMappingRecord,
-  WorkspaceMappingRepository,
-} from "../infrastructure/db/repositories/workspace-mapping-repository.js";
+import type { WorkspaceMappingRecord } from "../infrastructure/db/repositories/workspace-mapping-repository.js";
 import type { RequirementsRemoteClient } from "../infrastructure/requirements-v2/remote-client.js";
 
 const WORKBENCH_SESSION_LIMIT = 20;
@@ -77,7 +74,8 @@ export interface MyWorkbenchServiceDependencies {
   sessions: Pick<SessionRepository, "getById" | "listActiveByLastActivity">;
   events: Pick<EventRepository, "listRunStatusEventsForSessions">;
   projects: Pick<ProjectRepository, "getById">;
-  mappings: Pick<WorkspaceMappingRepository, "list">;
+  /** 当前服务器的目录关联（换过服务器时，别的服务器的关联不提醒）。 */
+  mappings: { list(): WorkspaceMappingRecord[] };
   remote: Pick<
     RequirementsRemoteClient,
     "getProjectStats" | "listAudit" | "listRequirementsByIds"

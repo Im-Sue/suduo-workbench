@@ -28,6 +28,7 @@ import type {
 import { ApprovalService } from "../src/application/approval-service.js";
 import {
   LocalDirectoryService,
+  linkedRemoteProjectIds,
   mappedWorkspaceRoots,
 } from "../src/application/local-directory-service.js";
 import { RequirementsV2Service } from "../src/application/requirements-v2-service.js";
@@ -62,6 +63,7 @@ import { SessionRepository } from "../src/infrastructure/db/repositories/session
 import { SessionThreadRepository } from "../src/infrastructure/db/repositories/session-thread-repository.js";
 import { RequirementSessionRefRepository } from "../src/infrastructure/db/repositories/requirement-session-ref-repository.js";
 import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import { buildHttpServer } from "../src/infrastructure/http/http-server.js";
 import { LoopbackGuard } from "../src/infrastructure/http/loopback-guard.js";
 import { RequirementsCredentialStore } from "../src/infrastructure/requirements-v2/credential-store.js";
@@ -77,6 +79,8 @@ const ARTIFACT_FILE_ID = "33333333-3333-4333-8333-333333333333";
 const ARTIFACT_FILE_CONTENT = "released artifact bytes";
 const SESSION_PROJECT_ID = "44444444-4444-4444-8444-444444444444";
 const SESSION_REQUIREMENT_ID = "55555555-5555-4555-8555-555555555555";
+/** 与 SESSION_PROJECT_ID 共用一个本机目录的另一个项目（一个仓库对应前端、后端两个项目）。 */
+const SHARED_PROJECT_ID = "66666666-6666-4666-8666-666666666666";
 
 interface ArtifactFileFixture {
   id: string;
@@ -839,6 +843,8 @@ describe("Gate B HTTP", () => {
         writable: true,
         isGitRepo: true,
         branch: "feature/p2",
+        // 这个目录已关联给 remote-project：选目录时据此告知（一个目录可关联多个项目）。
+        linkedRemoteProjectIds: ["remote-project"],
       });
 
       const cases: Array<[string, number, string]> = [
@@ -1131,6 +1137,8 @@ describe("Gate B HTTP", () => {
       expect(chinese.json()).toMatchObject({ title: "新会话" });
       // 会话语言随创建请求记下（迁移 017），交给 Codex 的开场按它写（S7）。
       expect(context.sessions.getById(chinese.json<{ id: string }>().id)?.locale).toBe("zh-CN");
+      // 所属项目建时记下（迁移 018），之后不随目录关联变化。
+      expect(context.projectSessionRefs.getBySessionId(chinese.json<{ id: string }>().id)?.remoteProjectId).toBe(SESSION_PROJECT_ID);
       expect(context.runtime.threadStarts.at(-1)?.developerInstructions).toContain("# SuDuo 项目会话");
       const english = await create({ "x-suduo-locale": "en" });
       expect(english.statusCode).toBe(201);
@@ -1139,6 +1147,94 @@ describe("Gate B HTTP", () => {
       const englishOpening = context.runtime.threadStarts.at(-1)?.developerInstructions ?? "";
       expect(englishOpening).toContain("# SuDuo project session");
       expect(englishOpening).toContain("Reply in the language the user writes in.");
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
+  it("目录关联按服务器区分：一个目录可关联多个项目并告知，会话按建时的所属项目列出，换服务器后旧关联不出现、换回原样恢复，解除不访问远程", async () => {
+    const context = createContext();
+    try {
+      configureRequirementsRemote(context);
+      const shared = join(context.projectRoot, "shared-repo");
+      mkdirSync(shared);
+      const realShared = realpathSync(shared);
+      const write = (method: "PUT" | "POST" | "DELETE", url: string, payload?: Record<string, unknown>) =>
+        context.server.inject({
+          method,
+          url,
+          headers: { host: context.host, origin: `http://${context.host}` },
+          ...(payload === undefined ? {} : { payload }),
+        });
+      const get = (url: string) => context.server.inject({ method: "GET", url, headers: { host: context.host } });
+
+      // 同一目录先后关联给两个项目：都成功，不再拒绝。
+      expect((await write("PUT", `/api/v2/projects/${SESSION_PROJECT_ID}/workspace-mapping`, { rootPath: shared })).statusCode).toBe(200);
+      expect((await write("PUT", `/api/v2/projects/${SHARED_PROJECT_ID}/workspace-mapping`, { rootPath: shared })).statusCode).toBe(200);
+      const inspected = await get(`/api/v2/local/dirs/inspect?path=${encodeURIComponent(shared)}`);
+      expect([...inspected.json<{ linkedRemoteProjectIds: string[] }>().linkedRemoteProjectIds].sort()).toEqual(
+        [SESSION_PROJECT_ID, SHARED_PROJECT_ID].sort(),
+      );
+      const mapped = await get("/api/v2/project-mappings?verify=1");
+      expect(mapped.json<{ items: Array<{ remoteProjectId: string; rootPath: string }> }>().items.map((item) => [item.remoteProjectId, item.rootPath]).sort()).toEqual(
+        [[SESSION_PROJECT_ID, realShared], [SHARED_PROJECT_ID, realShared]].sort(),
+      );
+
+      // 会话属于开它的项目：共用目录的另一个项目下看不到它。
+      const created = await write("POST", `/api/v2/projects/${SESSION_PROJECT_ID}/sessions`, {});
+      expect(created.statusCode).toBe(201);
+      const sessionId = created.json<{ id: string }>().id;
+      const listed = async (projectId: string) =>
+        (await get(`/api/v2/projects/${projectId}/sessions`)).json<{ items: Array<{ session: { id: string } }> }>().items.map((item) => item.session.id);
+      expect(await listed(SESSION_PROJECT_ID)).toEqual([sessionId]);
+      expect(await listed(SHARED_PROJECT_ID)).toEqual([]);
+      const context1 = await get(`/api/v1/sessions/${sessionId}/context`);
+      expect(context1.json()).toMatchObject({ kind: "project", remoteProjectId: SESSION_PROJECT_ID });
+
+      // 换到另一台服务器：这台服务器的关联不出现、不算进「最近使用」；换回来原样恢复。
+      context.requirementsSettings.setBaseUrl("https://other-requirements.fixture");
+      expect((await get("/api/v2/project-mappings?verify=1")).json<{ items: unknown[] }>().items).toEqual([]);
+      expect((await get(`/api/v2/local/dirs/inspect?path=${encodeURIComponent(shared)}`)).json()).toMatchObject({ linkedRemoteProjectIds: [] });
+      expect((await get(`/api/v2/local/dirs?path=${encodeURIComponent(context.projectRoot)}`)).json()).toMatchObject({ recent: [] });
+      context.requirementsSettings.setBaseUrl("https://requirements.fixture");
+      expect((await get("/api/v2/project-mappings?verify=1")).json<{ items: unknown[] }>().items).toHaveLength(2);
+
+      // 解除关联是纯本机操作：不向服务器发任何请求；会话仍属原项目。
+      const requestsBefore = context.requirementsRemote.state.requests.length;
+      expect((await write("DELETE", `/api/v2/projects/${SESSION_PROJECT_ID}/workspace-mapping`)).statusCode).toBe(204);
+      expect(context.requirementsRemote.state.requests.length).toBe(requestsBefore);
+      expect(context.workspaceMappings.getByRemoteProjectId(SESSION_PROJECT_ID)).toBeNull();
+      expect(context.projectSessionRefs.getBySessionId(sessionId)?.remoteProjectId).toBe(SESSION_PROJECT_ID);
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
+  it("升级前的存量关联（没有服务器信息）在配上服务器地址时记为这台服务器", async () => {
+    const context = createContext();
+    try {
+      const rootPath = join(context.projectRoot, "legacy-mapping");
+      mkdirSync(rootPath);
+      const project = context.projects.create({ name: "legacy", rootPath, rootPathKey: realpathSync(rootPath) });
+      context.database
+        .prepare(
+          [
+            "INSERT INTO v2_project_workspace_mappings",
+            "(remote_project_id, local_project_id, server_origin, created_at, updated_at, last_validated_at)",
+            "VALUES ('remote-legacy', @localProjectId, NULL, 1, 1, 1)",
+          ].join(" "),
+        )
+        .run({ localProjectId: project.id });
+      const saved = await context.server.inject({
+        method: "PUT",
+        url: "/api/v2/requirements/settings",
+        headers: { host: context.host, origin: `http://${context.host}` },
+        payload: { baseUrl: "https://requirements.fixture" },
+      });
+      expect(saved.json()).toMatchObject({ mappingCount: 1 });
+      expect(context.workspaceMappings.getByRemoteProjectId("remote-legacy")?.serverOrigin).toBe("https://requirements.fixture");
     } finally {
       await context.server.close();
       context.database.close();
@@ -1307,7 +1403,7 @@ describe("Gate B HTTP", () => {
       addWorkspaceMapping(context, "remote-available", rootPath);
       const beforeDirectory = snapshotTree(rootPath);
       const beforeConfig = snapshotTree(context.v2DataDirectory);
-      const beforeMappings = context.workspaceMappings.list();
+      const beforeMappings = context.workspaceMappings.list("https://requirements.fixture");
 
       const response = await context.server.inject({
         method: "GET",
@@ -1333,7 +1429,7 @@ describe("Gate B HTTP", () => {
       expect(context.requirementsRemote.state.requests).toEqual([]);
       expect(snapshotTree(rootPath)).toEqual(beforeDirectory);
       expect(snapshotTree(context.v2DataDirectory)).toEqual(beforeConfig);
-      expect(context.workspaceMappings.list()).toEqual(beforeMappings);
+      expect(context.workspaceMappings.list("https://requirements.fixture")).toEqual(beforeMappings);
     } finally {
       await context.server.close();
       context.database.close();
@@ -1455,6 +1551,7 @@ function createContext(options: {
   const approvals = new ApprovalRepository(database);
   const workspaceMappings = new WorkspaceMappingRepository(database);
   const requirementSessionRefs = new RequirementSessionRefRepository(database);
+  const projectSessionRefs = new ProjectSessionRefRepository(database);
   const broker = new EventBroker();
   const ledger = new EventLedger(database, events, approvals, broker);
   const runtime = new FakeRuntime();
@@ -1470,6 +1567,9 @@ function createContext(options: {
     undefined,
     undefined,
     requirementSessionRefs,
+    undefined,
+    null,
+    projectSessionRefs,
   );
   const approvalService = new ApprovalService(approvals, threads, registry, ledger);
   const codexGlobalState = new CodexGlobalState();
@@ -1480,10 +1580,16 @@ function createContext(options: {
     requirementsSettings,
     requirementsCredentials,
   );
+  // 与 server-application 一致：目录关联只看当前服务器的。
+  const currentServerMappings = {
+    list: () => workspaceMappings.list(requirementsSettings.getBaseUrl()),
+    listByLocalProjectId: (localProjectId: string) =>
+      workspaceMappings.listByLocalProjectId(requirementsSettings.getBaseUrl(), localProjectId),
+  };
   const sessionContext = new SessionContextService({
     sessions,
     projects,
-    mappings: workspaceMappings,
+    projectRefs: projectSessionRefs,
     refs: requirementSessionRefs,
     remote: requirementsRemote.client,
   });
@@ -1504,7 +1610,7 @@ function createContext(options: {
     sessions,
     events,
     projects,
-    mappings: workspaceMappings,
+    mappings: currentServerMappings,
     remote: requirementsRemote.client,
   });
   const codexHome = join(projectRoot, "codex-home");
@@ -1535,7 +1641,8 @@ function createContext(options: {
     requirementsV2,
     myWorkbench,
     localDirectories: new LocalDirectoryService({
-      recentRoots: () => mappedWorkspaceRoots(workspaceMappings, projects),
+      recentRoots: () => mappedWorkspaceRoots(currentServerMappings, projects),
+      linkedRemoteProjectIds: (path) => linkedRemoteProjectIds(currentServerMappings, projects, path),
     }),
     codexHome,
     openCodexConfigFile: async (absolutePath) => {
@@ -1602,6 +1709,7 @@ function createContext(options: {
     requirementsRemote,
     workspaceMappings,
     requirementSessionRefs,
+    projectSessionRefs,
     projects,
     codexHome,
     openedConfigFiles,
@@ -1836,10 +1944,15 @@ function createRequirementsRemoteClient(
         nextCursor: null,
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
-    if (init?.method === "GET" && url.pathname === `/v2/projects/${SESSION_PROJECT_ID}`) {
+    const projectMatch = /^\/v2\/projects\/([^/]+)$/u.exec(url.pathname);
+    const fixtureProjectId = projectMatch?.[1];
+    if (
+      init?.method === "GET" &&
+      (fixtureProjectId === SESSION_PROJECT_ID || fixtureProjectId === SHARED_PROJECT_ID)
+    ) {
       return new Response(JSON.stringify({
-        id: SESSION_PROJECT_ID,
-        name: "session-project",
+        id: fixtureProjectId,
+        name: fixtureProjectId === SESSION_PROJECT_ID ? "session-project" : "shared-project",
         isArchived: false,
         createdBy: { id: "fixture-user", displayName: "Fixture User" },
         updatedBy: { id: "fixture-user", displayName: "Fixture User" },
@@ -2187,14 +2300,20 @@ function addWorkspaceMapping(
   remoteProjectId: string,
   rootPath: string,
 ): void {
+  // 比较键按真实路径（与保存关联、开会话时的校验一致）：macOS 的临时目录 /var 指向 /private/var。
   const project = context.projects.create({
     name: remoteProjectId,
     rootPath,
-    rootPathKey: rootPath,
+    rootPathKey: existsSync(rootPath) ? realpathSync(rootPath) : rootPath,
   });
+  // 关联属于当前服务器：没配置时按测试默认的需求服务地址配上（不登录、不发请求）。
+  const serverOrigin =
+    context.requirementsSettings.getBaseUrl() ??
+    context.requirementsSettings.setBaseUrl("https://requirements.fixture");
   context.workspaceMappings.save({
     remoteProjectId,
     localProjectId: project.id,
+    serverOrigin,
   });
 }
 

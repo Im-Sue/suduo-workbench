@@ -26,7 +26,7 @@ import { ProjectRepository } from "../src/infrastructure/db/repositories/project
 import { RequirementSessionRefRepository } from "../src/infrastructure/db/repositories/requirement-session-ref-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "../src/infrastructure/db/repositories/session-thread-repository.js";
-import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import { RuntimeRegistry } from "../src/infrastructure/runtime/runtime-registry.js";
 import { FakeRequirementsRemote, attachmentFixture } from "./helpers/fake-requirements-remote.js";
 
@@ -86,7 +86,7 @@ function setup() {
   const projects = new ProjectRepository(database);
   const sessions = new SessionRepository(database);
   const threads = new SessionThreadRepository(database);
-  const mappings = new WorkspaceMappingRepository(database);
+  const projectRefs = new ProjectSessionRefRepository(database);
   const refs = new RequirementSessionRefRepository(database);
   const events = new EventRepository(database);
   const approvals = new ApprovalRepository(database);
@@ -118,7 +118,7 @@ function setup() {
   remote.attachments.set("req-1", [
     attachmentFixture({ id: "att-1", fileName: "需求问题截图.png", contentType: "image/png", sizeBytes: 900 }),
   ]);
-  const context = new SessionContextService({ sessions, projects, mappings, refs, remote });
+  const context = new SessionContextService({ sessions, projects, projectRefs, refs, remote });
   const logs: Array<Record<string, unknown>> = [];
   const service = new SessionToolService({
     runtimes: registry,

@@ -19,6 +19,7 @@ import type {
   SessionState,
 } from "../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRepository } from "../infrastructure/db/repositories/session-thread-repository.js";
+import type { ProjectSessionRefRepository } from "../infrastructure/db/repositories/project-session-ref-repository.js";
 import type {
   RequirementAuditAnchor,
   RequirementSessionRefRepository,
@@ -68,6 +69,8 @@ export class SessionService {
     private readonly requirementSessionRefs: RequirementSessionRefRepository | null = null,
     private readonly approvalModeEnvironment: NodeJS.ProcessEnv = process.env,
     private readonly stateObserver: SessionStateObserver | null = null,
+    /** 项目会话的所属项目（迁移 018）；不传时不能建带 remoteProjectId 的会话。 */
+    private readonly projectSessionRefs: ProjectSessionRefRepository | null = null,
   ) {}
 
   async create(
@@ -77,8 +80,9 @@ export class SessionService {
     /**
      * kind：room_task = 房间共享 Agent 的隐藏任务会话（只读 + 联网 + 不审批，不进普通列表）。
      * locale：没给标题时默认名用的语言（创建请求的语言）。
+     * remoteProjectId：项目会话的所属项目，与会话行同一事务写入，之后不随目录关联变化。
      */
-    options: { kind?: SessionKind; locale: Locale },
+    options: { kind?: SessionKind; locale: Locale; remoteProjectId?: string },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
@@ -99,17 +103,29 @@ export class SessionService {
         (t) => t.session.runtimeUnsupported,
       );
     }
-    const session = this.sessions.create({
-      projectId,
-      title: normalizeTitle(input.title ?? messagesFor(options.locale).session.defaultTitle),
-      purpose,
-      approvalMode: effectiveApprovalMode(
-        { approvalMode: this.defaultApprovalMode() },
-        this.approvalModeEnvironment,
-      ),
-      ...(options.kind === undefined ? {} : { kind: options.kind }),
-      locale: options.locale,
-    });
+    const projectSessionRefs = this.projectSessionRefs;
+    const remoteProjectId = options.remoteProjectId;
+    if (remoteProjectId !== undefined && projectSessionRefs === null) {
+      throw new Error("project session ref store is not configured");
+    }
+    // 所属项目必须在建线程之前写好：线程一建好，SuDuo 工具就可能按它取上下文。
+    const session = this.database.transaction(() => {
+      const created = this.sessions.create({
+        projectId,
+        title: normalizeTitle(input.title ?? messagesFor(options.locale).session.defaultTitle),
+        purpose,
+        approvalMode: effectiveApprovalMode(
+          { approvalMode: this.defaultApprovalMode() },
+          this.approvalModeEnvironment,
+        ),
+        ...(options.kind === undefined ? {} : { kind: options.kind }),
+        locale: options.locale,
+      });
+      if (remoteProjectId !== undefined) {
+        projectSessionRefs?.create({ sessionId: created.id, remoteProjectId });
+      }
+      return created;
+    })();
     let started;
     try {
       started = await this.supervisor.createPrimaryThread({
@@ -264,6 +280,19 @@ export class SessionService {
       .listByProject(projectId)
       // 房间任务会话是隐藏的：按项目的会话列表不显示（会话页「房间任务」筛选另走 /api/v1/sessions?kind=room_task）。
       .filter((session) => session.kind !== "room_task" && matchesView(session.state, view))
+      .map((session) => sessionDto(session, this.threads.listBySession(session.id)));
+    return paginate(sessions, query.cursor, query.limit);
+  }
+
+  /**
+   * 归属这个远程项目的会话（项目会话 + 需求会话），不限本机目录；房间任务会话不列。
+   * 与 list() 同样按视图过滤、分页。
+   */
+  listForRemoteProject(remoteProjectId: string, query: ListSessionsQuery) {
+    const view = query.state ?? "active";
+    const sessions = this.sessions
+      .listByRemoteProject(remoteProjectId)
+      .filter((session) => matchesView(session.state, view))
       .map((session) => sessionDto(session, this.threads.listBySession(session.id)));
     return paginate(sessions, query.cursor, query.limit);
   }

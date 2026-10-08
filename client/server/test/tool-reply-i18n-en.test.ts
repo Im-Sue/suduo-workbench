@@ -28,7 +28,7 @@ import { ProjectRepository } from "../src/infrastructure/db/repositories/project
 import { RequirementSessionRefRepository } from "../src/infrastructure/db/repositories/requirement-session-ref-repository.js";
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "../src/infrastructure/db/repositories/session-thread-repository.js";
-import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import { RuntimeRegistry } from "../src/infrastructure/runtime/runtime-registry.js";
 import { mapApprovalDecision } from "../src/infrastructure/runtime/codex/codex-approval-mapper.js";
 import { OMITTED_IMAGE_URL, normalizeCodexNotification } from "../src/infrastructure/runtime/codex/codex-event-normalizer.js";
@@ -419,7 +419,7 @@ function serviceSetup(options: { withSessions: boolean }) {
   const projects = new ProjectRepository(database);
   const sessions = new SessionRepository(database);
   const threads = new SessionThreadRepository(database);
-  const mappings = new WorkspaceMappingRepository(database);
+  const projectRefs = new ProjectSessionRefRepository(database);
   const refs = new RequirementSessionRefRepository(database);
   const approvals = new ApprovalRepository(database);
   const ledger = new EventLedger(database, new EventRepository(database), approvals, { publish: () => undefined });
@@ -471,7 +471,7 @@ function serviceSetup(options: { withSessions: boolean }) {
     threads,
     approvals,
     ledger,
-    context: new SessionContextService({ sessions, projects, mappings, refs, remote, roomTasks }),
+    context: new SessionContextService({ sessions, projects, projectRefs, refs, remote, roomTasks }),
     tools: new RequirementTools(remote),
     // 不接会话记录时用查不到记录的替身：退回 FALLBACK_LOCALE。
     sessions: options.withSessions ? sessions : { getById: () => null },

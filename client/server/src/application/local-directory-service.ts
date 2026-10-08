@@ -10,10 +10,13 @@ import {
   type LocalPathInspectionDto,
 } from "@suduo/client-contracts";
 import { ApiError, type ErrorText } from "./api-error.js";
+import { pathKey } from "./project-service.js";
 
 export interface LocalDirectoryServiceOptions {
-  /** 已映射到需求项目的本机目录，最近使用在前。 */
+  /** 当前服务器上已映射到需求项目的本机目录，最近使用在前。 */
   recentRoots(): readonly string[];
+  /** 当前服务器上已关联到这个目录（realpath）的远程项目 ID；不传时为空。 */
+  linkedRemoteProjectIds?(path: string): readonly string[];
   /** 仅供测试替换；默认为当前用户主目录。 */
   homeDirectory?: () => string;
   /** 仅供测试替换；默认为 `process.platform`。 */
@@ -23,6 +26,7 @@ export interface LocalDirectoryServiceOptions {
 /**
  * 最近使用的目录：已映射到需求项目、且本机项目仍在用的根目录。
  * 映射表按 updated_at 倒序（每次成功校验都会刷新），即最近使用在前。
+ * `mappings.list()` 由调用方限定为当前服务器的关联。
  */
 export function mappedWorkspaceRoots(
   mappings: { list(): ReadonlyArray<{ localProjectId: string }> },
@@ -32,6 +36,22 @@ export function mappedWorkspaceRoots(
     const project = projects.getById(mapping.localProjectId);
     return project?.state === "active" ? [project.rootPath] : [];
   });
+}
+
+/**
+ * 已关联到这个目录的远程项目：按根目录比较键找到本机项目，再取它的关联。
+ * `mappings.listByLocalProjectId()` 由调用方限定为当前服务器的关联。
+ */
+export function linkedRemoteProjectIds(
+  mappings: { listByLocalProjectId(localProjectId: string): ReadonlyArray<{ remoteProjectId: string }> },
+  projects: { getByRootPathKey(rootPathKey: string): { id: string; state: string } | null },
+  path: string,
+): string[] {
+  const project = projects.getByRootPathKey(pathKey(path));
+  if (project === null || project.state !== "active") {
+    return [];
+  }
+  return mappings.listByLocalProjectId(project.id).map((mapping) => mapping.remoteProjectId);
 }
 
 /** `.git` 文件（worktree / submodule 的 gitdir 指针）超过此大小即不解析。 */
@@ -126,6 +146,7 @@ export class LocalDirectoryService {
           writable: false,
           isGitRepo: false,
           branch: null,
+          linkedRemoteProjectIds: [],
         };
       }
       throw localPathError(error, requested);
@@ -148,6 +169,7 @@ export class LocalDirectoryService {
       readable,
       writable,
       ...git,
+      linkedRemoteProjectIds: isDirectory ? [...(this.options.linkedRemoteProjectIds?.(resolved) ?? [])] : [],
     };
   }
 

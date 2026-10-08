@@ -23,6 +23,7 @@ import { SessionListRepository, sessionListSql } from "../src/infrastructure/db/
 import { SessionRepository } from "../src/infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "../src/infrastructure/db/repositories/session-thread-repository.js";
 import { WorkspaceMappingRepository } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import { ProjectSessionRefRepository } from "../src/infrastructure/db/repositories/project-session-ref-repository.js";
 import { RuntimeRegistry } from "../src/infrastructure/runtime/runtime-registry.js";
 import { createMinimalHttpContext } from "./helpers/minimal-http-context.js";
 
@@ -39,6 +40,7 @@ function createContext() {
   const approvals = new ApprovalRepository(database);
   const refs = new RequirementSessionRefRepository(database);
   const mappings = new WorkspaceMappingRepository(database);
+  const projectRefs = new ProjectSessionRefRepository(database);
   const ledger = new EventLedger(database, events, approvals, { publish: () => undefined });
   const service = new SessionListService({ list: new SessionListRepository(database), threads, events, approvals });
   let ordinal = 0;
@@ -58,7 +60,7 @@ function createContext() {
       },
     });
   };
-  return { database, projects, sessions, threads, events, approvals, refs, mappings, ledger, service, append };
+  return { database, projects, sessions, threads, events, approvals, refs, mappings, projectRefs, ledger, service, append };
 }
 
 function collectAll(service: SessionListService, state: "active" | "archived" | "all", limit: number): SessionListItemDto[] {
@@ -191,7 +193,7 @@ describe("跨项目会话列表", () => {
     try {
       const mapped = context.projects.create({ name: "映射项目", rootPath: "/tmp/mapped", rootPathKey: "/tmp/mapped" });
       const plain = context.projects.create({ name: "本机项目", rootPath: "/tmp/plain", rootPathKey: "/tmp/plain" });
-      context.mappings.save({ remoteProjectId: REMOTE_PROJECT_ID, localProjectId: mapped.id });
+      context.mappings.save({ remoteProjectId: REMOTE_PROJECT_ID, localProjectId: mapped.id, serverOrigin: "https://a.example" });
       const requirementSession = context.sessions.create({ id: "s-req", projectId: mapped.id, title: "需求会话", state: "active", now: 30 });
       const legacySession = context.sessions.create({ id: "s-legacy", projectId: mapped.id, title: "旧需求会话", state: "active", now: 20 });
       const plainSession = context.sessions.create({ id: "s-plain", projectId: plain.id, title: "普通会话", state: "active", now: 10 });
@@ -288,17 +290,23 @@ describe("跨项目会话列表", () => {
     }
   });
 
-  it("按远程项目过滤：需求会话按需求所属项目、其余按目录映射，不属于任何项目的不出现；翻页不重不漏", () => {
+  it("按远程项目过滤：需求会话按需求所属项目、项目会话按建时记下的项目，不按目录映射反查；不属于任何项目的不出现；翻页不重不漏", () => {
     const context = createContext();
     try {
       const OTHER_REMOTE_PROJECT_ID = "33333333-3333-4333-8333-333333333333";
       const mapped = context.projects.create({ name: "映射项目", rootPath: "/tmp/mapped", rootPathKey: "/tmp/mapped" });
       const plain = context.projects.create({ name: "本机项目", rootPath: "/tmp/plain", rootPathKey: "/tmp/plain" });
-      context.mappings.save({ remoteProjectId: REMOTE_PROJECT_ID, localProjectId: mapped.id });
+      // 同一目录关联给两个项目（也有别的服务器的关联）：不能让会话行重复，也不能把会话算到关联上。
+      context.mappings.save({ remoteProjectId: REMOTE_PROJECT_ID, localProjectId: mapped.id, serverOrigin: "https://a.example" });
+      context.mappings.save({ remoteProjectId: OTHER_REMOTE_PROJECT_ID, localProjectId: mapped.id, serverOrigin: "https://a.example" });
+      context.mappings.save({ remoteProjectId: "55555555-5555-4555-8555-555555555555", localProjectId: mapped.id, serverOrigin: "https://b.example" });
       for (let index = 0; index < 5; index += 1) {
         context.sessions.create({ id: `s-mapped-${String(index)}`, projectId: mapped.id, title: "目录会话", state: "active", now: 10 + index });
+        context.projectRefs.create({ sessionId: `s-mapped-${String(index)}`, remoteProjectId: REMOTE_PROJECT_ID });
       }
-      // 需求会话的需求属于另一个项目（目录后来改关联了）：按需求所属项目算。
+      // 目录里没记所属项目的普通会话（升级前目录还没关联时开的）：不属于任何项目。
+      context.sessions.create({ id: "s-unowned", projectId: mapped.id, title: "没有所属项目", state: "active", now: 5 });
+      // 需求会话按需求所属项目算。
       const requirementSession = context.sessions.create({ id: "s-req", projectId: mapped.id, title: "需求会话", state: "active", now: 30 });
       context.refs.create({
         sessionId: requirementSession.id,
@@ -328,7 +336,7 @@ describe("跨项目会话列表", () => {
       expect(ids(REMOTE_PROJECT_ID, 2)).toEqual(["s-mapped-4", "s-mapped-3", "s-mapped-2", "s-mapped-1", "s-mapped-0"]);
       expect(ids(OTHER_REMOTE_PROJECT_ID, 2)).toEqual(["s-req"]);
       expect(ids("44444444-4444-4444-8444-444444444444", 2)).toEqual([]);
-      expect(ids(undefined, 50)).toEqual(["s-plain", "s-req", "s-mapped-4", "s-mapped-3", "s-mapped-2", "s-mapped-1", "s-mapped-0"]);
+      expect(ids(undefined, 50)).toEqual(["s-plain", "s-req", "s-mapped-4", "s-mapped-3", "s-mapped-2", "s-mapped-1", "s-mapped-0", "s-unowned"]);
     } finally {
       context.database.close();
     }
@@ -421,6 +429,93 @@ describe("需求会话创建时快照需求编号与标题", () => {
         number: 7,
         title: "支付回调重试",
       });
+    } finally {
+      context.database.close();
+    }
+  });
+});
+
+describe("项目会话的所属项目（迁移 018）", () => {
+  const projectService = (context: ReturnType<typeof createContext>) => {
+    const registry = new RuntimeRegistry();
+    registry.register(new StartingRuntime());
+    return new SessionService(
+      context.database,
+      context.projects,
+      context.sessions,
+      context.threads,
+      new RuntimeSupervisor(registry),
+      undefined,
+      undefined,
+      context.refs,
+      undefined,
+      null,
+      context.projectRefs,
+    );
+  };
+
+  it("建项目会话时写入所属项目；写不进去时会话行一起回滚，不留没有归属的会话", async () => {
+    const context = createContext();
+    try {
+      const project = context.projects.create({ name: "p", rootPath: "/tmp/owned", rootPathKey: "/tmp/owned" });
+      const service = projectService(context);
+      const created = await service.create(project.id, { purpose: "general" }, {}, { locale: "zh-CN", remoteProjectId: REMOTE_PROJECT_ID });
+      expect(context.projectRefs.getBySessionId(created.id)?.remoteProjectId).toBe(REMOTE_PROJECT_ID);
+      // 空的项目 ID 违反约束：整次创建失败，会话表里不多出一行。
+      await expect(service.create(project.id, { purpose: "general" }, {}, { locale: "zh-CN", remoteProjectId: "" })).rejects.toThrow();
+      expect(context.sessions.listByProject(project.id).map((session) => session.id)).toEqual([created.id]);
+      // 不带 remoteProjectId（通用接口）：不写归属。
+      const plain = await service.create(project.id, { purpose: "general" }, {}, { locale: "zh-CN" });
+      expect(context.projectRefs.getBySessionId(plain.id)).toBeNull();
+    } finally {
+      context.database.close();
+    }
+  });
+
+  it("按所属项目列会话：项目会话 + 需求会话，不限目录；排除房间任务、已移除的本机项目；按视图过滤", async () => {
+    const context = createContext();
+    try {
+      const OTHER = "33333333-3333-4333-8333-333333333333";
+      const current = context.projects.create({ name: "现目录", rootPath: "/tmp/now", rootPathKey: "/tmp/now" });
+      const before = context.projects.create({ name: "换目录之前", rootPath: "/tmp/before", rootPathKey: "/tmp/before" });
+      const removed = context.projects.create({ name: "已移除", rootPath: "/tmp/removed", rootPathKey: "/tmp/removed" });
+      context.database.prepare("UPDATE projects SET state = 'removed', removed_at = 1 WHERE id = @id").run({ id: removed.id });
+      const make = (id: string, projectId: string, now: number, owner: string | null, kind?: "room_task") => {
+        context.sessions.create({ id, projectId, title: id, state: "active", now, ...(kind === undefined ? {} : { kind }) });
+        if (owner !== null) context.projectRefs.create({ sessionId: id, remoteProjectId: owner });
+      };
+      make("s-now", current.id, 50, REMOTE_PROJECT_ID);
+      make("s-before", before.id, 40, REMOTE_PROJECT_ID);
+      make("s-removed", removed.id, 60, REMOTE_PROJECT_ID);
+      make("s-other", current.id, 70, OTHER);
+      make("s-unowned", current.id, 80, null);
+      make("s-room", current.id, 90, REMOTE_PROJECT_ID, "room_task");
+      make("s-archived", current.id, 30, REMOTE_PROJECT_ID);
+      const archived = context.sessions.getById("s-archived")!;
+      context.sessions.updateState(archived.id, archived.version, "archived", { now: 30 });
+      context.sessions.create({ id: "s-req", projectId: before.id, title: "需求", state: "active", now: 45 });
+      context.refs.create({
+        sessionId: "s-req",
+        remoteProjectId: REMOTE_PROJECT_ID,
+        remoteRequirementId: REMOTE_REQUIREMENT_ID,
+        requirementVersion: 1,
+        materialPath: "/tmp/material",
+        manifestSha256: "a".repeat(64),
+      });
+
+      expect(context.sessions.listByRemoteProject(REMOTE_PROJECT_ID).map((session) => session.id)).toEqual([
+        "s-now",
+        "s-req",
+        "s-before",
+        "s-archived",
+      ]);
+      const service = projectService(context);
+      expect(service.listForRemoteProject(REMOTE_PROJECT_ID, { state: "active", limit: 100 }).items.map((session) => session.id)).toEqual([
+        "s-now",
+        "s-req",
+        "s-before",
+      ]);
+      expect(service.listForRemoteProject(OTHER, { state: "active", limit: 100 }).items.map((session) => session.id)).toEqual(["s-other"]);
     } finally {
       context.database.close();
     }

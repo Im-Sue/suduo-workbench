@@ -216,6 +216,14 @@ export const requirements = {
     checking: "Checking…",
     browse: "Browse folders",
     manual: "Enter path manually",
+    alsoLinked: (projects: readonly (string | null)[]) => {
+      const named = projects.filter((name) => name !== null).map((name) => `“${name}”`);
+      const unnamed = projects.length - named.length;
+      const parts = [...named, ...(unnamed === 0 ? [] : [unnamed === 1 ? "another project" : `${String(unnamed)} other projects`])];
+      return `This folder is also linked to ${new Intl.ListFormat("en", { type: "conjunction" }).format(parts)}. Sessions of ${
+        projects.length === 1 ? "both projects" : "all these projects"
+      } will run here.`;
+    },
     verdict: {
       idle: "Select a folder (double-click or press → to open it)",
       missing: "This path doesn't exist",

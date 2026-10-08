@@ -26,6 +26,8 @@ export const sessionKeys = {
       ...(kind === "normal" ? [] : [kind]),
       ...(remoteProjectId === undefined ? [] : ["project", remoteProjectId]),
     ] as readonly string[],
+  /** 会话关联的 SuDuo 上下文（所属项目、需求）。 */
+  context: (sessionId: string) => ["sessions", "context", sessionId] as const,
 };
 
 const PAGE_SIZE = 50;

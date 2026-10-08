@@ -92,7 +92,9 @@ function setup() {
   /** 在映射用的库里挂一个远程项目 → 本机目录（只给 verify=1 复验用，不碰远程）。 */
   const link = (remoteProjectId: string, rootPath: string) => {
     const project = projects.create({ name: remoteProjectId, rootPath, rootPathKey: rootPath });
-    mappings.save({ remoteProjectId, localProjectId: project.id });
+    // 关联属于当前服务器（迁移 018）：配上一个地址，不登录、不发请求。
+    const serverOrigin = settings.getBaseUrl() ?? settings.setBaseUrl("https://requirements.example");
+    mappings.save({ remoteProjectId, localProjectId: project.id, serverOrigin });
   };
   return { send, link };
 }

@@ -135,6 +135,27 @@ export class SessionRepository {
       .map(mapSession);
   }
 
+  /**
+   * 归属这个远程项目的普通会话：项目会话引用或需求会话引用指向它，且本机项目仍在用。
+   * 排序与 listByProject 一致。
+   */
+  listByRemoteProject(remoteProjectId: string): SessionRecord[] {
+    return this.database
+      .prepare(
+        [
+          "SELECT s.* FROM sessions s",
+          "JOIN projects p ON p.id = s.project_id AND p.state = 'active'",
+          "WHERE s.kind = 'normal' AND (",
+          "  s.id IN (SELECT session_id FROM v2_project_session_refs WHERE remote_project_id = @remoteProjectId)",
+          "  OR s.id IN (SELECT session_id FROM v2_requirement_session_refs WHERE remote_project_id = @remoteProjectId)",
+          ")",
+          "ORDER BY s.last_activity_at DESC, s.updated_at DESC",
+        ].join(" "),
+      )
+      .all<SessionRow>({ remoteProjectId })
+      .map(mapSession);
+  }
+
   listActiveByLastActivity(limit: number): SessionRecord[] {
     if (!Number.isSafeInteger(limit) || limit < 1) {
       throw new Error("session list limit must be a positive safe integer");
