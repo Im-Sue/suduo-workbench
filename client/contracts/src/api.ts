@@ -104,6 +104,8 @@ export interface SessionDto {
    * 由房间触发、回答发回房间，会话页只读。
    */
   kind: SessionKind;
+  /** 会话用的 Agent（ADR-0014）；老会话为 codex。 */
+  agentId: string;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number | null;
@@ -121,7 +123,10 @@ export type SessionPurpose =
 
 export interface CreateSessionRequest {
   title?: string;
+  /** 旧字段：只接受 codex-local；新调用方用 agentId。 */
   runtimeId?: string;
+  /** 用哪家 Agent 开工（ADR-0014）；不传为 codex。 */
+  agentId?: string;
   purpose?: SessionPurpose;
 }
 

@@ -49,6 +49,7 @@ export function sessionDto(
     model: session.model,
     reasoningEffort: session.reasoningEffort,
     kind: session.kind,
+    agentId: session.agentId,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     lastActivityAt: session.lastActivityAt,

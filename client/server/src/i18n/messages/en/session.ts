@@ -11,6 +11,8 @@ export const session = {
   titleLength: "Session title must be 1 to 300 characters",
   runtimeIdNotString: "runtimeId must be a string",
   runtimeUnsupported: "Only runtimeId=codex-local is supported",
+  agentIdNotString: "agentId must be a string",
+  agentUnavailable: (agentId: string) => `This version of SuDuo can't start sessions with ${agentId} yet`,
   requirementRefStoreUnavailable: "Storage for requirement sessions is unavailable",
   threadMappingWriteFailed: "The runtime thread was created, but saving its local mapping failed",
   requirementRefWriteFailed: "The runtime thread was created, but saving its link to the requirement failed",

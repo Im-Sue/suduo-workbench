@@ -292,6 +292,7 @@ function sessionRecord(id: string, projectId: string): SessionRecord {
     approvalMode: "ask",
     kind: "normal",
     locale: "zh-CN",
+    agentId: "codex",
     model: null,
     reasoningEffort: null,
     createdAt: 1,

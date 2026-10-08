@@ -18,6 +18,18 @@ export class RuntimeSupervisor {
     private readonly approvalModeEnvironment: NodeJS.ProcessEnv = process.env,
   ) {}
 
+  /**
+   * 驱动这家 Agent 的运行时 id（ADR-0014）。没有注册（配置表里有、但这个版本还没接上它的通道，
+   * 或 Agent 不存在）时报 400，让调用方说清楚是哪家 Agent 用不了。
+   */
+  runtimeIdForAgent(agentId: string): string {
+    const runtime = this.runtimes.findByAgent(agentId);
+    if (!runtime) {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentUnavailable(agentId));
+    }
+    return runtime.runtimeId;
+  }
+
   async createPrimaryThread(input: {
     runtimeId: string;
     session: SessionRecord;

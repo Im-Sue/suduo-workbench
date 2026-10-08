@@ -32,6 +32,8 @@ export interface SessionRecord {
   kind: SessionKind;
   /** 建会话时定下的语言：交给 Codex 的说明、工具定义与工具回包按它写（迁移 017，存量会话为 zh-CN）。 */
   locale: Locale;
+  /** 会话用的 Agent（迁移 019，存量会话为 codex；ADR-0014）。 */
+  agentId: string;
   /** 会话级模型；null = 跟随全局默认。 */
   model: string | null;
   /** 会话级推理强度；null = 跟随全局默认。 */
@@ -56,6 +58,8 @@ export interface CreateSessionInput {
   kind?: SessionKind;
   locale?: Locale;
   now?: number;
+  /** 会话用的 Agent；不传为 codex。 */
+  agentId?: string;
 }
 
 export interface SessionRow {
@@ -69,6 +73,8 @@ export interface SessionRow {
   kind?: SessionKind;
   /** 迁移 017 之前的库没有这一列。 */
   locale?: string;
+  /** 迁移 019 之前的库没有这一列。 */
+  agent_id?: string;
   model: string | null;
   reasoning_effort: string | null;
   created_at: number;
@@ -88,15 +94,17 @@ export class SessionRepository {
     const id = input.id ?? randomUUID();
     const now = input.now ?? Date.now();
     const state = input.state ?? "starting";
-    // 普通会话不写 kind 列、中文会话不写 locale 列（走默认值）：迁移 016 / 017 之前的库（升级测试）仍能建会话。
+    // 普通会话不写 kind 列、中文会话不写 locale 列、Codex 会话不写 agent_id 列（走默认值）：
+    // 迁移 016 / 017 / 019 之前的库（升级测试）仍能建会话。
     const roomTask = input.kind === "room_task";
     const english = input.locale === "en";
+    const agentId = input.agentId !== undefined && input.agentId !== "codex" ? input.agentId : null;
     this.database
       .prepare(
         [
           "INSERT INTO sessions",
-          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""})`,
-          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""})`,
+          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"})`,
+          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"})`,
         ].join(" "),
       )
       .run({
@@ -107,6 +115,7 @@ export class SessionRepository {
         purpose: input.purpose ?? "general",
         approvalMode: input.approvalMode ?? "ask",
         now,
+        ...(agentId === null ? {} : { agentId }),
       });
     return requireSession(this.getById(id), id);
   }
@@ -336,6 +345,7 @@ export function mapSession(row: SessionRow): SessionRecord {
     approvalMode: row.approval_mode,
     kind: row.kind === "room_task" ? "room_task" : "normal",
     locale: row.locale === "en" ? "en" : "zh-CN",
+    agentId: row.agent_id ?? "codex",
     model: row.model,
     reasoningEffort: isReasoningEffort(row.reasoning_effort)
       ? row.reasoning_effort

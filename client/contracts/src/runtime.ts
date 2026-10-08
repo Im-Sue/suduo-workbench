@@ -150,6 +150,8 @@ export interface RuntimeSkill {
 export interface AgentRuntime {
   readonly runtimeId: string;
   readonly runtimeKind: string;
+  /** 驱动的是哪家 Agent（配置表的 id）；不写时 Codex 运行时视为 codex（ADR-0014）。 */
+  readonly agentId?: string;
 
   startThread(input: StartThreadInput): Promise<StartThreadResult>;
   startTurn(input: StartTurnInput): Promise<StartTurnResult>;

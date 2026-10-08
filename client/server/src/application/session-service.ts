@@ -1,4 +1,5 @@
 import {
+  DEFAULT_AGENT_ID,
   REASONING_EFFORTS,
   isReasoningEffort,
   type CreateSessionRequest,
@@ -94,15 +95,19 @@ export class SessionService {
     if (input.runtimeId !== undefined && typeof input.runtimeId !== "string") {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.runtimeIdNotString);
     }
+    if (input.agentId !== undefined && typeof input.agentId !== "string") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentIdNotString);
+    }
     const purpose = validatePurpose(input.purpose ?? "general");
-    const runtimeId = input.runtimeId ?? "codex-local";
-    if (runtimeId !== "codex-local") {
+    if (input.runtimeId !== undefined && input.runtimeId !== "codex-local") {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
         (t) => t.session.runtimeUnsupported,
       );
     }
+    const agentId = input.agentId ?? DEFAULT_AGENT_ID;
+    const runtimeId = this.supervisor.runtimeIdForAgent(agentId);
     const projectSessionRefs = this.projectSessionRefs;
     const remoteProjectId = options.remoteProjectId;
     if (remoteProjectId !== undefined && projectSessionRefs === null) {
@@ -120,6 +125,7 @@ export class SessionService {
         ),
         ...(options.kind === undefined ? {} : { kind: options.kind }),
         locale: options.locale,
+        agentId,
       });
       if (remoteProjectId !== undefined) {
         projectSessionRefs?.create({ sessionId: created.id, remoteProjectId });
@@ -189,6 +195,8 @@ export class SessionService {
       requirementNumber?: number | null;
       /** 需求卡与工具。 */
       setup: SessionThreadSetup;
+      /** 用哪家 Agent 开工（ADR-0014）；不传为 codex。 */
+      agentId?: string;
     },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
@@ -199,10 +207,13 @@ export class SessionService {
     if (!requirementSessionRefs) {
       throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.session.requirementRefStoreUnavailable);
     }
+    const agentId = input.agentId ?? DEFAULT_AGENT_ID;
+    const runtimeId = this.supervisor.runtimeIdForAgent(agentId);
     const session = this.sessions.create({
       projectId,
       title: normalizeTitle(input.title),
       locale: input.locale,
+      agentId,
       purpose: "general",
       approvalMode: effectiveApprovalMode(
         { approvalMode: this.defaultApprovalMode() },
@@ -220,7 +231,7 @@ export class SessionService {
     let started;
     try {
       started = await this.supervisor.createPrimaryThread({
-        runtimeId: "codex-local",
+        runtimeId,
         session,
         workspace: this.workspaces.forSession(project, session.id),
         ...input.setup,

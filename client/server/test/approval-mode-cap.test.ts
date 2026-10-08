@@ -157,6 +157,7 @@ function makeSupervisor(
 ) {
   const inputs: StartThreadInput[] = [];
   const registry = {
+    findByAgent: () => ({ runtimeId: "codex-local" }),
     get: () => ({
       startThread: async (input: StartThreadInput): Promise<StartThreadResult> => {
         inputs.push(input);
@@ -249,6 +250,7 @@ function fullSession(): SessionRecord {
     approvalMode: "full",
     kind: "normal",
     locale: "zh-CN",
+    agentId: "codex",
     model: null,
     reasoningEffort: null,
     createdAt: 1,

@@ -11,6 +11,9 @@ export const session = {
   titleLength: "会话标题长度必须为 1 到 300",
   runtimeIdNotString: "runtimeId 必须是字符串",
   runtimeUnsupported: "M1 仅支持 runtimeId=codex-local",
+  agentIdNotString: "agentId 必须是字符串",
+  /** 配置表里有、但这个版本还接不上它，或者没有这家 Agent。 */
+  agentUnavailable: (agentId: string) => `这个版本的 SuDuo 还不能用 ${agentId} 开工`,
   requirementRefStoreUnavailable: "V2 会话引用存储不可用",
   /** 结果不确定（409 IDEMPOTENCY_INDETERMINATE）：线程已在 Codex 建好，本机记录没写进去。 */
   threadMappingWriteFailed: "runtime thread 已创建，但本地映射写入失败",

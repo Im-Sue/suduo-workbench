@@ -205,6 +205,7 @@ function sessionRecord(
     approvalMode: "ask",
     kind: "normal",
     locale: "zh-CN",
+    agentId: "codex",
     model: null,
     reasoningEffort: null,
     createdAt: lastActivityAt,
