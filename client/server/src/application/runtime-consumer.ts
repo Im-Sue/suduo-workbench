@@ -17,7 +17,8 @@ export async function consumeRuntimeUntilAborted(input: {
   signal: AbortSignal;
   onError?(error: unknown): void;
   onActivity?(): void;
-  recover?(): Promise<void>;
+  /** 连接断开后恢复：只恢复这个运行时的线程（参数是运行时 id）。 */
+  recover?(runtimeId: string): Promise<void>;
   restartMaxMs?: number;
 }): Promise<void> {
   let restartDelayMs = 250;
@@ -57,7 +58,11 @@ export async function consumeRuntimeUntilAborted(input: {
       return;
     }
     try {
-      input.approvals.orphanPersistedPending("runtime connection closed", { inProcess: true });
+      // 只作废这个运行时的确认卡：多 Agent 时别家 Agent 的会话不受影响（ADR-0017 故障隔离）。
+      input.approvals.orphanPersistedPending("runtime connection closed", {
+        inProcess: true,
+        runtimeId: input.runtime.runtimeId,
+      });
     } catch (error) {
       input.onError?.(error);
     }
@@ -69,7 +74,7 @@ export async function consumeRuntimeUntilAborted(input: {
       return;
     }
     try {
-      await input.recover?.();
+      await input.recover?.(input.runtime.runtimeId);
       restartDelayMs = 250;
     } catch (error) {
       input.onError?.(error);

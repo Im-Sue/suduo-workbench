@@ -178,13 +178,18 @@ export class ApprovalService {
    * 进程内连接断开时（`options.inProcess`）跳过「正在执行」的工具确认卡：用户已点「发出」、
    * 远程写正在进行，由进行中的 decide 照实入账（否则评论已发出却记成作废）。
    * 本机服务重启时没有进行中的 decide，全部作废。
+   * `options.runtimeId`：只作废这个运行时的线程上的审批——多 Agent 时一家 Agent 的连接断开
+   * 不能连带作废别家会话里的确认卡（ADR-0017 故障隔离）。
    */
   orphanPersistedPending(
     reason = "runtime process is no longer available",
-    options: { inProcess?: boolean } = {},
+    options: { inProcess?: boolean; runtimeId?: string } = {},
   ): number {
     let count = 0;
     for (const approval of this.approvals.listPendingOrDeciding()) {
+      if (options.runtimeId !== undefined && this.threads.getById(approval.sessionThreadId)?.threadRef.runtimeId !== options.runtimeId) {
+        continue;
+      }
       const deciding = approval.status === "deciding" && this.toolConfirmations?.isToolConfirmation(approval) === true;
       if (options.inProcess === true && deciding) {
         continue;

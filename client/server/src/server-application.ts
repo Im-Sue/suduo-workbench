@@ -468,19 +468,21 @@ export function createSuDuoApplication(
   };
 
   const consumerAbort = new AbortController();
-  const restore = () =>
+  const restore = (runtimeId?: string) =>
     restoreAttachedThreads({
       projects,
       sessions,
       threads,
       supervisor,
       signal: consumerAbort.signal,
+      ...(runtimeId === undefined ? {} : { runtimeId }),
       ...(options.onBackgroundError === undefined
         ? {}
         : { onError: options.onBackgroundError }),
     });
-  const consumer = consumeRuntimeUntilAborted({
-    runtime,
+  // 每个已注册的运行时一条消费循环（多 Agent，ADR-0014）；断开与恢复按运行时隔离（ADR-0017）。
+  const consumers = registry.list().map((registered) => consumeRuntimeUntilAborted({
+    runtime: registered,
     ingestor,
     approvals: approvalService,
     supervisor,
@@ -493,7 +495,7 @@ export function createSuDuoApplication(
     ...(options.onBackgroundError === undefined
       ? {}
       : { onError: options.onBackgroundError }),
-  });
+  }));
   const restoration = restore();
   // 新版需求会话（ADR-0008）启动时的一次性清理与基线回收；尽力而为，不阻塞启动。
   void retireLegacySessionContext({
@@ -591,7 +593,7 @@ export function createSuDuoApplication(
       await Promise.allSettled([server.close()]);
       await Promise.allSettled([
         runtime.close(),
-        consumer,
+        ...consumers,
         restoration,
       ]);
       database.close();
@@ -631,10 +633,15 @@ async function restoreAttachedThreads(input: {
   supervisor: RuntimeSupervisor;
   signal: AbortSignal;
   onError?: (error: unknown) => void;
+  /** 只恢复这个运行时的线程；不传为全部（启动时）。 */
+  runtimeId?: string;
 }): Promise<void> {
   for (const binding of input.threads.listAttached()) {
     if (input.signal.aborted) {
       return;
+    }
+    if (input.runtimeId !== undefined && binding.threadRef.runtimeId !== input.runtimeId) {
+      continue;
     }
     const session = input.sessions.getById(binding.sessionId);
     if (!session || session.state !== "active") {

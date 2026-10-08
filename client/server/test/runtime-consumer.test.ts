@@ -19,12 +19,14 @@ describe("T10 runtime supervisor", () => {
     let orphaned = 0;
     let unavailable = 0;
     let recovered = 0;
+    const scopes: unknown[] = [];
     const operation = consumeRuntimeUntilAborted({
       runtime,
       ingestor: { ingest: () => undefined } as unknown as RuntimeEventIngestor,
       approvals: {
-        orphanPersistedPending: () => {
+        orphanPersistedPending: (_reason: string, options: unknown) => {
           orphaned += 1;
+          scopes.push(options);
           return 0;
         },
       } as unknown as ApprovalService,
@@ -34,8 +36,9 @@ describe("T10 runtime supervisor", () => {
         },
       } as unknown as RuntimeSupervisor,
       signal: abort.signal,
-      recover: async () => {
+      recover: async (runtimeId) => {
         recovered += 1;
+        scopes.push(runtimeId);
         abort.abort();
       },
       restartMaxMs: 1_000,
@@ -45,6 +48,8 @@ describe("T10 runtime supervisor", () => {
     expect(orphaned).toBe(1);
     expect(unavailable).toBe(1);
     expect(recovered).toBe(1);
+    // 作废与恢复都只针对断开的这个运行时（多 Agent 故障隔离）。
+    expect(scopes).toEqual([{ inProcess: true, runtimeId: "codex-local" }, "codex-local"]);
   });
 });
 
