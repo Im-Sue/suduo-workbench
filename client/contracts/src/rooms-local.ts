@@ -13,7 +13,13 @@ export const ROOM_RESYNC_SSE_EVENT_NAME = "room-resync";
 export interface LocalAgentStateDto {
   /** ready = 已登记且在发心跳；unregistered = 还没登记（未登录或本机没开）；unavailable = 登记 / 心跳失败。 */
   status: "ready" | "unregistered" | "unavailable";
+  /** Codex（默认登记的那个）。 */
   agent: AgentDto | null;
+  /**
+   * 本机登记了的全部 Agent（Codex 加上共享过的其他家，多 Agent S6）；旧本机服务不返回。
+   * 每家各是一个可 @ 的 Agent。
+   */
+  agents?: AgentDto[];
   /** 不是 ready 时给用户看的原因。 */
   message: string | null;
   /** 本机正在为房间执行的任务（所有者视角）。 */

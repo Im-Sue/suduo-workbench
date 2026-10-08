@@ -7,7 +7,7 @@ import type {
   AgentStatusReasonCode,
   UpdateAgentSettingsRequest,
 } from "@suduo/client-contracts";
-import { ApiError } from "../api-error.js";
+import { ApiError, type ErrorText } from "../api-error.js";
 import { AGENT_CATALOG, type AgentDescriptor, validateAgentCatalog } from "./catalog.js";
 import { agentChildEnv, execAgentCommand, type AgentExec } from "./agent-exec.js";
 import type { AgentSettingsStore } from "./agent-settings-store.js";
@@ -115,6 +115,18 @@ export class AgentCatalogService {
       termsUrl: descriptor.termsUrl,
       checkedAt: null,
     };
+  }
+
+  /**
+   * 这家 Agent 能不能在讨论里替别人执行（多 Agent S6，ADR-0009 只读红线）：SuDuo 接上了、做得到只读、没在设置里停用。
+   * 能返回 null，不能返回原因。登记、执行房间任务前都按它判断（配置表以后改了，老设备文件里的种类也跟着失效）。
+   */
+  roomAgentProblem(agentId: string): ErrorText | null {
+    const descriptor = this.catalog.find((agent) => agent.id === agentId);
+    if (descriptor === undefined || !descriptor.runtimeAvailable) return (t) => t.room.agentUnsupported(agentId);
+    if (!descriptor.readOnlyCapable) return (t) => t.room.agentNotReadOnly(descriptor.displayName);
+    if (!this.options.store.entry(agentId).enabled) return (t) => t.room.agentDisabled(descriptor.displayName);
+    return null;
   }
 
   /** 重新检测（用户登录后点的）：之前运行中记下的登录失败也一并放下，下次用到时再确认。 */

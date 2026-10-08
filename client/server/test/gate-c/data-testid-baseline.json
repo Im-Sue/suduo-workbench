@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 299,
+  "total": 303,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -229,13 +229,17 @@
       "incoming-share-request",
       "my-agent-active-run",
       "my-agent-no-mapping",
+      "my-agent-remove",
+      "my-agent-row",
       "my-agent-section",
       "my-agent-share-state",
+      "my-agent-subscription-note",
       "my-agent-switch",
       "my-agent-unavailable",
       "requestable-agent-row",
       "share-agent-button",
       "share-agent-panel",
+      "share-another-agent",
       "share-duration",
       "shared-agent-row"
     ],

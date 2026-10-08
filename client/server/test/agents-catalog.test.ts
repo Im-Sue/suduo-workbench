@@ -14,6 +14,7 @@ import { agentChildEnv, type AgentExec, type AgentExecResult } from "../src/appl
 import { AgentSettingsStore } from "../src/application/agents/agent-settings-store.js";
 import { AGENT_CATALOG, validateAgentCatalog, type AgentDescriptor } from "../src/application/agents/catalog.js";
 import { resolveExecutable } from "../src/application/agents/resolver.js";
+import { messagesFor } from "../src/i18n/messages/index.js";
 import { createMinimalHttpContext } from "./helpers/minimal-http-context.js";
 
 /** 多 Agent S1-2：Agent 配置表、可执行文件解析、状态检测与接口（技术设计 2.1、4.6）。 */
@@ -269,6 +270,20 @@ describe("Agent 状态检测", () => {
     expect(() => agents.updateSettings({ defaultAgentId: "nope" })).toThrow();
     expect(() => agents.loginCommand("codex")).toThrow();
     expect(agents.loginCommand("copilot")).toBe("copilot login");
+  });
+
+  it("能不能在讨论里替别人执行（多 Agent S6，ADR-0009 只读红线）：做得到只读、没停用的才行", () => {
+    const agents = service({ exec: fakeExec({}) });
+    const text = (agentId: string) => {
+      const problem = agents.roomAgentProblem(agentId);
+      return problem === null ? null : typeof problem === "string" ? problem : problem(messagesFor("zh-CN"));
+    };
+    // 实测过只读拦截的三家。
+    expect(["codex", "claude-code", "opencode"].map(text)).toEqual([null, null, null]);
+    expect(text("gemini")).toBe("Gemini CLI 做不到只读（可能不经询问就写文件），不能共享进讨论、不执行讨论里的任务");
+    expect(text("nope")).toBe("这个版本的 SuDuo 不能在讨论里使用 nope");
+    agents.updateSettings({ agents: [{ id: "claude-code", enabled: false }] });
+    expect(text("claude-code")).toBe("Claude Code 在这台电脑的 AI Agent 设置里停用了，不执行讨论里的任务");
   });
 });
 

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { collectMentions } from "../src/features/rooms/drafts.js";
 import {
   agentAvailabilityNote,
+  agentLabel,
+  agentName,
   applyRunToMessages,
   buildMentionCandidates,
   canRetryRun,
@@ -180,6 +182,15 @@ describe("房间列表与未读", () => {
       { meId: ME.id, reading: true },
     ).lastMessage;
     expect(many === null ? null : [lastMessageAuthor(many), lastMessagePreview(many)]).toEqual(["小王 的 Codex", "[文件] 方案.pdf 等 3 个"]);
+    // 多 Agent S6：按种类写产品名；老云端没给种类按 Codex。
+    const claude = roomAfterMessage(base, message({ seq: 5, authorKind: "agent", agent: agent({ kind: "claude-code" }), body: "好" }), {
+      meId: ME.id,
+      reading: true,
+    }).lastMessage;
+    expect(claude === null ? null : lastMessageAuthor(claude)).toBe("小王 的 Claude Code");
+    expect(lastMessageAuthor({ seq: 1, authorName: "x", preview: "", createdAt: "", authorKind: "agent", agent: { ownerName: "小王", deviceName: "M" } })).toBe(
+      "小王 的 Codex",
+    );
   });
 
   it("没加入的需求房间不算未读；自己在里面发言后算加入", () => {
@@ -314,6 +325,33 @@ describe("@ 候选", () => {
       query: "",
     });
     expect(list.filter((item) => item.kind === "agent").map((item) => item.text)).toEqual(["小王的Codex·MacBook Pro", "小王的Codex·ThinkPad"]);
+  });
+
+  it("多种 Agent（S6）：同一台电脑上的 Codex 与 Claude Code 靠产品名区分，不带设备名；按产品名或种类都能搜到；正文按种类高亮", () => {
+    const claude = agent({ id: "agent-wang-claude", kind: "claude-code", label: "小王's Claude Code · MacBook Pro" });
+    const input = { members: [], agents: [agent(), claude], shares: [share()], requestedAgentIds: new Set<string>(), meId: ME.id };
+    expect(buildMentionCandidates({ ...input, query: "" }).filter((item) => item.kind === "agent").map((item) => item.text)).toEqual([
+      "小王的Codex",
+      "小王的Claude Code",
+    ]);
+    for (const query of ["claude", "Claude Code", "claude-code"]) {
+      expect(buildMentionCandidates({ ...input, query }).map((item) => item.id), query).toEqual(["agent-wang-claude"]);
+    }
+    expect(agentName(claude)).toBe("小王 的 Claude Code");
+    expect(agentLabel(claude)).toBe("小王 的 Claude Code · MacBook Pro");
+    // 列表里找得到：按所有者名与种类拼各语言的写法；找不到（旧消息）：由云端英文标签推出产品名。
+    expect(mentionHighlights([{ kind: "agent", id: "agent-wang-claude", label: "x" }], [claude])).toEqual(
+      expect.arrayContaining(["小王的Claude Code", "小王's Claude Code", "小王的Claude Code·MacBook Pro"]),
+    );
+    expect(mentionHighlights([{ kind: "agent", id: "gone", label: "小王's Gemini CLI · ThinkPad" }])).toEqual(
+      expect.arrayContaining(["小王的Gemini CLI", "小王's Gemini CLI · ThinkPad"]),
+    );
+    // 所有者名里带「's」：先按已知产品名拆，不会把 “Team's Codex” 当成产品名。
+    expect(mentionHighlights([{ kind: "agent", id: "gone", label: "Sam's Team's Codex · Mac" }])).toEqual(
+      expect.arrayContaining(["Sam's Team的Codex", "Sam's Team的Codex·Mac"]),
+    );
+    // 不认识的产品名照样能拆。
+    expect(mentionHighlights([{ kind: "agent", id: "gone", label: "小王's Foo Agent · Mac" }])).toEqual(expect.arrayContaining(["小王的Foo Agent"]));
   });
 
   it("新云端的标签是英文兜底：中文写的 @小王的Codex、@所有人 照样高亮（按 kind）", () => {

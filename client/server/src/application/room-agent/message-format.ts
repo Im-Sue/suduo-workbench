@@ -1,5 +1,5 @@
 import type { Locale } from "@suduo/client-contracts";
-import type { RoomFileDto, RoomMessageDto } from "@suduo/cloud-contracts";
+import { agentKindName, type RoomFileDto, type RoomMessageDto } from "@suduo/cloud-contracts";
 import { messagesFor } from "../../i18n/messages/index.js";
 
 /**
@@ -9,16 +9,16 @@ import { messagesFor } from "../../i18n/messages/index.js";
  */
 
 /**
- * 作者名。Agent 不用云端标签（S6 起是英文兜底），按会话语言用所有者名与设备名自己拼，
+ * 作者名。Agent 不用云端标签（S6 起是英文兜底），按会话语言用所有者名、Agent 种类与设备名自己拼，
  * 与前端 `rooms.agent.withDevice` 同一写法。
  */
 export function authorNameOf(message: RoomMessageDto, locale: Locale): string {
   const text = messagesFor(locale).roomPrompt.message;
   if (message.authorKind === "agent") {
     if (message.agent) {
-      return text.agentWithDevice(message.agent.owner.displayName, message.agent.deviceName);
+      return text.agentWithDevice(message.agent.owner.displayName, agentKindName(message.agent.kind), message.agent.deviceName);
     }
-    return message.author ? text.agentName(message.author.displayName) : "Agent";
+    return message.author ? text.agentName(message.author.displayName, "Agent") : "Agent";
   }
   if (message.authorKind === "system") {
     return text.systemAuthor;

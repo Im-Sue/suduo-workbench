@@ -56,7 +56,8 @@ const COMMON_ACP: Pick<AgentDescriptor, "channel" | "bundled" | "runtimeAvailabl
 
 /**
  * 首批 Agent（母需求 D2，2026-10-08 用户确认）。启动参数、握手能力、登录方式来自 S0 实测
- * （技术设计第十二节）；Cursor、Kimi 本机未装，按官方说明填写，readOnlyCapable 暂为 false。
+ * （技术设计第十二节）；Cursor、Kimi 本机未装，按官方说明填写。readOnlyCapable 只给实测过只读拦截的
+ * （Codex、Claude Code、OpenCode），其余登录后实测再标。
  */
 export const AGENT_CATALOG: readonly AgentDescriptor[] = [
   {
@@ -167,7 +168,10 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     termsUrl: null,
     // 模型在 ACP 会话的配置项里，SuDuo 还没接切换（S5 之后）：先不声明 model_switch，界面不出现模型选择。
     capabilities: ["image_input", "plan", "token_usage", "session_resume", "mcp_http"],
-    readOnlyCapable: false,
+    // 只读实测（S6）：启动时注入工具白名单（acp-profiles.ts），其余工具——包括所有者自己配的 MCP、自定义工具——
+    // 都从 OpenCode 手上拿掉（所有者配置里显式放行也压得住），再加 plan 模式与 SuDuo 的权限请求策略；
+    // 对照组（放行）能写，说明拦截来自规则而不是模型自觉。
+    readOnlyCapable: true,
   },
   {
     ...COMMON_ACP,

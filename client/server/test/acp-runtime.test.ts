@@ -96,7 +96,17 @@ describe("档位与模式", () => {
     expect(pickMode(["default", "auto-edit", "yolo", "plan"], acpProfile("qwen-code").modes.full)).toBe("yolo");
     expect(pickMode(["build", "plan"], acpProfile("opencode").modes.readonly)).toBe("plan");
     expect(pickMode(["agent"], acpProfile("copilot").modes.readonly)).toBeNull();
-    expect(JSON.parse(acpProfile("opencode").env!("readonly")["OPENCODE_CONFIG_CONTENT"]!)).toEqual({ permission: { edit: "deny", bash: "deny", webfetch: "allow" } });
+    // 只读：白名单以外的工具（所有者的 MCP、自定义工具、子代理、技能）一律拿掉，全局与 plan / build 各一份；不读仓库配置。
+    const readonly = acpProfile("opencode").env!("readonly");
+    const rules = JSON.parse(readonly["OPENCODE_CONFIG_CONTENT"]!) as { permission: Record<string, string>; tools: Record<string, boolean>; agent: Record<string, unknown> };
+    expect(Object.entries(rules.permission)[0]).toEqual(["*", "deny"]);
+    expect(rules.permission).toMatchObject({ read: "allow", grep: "allow", webfetch: "allow", "suduo_*": "allow" });
+    expect(rules.permission).not.toHaveProperty("edit");
+    expect(rules.permission).not.toHaveProperty("bash");
+    expect(Object.entries(rules.tools)[0]).toEqual(["*", false]);
+    expect(rules.agent).toEqual({ plan: { permission: rules.permission, tools: rules.tools }, build: { permission: rules.permission, tools: rules.tools } });
+    expect(readonly["OPENCODE_DISABLE_PROJECT_CONFIG"]).toBe("1");
+    expect(acpProfile("opencode").env!("ask")).toEqual({ OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: { edit: "ask", bash: "ask", webfetch: "ask" } }) });
     expect(isAuthError({ code: -32000, message: "Authentication required" })).toBe(true);
     expect(isAuthError(new Error("Gemini API key is missing or not configured."))).toBe(true);
     expect(isAuthError(new Error("boom"))).toBe(false);

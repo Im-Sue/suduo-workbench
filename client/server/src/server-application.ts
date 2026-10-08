@@ -482,11 +482,14 @@ export function createSuDuoApplication(
     activity: idleMonitor,
     runs: () => roomRunner?.status() ?? { activeRun: null, queuedRuns: 0 },
     onRegistered: () => void roomRunner?.sync(),
+    serverKey: () => currentServerOrigin(),
+    kindProblem: (kind) => agentCatalog.roomAgentProblem(kind),
   });
   const presence = agentPresence;
   roomRunner = new RoomAgentRunner({
     remote: requirementsRemote,
     presence,
+    agentProblem: (kind) => agentCatalog.roomAgentProblem(kind),
     hub: remoteEvents,
     mappings: workspaceMappings,
     projects,
@@ -588,6 +591,10 @@ export function createSuDuoApplication(
     rooms: {
       remote: requirementsRemote,
       agentState: () => presence.state(),
+      // 共享到讨论的 Agent 固定只读（ADR-0009 / 需求 R6）：只收接上了、做得到只读的。
+      // 只读红线（ADR-0009）由 AgentPresence 按配置表把关（kindProblem）。
+      addAgentKind: (kind) => presence.addKind(kind),
+      removeAgentKind: (kind) => presence.removeKind(kind),
     },
     remoteEvents,
     systemActivity: { runningSessions: () => events.countRunningSessionsAfter(startupSeq) },

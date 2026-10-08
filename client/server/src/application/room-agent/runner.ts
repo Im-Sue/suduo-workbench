@@ -34,7 +34,7 @@ import type { SessionKind, SessionRepository } from "../../infrastructure/db/rep
 import type { WorkspaceMappingRepository } from "../../infrastructure/db/repositories/workspace-mapping-repository.js";
 import type { RequirementsRemoteClient } from "../../infrastructure/requirements-v2/remote-client.js";
 import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
-import { errorTextOf } from "../api-error.js";
+import { errorTextOf, renderText, type ErrorText } from "../api-error.js";
 import type { RemoteEventsSignal } from "../remote-events-hub.js";
 import { toolFormat } from "../session-tools/format.js";
 import type { RoomSetupInput, ThreadSetup } from "../session-tools/session-context.js";
@@ -82,7 +82,13 @@ export type RoomRunnerRemote = Pick<
 
 export interface RoomAgentRunnerDependencies {
   remote: RoomRunnerRemote;
-  presence: { currentAgent(): AgentDto | null };
+  /** 本机登记了的 Agent（Codex 加上共享过的其他家，多 Agent S6）。 */
+  presence: { currentAgents(): AgentDto[]; agentById(agentId: string): AgentDto | null };
+  /**
+   * 这一种 Agent 能不能在讨论里执行（配置表：接上了、做得到只读、没停用；ADR-0009 只读红线）。不能时返回原因，
+   * 任务以「没能在本机开始执行」收尾。登记时已把关，这里是执行前的最后一道（配置表或设置之后可能改了）。
+   */
+  agentProblem?(kind: string): ErrorText | null;
   hub: { subscribe(listener: (signal: RemoteEventsSignal) => void): () => void };
   mappings: Pick<WorkspaceMappingRepository, "getByRemoteProjectId">;
   projects: Pick<ProjectRepository, "getById">;
@@ -234,8 +240,8 @@ export class RoomAgentRunner {
   }
 
   private async syncOnce(): Promise<void> {
-    const agent = this.deps.presence.currentAgent();
-    if (agent === null || this.stopped) {
+    const agents = this.deps.presence.currentAgents();
+    if (agents.length === 0 || this.stopped) {
       return;
     }
     try {
@@ -250,42 +256,55 @@ export class RoomAgentRunner {
         }
         this.log({ event: "suduo.room_run.report_retried", runId, result });
       }
-      const running = await this.deps.remote.listAgentRuns({ agentId: agent.id, status: "running" });
-      for (const run of running.items) {
-        if (this.stopped) return;
-        if (
-          run.agent.id !== agent.id ||
-          run.id === this.starting ||
-          this.unreported.has(run.id) ||
-          this.settled.has(run.id)
-        ) {
-          continue;
-        }
-        if (run.id === this.active?.run.id) {
-          // 推送丢了也能拿到停止请求。
-          this.accept(run, agent.id);
-          continue;
-        }
-        const reason: AgentRunReason = {
-          code: this.startedHere.has(run.id)
-            ? "result_not_delivered"
-            : this.startAttempted.has(run.id)
-              ? "start_connection_lost"
-              : "local_service_restarted",
-          params: {},
-        };
-        const result = await this.deliver(run.id, { kind: "failed", reason }, { retry: false });
-        if (result !== "unavailable") this.settled.add(run.id);
-        this.log({ event: "suduo.room_run.failed", runId: run.id, roomId: run.roomId, reason: reason.code, result });
-      }
-      const queued = await this.deps.remote.listAgentRuns({ agentId: agent.id, status: "queued" });
-      for (const run of queued.items) {
-        this.accept(run, agent.id);
-      }
     } catch (error) {
       this.log({ event: "suduo.room_run.sync_failed", message: logMessageOf(error) });
     }
+    // 各家各自对账：一家失败不挡后面的。
+    for (const agent of agents) {
+      if (this.stopped) return;
+      try {
+        await this.syncAgent(agent);
+      } catch (error) {
+        this.log({ event: "suduo.room_run.sync_failed", agentId: agent.id, message: logMessageOf(error) });
+      }
+    }
     this.pump();
+  }
+
+  /** 一家 Agent 的对账：执行中的任务本机没在跑就收尾，排队的入队（本机共享了几家就各对一遍，多 Agent S6）。 */
+  private async syncAgent(agent: AgentDto): Promise<void> {
+    const running = await this.deps.remote.listAgentRuns({ agentId: agent.id, status: "running" });
+    for (const run of running.items) {
+      if (this.stopped) return;
+      if (
+        run.agent.id !== agent.id ||
+        run.id === this.starting ||
+        this.unreported.has(run.id) ||
+        this.settled.has(run.id)
+      ) {
+        continue;
+      }
+      if (run.id === this.active?.run.id) {
+        // 推送丢了也能拿到停止请求。
+        this.accept(run, agent.id);
+        continue;
+      }
+      const reason: AgentRunReason = {
+        code: this.startedHere.has(run.id)
+          ? "result_not_delivered"
+          : this.startAttempted.has(run.id)
+            ? "start_connection_lost"
+            : "local_service_restarted",
+        params: {},
+      };
+      const result = await this.deliver(run.id, { kind: "failed", reason }, { retry: false });
+      if (result !== "unavailable") this.settled.add(run.id);
+      this.log({ event: "suduo.room_run.failed", runId: run.id, roomId: run.roomId, reason: reason.code, result });
+    }
+    const queued = await this.deps.remote.listAgentRuns({ agentId: agent.id, status: "queued" });
+    for (const run of queued.items) {
+      this.accept(run, agent.id);
+    }
   }
 
   private onSignal(signal: RemoteEventsSignal): void {
@@ -306,7 +325,7 @@ export class RoomAgentRunner {
     if (event.type !== "room.run" || event.run === undefined) {
       return;
     }
-    const agent = this.deps.presence.currentAgent();
+    const agent = this.deps.presence.agentById(event.run.agent.id);
     if (agent === null) {
       return;
     }
@@ -371,8 +390,8 @@ export class RoomAgentRunner {
   }
 
   private async execute(queued: AgentRunSummaryDto): Promise<void> {
-    const agent = this.deps.presence.currentAgent();
-    if (agent === null || queued.agent.id !== agent.id) {
+    const agent = this.deps.presence.agentById(queued.agent.id);
+    if (agent === null) {
       return;
     }
     let started;
@@ -443,6 +462,10 @@ export class RoomAgentRunner {
     if (active.stopRequested) {
       return { kind: "stopped", reason: { code: "stopped_before_start", params: {} } };
     }
+    const problem = this.deps.agentProblem?.(agent.kind) ?? null;
+    if (problem !== null) {
+      return { kind: "failed", reason: { code: "local_start_failed", params: { detail: renderText(problem, this.ownerMessages()) } } };
+    }
     const room = await this.deps.remote.getRoom(run.roomId);
     const mapping = this.deps.mappings.getByRemoteProjectId(room.projectId);
     const project = mapping === null ? null : this.deps.projects.getById(mapping.localProjectId);
@@ -506,11 +529,13 @@ export class RoomAgentRunner {
     }
     // 任务会话的语言 = 所有者此刻的界面语言：固定层与工具说明按它写，记进会话，重建线程时沿用。
     const locale = this.deps.ownerLocale();
-    const { setup, requirementVersion } = await this.buildSetup(room, agent, project, locale);
+    const { setup, requirementVersion } = await this.buildSetup(room, agent, agent.kind, project, locale);
     const root = thread.find((message) => message.id === run.threadRootId) ?? trigger;
+    // 用被 @ 的那家 Agent 开房间任务会话（云端的种类就是本机配置表的 Agent id，多 Agent S6）。
     const session = await this.deps.sessions.create(
       project.id,
-      { title: roomTaskTitle(room.name, root.body, locale), purpose: "general" },
+      // 显式要只读档：做不到只读的 Agent 在建会话时就被拒（room_task 运行时本来也固定只读）。
+      { title: roomTaskTitle(room.name, root.body, locale), purpose: "general", agentId: agent.kind, approvalMode: "readonly" },
       setup,
       { kind: "room_task", locale },
     );
@@ -533,6 +558,7 @@ export class RoomAgentRunner {
   private async buildSetup(
     room: RoomDto,
     agent: Pick<AgentDto, "owner" | "deviceName"> | null,
+    agentKind: string,
     project: { name: string; rootPath: string },
     locale: Locale,
   ): Promise<{ setup: ThreadSetup; requirementVersion: number | null }> {
@@ -555,6 +581,7 @@ export class RoomAgentRunner {
       locale,
       projectRoot: project.rootPath,
       ownerName: agent?.owner.displayName ?? messagesFor(locale).roomPrompt.setup.ownerFallback,
+      agentKind,
       deviceName: agent?.deviceName ?? messagesFor(locale).roomPrompt.setup.deviceFallback,
       projectName,
       roomName: room.name,
@@ -578,7 +605,13 @@ export class RoomAgentRunner {
       return null;
     }
     const locale = session?.locale ?? this.deps.ownerLocale();
-    const { setup } = await this.buildSetup(room, this.deps.presence.currentAgent(), project, locale);
+    const { setup } = await this.buildSetup(
+      room,
+      this.deps.presence.agentById(record.agentId),
+      session?.agentId ?? "codex",
+      project,
+      locale,
+    );
     if (record.lastTriggerSeq <= 0) {
       return setup;
     }

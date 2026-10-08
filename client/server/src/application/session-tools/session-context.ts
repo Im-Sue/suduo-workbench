@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Locale, RuntimeToolSpec, SessionContextDto } from "@suduo/client-contracts";
 import {
+  agentKindName,
   formatRequirementNumber,
   type AttachmentDto,
   type RequirementActivityEntryDto,
@@ -90,6 +91,8 @@ export interface RoomSetupInput {
   projectRoot: string;
   /** 所有者显示名（「陈思远」）。 */
   ownerName: string;
+  /** 被 @ 的本机 Agent 的种类（配置表 id：codex、claude-code……），身份里写它的产品名（多 Agent S6）。 */
+  agentKind: string;
   deviceName: string;
   projectName: string;
   roomName: string;
@@ -283,7 +286,13 @@ export class SessionContextService {
     const r = f.t.roomPrompt.setup;
     const lines = [
       r.title,
-      r.identity({ owner: input.ownerName, device: input.deviceName, project: input.projectName, room: input.roomName }),
+      r.identity({
+        owner: input.ownerName,
+        agent: agentKindName(input.agentKind),
+        device: input.deviceName,
+        project: input.projectName,
+        room: input.roomName,
+      }),
       "",
       ...roomRules(r),
       "",
@@ -434,7 +443,7 @@ export class SessionContextService {
       return {
         developerInstructions: [
           r.title,
-          r.minimalIdentity(roomTask.roomName),
+          r.minimalIdentity(roomTask.roomName, agentKindName(this.deps.sessions.getById(sessionId)?.agentId ?? "codex")),
           "",
           ...roomRules(r),
           "",

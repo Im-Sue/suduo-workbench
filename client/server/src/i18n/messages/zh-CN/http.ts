@@ -24,6 +24,7 @@ export const http = {
   skillNameRequired: "必须提供 skill name",
   /** field 是接口字段名。 */
   mustBeBoolean: (field: string) => `${field} 必须是布尔值`,
+  mustBeNonEmptyString: (field: string) => `${field} 必须是非空字符串`,
   /** 多 Agent（ADR-0014）。 */
   agentNotFound: (id: string) => `没有叫 ${id} 的 Agent`,
   agentBinOverrideInvalid: "binOverride 必须是路径字符串或 null",

@@ -93,6 +93,7 @@ import type {
   UpdateProjectRequest as RequirementsUpdateProjectRequest,
   UpdateRequirementRequest,
   AddRoomMembersRequest,
+  AgentDto as RoomAgentDto,
   AgentRunDetailDto,
   AgentRunSummaryDto,
   AgentShareDto,
@@ -960,6 +961,14 @@ export const api = {
       "/api/v2/agents/self",
       options.signal === undefined ? {} : { signal: options.signal },
     ),
+
+  /** 共享 Codex 以外的一家本机 Agent（多 Agent S6）：本机服务登记它并返回它在云端的 Agent。 */
+  addAgentKind: (kind: string) =>
+    request<RoomAgentDto>("/api/v2/agents/self/kinds", { method: "POST", body: { kind } }),
+
+  /** 不再在讨论里提供这一家本机 Agent（本机服务停止登记与心跳）。 */
+  removeAgentKind: (kind: string) =>
+    request<void>(`/api/v2/agents/self/kinds/${encodeURIComponent(kind)}`, { method: "DELETE" }),
 
   listRoomShares: (roomId: string, options: { signal?: AbortSignal } = {}) =>
     request<ListAgentSharesResponse>(

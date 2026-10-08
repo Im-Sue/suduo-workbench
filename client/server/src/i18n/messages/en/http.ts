@@ -21,6 +21,7 @@ export const http = {
   restoreHashRequired: "A hash is required to restore",
   skillNameRequired: "A Skill name is required",
   mustBeBoolean: (field: string) => `${field} must be a boolean`,
+  mustBeNonEmptyString: (field: string) => `${field} must be a non-empty string`,
   /** Multiple agents (ADR-0014). */
   agentNotFound: (id: string) => `There's no agent called ${id}`,
   agentBinOverrideInvalid: "binOverride must be a path string or null",

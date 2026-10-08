@@ -50,7 +50,9 @@ test("the repository's dynamic data-testid attributes do not create baseline dri
   // （CHOICE_TEST_ID[choice.decision]，取值仍是 approval-accept-session / approval-cancel 等固定名）、
   // 开工选项里每家 Agent 一项（start-agent-${id}）、AI Agent 设置里每家一行与「设为默认」
   // （agent-row-${id}、agent-set-default-${id}）。
-  expect(scan.dynamicEntries).toHaveLength(13);
+  // 13 -> 14：多 Agent S6「共享本机的其他 Agent」菜单每家一项（share-another-${id}）；「我的 Agent」每家一行
+  // 仍用静态的 my-agent-switch，按行上的 data-agent-kind 区分。
+  expect(scan.dynamicEntries).toHaveLength(14);
   expect(comparison.missingFromSource).toEqual([]);
   expect(comparison.missingFromBaseline).toEqual([]);
 });

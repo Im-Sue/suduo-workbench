@@ -20,13 +20,29 @@ const GENERIC_MODES: Record<RuntimeApprovalMode, string[]> = {
   full: ["yolo", "bypass-permissions", "bypasspermissions", "full-access", "full"],
 };
 
+/** 只读档留下的 OpenCode 工具：看文件、搜索、联网查资料、待办，加 SuDuo 自己的工具（MCP 服务器名 suduo）。 */
+const OPENCODE_READONLY_TOOLS = ["read", "grep", "glob", "list", "webfetch", "todowrite", "todoread", "suduo_*"];
+
 /**
  * OpenCode 自己写文件、build 模式下也不发权限请求（S0）：写前询问 / 只读只能在启动时经
  * OPENCODE_CONFIG_CONTENT 注入权限规则。
+ *
+ * 只读（房间任务的安全红线，ADR-0009）只放行白名单里的工具，其余一律拿掉：所有者自己配的 MCP、自定义工具、
+ * 子代理（task）、技能都不在里面，它们的默认权限是放行、不经 ACP 的权限请求，SuDuo 看不到。权限（permission）
+ * 与工具开关（tools）两套都写，全局与 plan / build 代理级各写一份——内联配置优先级最高，所有者在全局配置里
+ * 显式放行某个工具（含代理级）也压得住（S6 实测）；再关掉仓库里的项目配置（同 Claude 只读不加载设置）。
  */
-function openCodePermissions(mode: RuntimeApprovalMode): Record<string, string> {
-  const rules: Record<RuntimeApprovalMode, Record<string, string>> = {
-    readonly: { edit: "deny", bash: "deny", webfetch: "allow" },
+function openCodeEnv(mode: RuntimeApprovalMode): Record<string, string> {
+  if (mode === "readonly") {
+    const permission = Object.fromEntries([["*", "deny"], ...OPENCODE_READONLY_TOOLS.map((tool) => [tool, "allow"])]);
+    const tools = Object.fromEntries([["*", false], ...OPENCODE_READONLY_TOOLS.map((tool) => [tool, true])]);
+    const rules = { permission, tools };
+    return {
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...rules, agent: { plan: rules, build: rules } }),
+      OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+    };
+  }
+  const rules: Record<Exclude<RuntimeApprovalMode, "readonly">, Record<string, string>> = {
     ask: { edit: "ask", bash: "ask", webfetch: "ask" },
     auto: { edit: "allow", bash: "ask", webfetch: "allow" },
     full: { edit: "allow", bash: "allow", webfetch: "allow" },
@@ -37,7 +53,7 @@ function openCodePermissions(mode: RuntimeApprovalMode): Record<string, string> 
 const PROFILES: Record<string, AcpProfile> = {
   opencode: {
     modes: { ...GENERIC_MODES, ask: ["build"], auto: ["build"], full: ["build"], readonly: ["plan"] },
-    env: openCodePermissions,
+    env: openCodeEnv,
   },
 };
 

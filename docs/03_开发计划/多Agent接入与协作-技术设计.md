@@ -123,7 +123,7 @@ updated: 2026-10-08
 
 | 档位 | Codex | Claude Code（SDK） | ACP（配置表 + SuDuo 客户端策略） |
 |---|---|---|---|
-| 只读 | `never` + 只读沙箱 + 可联网 | `dontAsk` + `strictMcpConfig: true`（只用 SuDuo 传入的 MCP，claude.ai 账号连接器也被排除，S0 实测）+ `allowedTools` 只放行只读工具（Read、Grep、Glob、WebSearch、WebFetch、TodoWrite、SuDuo 只读工具）；`canUseTool` 其余一律拒绝；`settingSources: []`（不加载用户与项目设置，避免其 allow 规则先于 `canUseTool` 放行写入、避免带上所有者的 MCP）+ `disallowedTools` 列出写入类工具（S0 验证） | 最严格模式；`request_permission` 写入 / 执行类一律拒绝；`fs/write_text_file` 返回错误 |
+| 只读 | `never` + 只读沙箱 + 可联网 | `dontAsk` + `strictMcpConfig: true`（只用 SuDuo 传入的 MCP，claude.ai 账号连接器也被排除，S0 实测）+ `allowedTools` 只放行只读工具（Read、Grep、Glob、WebSearch、WebFetch、TodoWrite、SuDuo 只读工具）；`canUseTool` 其余一律拒绝；`settingSources: []`（不加载用户与项目设置，避免其 allow 规则先于 `canUseTool` 放行写入、避免带上所有者的 MCP）+ `disallowedTools` 列出写入类工具（S0 验证） | 最严格模式；`request_permission` 写入 / 执行类一律拒绝；`fs/write_text_file` 返回错误。**只有不经权限请求就能用的工具（所有者自己的 MCP、自定义工具）都被拿掉的才算做得到只读**（配置表 `readOnlyCapable`）：OpenCode 启动时注入工具白名单（其余一律 deny / 关闭，全局与 plan、build 代理级各一份）并关掉仓库配置（S6 实测） |
 | 写前询问 | 现「询问」组合（`on-request` + 只读沙箱 + 不联网，写入与越权需审批） | `default` | 「询问」模式；权限请求交给用户 |
 | 自动 | 现「自动」组合（`on-request` + 可写工作区 + 不联网） | `acceptEdits` | 「自动」模式；读与工作目录内编辑自动允许，执行类交给用户 |
 | 完全访问 | 现「完全访问」组合（`never` + 完全访问 + 联网） | `bypassPermissions` | 「完全访问」模式；自动选允许一次 |
@@ -609,3 +609,24 @@ OpenCode 完整回合：SuDuo MCP 工具调用成功（带会话令牌，Agent �
   7. 审批卡保留 Agent 给选项起的名字（Gemini 的两个「始终同意」能分开）；版本检测超时的原因在设置页显示；开工选完全访问也先确认一次；没有同意或拒绝选项时不显示回车 / Esc 提示；开会话请求体的多余字段报「只接受这几项」；开工选项在打水位线等远程准备之前就校验；启动预热的定时器在本机服务关闭时清掉；删掉没用上的字典键；英文句首大小写。
   8. 「只读」的说法改成「不改这台电脑上的文件」：Codex 的只读沿用房间档（只读沙箱、可联网），不承诺「不运行会改东西的命令」（联网命令仍可能有外部副作用）。**记下**：Claude 的只读不加载任何设置（包括项目的 CLAUDE.md），这是只读档安全优先的取舍。
 - 复核后质量门：client typecheck、lint、testid 基线通过，全量测试 1697 项通过（server 753、web 896、desktop 36、contracts 12）。gate-c 全量（复核修正后）19 步全过。
+
+### S6 房间共享任意 Agent（已完成）
+
+- **云端**：迁移 016 把 `agents.kind` 的固定 CHECK 换成格式校验（`^[a-z][a-z0-9-]{0,31}$`，与 JSON Schema 的 pattern 一致），唯一约束仍是（所有者、设备、种类）；契约 `AGENT_KINDS` 与 `agentKindName`（产品名不随语言变，不认识的种类原样显示），Agent 的英文兜底标签按种类写（“陈思远's Claude Code · MacBook”）；房间「最后一条」的 Agent 作者带 `kind`（老云端没有，按 codex）；`/v2/health` 声明 `agent_kinds_v2`。
+- **本机登记**：`AgentPresence` 除 Codex 外，按设备文件 `kindsByServer[当前服务器]` 为每家共享过的 Agent 各登记一个云端 Agent，一起心跳；任一家有开着的共享就常驻。按服务器分开记（与目录关联按服务器区分一致）。新端点 `POST /api/v2/agents/self/kinds`（登记并返回云端 Agent）、`DELETE /api/v2/agents/self/kinds/:kind`（不再提供：停止登记与心跳，云端随后标离线）。老云端不认的种类（400）本代不再重试。
+- **只读红线（ADR-0009）**：`AgentCatalogService.roomAgentProblem` = 接上了 + 配置表 `readOnlyCapable` + 设置里没停用，三处把关——登记（不合格的拒绝；设备文件里手写的也不登记；已登记的改成不合格后停止心跳）、执行前（`RoomAgentRunner` 每个任务开工前再查，不合格以「没能在本机开始执行」收尾，新建与续接两条路都经过）、建会话（房间任务会话显式要只读档，做不到只读的被会话服务拒绝；运行时本来也固定只读）。可共享的是实测过只读拦截的 Codex、Claude Code、OpenCode。
+- **执行**：`RoomAgentRunner` 按任务的 Agent id 找本机那一家，用它的种类开房间任务会话（每家各自的会话、各自续接）；各家各自对账（一家失败不挡别家）；晚登记上的一家立刻触发对账。各家共用一个队列、一次只跑一个（按家并发等 S8 调度器）。房间固定层与消息作者按产品名写（「你是陈思远的 Claude Code」），规则不再承诺「能跑只读命令」（Claude、OpenCode 的只读不给执行命令）。
+- **界面**：共享面板「我的 Agent」每家一行开关；「共享本机的其他 Agent…」菜单列出本机做得到只读、还没登记的各家（不能用的灰显并写原因：需要登录、已停用），选中即登记并按时长共享，云端不声明 `agent_kinds_v2` 时不出现；其他家在哪都没共享着时可以去掉；开关旁写个人订阅的说明（ADR-0016 第 7 条，只告知不限制）。@ 候选、消息、运行状态、申请提醒按「所有者 的 产品名」显示；同一个人同一家有多台设备才带设备名；高亮从云端标签反推时先认已知产品名。
+- **OpenCode 只读实测**（S6，之前配置表标 false）：S4 记的「权限规则 + plan」只拦住内置的写文件与 Bash；复核指出所有者自己配的 MCP、自定义工具不经 ACP 权限请求。实测在所有者配置里加一个会写文件的 MCP 并显式放行（含 plan 代理级）：旧注入下 OpenCode 手上有 `marker_write_marker`、`apply_patch`、`task`、`skill`；改为注入工具白名单（read、grep、glob、list、webfetch、todo、`suduo_*`，其余 deny 且关闭，全局与 plan / build 各一份）+ `OPENCODE_DISABLE_PROJECT_CONFIG=1` 后只剩白名单，经 SuDuo 只读会话它回答「没有这个工具」、文件未写；对照组（放行）能写。白名单下房间工具 `suduo_room_history` 照常可用。另：OpenCode 免费模型已不允许从 ACP 调用（「free tier can only be used from within OpenCode」），要用它得配自己的模型服务；实测时临时经 `OPENCODE_CONFIG` 指向中转站（Key 只从钥匙串进进程环境；注意 SuDuo 会去掉子进程环境里的 `SUDUO_*` 变量）。
+- **实测**（分支云端 19091 用主库的只读导出 `suduo_s6`，分支本机服务 18788）：一条消息同时 @ Codex 与 Claude Code，两家各建房间任务会话（Claude 的 `agentId=claude-code`）、各自只读回答，回复作者种类正确，让它们写的文件没有出现；OpenCode 同样跑通；重启后按设备文件自动重登、共享仍在；无头 Chrome 截图核对共享面板、@ 候选与运行状态的名字。
+- **独立复核与处理**：
+  1. **【高】OpenCode 只读没关所有者的 MCP / 自定义工具** → 见上「OpenCode 只读实测」。
+  2. **【中高】只读校验只在登记时做**（设备文件手写、配置表以后改回 false、设置里停用都绕得过）→ 登记、执行前、建会话三处把关。
+  3. **【中】共享过的种类不分服务器、没法去掉、老云端每 30 秒报错一次** → 按服务器记、去掉入口、400 本代不重试。
+  4. **【低中，记下】老 Web 连新云端分不清同一台电脑上的 Codex 与 Claude Code**（老前端写死 Codex，都是只读、无安全风险，但会 @ 错）→ 发版说明要求团队成员一起升级客户端。
+  5. 心跳里「换了账号」分支补清其他家；runner 各家各自对账、晚登记立刻对账；标签反推先认已知产品名（所有者名带「's」不拆错）；英文冠词；`kind` 非字符串的报错；停用的写「已停用」、不执行房间任务；补上配置表判定、执行前拒绝、去掉、按服务器等测试。
+  ADR-0004：新增的拒绝只有「不能在讨论里执行的 Agent 不登记 / 不执行」，过判据（拿掉它最坏是别人借所有者的 Agent 改文件或产生对外副作用，不可恢复，命中两条红线）；没有新增锁、版本校验、幂等表或 409，重复登记靠云端 `ON CONFLICT` 合并。
+  复核第二轮：修正到位；另补「去掉一家时它的心跳 / 登记请求还在路上，回来不再把它加回来」。复核还发现 client typecheck 实际没过（测试文件里的可选字段）——之前用 `pnpm -s typecheck | tail` 看输出、没看退出码，`-s` 把报错吞了；改为按退出码判定后两端全过。
+- **偏差与遗留**：Gemini、Qwen、Copilot 登录后再实测只读并标配置表；各家共用一个执行队列（S8 调度器按家并发）；老 Web 的显示问题见上第 4 条（写进发版说明）；在设置里停用 Codex 后它仍登记在线、可共享，被 @ 时以「已停用」失败收尾（其他家停用即停止心跳、变离线），先按告知处理。
+- 质量门（按退出码）：client typecheck、lint、testid 基线（303 个静态、14 个动态）通过，全量测试 1712 项通过（server 763、web 901、desktop 36、contracts 12）；cloud typecheck、lint 通过，测试 219 项通过（server 195、contracts 24）。gate-c 全量：实现后一轮、复核修正后一轮都通过（`"status":"passed"`）。
+

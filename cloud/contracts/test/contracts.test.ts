@@ -132,7 +132,7 @@ describe("评论文件", () => {
     expect(schema.properties.body.minLength).toBe(0);
     expect(schema.properties.fileIds.maxItems).toBe(REQUIREMENT_COMMENT_MAX_FILES);
     expect(REQUIREMENT_COMMENT_MAX_FILES).toBe(10);
-    expect(CLOUD_FEATURES).toEqual(["requirement_priority", "comment_files"]);
+    expect(CLOUD_FEATURES).toEqual(["requirement_priority", "comment_files", "agent_kinds_v2"]);
     expectTypeOf<{ fileIds: string[] }>().toMatchTypeOf<CreateCommentRequest>();
     expectTypeOf<CommentDto["files"]>().toEqualTypeOf<CommentFileDto[] | undefined>();
   });

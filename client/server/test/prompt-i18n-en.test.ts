@@ -322,6 +322,7 @@ describe("项目会话与重建（英文会话）", () => {
       locale: "en",
       projectRoot: root,
       ownerName: "陈思远",
+      agentKind: "codex",
       deviceName: "MacBook",
       projectName: "商家端",
       roomName: "REQ-1",
