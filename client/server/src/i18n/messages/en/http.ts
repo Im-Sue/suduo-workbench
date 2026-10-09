@@ -23,6 +23,8 @@ export const http = {
   mustBeBoolean: (field: string) => `${field} must be a boolean`,
   schedulerItemNotQueued: "This item isn't queued anymore (it may have started or been cancelled)",
   schedulerItemNotFound: "This item has already finished",
+  reviewFindingsRequired: "Pick at least one review finding",
+  reviewAgentMissing: "Missing the agent to review with (agentId)",
   concurrencyRange: (field: string, min: number, max: number) => `${field} must be an integer from ${min} to ${max}`,
   mustBeNonEmptyString: (field: string) => `${field} must be a non-empty string`,
   /** Multiple agents (ADR-0014). */

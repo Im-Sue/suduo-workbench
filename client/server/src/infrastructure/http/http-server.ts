@@ -98,6 +98,7 @@ import {
 import { registerAgentsRoutes, type AgentsRouteDependencies } from "./routes/agents-routes.js";
 import { registerSchedulerRoutes, type SchedulerRouteDependencies } from "./routes/scheduler-routes.js";
 import { registerDelegationsRoutes, type DelegationsRouteDependencies } from "./routes/delegations-routes.js";
+import { registerReviewsRoutes, type ReviewsRouteDependencies } from "./routes/reviews-routes.js";
 import { MCP_ENDPOINT_PATH, registerMcpEndpoint, type McpToolHost } from "../mcp/mcp-endpoint.js";
 import type { ToolTokenRegistry } from "../mcp/tool-tokens.js";
 import {
@@ -129,6 +130,7 @@ export interface HttpServerDependencies
     AgentsRouteDependencies,
     SchedulerRouteDependencies,
     DelegationsRouteDependencies,
+    ReviewsRouteDependencies,
     McpRouteDependencies,
     LocalDirectoryRouteDependencies,
     SystemActivityRouteDependencies {
@@ -274,6 +276,7 @@ export function buildHttpServer(
   registerAgentsRoutes(server, { ...dependencies, codexModelOptions: () => dependencies.modelProvider.listModelOptions() });
   registerSchedulerRoutes(server, dependencies);
   registerDelegationsRoutes(server, dependencies);
+  registerReviewsRoutes(server, dependencies);
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }
@@ -709,8 +712,10 @@ export function buildHttpServer(
           // withChildren=true 连带删除往下的会话（需求 R11）；子会话上没做完的委派先取消。
           const targets = dependencies.sessions.removalTargets(request.params.sessionId, request.query.withChildren === "true");
           await dependencies.delegations?.beforeSessionsDeleted(targets);
+          await dependencies.reviews?.beforeSessionsDeleted(targets);
           for (const id of targets) dependencies.sessions.remove(id);
           dependencies.delegations?.afterSessionsDeleted(targets);
+          dependencies.reviews?.afterSessionsDeleted(targets);
           return { statusCode: 204, body: null };
         },
       ),

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SUDUO_TOOL_NAMES, isRetiredSuDuoToolName } from "@suduo/client-contracts";
 import { ApiError } from "../src/application/api-error.js";
-import { isDelegationToolName, isWriteTool, sessionToolNames, sessionToolSpecs } from "../src/application/session-tools/catalog.js";
+import { delegateChildDropsTool, isDelegationToolName, isWriteTool, reviewerDropsTool, reviewSubmitSpec, sessionToolNames, sessionToolSpecs } from "../src/application/session-tools/catalog.js";
 import { adjustThreadSetup } from "../src/application/requirements-v2-service.js";
 import { formatTime } from "../src/application/session-tools/format.js";
 import { SessionContextService } from "../src/application/session-tools/session-context.js";
@@ -39,6 +39,8 @@ const SESSION_TOOLS = [
   "suduo_delegate_wait",
   "suduo_delegate_send",
   "suduo_delegate_cancel",
+  // 交叉评审（多 Agent 协作 S9）：主会话可以请别人评审。
+  "suduo_review_request",
 ];
 const ALL_TOOLS = [...SUDUO_TOOL_NAMES.filter((name) => !isRetiredSuDuoToolName(name)), ...SESSION_TOOLS];
 const PROJECT_TOOLS = ALL_TOOLS.filter((name) => name !== "suduo_comment_submit");
@@ -272,17 +274,17 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
     expect(card).not.toContain("没有附件");
     expect(card).not.toContain("暂无确认版");
     expect(card).not.toContain("需求没有变化");
-    expect(result.dynamicTools).toHaveLength(14);
+    expect(result.dynamicTools).toHaveLength(15);
   });
 });
 
 describe("工具清单", () => {
-  it("需求会话 14 个；项目会话 13 个（不含写工具）；确认版的三个工具已撤下；说明与参数形状", () => {
+  it("需求会话 15 个；项目会话 14 个（不含写工具）；确认版的三个工具已撤下；说明与参数形状", () => {
     const requirementTools = sessionToolSpecs("requirement", "zh-CN");
     const projectTools = sessionToolSpecs("project", "zh-CN");
     expect(requirementTools.map((tool) => tool.name)).toEqual(ALL_TOOLS);
     expect(projectTools.map((tool) => tool.name)).toEqual(PROJECT_TOOLS);
-    expect(projectTools).toHaveLength(13);
+    expect(projectTools).toHaveLength(14);
     expect(requirementTools.map((tool) => tool.name).filter((name) => name.startsWith("suduo_artifact"))).toEqual([]);
     // 房间任务不读私人会话（R10）：两种房间范围都没有会话工具（MCP 与 dynamicTools 的清单都从这里来，调用时也按它拒绝）。
     for (const scope of ["room", "room_requirement"] as const) {
@@ -303,7 +305,7 @@ describe("工具清单", () => {
     }
   });
 
-  it("projectSetup：项目卡 + 13 个工具；项目名查不到时照样给卡", async () => {
+  it("projectSetup：项目卡 + 14 个工具；项目名查不到时照样给卡", async () => {
     const { root, remote, service } = setup();
     const result = await service.projectSetup({ locale: "zh-CN",  projectRoot: root, remoteProjectId: "proj-1" });
     expect(lines(result.developerInstructions).slice(0, 2)).toEqual([
@@ -316,7 +318,7 @@ describe("工具清单", () => {
     remote.fail.getProject = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "down");
     const degraded = await service.projectSetup({ locale: "zh-CN",  projectRoot: root, remoteProjectId: "proj-1" });
     expect(degraded.developerInstructions).toContain("项目名查不到：需求服务暂时连不上（down）");
-    expect(degraded.dynamicTools).toHaveLength(13);
+    expect(degraded.dynamicTools).toHaveLength(14);
   });
 });
 
@@ -339,6 +341,38 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
     expect(names.filter((name) => isDelegationToolName(name) || isWriteTool(name))).toEqual([]);
     // 主会话不受影响。
     expect((await service.rebuildSetup(parent.id))?.dynamicTools.map((tool) => tool.name)).toContain("suduo_delegate_start");
+  });
+
+  it("角色工具（生产代码里的谓词）：子会话没有委派、请求评审与对外写工具；评审会话另外没有结论笔记", () => {
+    for (const scope of ["requirement", "project"] as const) {
+      const child = sessionToolNames(scope).filter((name) => !delegateChildDropsTool(name));
+      expect(child.filter((name) => /^suduo_(delegate|agent|review)_/u.test(name) || isWriteTool(name))).toEqual([]);
+      expect(child).toContain("suduo_notes_save");
+      const reviewer = sessionToolNames(scope).filter((name) => !reviewerDropsTool(name));
+      expect(reviewer.filter((name) => /^suduo_(delegate|agent|review)_/u.test(name) || isWriteTool(name) || name === "suduo_notes_save")).toEqual([]);
+      expect(reviewer).toContain("suduo_session_read");
+    }
+  });
+
+  it("评审会话（S9）：只读工具与提交评审意见，没有结论笔记、对外写、委派与请求评审", async () => {
+    const { sessions, projectRefs, service, project } = setup();
+    const target = sessions.create({ projectId: project.id, title: "被评" });
+    const reviewer = sessions.create({ projectId: project.id, title: "评审：被评", graph: { parentSessionId: target.id, rootSessionId: target.id, relation: "review" } });
+    projectRefs.create({ sessionId: reviewer.id, remoteProjectId: "proj-1" });
+    expect(service.toolContext(reviewer.id)).toMatchObject({ reviewer: true });
+    service.setRebuildAdjust((sessionId, setup) => {
+      if (sessions.getById(sessionId)?.relation !== "review" || setup === null) return setup;
+      const adjusted = adjustThreadSetup(setup, {
+        role: "# 只读评审",
+        dropTools: reviewerDropsTool,
+        addTools: [reviewSubmitSpec("zh-CN")],
+      });
+      return { developerInstructions: adjusted.developerInstructions ?? "", dynamicTools: adjusted.dynamicTools ?? [] };
+    });
+    const names = (await service.rebuildSetup(reviewer.id))?.dynamicTools.map((tool) => tool.name) ?? [];
+    expect(names).toContain("suduo_review_submit");
+    expect(names).toContain("suduo_session_read");
+    expect(names.filter((name) => isDelegationToolName(name) || isWriteTool(name) || name === "suduo_notes_save" || name === "suduo_review_request")).toEqual([]);
   });
 
   it("describe 的三种 kind：requirement / project / none；会话不存在 404", () => {
@@ -421,25 +455,25 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
     expect(rebuilt?.developerInstructions.startsWith("# SuDuo 需求会话\n")).toBe(true);
     expect(rebuilt?.developerInstructions).toContain("你在处理需求 REQ-1「商家端-订单详情优化」");
     expect(rebuilt?.developerInstructions).not.toContain("自上次会话");
-    expect(rebuilt?.dynamicTools).toHaveLength(14);
+    expect(rebuilt?.dynamicTools).toHaveLength(15);
 
     // 旧版会话的线程续接失败要重建：新线程没有历史，也给需求卡与工具，并改成新版（审查第 6 条）。
     const legacy = requirementSession({ contextMode: "legacy" });
     const legacyRebuilt = await service.rebuildSetup(legacy.id);
-    expect(legacyRebuilt?.dynamicTools).toHaveLength(14);
+    expect(legacyRebuilt?.dynamicTools).toHaveLength(15);
     expect(refs.getBySessionId(legacy.id)?.contextMode).toBe("tools");
 
     remote.fail.getRequirement = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "down");
     const minimal = await service.rebuildSetup(current.id);
     expect(minimal?.developerInstructions).toContain("你在处理需求 REQ-1「商家端-订单详情优化」。需求详情暂时查不到（需求服务暂时连不上（down））");
-    expect(minimal?.dynamicTools).toHaveLength(14);
+    expect(minimal?.dynamicTools).toHaveLength(15);
 
     const plain = sessions.create({ projectId: project.id, title: "普通会话" });
     expect(await service.rebuildSetup(plain.id)).toBeNull();
     projectRefs.create({ sessionId: plain.id, remoteProjectId: "proj-1" });
     const projectCard = await service.rebuildSetup(plain.id);
     expect(projectCard?.developerInstructions.startsWith("# SuDuo 项目会话")).toBe(true);
-    expect(projectCard?.dynamicTools).toHaveLength(13);
+    expect(projectCard?.dynamicTools).toHaveLength(14);
   });
 
   it("项目会话的所属项目按建时记下的算，不随目录关联或服务器变化；目录关联不会给普通会话安上项目", () => {

@@ -140,6 +140,7 @@ export const toolReply = {
     roomToolsUnavailable: "房间工具暂时不可用。",
     sessionToolsUnavailable: "会话工具暂时不可用。",
     delegationToolsUnavailable: "委派工具暂时不可用。",
+    reviewToolsUnavailable: "评审工具暂时不可用。",
     unknownTool: (tool: string) => `SuDuo 没有工具 ${tool}。`,
     declinedComment: "用户没有同意，评论没有发出。",
     /** 经 MCP 调用发评论、等用户确认等到快超时（ADR-0015）：卡片留作草稿，不丢。 */

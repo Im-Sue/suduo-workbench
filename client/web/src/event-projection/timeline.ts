@@ -1,4 +1,4 @@
-import type { DelegationDto, EventEnvelope, JsonValue } from "@suduo/client-contracts";
+import type { DelegationDto, EventEnvelope, JsonValue, ReviewDto } from "@suduo/client-contracts";
 import type { ConversationMessage, CurrentStep, TurnMeta, TurnStatus } from "./reducer.js";
 import { completedAgentMessageText, codexErrorDescription, describeCodexError, localizeTurnError, noticeOf, objectValue, describePermissions, runtimeNoticeText } from "./shared.js";
 import {
@@ -132,6 +132,8 @@ export type TimelineEntry =
   | { kind: "notice"; id: string; seq: number; notice: TimelineNotice }
   /** 委派卡片（多 Agent 协作 S8）：出现在第一次记下的位置，内容取同一委派最新的一条。 */
   | { kind: "delegation"; id: string; seq: number; delegation: DelegationDto }
+  /** 交叉评审（多 Agent 协作 S9）：同一评审只出一张卡片，取最新状态。 */
+  | { kind: "review"; id: string; seq: number; review: ReviewDto }
   /**
    * 排队中的消息（多 Agent 协作 S8）：带可取消的队列项。state：还在等 / 开起来了 / 没发出（取消、重启、会话归档），
    * 按 clientTurnId 对上服务端的出队记录；本地队列据此判断这条有没有被收下。
@@ -166,6 +168,7 @@ export function buildTimeline(
   const noticeTexts = new Set<string>();
   const userEntries = new Map<string, Extract<TimelineEntry, { kind: "user" }>>();
   const delegations = new Map<string, Extract<TimelineEntry, { kind: "delegation" }>>();
+  const reviews = new Map<string, Extract<TimelineEntry, { kind: "review" }>>();
   /** 排队提示，按 clientTurnId：回合开起来或取消后不再显示「取消排队」。 */
   const queued = new Map<string, Extract<TimelineEntry, { kind: "queued" }>>();
   const messageById = new Map(messages.map((message) => [message.id, message]));
@@ -264,6 +267,17 @@ export function buildTimeline(
       else {
         const entry = { kind: "delegation" as const, id: `delegation:${delegation.id}`, seq: event.seq, delegation };
         delegations.set(delegation.id, entry);
+        entries.push(entry);
+      }
+      continue;
+    }
+    if (event.type === "review.updated") {
+      const review = event.payload as unknown as ReviewDto;
+      const existing = reviews.get(review.id);
+      if (existing !== undefined) existing.review = review;
+      else {
+        const entry = { kind: "review" as const, id: `review:${review.id}`, seq: event.seq, review };
+        reviews.set(review.id, entry);
         entries.push(entry);
       }
       continue;

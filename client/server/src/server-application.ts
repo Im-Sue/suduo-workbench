@@ -31,7 +31,11 @@ import { SchedulerService } from "./application/scheduler/scheduler-service.js";
 import { DelegationService, oneLine } from "./application/collab/delegation-service.js";
 import { DelegationTools } from "./application/collab/delegation-tools.js";
 import { messagesFor } from "./i18n/messages/index.js";
-import { isDelegationToolName, isWriteTool } from "./application/session-tools/catalog.js";
+import { delegateChildDropsTool, reviewerDropsTool, reviewSubmitSpec } from "./application/session-tools/catalog.js";
+import { ReviewService } from "./application/collab/review-service.js";
+import { ReviewTools } from "./application/collab/review-tools.js";
+import { ReviewRepository } from "./infrastructure/db/repositories/review-repository.js";
+import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import { DelegationRepository } from "./infrastructure/db/repositories/delegation-repository.js";
 import { TurnScheduler } from "./application/scheduler/turn-scheduler.js";
 import { applyProxySettings } from "./application/proxy-settings.js";
@@ -478,17 +482,30 @@ export function createSuDuoApplication(
   });
   // 委派（多 Agent 协作 S8，需求 4.3）：子会话与发起会话同一需求 / 项目、同一目录，带子任务的角色说明、不挂委派工具。
   const agentDisplayName = (agentId: string) => AGENT_CATALOG.find((agent) => agent.id === agentId)?.displayName ?? agentId;
-  // 子会话不挂委派工具（深度 1，R2）与对外写工具（技术设计 2.9：评论由发起会话去发）。
-  const delegateDropsTool = (name: string) => isDelegationToolName(name) || isWriteTool(name);
+  // 子会话不挂委派、请求评审（深度 1，R2）与对外写工具（技术设计 2.9：评论由发起会话去发），见 delegateChildDropsTool。
+  const delegateDropsTool = delegateChildDropsTool;
   const delegateRole = (child: { locale: Locale; parentSessionId?: string | null }) => {
     const parent = child.parentSessionId ? sessions.getById(child.parentSessionId) : null;
     return messagesFor(child.locale).delegation.role(agentDisplayName(parent?.agentId ?? "codex"), child.parentSessionId ?? "");
   };
   // 线程续接失败要重建时，委派的子会话照样带角色说明、不挂这些工具（否则重建后又能看到委派工具）。
+  // 评审会话（S9）：只读，只有只读工具与提交评审意见（技术设计 2.9）；结论笔记、对外写、委派、请求评审都不给。
+  const reviewerRole = (reviewer: { locale: Locale; parentSessionId?: string | null }) => {
+    const target = reviewer.parentSessionId ? sessions.getById(reviewer.parentSessionId) : null;
+    return messagesFor(reviewer.locale).review.role(agentDisplayName(target?.agentId ?? "codex"), reviewer.parentSessionId ?? "");
+  };
+  // 线程续接失败要重建时，委派的子会话、评审会话照样带角色说明与各自的工具（否则重建后又能看到委派工具）。
   sessionContext.setRebuildAdjust((sessionId, setup) => {
     const session = sessions.getById(sessionId);
-    if (session?.relation !== "delegate") return setup;
-    const adjusted = adjustThreadSetup(setup ?? { developerInstructions: "", dynamicTools: [] }, { role: delegateRole(session), dropTools: delegateDropsTool });
+    if (session?.relation !== "delegate" && session?.relation !== "review") return setup;
+    const adjusted =
+      session.relation === "delegate"
+        ? adjustThreadSetup(setup ?? { developerInstructions: "", dynamicTools: [] }, { role: delegateRole(session), dropTools: delegateDropsTool })
+        : adjustThreadSetup(setup ?? { developerInstructions: "", dynamicTools: [] }, {
+            role: reviewerRole(session),
+            dropTools: reviewerDropsTool,
+            ...(setup === null ? {} : { addTools: [reviewSubmitSpec(session.locale)] }),
+          });
     return { developerInstructions: adjusted.developerInstructions ?? "", dynamicTools: adjusted.dynamicTools ?? [] };
   });
   const delegationService = new DelegationService({
@@ -523,6 +540,35 @@ export function createSuDuoApplication(
   delegationService.recoverAfterRestart(
     closeQueuedAfterRestart(events, ledger, (message) => message.source === "delegate" && delegationService.willRequeue(message.sessionId)),
   );
+  // 交叉评审（多 Agent 协作 S9，需求 4.4）：评审会话与被评会话同一需求 / 项目、同一目录，固定只读。
+  const reviewService = new ReviewService({
+    reviews: new ReviewRepository(database),
+    sessions,
+    threads,
+    ledger,
+    broker,
+    messages: messageService,
+    clientTurnId: stableClientTurnId,
+    interrupt: (sessionId, turnId) => interruptService.interrupt(sessionId, { turnId }),
+    scheduler: { cancel: (itemId) => turnScheduler.cancel(itemId) },
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    createReviewer: ({ target, agentId, locale }) =>
+      requirementsV2.createRelatedSession(target, locale, { agentId, approvalMode: "readonly" }, "review", {
+        title: messagesFor(locale).review.title(target.title),
+        role: reviewerRole({ locale, parentSessionId: target.id }),
+        dropTools: reviewerDropsTool,
+        addTools: [reviewSubmitSpec(locale)],
+      }),
+    agentProblem: (agentId) => agentCatalog.reviewProblem(agentId),
+    agentName: agentDisplayName,
+    requirementOf: (sessionId) => {
+      const ref = requirementSessionRefs.getBySessionId(sessionId);
+      if (ref === null) return null;
+      return [ref.requirementNumber === null ? null : formatRequirementNumber(ref.requirementNumber), ref.requirementTitle].filter((part) => part !== null && part !== "").join(" ") || null;
+    },
+  });
+  reviewService.recoverAfterRestart();
+  sessionTools.setReviewTools(new ReviewTools({ service: reviewService }));
   sessionTools.setDelegationTools(
     new DelegationTools({
       service: delegationService,
@@ -714,6 +760,7 @@ export function createSuDuoApplication(
     agents: agentCatalog,
     scheduler: schedulerService,
     delegations: delegationService,
+    reviews: reviewService,
     openTerminal: terminalOpener(),
     modelProvider: modelProviderService,
     mcp: mcpService,

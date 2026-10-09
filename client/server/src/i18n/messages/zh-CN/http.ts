@@ -26,6 +26,8 @@ export const http = {
   mustBeBoolean: (field: string) => `${field} 必须是布尔值`,
   schedulerItemNotQueued: "这一项已经不在排队了（可能已经开始或取消）",
   schedulerItemNotFound: "这一项已经结束了",
+  reviewFindingsRequired: "请至少选一条评审意见",
+  reviewAgentMissing: "缺少要请来评审的 Agent（agentId）",
   concurrencyRange: (field: string, min: number, max: number) => `${field} 必须是 ${min} 到 ${max} 的整数`,
   mustBeNonEmptyString: (field: string) => `${field} 必须是非空字符串`,
   /** 多 Agent（ADR-0014）。 */

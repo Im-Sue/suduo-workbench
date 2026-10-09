@@ -17,5 +17,6 @@ import { toolReply } from "./toolReply.js";
 import { cli } from "./cli.js";
 import { sessionContext } from "./sessionContext.js";
 import { delegation } from "./delegation.js";
+import { review } from "./review.js";
 
-export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply, cli, sessionContext, delegation } satisfies ServerMessages;
+export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply, cli, sessionContext, delegation, review } satisfies ServerMessages;

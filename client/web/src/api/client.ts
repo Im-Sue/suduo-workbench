@@ -11,7 +11,9 @@ import type {
   SessionStartOptions,
   SchedulerSnapshotDto,
   DelegationDto,
+  ReviewDto,
   StartDelegationRequest,
+  StartReviewRequest,
   UpdateAgentSettingsRequest,
   McpServerDto,
   ApprovalDto,
@@ -584,6 +586,16 @@ export const api = {
     request<DelegationDto>(`/api/v1/delegations/${encodeURIComponent(delegationId)}/cancel`, { method: "POST", body: {} }),
   cancelAllDelegations: (sessionId: string) =>
     request<{ items: DelegationDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations/cancel-all`, { method: "POST", body: {} }),
+
+  /** 交叉评审（多 Agent 协作 S9）。 */
+  listReviews: (sessionId: string) =>
+    request<{ items: ReviewDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/reviews`),
+  startReview: (sessionId: string, body: StartReviewRequest) =>
+    request<ReviewDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/reviews`, { method: "POST", body }),
+  applyReview: (reviewId: string, findingIds: string[]) =>
+    request<ReviewDto>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/apply`, { method: "POST", body: { findingIds } }),
+  cancelReview: (reviewId: string) =>
+    request<ReviewDto>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/cancel`, { method: "POST", body: {} }),
   handbackDelegation: (delegationId: string) =>
     request<DelegationDto>(`/api/v1/delegations/${encodeURIComponent(delegationId)}/handback`, { method: "POST", body: {} }),
 

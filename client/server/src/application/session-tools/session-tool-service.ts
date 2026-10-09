@@ -14,6 +14,7 @@ import {
 } from "@suduo/client-contracts";
 import type { SessionReaderService } from "../context/session-reader.js";
 import type { DelegationTools } from "../collab/delegation-tools.js";
+import type { ReviewTools } from "../collab/review-tools.js";
 import type { ApprovalRecord, ApprovalRepository } from "../../infrastructure/db/repositories/approval-repository.js";
 import type { SessionRepository } from "../../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRecord, SessionThreadRepository } from "../../infrastructure/db/repositories/session-thread-repository.js";
@@ -21,7 +22,7 @@ import type { ToolConfirmationHandler } from "../approval-service.js";
 import type { EventLedger } from "../event-ledger.js";
 import type { McpToolCallResult, McpToolContent, McpToolDefinition, McpToolHost } from "../../infrastructure/mcp/mcp-endpoint.js";
 import type { ToolGrant } from "../../infrastructure/mcp/tool-tokens.js";
-import { internalToolName, isDelegationToolName, isWriteTool, mcpToolSpecsFor, mcpToolText, sessionToolNames, type SessionToolScope } from "./catalog.js";
+import { internalToolName, isDelegationToolName, isReviewToolName, isWriteTool, mcpToolSpecsFor, mcpToolText, sessionToolNames, type SessionToolScope } from "./catalog.js";
 import { failure, limitToolResult, textResult, toolFormat, type ToolResult } from "./format.js";
 import type { RequirementTools, ToolSessionContext } from "./requirement-tools.js";
 import type { RoomTools } from "./room-tools.js";
@@ -71,6 +72,8 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
       sessionReader?: Pick<SessionReaderService, "list" | "read">;
       /** 委派（多 Agent 协作 S8）；不传时委派工具一律回「不可用」。 */
       delegationTools?: DelegationTools;
+      /** 交叉评审（多 Agent 协作 S9）；不传时评审工具一律回「不可用」。 */
+      reviewTools?: ReviewTools;
       /**
        * 会话记录：会话没关联 SuDuo 项目（取不到工具上下文）时，按它记下的语言回包；
        * 会话记录也查不到时用 `FALLBACK_LOCALE`。必填，免得漏接时英文会话悄悄收到中文。
@@ -85,6 +88,11 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
   /** 委派工具在本机服务组装的后段才建好（依赖发消息、调度）：建好后接上。 */
   setDelegationTools(tools: DelegationTools): void {
     this.deps.delegationTools = tools;
+  }
+
+  /** 评审工具同理（依赖发消息、调度）。 */
+  setReviewTools(tools: ReviewTools): void {
+    this.deps.reviewTools = tools;
   }
 
   /** MCP tools/list（ADR-0015）：给令牌授予的工具（建线程时定下），说明不用代码模式的写法。 */
@@ -111,7 +119,7 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
       return toMcpResult(failure(toolFormat(this.localeOf(sessionId)).t.toolReply.dispatch.noProject));
     }
     const f = toolFormat(context.locale);
-    if (!grant.toolNames.includes(internal) || !sessionToolNames(scopeOf(context)).includes(internal)) {
+    if (!grant.toolNames.includes(internal) || !scopeTools(context).includes(internal)) {
       // 范围外的调用（房间任务里调笔记 / 写工具等）：不执行（ADR-0009）。
       const reason = context.room !== undefined ? f.t.toolReply.dispatch.roomReadOnly(internal) : f.t.toolReply.dispatch.unknownTool(name);
       return toMcpResult(failure(reason));
@@ -361,9 +369,14 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
   ): Promise<ToolResult> {
     const tools = this.deps.tools;
     const text = toolFormat(context.locale).t.toolReply;
+    if (isReviewToolName(tool)) {
+      const reviews = this.deps.reviewTools;
+      if (!reviews) return Promise.resolve(failure(text.dispatch.reviewToolsUnavailable));
+      return tool === "suduo_review_submit" ? Promise.resolve(reviews.submit(context, args)) : reviews.request(context, args);
+    }
     if (isDelegationToolName(tool)) {
-      // 深度 1（R2）：委派出来的子会话不能再委派（建线程时已经不挂，这里再拦一次）。
-      if (context.delegateChild === true) return Promise.resolve(failure(toolFormat(context.locale).t.delegation.reply.notMain));
+      // 深度 1（R2）：委派出来的子会话、评审会话不能再委派（建线程时已经不挂，这里再拦一次）。
+      if (context.delegateChild === true || context.reviewer === true) return Promise.resolve(failure(toolFormat(context.locale).t.delegation.reply.notMain));
       const delegation = this.deps.delegationTools;
       if (!delegation) return Promise.resolve(failure(text.dispatch.delegationToolsUnavailable));
       switch (tool) {
@@ -606,6 +619,12 @@ function textOf(result: ToolResult, image: string): string {
 
 function isRecord(value: unknown): value is Record<string, JsonValue> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 这个会话能用的工具：scope 的工具，加上按会话角色另加的（评审会话的提交评审意见，S9）。 */
+function scopeTools(context: ToolSessionContext): string[] {
+  const names = sessionToolNames(scopeOf(context));
+  return context.reviewer === true ? [...names, "suduo_review_submit"] : names;
 }
 
 /** 会话的工具范围（与建线程时 `sessionToolSpecs` 用的一致）。 */

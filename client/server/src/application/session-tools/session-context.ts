@@ -167,11 +167,13 @@ export class SessionContextService {
       };
     }
     const delegateChild = session.relation === "delegate";
+    const reviewer = session.relation === "review";
     const ref = this.deps.refs.getBySessionId(sessionId);
     if (ref !== null) {
       return {
         sessionId,
         ...(delegateChild ? { delegateChild } : {}),
+        ...(reviewer ? { reviewer } : {}),
         locale: session.locale,
         projectRoot: project.rootPath,
         remoteProjectId: ref.remoteProjectId,
@@ -190,6 +192,7 @@ export class SessionContextService {
     return {
       sessionId,
       ...(delegateChild ? { delegateChild } : {}),
+      ...(reviewer ? { reviewer } : {}),
       locale: session.locale,
       projectRoot: project.rootPath,
       remoteProjectId: projectRef.remoteProjectId,

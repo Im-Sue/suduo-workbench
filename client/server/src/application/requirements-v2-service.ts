@@ -24,7 +24,7 @@ import type {
   UpdateRequirementRequest,
 } from "@suduo/cloud-contracts";
 import { REQUIREMENT_COMMENT_MAX_FILES, REQUIREMENT_PRIORITIES } from "@suduo/cloud-contracts";
-import type { Locale } from "@suduo/client-contracts";
+import type { Locale, RuntimeToolSpec } from "@suduo/client-contracts";
 import { ApiError } from "./api-error.js";
 import { pathKey } from "./project-service.js";
 import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
@@ -429,6 +429,8 @@ export class RequirementsV2Service {
     graph?: SessionGraphInput,
     /** 改写开场说明与工具（委派的子会话附角色说明、去掉委派工具，多 Agent 协作 S8）。 */
     adjustSetup?: (setup: SessionThreadSetup) => SessionThreadSetup,
+    /** 会话标题（委派的子任务、评审会话另起名字）；不给时用需求标题。 */
+    title?: string,
   ) {
     this.sessions.checkStartOptions(start);
     const sessionContext = this.sessionContext;
@@ -449,7 +451,7 @@ export class RequirementsV2Service {
       const setup = adjustSetup === undefined ? baseSetup : adjustSetup(baseSetup);
       const session = await this.sessions.createFromRequirement(localProject.id, {
         locale,
-        title: requirement.title,
+        title: title ?? requirement.title,
         remoteProjectId: requirement.projectId,
         remoteRequirementId: requirement.id,
         requirementVersion: requirement.version,
@@ -517,15 +519,15 @@ export class RequirementsV2Service {
     source: SessionRecord,
     locale: Locale,
     start: SessionStartOptions,
-    relation: "continue" | "delegate",
-    options: { title?: string; role?: string; dropTools?: (name: string) => boolean } = {},
+    relation: "continue" | "delegate" | "review",
+    options: { title?: string; role?: string; dropTools?: (name: string) => boolean; addTools?: RuntimeToolSpec[] } = {},
   ) {
     const graph: SessionGraphInput = { parentSessionId: source.id, rootSessionId: source.rootSessionId ?? source.id, relation };
     const adjustSetup = (setup: SessionThreadSetup): SessionThreadSetup => adjustThreadSetup(setup, options);
     const title = options.title ?? source.title;
     const context = this.sessionContext?.toolContext(source.id) ?? null;
     if (context?.requirement) {
-      return this.createRequirementSession(context.requirement.remoteRequirementId, locale, start, graph, adjustSetup);
+      return this.createRequirementSession(context.requirement.remoteRequirementId, locale, start, graph, adjustSetup, options.title);
     }
     if (context !== null) {
       return this.createProjectSession(context.remoteProjectId, locale, start, { title, graph, adjustSetup });
@@ -768,18 +770,21 @@ function requirementNumberOf(requirement: object): number | null {
     : null;
 }
 
-/** 有关系的会话的开场：在开场说明后附角色说明，去掉不给它的工具（委派的子会话，S8；线程重建时同样套用）。 */
+/**
+ * 有关系的会话的开场：在开场说明后附角色说明，去掉不给它的工具、加上只给它的工具（委派的子会话 S8、评审会话 S9；
+ * 线程重建时同样套用）。没有 SuDuo 工具的会话（没关联项目）不加工具。
+ */
 export function adjustThreadSetup(
   setup: SessionThreadSetup,
-  options: { role?: string; dropTools?: (name: string) => boolean },
+  options: { role?: string; dropTools?: (name: string) => boolean; addTools?: RuntimeToolSpec[] },
 ): SessionThreadSetup {
+  const kept = setup.dynamicTools === undefined || options.dropTools === undefined ? setup.dynamicTools : setup.dynamicTools.filter((tool) => !options.dropTools!(tool.name));
+  const tools = kept === undefined || options.addTools === undefined ? kept : [...kept, ...options.addTools.filter((tool) => !kept.some((existing) => existing.name === tool.name))];
   return {
     ...setup,
     ...(options.role === undefined
       ? {}
       : { developerInstructions: [setup.developerInstructions ?? "", options.role].filter((text) => text !== "").join("\n\n") }),
-    ...(setup.dynamicTools === undefined || options.dropTools === undefined
-      ? {}
-      : { dynamicTools: setup.dynamicTools.filter((tool) => !options.dropTools!(tool.name)) }),
+    ...(tools === undefined ? {} : { dynamicTools: tools }),
   };
 }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentRuntime, DelegationDto, StartThreadResult, StartTurnResult } from "@suduo/client-contracts";
 import type { DelegationService } from "../src/application/collab/delegation-service.js";
+import type { ReviewService } from "../src/application/collab/review-service.js";
 import { SchedulerService } from "../src/application/scheduler/scheduler-service.js";
 import { TurnScheduler } from "../src/application/scheduler/turn-scheduler.js";
 import { ApprovalRepository } from "../src/infrastructure/db/repositories/approval-repository.js";
@@ -178,5 +179,36 @@ describe("审批坞合并委派子会话的待确认卡（R6）", () => {
     expect(list.json().items).toMatchObject([{ id: "approval-child", origin }]);
     const history = await context.server.inject({ method: "GET", url: `/api/v1/sessions/${parent.id}/approvals?status=history`, headers: { host: "127.0.0.1:8787" } });
     expect(history.json().items).toEqual([]);
+  });
+});
+
+describe("评审接口", () => {
+  it("在会话头请另一个 Agent 评审（201）；缺 Agent 400；交回修改要选意见；停止", async () => {
+    const started: Array<Record<string, unknown>> = [];
+    const applied: Array<[string, string[]]> = [];
+    const reviews = {
+      listByTarget: () => [],
+      start: async (input: Record<string, unknown>) => {
+        started.push(input);
+        return { id: "r1", status: "running" };
+      },
+      apply: async (id: string, findingIds: string[]) => {
+        applied.push([id, findingIds]);
+        return { id, appliedFindingIds: findingIds };
+      },
+      cancel: async (id: string) => ({ id, status: "cancelled" }),
+    } as unknown as ReviewService;
+    const context = createMinimalHttpContext(new IdleRuntime(), { reviews });
+    closers.push(() => context.close());
+    const headers = { host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787" };
+    const created = await context.server.inject({ method: "POST", url: "/api/v1/sessions/s1/reviews", headers, payload: { agentId: "codex", focus: ["security"], note: "看鉴权" } });
+    expect(created.statusCode).toBe(201);
+    expect(started).toEqual([{ targetSessionId: "s1", agentId: "codex", focus: ["security"], note: "看鉴权", origin: "user" }]);
+    expect((await context.server.inject({ method: "POST", url: "/api/v1/sessions/s1/reviews", headers, payload: {} })).statusCode).toBe(400);
+    expect((await context.server.inject({ method: "POST", url: "/api/v1/reviews/r1/apply", headers, payload: { findingIds: [] } })).statusCode).toBe(400);
+    expect((await context.server.inject({ method: "POST", url: "/api/v1/reviews/r1/apply", headers, payload: { findingIds: ["f1", 2] } })).json()).toMatchObject({ appliedFindingIds: ["f1"] });
+    expect(applied).toEqual([["r1", ["f1"]]]);
+    expect((await context.server.inject({ method: "POST", url: "/api/v1/reviews/r1/cancel", headers, payload: {} })).json()).toMatchObject({ status: "cancelled" });
+    expect((await context.server.inject({ method: "GET", url: "/api/v1/sessions/s1/reviews", headers: { host: "127.0.0.1:8787" } })).json()).toEqual({ items: [] });
   });
 });

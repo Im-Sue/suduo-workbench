@@ -160,7 +160,7 @@ export class DelegationService {
   }): Promise<DelegationDto> {
     const parent = this.deps.sessions.getById(input.parentSessionId);
     if (parent === null || parent.state === "deleted") throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
-    if (parent.kind !== "normal" || parent.relation === "delegate") {
+    if (parent.kind !== "normal" || parent.relation === "delegate" || parent.relation === "review") {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.delegation.reply.notMain);
     }
     const problem = this.deps.agentProblem(input.agentId);

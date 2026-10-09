@@ -1,5 +1,5 @@
 import type { SessionDto } from "@suduo/client-contracts";
-import { FileTextIcon, FolderGit2Icon, ForwardIcon, InfoIcon, PanelRightIcon, PencilIcon } from "lucide-react";
+import { FileTextIcon, FolderGit2Icon, ForwardIcon, InfoIcon, PanelRightIcon, PencilIcon, ScanSearchIcon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
 import { useLossCheck, useT } from "../../i18n/provider.js";
@@ -26,6 +26,7 @@ export function SessionHeader({
   onOpenRequirement,
   onToggleInspector,
   onContinue,
+  onReview,
 }: {
   session: SessionDto;
   status: SessionUiStatus;
@@ -38,6 +39,8 @@ export function SessionHeader({
   onToggleInspector(): void;
   /** 交给另一个 Agent 接着做（多 Agent 协作 S7）；不传时不显示（房间任务、已删除的会话）。 */
   onContinue?(): void;
+  /** 请另一个 Agent 评审（多 Agent 协作 S9）；不传时不显示（房间任务、评审会话、已删除的会话）。 */
+  onReview?(): void;
 }) {
   const t = useT();
   const text = t.conversation.header;
@@ -141,6 +144,18 @@ export function SessionHeader({
             </ul>
           </PopoverContent>
         </Popover>
+      )}
+      {onReview === undefined ? null : (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t.collab.review.button}
+          title={t.collab.review.button}
+          data-testid="review-session"
+          onClick={onReview}
+        >
+          <ScanSearchIcon />
+        </Button>
       )}
       {onContinue === undefined ? null : (
         <Button

@@ -111,7 +111,7 @@ function setup(options: { draftAfterMs?: number } = {}) {
     return approvals.listBySession(session.id).find((approval) => approval.status === "pending")!;
   };
   const text = (result: { content: Array<{ type: string; text?: string }> }) => result.content.map((item) => item.text ?? "").join("\n");
-  return { session, sessionWithoutRef, service, approvalService, approvals, remote, pendingCard, text };
+  return { session, sessionWithoutRef, service, approvalService, approvals, remote, pendingCard, text, sessions, refs, project };
 }
 
 const live = () => ({ requestKey: "s:1", signal: new AbortController().signal });
@@ -137,6 +137,7 @@ describe("MCP 下发的工具定义", () => {
         "delegate_wait",
         "delegate_send",
         "delegate_cancel",
+        "review_request",
       ]);
       const all = JSON.stringify(specs);
       expect(all).not.toMatch(/suduo_/);
@@ -164,6 +165,7 @@ describe("会话工具服务的 MCP 一侧", () => {
       "delegate_wait",
       "delegate_send",
       "delegate_cancel",
+      "review_request",
     ]);
     const result = await service.callTool(grant(session.id), "requirement_get", {}, live());
     expect(result.isError).toBe(false);
@@ -177,11 +179,24 @@ describe("会话工具服务的 MCP 一侧", () => {
     expect((await service.callTool(narrow, "notes_read", {}, live())).isError).toBe(true);
   });
 
+  it("评审会话（S9）：按角色加的提交评审意见经 MCP 照样执行（不当成没有的工具）；主会话调它不执行", async () => {
+    const { session, service, sessions, refs, project, text } = setup();
+    const reviewer = sessions.create({ projectId: project.id, title: "评审", graph: { parentSessionId: session.id, rootSessionId: session.id, relation: "review" } });
+    refs.create({ sessionId: reviewer.id, remoteProjectId: "proj-1", remoteRequirementId: "req-1", requirementVersion: 2, requirementNumber: 1, requirementTitle: "商家端-订单详情优化" });
+    const reviewerGrant = { sessionId: reviewer.id, toolNames: ["suduo_requirement_get", "suduo_review_submit"], toolTimeoutSec: 600 };
+    expect(service.listTools(reviewerGrant).map((tool) => tool.name)).toEqual(["requirement_get", "review_submit"]);
+    // 评审工具没接上时回「不可用」，而不是「没有这个工具」——说明它过了放行检查。
+    const result = await service.callTool(reviewerGrant, "review_submit", { findings: [], summary: "没问题" }, live());
+    expect(text(result)).toContain("评审工具暂时不可用");
+    const mainGrant = { sessionId: session.id, toolNames: ["suduo_review_submit"], toolTimeoutSec: 600 };
+    expect(text(await service.callTool(mainGrant, "review_submit", { findings: [], summary: "x" }, live()))).toContain("SuDuo 没有工具");
+  });
+
   it("建线程时 Agent 就来取清单：那时需求关联还没写入，清单照样完整（S2 端到端发现的时序）", () => {
     const { service, sessionWithoutRef } = setup();
     const names = service.listTools(grant(sessionWithoutRef.id)).map((tool) => tool.name);
     expect(names).toContain("comment_submit");
-    expect(names).toHaveLength(14);
+    expect(names).toHaveLength(15);
   });
 
   it("发评论：建确认卡（不属于任何运行时连接），确认后发出并回给这次调用", async () => {

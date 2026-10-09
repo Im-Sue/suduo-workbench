@@ -1,4 +1,4 @@
-import type { ActiveSuDuoToolName, Locale, RuntimeToolSpec } from "@suduo/client-contracts";
+import { REVIEW_FOCUSES, REVIEW_SEVERITIES, type ActiveSuDuoToolName, type Locale, type RuntimeToolSpec } from "@suduo/client-contracts";
 import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
 
 /**
@@ -262,6 +262,84 @@ function delegationSpecs(locale: Locale, d: ServerMessages["toolSpec"]): Record<
   };
 }
 
+/**
+ * 交叉评审（多 Agent 协作 S9，技术设计 2.9 / 2.11）：请求评审只有主会话有；提交评审意见只挂在评审会话上
+ * （建评审会话时加上，不属于任何 scope）。
+ */
+export const REVIEW_TOOL_NAMES = ["suduo_review_request", "suduo_review_submit"] as const;
+export type ReviewToolName = (typeof REVIEW_TOOL_NAMES)[number];
+
+export function isReviewToolName(name: string): name is ReviewToolName {
+  return (REVIEW_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+function reviewSpecs(locale: Locale, d: ServerMessages["toolSpec"]): Record<ReviewToolName, RuntimeToolSpec> {
+  const spec = messagesFor(locale).review.spec;
+  return {
+    suduo_review_request: {
+      name: "suduo_review_request",
+      description: spec.request.description + d.textReturn("suduo_review_request"),
+      inputSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: spec.request.agentId },
+          focus: { type: "array", items: { type: "string", enum: [...REVIEW_FOCUSES] }, description: spec.request.focus },
+          note: { type: "string", description: spec.request.note },
+        },
+        required: ["agentId"],
+        additionalProperties: false,
+      },
+    },
+    suduo_review_submit: {
+      name: "suduo_review_submit",
+      description: spec.submit.description + d.textReturn("suduo_review_submit"),
+      inputSchema: {
+        type: "object",
+        properties: {
+          findings: {
+            type: "array",
+            description: spec.submit.findings,
+            items: {
+              type: "object",
+              properties: {
+                severity: { type: "string", enum: [...REVIEW_SEVERITIES], description: spec.submit.severity },
+                file: { type: "string", description: spec.submit.file },
+                line: { type: "integer", minimum: 1, description: spec.submit.line },
+                title: { type: "string", description: spec.submit.title },
+                detail: { type: "string", description: spec.submit.detail },
+                suggestion: { type: "string", description: spec.submit.suggestion },
+              },
+              required: ["severity", "title", "detail"],
+              additionalProperties: false,
+            },
+          },
+          summary: { type: "string", description: spec.submit.summary },
+        },
+        required: ["findings", "summary"],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+/**
+ * 委派出来的子会话不挂的工具（技术设计 2.9）：委派与请求评审（深度 1，R2）、对外写工具（评论由发起会话去发）。
+ * 建子会话与线程重建时都用它。
+ */
+export function delegateChildDropsTool(name: string): boolean {
+  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name);
+}
+
+/** 评审会话不挂的工具（技术设计 2.9）：结论笔记、对外写、委派与请求评审；另加 `review_submit`。 */
+export function reviewerDropsTool(name: string): boolean {
+  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_notes_save";
+}
+
+/** 评审会话的工具（建评审会话时加在 scope 的工具之外）。 */
+export function reviewSubmitSpec(locale: Locale): RuntimeToolSpec {
+  return reviewSpecs(locale, messagesFor(locale).toolSpec).suduo_review_submit;
+}
+
 /** 只读与本机笔记工具：需求会话和项目会话都有。 */
 const READ_TOOLS: ActiveSuDuoToolName[] = [
   "suduo_requirement_get",
@@ -299,6 +377,7 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
   const rooms = roomSpecs(d);
   const sessions = sessionSpecs(locale, d);
   const delegations = delegationSpecs(locale, d);
+  const reviews = reviewSpecs(locale, d);
   return sessionToolNames(scope).map((name) =>
     isRoomToolName(name)
       ? rooms[name]
@@ -306,7 +385,9 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
         ? sessions[name]
         : isDelegationToolName(name)
           ? delegations[name]
-          : specs[name as ActiveSuDuoToolName],
+          : isReviewToolName(name)
+            ? reviews[name]
+            : specs[name as ActiveSuDuoToolName],
   );
 }
 
@@ -314,9 +395,9 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
 export function sessionToolNames(scope: SessionToolScope): string[] {
   switch (scope) {
     case "requirement":
-      return [...READ_TOOLS, ...WRITE_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES];
+      return [...READ_TOOLS, ...WRITE_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, "suduo_review_request"];
     case "project":
-      return [...READ_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES];
+      return [...READ_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, "suduo_review_request"];
     case "room":
       return [...ROOM_TOOL_NAMES];
     case "room_requirement":
@@ -345,7 +426,7 @@ export function internalToolName(mcpName: string): string {
   return MCP_TOOL_PREFIX + mcpName;
 }
 
-const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES]);
+const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, ...REVIEW_TOOL_NAMES]);
 
 /** 说明与回复文字里提到的 SuDuo 工具名换成 MCP 名（只换认识的工具名，其余原样）。 */
 export function mcpToolText(text: string): string {
@@ -363,6 +444,7 @@ export function mcpToolSpecsFor(toolNames: readonly string[], locale: Locale): R
   const rooms = roomSpecs(d);
   const sessions = sessionSpecs(locale, d);
   const delegations = delegationSpecs(locale, d);
+  const reviews = reviewSpecs(locale, d);
   return toolNames.flatMap((name): RuntimeToolSpec[] => {
     const spec = isRoomToolName(name)
       ? rooms[name]
@@ -370,6 +452,8 @@ export function mcpToolSpecsFor(toolNames: readonly string[], locale: Locale): R
         ? sessions[name]
         : isDelegationToolName(name)
           ? delegations[name]
+          : isReviewToolName(name)
+            ? reviews[name]
           : KNOWN_TOOL_NAMES.has(name)
           ? specs[name as ActiveSuDuoToolName]
           : undefined;

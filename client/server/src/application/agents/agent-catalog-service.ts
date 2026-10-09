@@ -139,6 +139,14 @@ export class AgentCatalogService {
     return null;
   }
 
+  /** 这家 Agent 能不能做评审（S9）：能委派之外还要做得到只读（评审会话固定只读，R3）。 */
+  reviewProblem(agentId: string): ErrorText | null {
+    const problem = this.delegationProblem(agentId);
+    if (problem !== null) return problem;
+    const descriptor = this.catalog.find((agent) => agent.id === agentId)!;
+    return descriptor.readOnlyCapable ? null : (t) => t.review.reply.notReadOnly(descriptor.displayName);
+  }
+
   /** 重新检测（用户登录后点的）：之前运行中记下的登录失败也一并放下，下次用到时再确认。 */
   async recheck(agentId: string): Promise<AgentDto> {
     this.authFailures.delete(agentId);

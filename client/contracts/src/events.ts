@@ -39,6 +39,7 @@ export type KnownEventType =
   | "turn.dequeued"
   /** 这个会话发起的委派有了变化（载荷是 DelegationDto，委派卡片取同一委派最新的一条）。 */
   | "delegation.updated"
+  | "review.updated"
   | "approval.requested"
   | "approval.resolved"
   | "approval.orphaned"

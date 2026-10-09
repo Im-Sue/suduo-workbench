@@ -100,6 +100,7 @@ import {
 import { SessionModelSwitcher } from "../features/sessions/SessionModelSwitcher.js";
 import { ContinueSessionDialog, SessionLinksBar, takePendingDraft } from "../features/sessions/session-links.js";
 import { CascadeStopDialog } from "../features/sessions/CascadeStopDialog.js";
+import { ReviewDialog } from "../features/sessions/ReviewDialog.js";
 import { ChangesPanel } from "../components/ChangesPanel.js";
 import { usePersistentState } from "../ui/use-persistent-state.js";
 import { INSPECTOR_SIDE_BY_SIDE_QUERY, useMediaQuery } from "../ui/use-breakpoint.js";
@@ -143,6 +144,7 @@ const EVENT_TYPES = [
   "turn.queued",
   "turn.dequeued",
   "delegation.updated",
+  "review.updated",
   ...BACKFILL_OMITTED_EVENT_TYPES,
 ] as const;
 
@@ -224,6 +226,7 @@ export function SessionRuntime(props: {
   const [session, setSession] = useState<SessionDto | null>(carried?.session ?? null);
   /** 交给另一个 Agent 接着做的对话框（多 Agent 协作 S7）。 */
   const [continueOpen, setContinueOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   /** 接着做开出的新会话：输入框预填「接着 @原会话 继续：」（只预填，不自动发出）。 */
   const [prefill, setPrefill] = useState<{ sessionId: string; text: string } | null>(null);
   useEffect(() => {
@@ -601,8 +604,8 @@ export function SessionRuntime(props: {
    * 本机会话没有，引用了 Agent 也读不了，就不给入口。
    */
   const referencesSessions = context.status === "ready" && context.value.kind !== "none" && context.value.contextMode !== "legacy";
-  /** 能不能在输入框 @ Agent 委派（多 Agent 协作 S8）：主会话才行（子会话不能再委派，R2）。 */
-  const canDelegate = referencesSessions && session !== null && session.kind === "normal" && session.relation !== "delegate";
+  /** 能不能在输入框 @ Agent 委派（多 Agent 协作 S8）：主会话才行（子会话、评审会话不能委派，R2）。 */
+  const canDelegate = referencesSessions && session !== null && session.kind === "normal" && session.relation !== "delegate" && session.relation !== "review";
   // 不用 useQuery：会话页的测试与部分外壳不包 QueryClientProvider（S5 的教训）。能委派时取一次本机 Agent。
   const [delegateAgents, setDelegateAgents] = useState<ReadonlyArray<{ id: string; name: string }>>([]);
   useEffect(() => {
@@ -1053,10 +1056,12 @@ export function SessionRuntime(props: {
             }}
             onToggleInspector={toggleInspector}
             {...(session.kind === "normal" && session.state !== "deleted" && referencesSessions ? { onContinue: () => setContinueOpen(true) } : {})}
+            {...(session.kind === "normal" && session.state !== "deleted" && session.relation !== "review" && referencesSessions ? { onReview: () => setReviewOpen(true) } : {})}
           />
         ) : null}
         {session ? <SessionLinksBar links={session.links} /> : null}
         {session ? <ContinueSessionDialog session={session} open={continueOpen} onOpenChange={setContinueOpen} /> : null}
+        {session ? <ReviewDialog session={session} open={reviewOpen} onOpenChange={setReviewOpen} /> : null}
         <CascadeStopDialog
           open={cascadeTurn !== null}
           count={activeDelegations}
@@ -1212,6 +1217,7 @@ export function SessionRuntime(props: {
                         <ApprovalModeSwitcher
                           approvalModeLocked={approvalLock.locked}
                           {...(approvalLock.max === undefined ? {} : { maxApprovalMode: approvalLock.max })}
+                          {...(session.relation === "review" ? { fixedReason: t.collab.review.fixedReadOnly } : {})}
                           session={session}
                           onChange={async (approvalMode) => {
                             try {

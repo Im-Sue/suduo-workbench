@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 339,
+  "total": 356,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -307,6 +307,14 @@
       "cascade-stop-dialog",
       "cascade-stop-this"
     ],
+    "web/src/features/sessions/ReviewDialog.tsx": [
+      "review-agent",
+      "review-dialog",
+      "review-focus",
+      "review-no-agents",
+      "review-note",
+      "review-start"
+    ],
     "web/src/features/sessions/session-links.tsx": [
       "continue-session-dialog",
       "continue-session-start",
@@ -319,6 +327,7 @@
     "web/src/features/sessions/SessionHeader.tsx": [
       "continue-session",
       "rename-session",
+      "review-session",
       "session-agent",
       "session-status",
       "session-title",
@@ -357,6 +366,18 @@
       "delegation-waiting",
       "queued-cancel",
       "stream-queued"
+    ],
+    "web/src/features/sessions/stream/ReviewCard.tsx": [
+      "review-apply",
+      "review-card",
+      "review-finding",
+      "review-finding-check",
+      "review-findings",
+      "review-open",
+      "review-status",
+      "review-stop",
+      "review-summary",
+      "review-unstructured"
     ],
     "web/src/features/sessions/stream/TurnView.tsx": [
       "assistant-text",

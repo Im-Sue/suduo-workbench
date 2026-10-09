@@ -78,6 +78,8 @@ export interface ToolSessionContext {
   };
   /** 委派出来的子会话（多 Agent 协作 S8）：不能再委派（深度 1，R2）。 */
   delegateChild?: boolean;
+  /** 只读评审会话（多 Agent 协作 S9）：只有它能提交评审意见，不能再请别人评审。 */
+  reviewer?: boolean;
 }
 
 /** 图片直接交给模型看的上限；更大的存文件。 */
