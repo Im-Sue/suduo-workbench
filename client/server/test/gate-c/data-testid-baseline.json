@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 313,
+  "total": 339,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -32,6 +32,8 @@
       "app-nav",
       "my-work-attention",
       "rooms-unread",
+      "run-panel-button",
+      "run-panel-count",
       "sessions-attention"
     ],
     "web/src/components/ApprovalModeSwitcher.tsx": [
@@ -53,6 +55,7 @@
       "context-ring",
       "interrupt-turn",
       "message-input",
+      "palette-agent",
       "palette-item",
       "palette-session",
       "queue-item",
@@ -279,14 +282,30 @@
       "room-window-switcher",
       "room-window-switcher-item"
     ],
+    "web/src/features/scheduler/RunPanel.tsx": [
+      "run-panel",
+      "run-panel-agent",
+      "run-panel-cancel",
+      "run-panel-cascade",
+      "run-panel-item",
+      "run-panel-promote",
+      "run-panel-stop-all",
+      "run-panel-stop-this"
+    ],
     "web/src/features/sessions/ApprovalDock.tsx": [
       "approval-accept",
       "approval-card",
       "approval-decline",
       "approval-more",
+      "approval-origin",
       "tool-confirm-comment",
       "tool-confirm-duplicate",
       "tool-confirm-title"
+    ],
+    "web/src/features/sessions/CascadeStopDialog.tsx": [
+      "cascade-stop-all",
+      "cascade-stop-dialog",
+      "cascade-stop-this"
     ],
     "web/src/features/sessions/session-links.tsx": [
       "continue-session-dialog",
@@ -321,11 +340,23 @@
       "model-menu"
     ],
     "web/src/features/sessions/SessionsPage.tsx": [
+      "delete-with-children",
       "sessions-workbench"
     ],
     "web/src/features/sessions/stream/ConversationStream.tsx": [
       "conversation-stream",
       "stream-notice"
+    ],
+    "web/src/features/sessions/stream/DelegationCard.tsx": [
+      "delegation-card",
+      "delegation-handback",
+      "delegation-open",
+      "delegation-result",
+      "delegation-status",
+      "delegation-stop",
+      "delegation-waiting",
+      "queued-cancel",
+      "stream-queued"
     ],
     "web/src/features/sessions/stream/TurnView.tsx": [
       "assistant-text",
@@ -367,6 +398,7 @@
       "settings-logout"
     ],
     "web/src/features/settings/sections/AgentsSection.tsx": [
+      "agents-concurrency",
       "agents-default",
       "agents-list",
       "agents-recheck-all"

@@ -21,6 +21,9 @@ export const http = {
   restoreHashRequired: "A hash is required to restore",
   skillNameRequired: "A Skill name is required",
   mustBeBoolean: (field: string) => `${field} must be a boolean`,
+  schedulerItemNotQueued: "This item isn't queued anymore (it may have started or been cancelled)",
+  schedulerItemNotFound: "This item has already finished",
+  concurrencyRange: (field: string, min: number, max: number) => `${field} must be an integer from ${min} to ${max}`,
   mustBeNonEmptyString: (field: string) => `${field} must be a non-empty string`,
   /** Multiple agents (ADR-0014). */
   agentNotFound: (id: string) => `There's no agent called ${id}`,

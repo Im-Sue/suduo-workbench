@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
+  type JsonValue,
   type Locale,
   type MessageContent,
   type RuntimeInput,
@@ -13,6 +14,7 @@ import {
   type StartThreadResult,
 } from "@suduo/client-contracts";
 import type { EventLedger } from "./event-ledger.js";
+import type { EventRecord, EventRepository } from "../infrastructure/db/repositories/event-repository.js";
 import type { GitService } from "./git-service.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import type { SessionRepository } from "../infrastructure/db/repositories/session-repository.js";
@@ -25,6 +27,7 @@ import type { RuntimeSupervisor } from "./runtime-supervisor.js";
 import { WorkspaceContextResolver } from "./workspace-context.js";
 import { sessionRuntimeApprovalMode } from "./approval-mode-cap.js";
 import { sessionHandles } from "./context/session-handles.js";
+import { SchedulerCancelledError, type SchedulerSource, type TurnScheduler, type TurnTicket } from "./scheduler/turn-scheduler.js";
 import { toolServerTools } from "./runtime-supervisor.js";
 import { messagesFor } from "../i18n/messages/index.js";
 import type { SkillRootsProvider } from "./skill-roots.js";
@@ -47,12 +50,23 @@ export class MessageService {
     private readonly approvalModeEnvironment: NodeJS.ProcessEnv = process.env,
   ) {}
 
+  /** 本机回合调度（多 Agent 协作 S8）；没接时不限并发（测试与老调用方）。 */
+  private scheduler: TurnScheduler | null = null;
+
+  setScheduler(scheduler: TurnScheduler): void {
+    this.scheduler = scheduler;
+  }
+
   async send(
     sessionId: string,
     input: SendMessageRequest,
     idempotencyKey: string,
-    /** locale：回合前自动存档的提交标题用的语言（发消息的请求的语言）；房间任务不传，用记下的界面语言。 */
-    options: { locale?: Locale } = {},
+    /**
+     * locale：回合前自动存档的提交标题用的语言（发消息的请求的语言）；房间任务不传，用记下的界面语言。
+     * source / label：在本机队列与运行面板里的来源与说明（多 Agent 协作 S8）。
+     * waitForTurn：名额满了时等到轮到再返回（房间任务、委派等内部调用方）；不传时先返回「排队中」，轮到了再开回合。
+     */
+    options: { locale?: Locale; source?: SchedulerSource; label?: string; waitForTurn?: boolean } = {},
   ): Promise<SendMessageAccepted> {
     if (!Array.isArray(input.content)) {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.contentNotArray);
@@ -123,37 +137,145 @@ export class MessageService {
         dedupeKey: "message:" + sessionId + ":" + idempotencyKey,
       },
     });
-    let turn;
-    try {
-      turn = await this.runtimes.get(binding.threadRef.runtimeId).startTurn({
+    const threadBinding = binding;
+    /**
+     * 开回合。queuedEarlier：在本机队列里等过——轮到时按会话现在的样子开（排队期间改了权限 / 模型、被删除或归档都要算数），
+     * 回合前存档也在这时补一次。
+     */
+    const startNow = async (ticket: TurnTicket | null, queuedEarlier = false): Promise<SendMessageAccepted> => {
+      let current = session;
+      if (queuedEarlier) {
+        const fresh = this.sessions.getById(sessionId);
+        const freshProject = this.projects.getById(project.id);
+        if (fresh === null || fresh.state !== "active" || freshProject === null || freshProject.state !== "active") {
+          ticket?.release();
+          throw new QueuedSessionGoneError(fresh?.state ?? "deleted");
+        }
+        current = fresh;
+        if (current.kind !== "room_task") {
+          await this.git?.autoCheckpoint(project.id, project.rootPath, options.locale);
+        }
+      }
+      let turn;
+      try {
+        turn = await this.runtimes.get(threadBinding.threadRef.runtimeId).startTurn({
+          sessionId,
+          threadRef: threadBinding.threadRef,
+          clientTurnId,
+          input: runtimeInput,
+          projectRoot: project.rootPath,
+          workspaceRoots: [project.rootPath],
+          // 房间任务会话固定为只读档（Codex 换算为只读 + 联网 + 不审批）；其余按会话审批档。
+          approvalMode: sessionRuntimeApprovalMode(current, this.approvalModeEnvironment),
+          // 审批档每回合都显式下发；模型 / 推理强度只在需要改变时由 runtime 下发
+          // （null = 跟随全局默认，粘性覆盖的回退由 runtime 负责）。
+          model: current.model,
+          reasoningEffort: current.reasoningEffort,
+        });
+      } catch (error) {
+        ticket?.release();
+        throw new IndeterminateOperationError((t) => t.session.turnStartIndeterminate, {
+          cause: error,
+        });
+      }
+      ticket?.started(turn.turnRef.turnId);
+      if (queuedEarlier && ticket !== null) {
+        // 排队的这一条开起来了：界面据此撤掉排队提示（按 clientTurnId 对上，不靠回合开始事件猜）。
+        this.appendQueueEvent(sessionId, threadBinding, "turn.dequeued", { clientTurnId, queueItemId: ticket.id, reason: "started", turnId: turn.turnRef.turnId });
+      }
+      this.sessions.touchActivity(sessionId, turn.acceptedAt);
+      return {
         sessionId,
-        threadRef: binding.threadRef,
+        messageEventSeq: submitted.seq,
+        threadRef: threadBinding.threadRef,
+        turnRef: turn.turnRef,
+        acceptedAt: turn.acceptedAt,
+        // 归属关联键：前端用它在事件流里找 userMessage item，而不是用上面的 turnRef。
         clientTurnId,
-        input: runtimeInput,
-        projectRoot: project.rootPath,
-        workspaceRoots: [project.rootPath],
-        // 房间任务会话固定为只读档（Codex 换算为只读 + 联网 + 不审批）；其余按会话审批档。
-        approvalMode: sessionRuntimeApprovalMode(session, this.approvalModeEnvironment),
-        // 审批档每回合都显式下发；模型 / 推理强度只在需要改变时由 runtime 下发
-        // （null = 跟随全局默认，粘性覆盖的回退由 runtime 负责）。
-        model: session.model,
-        reasoningEffort: session.reasoningEffort,
-      });
-    } catch (error) {
-      throw new IndeterminateOperationError((t) => t.session.turnStartIndeterminate, {
-        cause: error,
-      });
+      };
+    };
+
+    // 本机调度（多 Agent 协作 S8，需求 4.11）：会话里已有回合在跑、又没有排队项时，这条由运行时并入或排在会话内，
+    // 不另占名额（运行时自己接着开的回合开始时由调度器补登记）；有排队项时排在它后面，保持先后。
+    const scheduler = this.scheduler;
+    if (scheduler === null || (scheduler.sessionRunning(sessionId) && !scheduler.sessionPending(sessionId))) {
+      return startNow(null);
     }
-    this.sessions.touchActivity(sessionId, turn.acceptedAt);
+    const ticket = scheduler.request({
+      sessionId,
+      agentId: session.agentId,
+      source: options.source ?? "user",
+      label: options.label ?? session.title,
+    });
+    if (ticket.immediate) {
+      return startNow(ticket);
+    }
+    if (options.waitForTurn === true) {
+      try {
+        await ticket.admitted;
+      } catch (error) {
+        this.appendQueueEvent(sessionId, threadBinding, "turn.dequeued", { clientTurnId, queueItemId: ticket.id, reason: cancelReason(error) });
+        throw error;
+      }
+      try {
+        return await startNow(ticket, true);
+      } catch (error) {
+        if (!(error instanceof QueuedSessionGoneError)) throw error;
+        this.appendQueueEvent(sessionId, threadBinding, "turn.dequeued", { clientTurnId, queueItemId: ticket.id, reason: error.state });
+        throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.notActive, { state: error.state });
+      }
+    }
+    // 排队不拒绝：先告诉界面排在第几位，轮到了再开回合；排队中被取消就记一笔。
+    const position = scheduler.position(ticket.id) ?? 1;
+    this.appendQueueEvent(sessionId, threadBinding, "turn.queued", {
+      clientTurnId,
+      queueItemId: ticket.id,
+      position,
+      agentId: session.agentId,
+      source: options.source ?? "user",
+    });
+    void ticket.admitted.then(
+      () =>
+        startNow(ticket, true).catch((error: unknown) => {
+          if (error instanceof QueuedSessionGoneError) {
+            // 排队期间会话被删除或归档：不开回合，记一笔。
+            this.appendQueueEvent(sessionId, threadBinding, "turn.dequeued", { clientTurnId, queueItemId: ticket.id, reason: error.state });
+            return;
+          }
+          this.appendQueueEvent(sessionId, threadBinding, "turn.start-failed", {
+            clientTurnId,
+            error: { message: error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error) },
+          });
+        }),
+      (error: unknown) => {
+        this.appendQueueEvent(sessionId, threadBinding, "turn.dequeued", { clientTurnId, queueItemId: ticket.id, reason: cancelReason(error) });
+      },
+    );
     return {
       sessionId,
       messageEventSeq: submitted.seq,
-      threadRef: binding.threadRef,
-      turnRef: turn.turnRef,
-      acceptedAt: turn.acceptedAt,
-      // 归属关联键：前端用它在事件流里找 userMessage item，而不是用上面的 turnRef。
+      threadRef: threadBinding.threadRef,
+      turnRef: null,
+      acceptedAt: Date.now(),
       clientTurnId,
+      queued: { itemId: ticket.id, position },
     };
+  }
+
+  /** 排队相关的账本事件（不属于任何回合）。 */
+  private appendQueueEvent(sessionId: string, binding: SessionThreadRecord, type: string, payload: JsonValue): void {
+    this.ledger.append({
+      sessionId,
+      sessionThreadId: binding.id,
+      event: {
+        source: "suduo:scheduler",
+        type,
+        payload,
+        threadRef: binding.threadRef,
+        turnRef: null,
+        ts: Date.now(),
+      },
+    });
   }
 
   /** resume 失败重建后：老绑定标记 detached，新 thread 挂为 primary 并入账告知前端。 */
@@ -398,8 +520,81 @@ async function requireContainedFile(path: string, root: string): Promise<string>
   }
 }
 
-function stableClientTurnId(sessionId: string, key: string): string {
+/** 发消息时生成的关联键（幂等键稳定映射；委派据此认出自己发给子会话的消息）。 */
+export function stableClientTurnId(sessionId: string, key: string): string {
   return createHash("sha256")
     .update("suduo-turn\0" + sessionId + "\0" + key)
     .digest("hex");
+}
+
+function cancelReason(error: unknown): string {
+  return error instanceof SchedulerCancelledError ? error.reason : "cancelled";
+}
+
+/** 排队的消息轮到时会话已经不能用了（删除 / 归档 / 项目不可用）。 */
+class QueuedSessionGoneError extends Error {
+  constructor(readonly state: string) {
+    super("session no longer active: " + state);
+    this.name = "QueuedSessionGoneError";
+  }
+}
+
+/** 重启前还排着、没发出的一条消息（委派据此重新排队）。 */
+export interface ClosedQueuedMessage {
+  sessionId: string;
+  clientTurnId: string;
+  /** 排队时的来源（user / delegate / room …）。 */
+  source: string;
+  content: MessageContent[] | null;
+}
+
+/**
+ * 本机服务启动时给重启前还在排队的消息收尾（多 Agent 协作 S8，技术设计 2.7「主会话的排队回合重启后不恢复，提示重发」）：
+ * 队列只在内存里；`turn.queued` 之后没有出队（含「开起来了」）、开不起来记录的，记一笔「重启没发出」。
+ * 会被自动重新排队的（委派，`willRequeue`）记为 requeued，界面不叫人重发。
+ */
+export function closeQueuedAfterRestart(
+  events: Pick<EventRepository, "listQueueEvents" | "submittedContent">,
+  ledger: Pick<EventLedger, "append">,
+  willRequeue: (message: ClosedQueuedMessage) => boolean = () => false,
+): ClosedQueuedMessage[] {
+  const open = new Map<string, EventRecord>();
+  for (const event of events.listQueueEvents()) {
+    const payload = event.payload !== null && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload : {};
+    const clientTurnId = typeof payload["clientTurnId"] === "string" ? payload["clientTurnId"] : null;
+    if (clientTurnId === null) continue;
+    if (event.type === "turn.queued") {
+      open.set(clientTurnId, event);
+    } else {
+      open.delete(clientTurnId);
+    }
+  }
+  const closed: ClosedQueuedMessage[] = [];
+  for (const [clientTurnId, queued] of open) {
+    const payload = queued.payload as Record<string, JsonValue>;
+    const source = typeof payload["source"] === "string" ? payload["source"] : "user";
+    // 只有委派的要重发，才去取内容。
+    const content = source === "delegate" ? events.submittedContent(queued.sessionId, clientTurnId) : null;
+    const message: ClosedQueuedMessage = {
+      sessionId: queued.sessionId,
+      clientTurnId,
+      source,
+      content: Array.isArray(content) && content.length > 0 ? (content as unknown as MessageContent[]) : null,
+    };
+    ledger.append({
+      sessionId: queued.sessionId,
+      sessionThreadId: queued.sessionThreadId,
+      event: {
+        source: "suduo:scheduler",
+        type: "turn.dequeued",
+        payload: { clientTurnId, queueItemId: payload["queueItemId"] ?? null, reason: willRequeue(message) ? "requeued" : "restart" },
+        threadRef: queued.threadRef,
+        turnRef: null,
+        ts: Date.now(),
+        dedupeKey: "queue-restart:" + clientTurnId,
+      },
+    });
+    closed.push(message);
+  }
+  return closed;
 }

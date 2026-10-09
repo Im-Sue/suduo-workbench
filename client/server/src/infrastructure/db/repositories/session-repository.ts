@@ -170,6 +170,21 @@ export class SessionRepository {
       .map(mapSession);
   }
 
+  /** 某个会话往下的全部会话 ID（子、孙……；不含已删除与它自己），删除根会话时连带用。 */
+  listDescendantIds(sessionId: string): string[] {
+    return this.database
+      .prepare(
+        [
+          "WITH RECURSIVE tree(id) AS (",
+          "  SELECT id FROM sessions WHERE parent_session_id = @sessionId AND state != 'deleted'",
+          "  UNION SELECT s.id FROM sessions s JOIN tree ON s.parent_session_id = tree.id WHERE s.state != 'deleted'",
+          ") SELECT id FROM tree",
+        ].join(" "),
+      )
+      .all<{ id: string }>({ sessionId })
+      .map((row) => row.id);
+  }
+
   /** 全部会话 ID（含已删除；启动清理旧版现状文件目录用）。 */
   listAllIds(): string[] {
     return this.database

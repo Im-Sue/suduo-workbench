@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentActionDto, AgentDto, AgentStatus } from "@suduo/client-contracts";
+import { CONCURRENCY_MAX, CONCURRENCY_MIN, type AgentActionDto, type AgentDto, type AgentStatus } from "@suduo/client-contracts";
 import { CopyIcon, ExternalLinkIcon, RotateCwIcon, TerminalIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -109,7 +109,61 @@ export function AgentsSection() {
         </ItemList>
         <p className="m-0 text-caption text-subtle-foreground">{text.termsNote}</p>
       </SettingsRow>
+
+      <ConcurrencyRow agents={usable} />
     </SettingsSection>
+  );
+}
+
+const CONCURRENCY_CHOICES = Array.from({ length: CONCURRENCY_MAX - CONCURRENCY_MIN + 1 }, (_, index) => CONCURRENCY_MIN + index);
+
+/** 同时运行的回合上限（多 Agent 协作 S8，需求 4.11）：每家一个、全部合计一个；超出的排队，不拒绝。 */
+function ConcurrencyRow({ agents }: { agents: readonly AgentDto[] }) {
+  const t = useT();
+  const text = t.collab.settings;
+  const queryClient = useQueryClient();
+  const settings = useQuery({ queryKey: ["agent-settings"], queryFn: () => api.agentSettings() });
+  const [saved, track] = useSaveIndicator();
+  if (settings.data === undefined) return null;
+  const data = settings.data;
+  const save = (body: Parameters<typeof api.updateAgentSettings>[0]) =>
+    track(api.updateAgentSettings(body).then((next) => queryClient.setQueryData(["agent-settings"], next)));
+  const concurrencyOf = (agentId: string) => data.agents.find((agent) => agent.id === agentId)?.concurrency ?? 2;
+  return (
+    <SettingsRow anchor="agents-concurrency" title={text.title} description={text.description} status={<SaveStatus state={saved} />} stacked>
+      <div className="flex flex-col gap-2" data-testid="agents-concurrency">
+        <NumberChoice label={text.global} value={data.globalConcurrency} onChange={(value) => save({ globalConcurrency: value })} testId="agents-concurrency-global" />
+        {agents.map((agent) => (
+          <NumberChoice
+            key={agent.id}
+            label={text.perAgent(agent.displayName)}
+            value={concurrencyOf(agent.id)}
+            onChange={(value) => save({ agents: [{ id: agent.id, concurrency: value }] })}
+            testId={`agents-concurrency-${agent.id}`}
+          />
+        ))}
+      </div>
+    </SettingsRow>
+  );
+}
+
+function NumberChoice({ label, value, onChange, testId }: { label: string; value: number; onChange(value: number): void; testId: string }) {
+  return (
+    <label className="flex items-center justify-between gap-3 text-small">
+      <span className="text-foreground">{label}</span>
+      <Select value={String(value)} onValueChange={(next) => onChange(Number(next))}>
+        <SelectTrigger className="w-20" data-testid={testId} aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CONCURRENCY_CHOICES.map((choice) => (
+            <SelectItem key={choice} value={String(choice)}>
+              {choice}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
   );
 }
 

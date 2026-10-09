@@ -78,6 +78,8 @@ export const conversation = {
       title: (title: string) => `删除会话「${title}」？`,
       description: "删除后对话记录不能恢复；项目文件和检查点不受影响。",
       confirm: "删除",
+      /** 这个会话往下还有会话（委派、接着做）时多问一句。 */
+      withChildren: (count: number) => `同时删除它往下的 ${String(count)} 个会话（委派、接着做）`,
     },
   },
   /** 会话头。 */

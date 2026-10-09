@@ -266,7 +266,15 @@ describe("Agent 状态检测", () => {
     const agents = service({ exec: fakeExec({}) });
     const updated = agents.updateSettings({ defaultAgentId: "claude-code", agents: [{ id: "gemini", enabled: false, binOverride: "/opt/gemini" }] });
     expect(updated.defaultAgentId).toBe("claude-code");
-    expect(updated.agents.find((agent) => agent.id === "gemini")).toEqual({ id: "gemini", enabled: false, binOverride: "/opt/gemini" });
+    expect(updated.agents.find((agent) => agent.id === "gemini")).toEqual({ id: "gemini", enabled: false, binOverride: "/opt/gemini", concurrency: 2 });
+    // 并发上限（多 Agent 协作 S8）：每家与合计都可改，范围 1–8。
+    const limited = agents.updateSettings({ agents: [{ id: "claude-code", concurrency: 3 }], globalConcurrency: 6 });
+    expect(limited.globalConcurrency).toBe(6);
+    expect(limited.agents.find((agent) => agent.id === "claude-code")?.concurrency).toBe(3);
+    expect(agents.concurrency("claude-code")).toBe(3);
+    expect(agents.globalConcurrency()).toBe(6);
+    expect(() => agents.updateSettings({ globalConcurrency: 0 })).toThrow();
+    expect(() => agents.updateSettings({ agents: [{ id: "codex", concurrency: 9 }] })).toThrow();
     expect(() => agents.updateSettings({ defaultAgentId: "nope" })).toThrow();
     expect(() => agents.loginCommand("codex")).toThrow();
     expect(agents.loginCommand("copilot")).toBe("copilot login");

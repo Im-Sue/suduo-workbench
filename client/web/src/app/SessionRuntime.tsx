@@ -99,12 +99,14 @@ import {
 } from "../session/queue.js";
 import { SessionModelSwitcher } from "../features/sessions/SessionModelSwitcher.js";
 import { ContinueSessionDialog, SessionLinksBar, takePendingDraft } from "../features/sessions/session-links.js";
+import { CascadeStopDialog } from "../features/sessions/CascadeStopDialog.js";
 import { ChangesPanel } from "../components/ChangesPanel.js";
 import { usePersistentState } from "../ui/use-persistent-state.js";
 import { INSPECTOR_SIDE_BY_SIDE_QUERY, useMediaQuery } from "../ui/use-breakpoint.js";
 import { Drawer, type DrawerState } from "../components/Drawer.js";
 import { ConfirmDialog, RegionError } from "../feedback/components/index.js";
 import { showMessage } from "../ui/message.js";
+import { isUsable } from "../features/agents/queries.js";
 import { classifyFailure } from "../feedback/classify.js";
 import { reportFailure } from "../feedback/report.js";
 import { routeFeedback } from "../feedback/routes.js";
@@ -137,6 +139,10 @@ const EVENT_TYPES = [
   "usage.updated",
   "thread.settings-updated",
   "model.rerouted",
+  // 多 Agent 协作 S8：本机队列与委派卡片。
+  "turn.queued",
+  "turn.dequeued",
+  "delegation.updated",
   ...BACKFILL_OMITTED_EVENT_TYPES,
 ] as const;
 
@@ -355,6 +361,12 @@ export function SessionRuntime(props: {
   }, [setPersistentError]);
 
   const projection = useMemo(() => projectEvents(events), [events]);
+  /** 这个会话发起、还没做完的委派（停止时询问是否一并停止）。 */
+  const activeDelegations = useMemo(
+    () => projection.timeline.filter((entry) => entry.kind === "delegation" && (entry.delegation.status === "queued" || entry.delegation.status === "running")).length,
+    [projection.timeline],
+  );
+  const [cascadeTurn, setCascadeTurn] = useState<string | null>(null);
   const projectionRef = useRef(projection);
   projectionRef.current = projection;
   // 出队与发送正告一段落之前、停止请求还没回来时，重建会让结果落空或发两次：别的标签页切语言时等这些过去再切。
@@ -436,7 +448,7 @@ export function SessionRuntime(props: {
     try {
       const accepted = await api.sendMessage(props.sessionId, { content });
       // 立刻用当前投影对账：SSE 先于 HTTP 响应时，归属可能已经在投影里了。
-      setQueue((current) => reconcileQueue(onSendAccepted(current, accepted.clientTurnId, Date.now()), projectionRef.current, Date.now()));
+      setQueue((current) => reconcileQueue(onSendAccepted(current, accepted.clientTurnId, Date.now(), accepted.queued !== undefined), projectionRef.current, Date.now()));
     } catch (cause) {
       setQueue((current) => (classifySendFailure(cause) === "rejected" ? onSendRejected(current) : onSendUncertain(current)));
       reportError(cause, "action");
@@ -589,6 +601,30 @@ export function SessionRuntime(props: {
    * 本机会话没有，引用了 Agent 也读不了，就不给入口。
    */
   const referencesSessions = context.status === "ready" && context.value.kind !== "none" && context.value.contextMode !== "legacy";
+  /** 能不能在输入框 @ Agent 委派（多 Agent 协作 S8）：主会话才行（子会话不能再委派，R2）。 */
+  const canDelegate = referencesSessions && session !== null && session.kind === "normal" && session.relation !== "delegate";
+  // 不用 useQuery：会话页的测试与部分外壳不包 QueryClientProvider（S5 的教训）。能委派时取一次本机 Agent。
+  const [delegateAgents, setDelegateAgents] = useState<ReadonlyArray<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    if (!canDelegate) return;
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => api.listLocalAgents())
+      .then((list) => {
+        if (!cancelled) setDelegateAgents(list.agents.filter((agent) => isUsable(agent)).map((agent) => ({ id: agent.id, name: agent.displayName })));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [canDelegate]);
+  const delegate = useCallback(
+    async (agentId: string, task: string) => {
+      await api.startDelegation(props.sessionId, { agentId, task });
+      showMessage(t.collab.delegation.started(delegateAgents.find((agent) => agent.id === agentId)?.name ?? agentId), "success");
+    },
+    [delegateAgents, props.sessionId, t],
+  );
 
 
   useEffect(() => {
@@ -653,7 +689,8 @@ export function SessionRuntime(props: {
       setEvents((current) => mergeSessionEvents(current, [event]));
       // 只有经这条实时入口、且已过回放边界收到的 turn.started 才建本地计时锚点。
       setTiming((current) => onLiveEvent(current, event, Date.now()));
-      if (event.type.startsWith("approval.")) {
+      // 委派出来的子会话的审批也列在这里（多 Agent 协作 S8），它们的变化经 delegation.updated 告知。
+      if (event.type.startsWith("approval.") || event.type === "delegation.updated") {
         void refreshApprovals(props.sessionId, setApprovals);
       }
       if (
@@ -1020,6 +1057,20 @@ export function SessionRuntime(props: {
         ) : null}
         {session ? <SessionLinksBar links={session.links} /> : null}
         {session ? <ContinueSessionDialog session={session} open={continueOpen} onOpenChange={setContinueOpen} /> : null}
+        <CascadeStopDialog
+          open={cascadeTurn !== null}
+          count={activeDelegations}
+          onOpenChange={(open) => {
+            if (!open) setCascadeTurn(null);
+          }}
+          onStopThis={() => {
+            if (cascadeTurn !== null) stopTurn(cascadeTurn);
+          }}
+          onStopAll={() => {
+            if (cascadeTurn !== null) stopTurn(cascadeTurn);
+            void api.cancelAllDelegations(props.sessionId).catch((cause: unknown) => reportError(cause, "action"));
+          }}
+        />
         <PanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
           <Panel id="conversation" minSize={420}>
             <section className="flex h-full min-w-0 flex-col" aria-label={text.conversationLabel}>
@@ -1115,6 +1166,7 @@ export function SessionRuntime(props: {
                     usage={projection.usage}
                     lastUserText={lastUserText}
                     referencesSessions={referencesSessions}
+                    {...(canDelegate ? { delegateAgents, onDelegate: delegate } : {})}
                     {...(prefill === null || prefill.sessionId !== props.sessionId ? {} : { initialDraft: prefill.text, draftKey: prefill.sessionId })}
                     runState={{
                       status: headStatus,
@@ -1123,7 +1175,10 @@ export function SessionRuntime(props: {
                       pendingApprovals: approvals.length,
                       stopping: stopping !== null && activeTurnId === stopping.turnId,
                       onStop: () => {
-                        if (activeTurnId !== null) stopTurn(activeTurnId);
+                        if (activeTurnId === null) return;
+                        // 还有没做完的委派：问一句是否一并停止（需求 4.11 停止级联）。
+                        if (activeDelegations > 0) setCascadeTurn(activeTurnId);
+                        else stopTurn(activeTurnId);
                       },
                       onJumpToApproval: () => {
                         document.querySelector('[data-testid="approval-card"]')?.scrollIntoView({ behavior: "smooth", block: "center" });

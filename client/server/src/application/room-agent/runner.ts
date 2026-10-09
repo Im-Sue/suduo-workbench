@@ -102,8 +102,17 @@ export interface RoomAgentRunnerDependencies {
       options: { kind?: SessionKind; locale: Locale },
     ): Promise<SessionDto>;
   };
-  messages: { send(sessionId: string, input: SendMessageRequest, idempotencyKey: string): Promise<SendMessageAccepted> };
+  messages: {
+    send(
+      sessionId: string,
+      input: SendMessageRequest,
+      idempotencyKey: string,
+      options?: { source?: "room"; label?: string; waitForTurn?: boolean },
+    ): Promise<SendMessageAccepted>;
+  };
   interrupts: { interrupt(sessionId: string, input: InterruptRequest): Promise<unknown> };
+  /** 撤掉这个会话在本机队列里排着的回合（排队中被叫停时，S8）。 */
+  cancelQueued?: (sessionId: string) => void;
   events: Pick<EventRepository, "maxSeq" | "listAfter" | "hasTurnTerminal">;
   broker: { subscribe(sessionId: string, listener: (event: EventEnvelope<string, JsonValue>) => void): () => void };
   context: { roomSetup(input: RoomSetupInput): Promise<ThreadSetup> };
@@ -684,13 +693,20 @@ export class RoomAgentRunner {
     try {
       let accepted: SendMessageAccepted;
       try {
+        // 房间任务也计入本机名额（需求 4.11）：名额满了就在这里等到轮到（各家一次只跑一个房间任务由本执行器保证）。
         accepted = await this.deps.messages.send(
           sessionId,
           { content: [{ type: "text", text }] },
           `room-run:${runId}:${randomUUID()}`,
+          { source: "room", label: roomName, waitForTurn: true },
         );
       } catch (error) {
+        // 排队中被叫停：回合没开起来。
+        if (active.stopRequested) return { kind: "stopped", reason: { code: "stopped_before_start", params: {} } };
         return { kind: "failed", reason: { code: "local_start_failed", params: { detail: this.errorDetail(error) } } };
+      }
+      if (accepted.turnRef === null) {
+        return { kind: "failed", reason: { code: "local_start_failed", params: { detail: "turn was not started" } } };
       }
       turnId = accepted.turnRef.turnId;
       clientTurnId = accepted.clientTurnId ?? null;
@@ -799,6 +815,11 @@ export class RoomAgentRunner {
 
   private requestStop(active: ActiveRun): void {
     active.stopRequested = true;
+    if (active.sessionId !== null && active.turnId === null) {
+      // 还在本机队列里等名额：撤掉，不用等轮到再开、再中断。
+      this.deps.cancelQueued?.(active.sessionId);
+      return;
+    }
     if (active.sessionId === null || active.turnId === null || active.interruptSent) {
       return;
     }

@@ -436,8 +436,62 @@ function fileChanges(tool: OpenTool, cwd: string): JsonValue[] {
         : { path: filePath, kind: { type: "update", move_path: null }, diff: snippetDiff(relative(cwd, filePath), before, after) };
     });
   }
+  const reported = patchFiles(tool, cwd);
+  if (reported.length > 0) return reported;
   const kind = tool.kind === "delete" ? "delete" : "update";
   return tool.locations.map((location) => ({ path: location, kind: { type: kind, move_path: null }, diff: "" }));
+}
+
+/**
+ * OpenCode 的 apply_patch 既不给 diff 内容也不给位置，改动只在完成时的 rawOutput.metadata.files
+ * （filePath / type: add | update | delete | move / patch 统一 diff / movePath）。按 Codex 的形状转：
+ * 新增给全文、删除给原文、修改与改名给 diff 片段。
+ */
+function patchFiles(tool: OpenTool, cwd: string): JsonValue[] {
+  const files = asObject(asObject(tool.rawOutput)["metadata"])["files"];
+  if (!Array.isArray(files)) return [];
+  return files.map(asObject).flatMap((file): JsonValue[] => {
+    const filePath = file["filePath"];
+    if (typeof filePath !== "string") return [];
+    const lines = stringOr(file["patch"], "").split("\n");
+    if (lines.at(-1) === "") lines.pop();
+    const start = lines.findIndex((line) => line.startsWith("@@"));
+    const hunks = start === -1 ? [] : lines.slice(start);
+    const movePath = typeof file["movePath"] === "string" ? file["movePath"] : null;
+    if (file["type"] === "add") return [{ path: filePath, kind: { type: "add", move_path: null }, diff: bodyOf(hunks, "+") }];
+    if (file["type"] === "delete") return [{ path: filePath, kind: { type: "delete", move_path: null }, diff: bodyOf(hunks, "-") }];
+    const diff = hunks.length === 0 ? "" : [`--- a/${relative(cwd, filePath)}`, `+++ b/${relative(cwd, movePath ?? filePath)}`, ...hunks].join("\n") + "\n";
+    return [{ path: filePath, kind: { type: "update", move_path: movePath }, diff }];
+  });
+}
+
+function bodyOf(hunks: string[], sign: "+" | "-"): string {
+  const lines = hunks.filter((line) => line.startsWith(sign)).map((line) => line.slice(1));
+  return lines.length === 0 ? "" : lines.join("\n") + "\n";
+}
+
+/**
+ * 编辑类工具会动到的文件（权限判断与确认卡用）：位置、diff 内容、输入里的路径，以及 apply_patch 的补丁头
+ * （OpenCode 用 apply_patch 时不给位置）。相对路径按工作目录解析。
+ */
+export function editPaths(
+  tool: { locations?: Array<{ path: string }> | null; content?: Array<{ type: string; path?: string }> | null; rawInput?: unknown },
+  cwd: string,
+): string[] {
+  const paths = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.trim() !== "") paths.add(path.resolve(cwd, value.trim()));
+  };
+  for (const location of tool.locations ?? []) add(location.path);
+  for (const content of tool.content ?? []) if (content.type === "diff") add(content.path);
+  const input = tool.rawInput !== null && typeof tool.rawInput === "object" && !Array.isArray(tool.rawInput) ? (tool.rawInput as Record<string, unknown>) : {};
+  for (const key of ["filePath", "file_path", "path"]) add(input[key]);
+  for (const key of ["patchText", "patch", "input"]) {
+    const patch = input[key];
+    if (typeof patch !== "string") continue;
+    for (const match of patch.matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gmu)) add(match[1]);
+  }
+  return [...paths];
 }
 
 function locationsOf(value: JsonValue | undefined): string[] {

@@ -75,6 +75,8 @@ export const conversation = {
       title: (title: string) => `Delete session “${title}”?`,
       description: "The conversation history can't be recovered. Project files and checkpoints aren't affected.",
       confirm: "Delete",
+      /** Asked when sessions hang off this one (delegations, continuations). */
+      withChildren: (count: number) => `Also delete the ${String(count)} ${count === 1 ? "session" : "sessions"} that follow from it (delegations, continuations)`,
     },
   },
   header: {

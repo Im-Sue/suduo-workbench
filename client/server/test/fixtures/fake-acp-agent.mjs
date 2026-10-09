@@ -69,6 +69,20 @@ class FakeAgent {
       await this.update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: " there" } });
       return { stopReason: "end_turn" };
     }
+    if (text.includes("edit-permission ")) {
+      // 编辑类权限请求，rawInput 由消息给出（apply_patch 这类不带位置的写法）；第一条消息前有 SuDuo 的说明。
+      const rawInput = JSON.parse(text.slice(text.indexOf("edit-permission ") + "edit-permission ".length));
+      const response = await this.connection.requestPermission({
+        sessionId,
+        toolCall: { toolCallId: "call-patch", title: "apply_patch", kind: "edit", rawInput },
+        options: [
+          { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+          { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+        ],
+      });
+      record({ method: "permission-answer", outcome: response.outcome });
+      return { stopReason: response.outcome.outcome === "cancelled" ? "cancelled" : "end_turn" };
+    }
     if (text.includes("permission")) {
       await this.update(sessionId, { sessionUpdate: "tool_call", toolCallId: "call-rm", title: "rm -rf build", kind: "execute", status: "pending", rawInput: { command: "rm -rf build" } });
       const response = await this.connection.requestPermission({

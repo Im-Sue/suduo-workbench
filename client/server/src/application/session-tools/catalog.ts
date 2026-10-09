@@ -192,6 +192,76 @@ export function isSessionToolName(name: string): name is SessionToolName {
   return (SESSION_TOOL_NAMES as readonly string[]).includes(name);
 }
 
+/**
+ * 委派（多 Agent 协作 S8，技术设计 2.9 / 2.10）：只有主会话有（深度 1，R2）；委派出来的子会话建线程时去掉，
+ * 调用时也按会话关系拒绝。
+ */
+export const DELEGATION_TOOL_NAMES = [
+  "suduo_agent_list",
+  "suduo_delegate_start",
+  "suduo_delegate_wait",
+  "suduo_delegate_send",
+  "suduo_delegate_cancel",
+] as const;
+export type DelegationToolName = (typeof DELEGATION_TOOL_NAMES)[number];
+
+export function isDelegationToolName(name: string): name is DelegationToolName {
+  return (DELEGATION_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+function delegationSpecs(locale: Locale, d: ServerMessages["toolSpec"]): Record<DelegationToolName, RuntimeToolSpec> {
+  const spec = messagesFor(locale).delegation.spec;
+  const id = { type: "string", description: spec.wait.delegationId };
+  return {
+    suduo_agent_list: {
+      name: "suduo_agent_list",
+      description: spec.agentList + d.textReturn("suduo_agent_list"),
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    suduo_delegate_start: {
+      name: "suduo_delegate_start",
+      description: spec.start.description + d.textReturn("suduo_delegate_start"),
+      inputSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: spec.start.agentId },
+          task: { type: "string", description: spec.start.task },
+          files: { type: "array", items: { type: "string" }, description: spec.start.files },
+          autoHandback: { type: "boolean", description: spec.start.autoHandback },
+          approvalMode: { type: "string", enum: ["readonly", "ask", "auto", "full"], description: spec.start.approvalMode },
+        },
+        required: ["agentId", "task"],
+        additionalProperties: false,
+      },
+    },
+    suduo_delegate_wait: {
+      name: "suduo_delegate_wait",
+      description: spec.wait.description + d.textReturn("suduo_delegate_wait"),
+      inputSchema: {
+        type: "object",
+        properties: { delegationId: id, maxSeconds: { type: "integer", minimum: 1, maximum: 600, description: spec.wait.maxSeconds } },
+        required: ["delegationId"],
+        additionalProperties: false,
+      },
+    },
+    suduo_delegate_send: {
+      name: "suduo_delegate_send",
+      description: spec.send.description + d.textReturn("suduo_delegate_send"),
+      inputSchema: {
+        type: "object",
+        properties: { delegationId: id, message: { type: "string", description: spec.send.message } },
+        required: ["delegationId", "message"],
+        additionalProperties: false,
+      },
+    },
+    suduo_delegate_cancel: {
+      name: "suduo_delegate_cancel",
+      description: spec.cancel.description + d.textReturn("suduo_delegate_cancel"),
+      inputSchema: { type: "object", properties: { delegationId: id }, required: ["delegationId"], additionalProperties: false },
+    },
+  };
+}
+
 /** 只读与本机笔记工具：需求会话和项目会话都有。 */
 const READ_TOOLS: ActiveSuDuoToolName[] = [
   "suduo_requirement_get",
@@ -228,8 +298,15 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
   const specs = requirementSpecs(d);
   const rooms = roomSpecs(d);
   const sessions = sessionSpecs(locale, d);
+  const delegations = delegationSpecs(locale, d);
   return sessionToolNames(scope).map((name) =>
-    isRoomToolName(name) ? rooms[name] : isSessionToolName(name) ? sessions[name] : specs[name as ActiveSuDuoToolName],
+    isRoomToolName(name)
+      ? rooms[name]
+      : isSessionToolName(name)
+        ? sessions[name]
+        : isDelegationToolName(name)
+          ? delegations[name]
+          : specs[name as ActiveSuDuoToolName],
   );
 }
 
@@ -237,9 +314,9 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
 export function sessionToolNames(scope: SessionToolScope): string[] {
   switch (scope) {
     case "requirement":
-      return [...READ_TOOLS, ...WRITE_TOOLS, ...SESSION_TOOL_NAMES];
+      return [...READ_TOOLS, ...WRITE_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES];
     case "project":
-      return [...READ_TOOLS, ...SESSION_TOOL_NAMES];
+      return [...READ_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES];
     case "room":
       return [...ROOM_TOOL_NAMES];
     case "room_requirement":
@@ -268,7 +345,7 @@ export function internalToolName(mcpName: string): string {
   return MCP_TOOL_PREFIX + mcpName;
 }
 
-const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES, ...SESSION_TOOL_NAMES]);
+const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES]);
 
 /** 说明与回复文字里提到的 SuDuo 工具名换成 MCP 名（只换认识的工具名，其余原样）。 */
 export function mcpToolText(text: string): string {
@@ -285,12 +362,15 @@ export function mcpToolSpecsFor(toolNames: readonly string[], locale: Locale): R
   const specs = requirementSpecs(d);
   const rooms = roomSpecs(d);
   const sessions = sessionSpecs(locale, d);
+  const delegations = delegationSpecs(locale, d);
   return toolNames.flatMap((name): RuntimeToolSpec[] => {
     const spec = isRoomToolName(name)
       ? rooms[name]
       : isSessionToolName(name)
         ? sessions[name]
-        : KNOWN_TOOL_NAMES.has(name)
+        : isDelegationToolName(name)
+          ? delegations[name]
+          : KNOWN_TOOL_NAMES.has(name)
           ? specs[name as ActiveSuDuoToolName]
           : undefined;
     if (spec === undefined) return [];

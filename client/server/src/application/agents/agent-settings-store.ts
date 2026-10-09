@@ -5,7 +5,9 @@ import { DEFAULT_AGENT_ID } from "@suduo/client-contracts";
 interface AgentSettingsFile {
   schemaVersion: 1;
   defaultAgentId: string;
-  agents: Record<string, { enabled?: boolean; binOverride?: string | null }>;
+  agents: Record<string, { enabled?: boolean; binOverride?: string | null; concurrency?: number }>;
+  /** 合计并发上限（多 Agent 协作 S8）；没设为默认。 */
+  globalConcurrency?: number;
 }
 
 const EMPTY: AgentSettingsFile = { schemaVersion: 1, defaultAgentId: DEFAULT_AGENT_ID, agents: {} };
@@ -18,6 +20,8 @@ export function agentSettingsPathFor(settingsFilePath: string): string {
 export interface AgentSettingEntry {
   enabled: boolean;
   binOverride: string | null;
+  /** 用户设的并发上限；没设为 null（用配置表的默认值）。 */
+  concurrency: number | null;
 }
 
 export class AgentSettingsStore {
@@ -36,12 +40,20 @@ export class AgentSettingsStore {
     return {
       enabled: raw.enabled ?? true,
       binOverride: typeof raw.binOverride === "string" && raw.binOverride.trim() !== "" ? raw.binOverride : null,
+      concurrency: typeof raw.concurrency === "number" && Number.isSafeInteger(raw.concurrency) ? raw.concurrency : null,
     };
+  }
+
+  /** 用户设的合计并发上限；没设为 null。 */
+  globalConcurrency(): number | null {
+    const value = this.state.globalConcurrency;
+    return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
   }
 
   update(input: {
     defaultAgentId?: string;
-    agents?: Array<{ id: string; enabled?: boolean; binOverride?: string | null }>;
+    agents?: Array<{ id: string; enabled?: boolean; binOverride?: string | null; concurrency?: number }>;
+    globalConcurrency?: number;
   }): void {
     const next: AgentSettingsFile = {
       ...this.state,
@@ -50,12 +62,16 @@ export class AgentSettingsStore {
     if (input.defaultAgentId !== undefined) {
       next.defaultAgentId = input.defaultAgentId;
     }
+    if (input.globalConcurrency !== undefined) {
+      next.globalConcurrency = input.globalConcurrency;
+    }
     for (const change of input.agents ?? []) {
       const current = next.agents[change.id] ?? {};
       next.agents[change.id] = {
         ...current,
         ...(change.enabled === undefined ? {} : { enabled: change.enabled }),
         ...(change.binOverride === undefined ? {} : { binOverride: change.binOverride }),
+        ...(change.concurrency === undefined ? {} : { concurrency: change.concurrency }),
       };
     }
     this.write(next);
@@ -69,6 +85,7 @@ export class AgentSettingsStore {
         schemaVersion: 1,
         defaultAgentId: typeof parsed.defaultAgentId === "string" && parsed.defaultAgentId !== "" ? parsed.defaultAgentId : DEFAULT_AGENT_ID,
         agents: parsed.agents !== null && typeof parsed.agents === "object" ? parsed.agents : {},
+        ...(typeof parsed.globalConcurrency === "number" ? { globalConcurrency: parsed.globalConcurrency } : {}),
       };
     } catch {
       return { ...EMPTY, agents: {} };

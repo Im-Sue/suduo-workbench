@@ -132,6 +132,11 @@ describe("MCP 下发的工具定义", () => {
         "comment_submit",
         "session_list",
         "session_read",
+        "agent_list",
+        "delegate_start",
+        "delegate_wait",
+        "delegate_send",
+        "delegate_cancel",
       ]);
       const all = JSON.stringify(specs);
       expect(all).not.toMatch(/suduo_/);
@@ -154,6 +159,11 @@ describe("会话工具服务的 MCP 一侧", () => {
       "comment_submit",
       "session_list",
       "session_read",
+      "agent_list",
+      "delegate_start",
+      "delegate_wait",
+      "delegate_send",
+      "delegate_cancel",
     ]);
     const result = await service.callTool(grant(session.id), "requirement_get", {}, live());
     expect(result.isError).toBe(false);
@@ -171,7 +181,7 @@ describe("会话工具服务的 MCP 一侧", () => {
     const { service, sessionWithoutRef } = setup();
     const names = service.listTools(grant(sessionWithoutRef.id)).map((tool) => tool.name);
     expect(names).toContain("comment_submit");
-    expect(names).toHaveLength(9);
+    expect(names).toHaveLength(14);
   });
 
   it("发评论：建确认卡（不属于任何运行时连接），确认后发出并回给这次调用", async () => {

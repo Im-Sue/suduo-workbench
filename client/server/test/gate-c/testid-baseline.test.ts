@@ -52,7 +52,8 @@ test("the repository's dynamic data-testid attributes do not create baseline dri
   // （agent-row-${id}、agent-set-default-${id}）。
   // 13 -> 14：多 Agent S6「共享本机的其他 Agent」菜单每家一项（share-another-${id}）；「我的 Agent」每家一行
   // 仍用静态的 my-agent-switch，按行上的 data-agent-kind 区分。
-  expect(scan.dynamicEntries).toHaveLength(14);
+  // 14 -> 15：多 Agent 协作 S8 的 AI Agent 设置里每家一个并发上限选择（agents-concurrency-${agent.id}）。
+  expect(scan.dynamicEntries).toHaveLength(15);
   expect(comparison.missingFromSource).toEqual([]);
   expect(comparison.missingFromBaseline).toEqual([]);
 });

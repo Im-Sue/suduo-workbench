@@ -5,11 +5,31 @@ type Listener = (event: EventEnvelope<string, JsonValue>) => void;
 
 export class EventBroker implements EventPublisher {
   private readonly listeners = new Map<string, Set<Listener>>();
+  /** 不分会话的监听（本机调度器按回合终态还名额，多 Agent 协作 S8）。 */
+  private readonly globalListeners = new Set<Listener>();
 
   publish(event: EventEnvelope<string, JsonValue>): void {
     for (const listener of this.listeners.get(event.sessionId) ?? []) {
-      listener(event);
+      try {
+        listener(event);
+      } catch {
+        // 一个监听出错不挡别的（本机调度器按回合事件记名额，漏了要等对账）。
+      }
     }
+    for (const listener of this.globalListeners) {
+      try {
+        listener(event);
+      } catch {
+        // 全局监听出错不影响会话推送。
+      }
+    }
+  }
+
+  subscribeAll(listener: Listener): () => void {
+    this.globalListeners.add(listener);
+    return () => {
+      this.globalListeners.delete(listener);
+    };
   }
 
   subscribe(sessionId: string, listener: Listener): () => void {

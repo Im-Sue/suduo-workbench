@@ -33,6 +33,12 @@ export type KnownEventType =
   | "turn.completed"
   | "turn.interrupted"
   | "turn.start-failed"
+  /** 本机名额满了，这条消息的回合在排队（多 Agent 协作 S8）。 */
+  | "turn.queued"
+  /** 排队中的回合被取消（没有开始）。 */
+  | "turn.dequeued"
+  /** 这个会话发起的委派有了变化（载荷是 DelegationDto，委派卡片取同一委派最新的一条）。 */
+  | "delegation.updated"
   | "approval.requested"
   | "approval.resolved"
   | "approval.orphaned"

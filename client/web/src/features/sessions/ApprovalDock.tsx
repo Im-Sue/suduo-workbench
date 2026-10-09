@@ -160,6 +160,11 @@ export function ApprovalDock({
         data-variant="suduo-tool"
         data-tool={toolConfirmation.tool}
       >
+        {current.origin === undefined ? null : (
+          <div className="flex px-3.5 pt-3">
+            <OriginBadge origin={current.origin} />
+          </div>
+        )}
         <ToolConfirmationCard
           key={current.id}
           executing={current.status === "deciding"}
@@ -193,6 +198,7 @@ export function ApprovalDock({
         <span className="font-medium text-foreground">
           {current.kind === "file-change" && pending.length > 0 ? text.editFiles(pending.length) : approvalQuestion(current.kind, current.request, t)}
         </span>
+        {current.origin === undefined ? null : <OriginBadge origin={current.origin} />}
         {ordered.length > 1 ? (
           <span className="ml-auto text-caption text-subtle-foreground" aria-label={text.position(ordered.length)}>
             1/{ordered.length}
@@ -457,4 +463,14 @@ function choiceLabel(decision: ApprovalDecision, t: Messages): { title: string; 
     case "decline":
       return { title: text.decline, description: "" };
   }
+}
+
+/** 来自委派出来的子会话（多 Agent 协作 S8，R6「标明来源」）。 */
+function OriginBadge({ origin }: { origin: NonNullable<ApprovalDto["origin"]> }) {
+  const t = useT();
+  return (
+    <span className="min-w-0 truncate rounded-xs bg-muted px-1.5 text-caption text-muted-foreground" data-testid="approval-origin" title={origin.sessionTitle}>
+      {t.collab.approval.origin(origin.agentName, origin.task)}
+    </span>
+  );
 }

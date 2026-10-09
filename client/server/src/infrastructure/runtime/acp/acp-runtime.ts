@@ -28,7 +28,7 @@ import { withLoopbackNoProxy } from "../../mcp/loopback-no-proxy.js";
 import { AgentNotReadyError } from "../agent-not-ready.js";
 import { EventChannel } from "../event-channel.js";
 import { acpProfile, pickMode, type AcpProfile } from "./acp-profiles.js";
-import { AcpTurnTranslator, type TranslatedEvent } from "./acp-translator.js";
+import { AcpTurnTranslator, editPaths, type TranslatedEvent } from "./acp-translator.js";
 
 export const ACP_RUNTIME_KIND = "acp";
 
@@ -389,8 +389,9 @@ export class AcpRuntime implements AgentRuntime {
     }
     const kind = request.toolCall.kind ?? "other";
     const readKinds = new Set(["read", "search", "fetch", "think"]);
-    // 自动档只放行工作目录里的编辑（越界照样问）。
-    const insideCwd = (request.toolCall.locations ?? []).every((location) => isInside(session.cwd, location.path));
+    // 自动档只放行工作目录里的编辑（越界照样问；看不出改哪些文件也问）。
+    const touched = editPaths(request.toolCall, session.cwd);
+    const insideCwd = touched.length > 0 && touched.every((target) => isInside(session.cwd, target));
     const allow = optionFor(request.options, "accept") ?? request.options.find((option) => option.kind === "allow_always");
     const reject = optionFor(request.options, "decline") ?? request.options.find((option) => option.kind === "reject_always");
     const answer = (option: acp.PermissionOption | undefined) => Promise.resolve(option === undefined ? cancelled : { outcome: { outcome: "selected" as const, optionId: option.optionId } });
@@ -621,19 +622,17 @@ export function describeAcpPermission(
   const tool = request.toolCall;
   const raw = (tool.rawInput ?? {}) as Record<string, unknown>;
   const title = tool.title ?? "";
-  const paths = (tool.locations ?? []).map((location) => location.path);
   if (tool.kind === "execute") {
     const command = typeof raw["command"] === "string" ? raw["command"] : Array.isArray(raw["command"]) ? raw["command"].map(String).join(" ") : title;
     return { kind: "command", subject: "command", request: { command, cwd, reason: title }, display: { command, cwd, reason: title } };
   }
   if (tool.kind === "edit" || tool.kind === "delete" || tool.kind === "move") {
-    const diffPaths = (tool.content ?? []).flatMap((content) => (content.type === "diff" ? [content.path] : []));
-    const files = paths.length > 0 ? paths : diffPaths;
+    const paths = editPaths(tool, cwd);
     return {
       kind: "file-change",
       subject: "file",
-      request: { itemId: tool.toolCallId, ...(files[0] === undefined ? {} : { path: files[0] }), reason: title },
-      display: { paths: files, reason: title },
+      request: { itemId: tool.toolCallId, ...(paths[0] === undefined ? {} : { path: paths[0] }), reason: title },
+      display: { paths, reason: title },
     };
   }
   return { kind: "other", subject: "tool", request: { command: title, toolName: tool.kind ?? "other" }, display: { toolName: tool.kind ?? "other", command: title } };

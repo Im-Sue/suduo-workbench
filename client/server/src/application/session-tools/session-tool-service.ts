@@ -13,6 +13,7 @@ import {
   type SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
 import type { SessionReaderService } from "../context/session-reader.js";
+import type { DelegationTools } from "../collab/delegation-tools.js";
 import type { ApprovalRecord, ApprovalRepository } from "../../infrastructure/db/repositories/approval-repository.js";
 import type { SessionRepository } from "../../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRecord, SessionThreadRepository } from "../../infrastructure/db/repositories/session-thread-repository.js";
@@ -20,7 +21,7 @@ import type { ToolConfirmationHandler } from "../approval-service.js";
 import type { EventLedger } from "../event-ledger.js";
 import type { McpToolCallResult, McpToolContent, McpToolDefinition, McpToolHost } from "../../infrastructure/mcp/mcp-endpoint.js";
 import type { ToolGrant } from "../../infrastructure/mcp/tool-tokens.js";
-import { internalToolName, isWriteTool, mcpToolSpecsFor, mcpToolText, sessionToolNames, type SessionToolScope } from "./catalog.js";
+import { internalToolName, isDelegationToolName, isWriteTool, mcpToolSpecsFor, mcpToolText, sessionToolNames, type SessionToolScope } from "./catalog.js";
 import { failure, limitToolResult, textResult, toolFormat, type ToolResult } from "./format.js";
 import type { RequirementTools, ToolSessionContext } from "./requirement-tools.js";
 import type { RoomTools } from "./room-tools.js";
@@ -68,6 +69,8 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
       roomTools?: RoomTools;
       /** 跨会话读取（多 Agent 协作 S7）；不传时会话工具一律回「不可用」。 */
       sessionReader?: Pick<SessionReaderService, "list" | "read">;
+      /** 委派（多 Agent 协作 S8）；不传时委派工具一律回「不可用」。 */
+      delegationTools?: DelegationTools;
       /**
        * 会话记录：会话没关联 SuDuo 项目（取不到工具上下文）时，按它记下的语言回包；
        * 会话记录也查不到时用 `FALLBACK_LOCALE`。必填，免得漏接时英文会话悄悄收到中文。
@@ -78,6 +81,11 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
       mcpDraftAfterMs?: number;
     },
   ) {}
+
+  /** 委派工具在本机服务组装的后段才建好（依赖发消息、调度）：建好后接上。 */
+  setDelegationTools(tools: DelegationTools): void {
+    this.deps.delegationTools = tools;
+  }
 
   /** MCP tools/list（ADR-0015）：给令牌授予的工具（建线程时定下），说明不用代码模式的写法。 */
   listTools(grant: ToolGrant): McpToolDefinition[] {
@@ -111,7 +119,7 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
     const draftAt = startedAt + (this.deps.mcpDraftAfterMs ?? (grant.toolTimeoutSec - MCP_DRAFT_MARGIN_SEC) * 1000);
     const result = await (isWriteTool(internal)
       ? this.mcpWrite(context, internal, args, call, draftAt)
-      : this.runReadTool(context, internal, args)
+      : this.runReadTool(context, internal, args, { signal: call.signal, toolTimeoutSec: grant.toolTimeoutSec })
     ).catch((error: unknown) => failure(f.t.toolReply.dispatch.runFailed(f.reasonOf(error))));
     this.log({ event: "suduo.tool.mcp_call", sessionId, tool: internal, success: result.success, durationMs: Date.now() - startedAt });
     return toMcpResult(limitToolResult(result, f));
@@ -344,9 +352,33 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
     });
   }
 
-  private runReadTool(context: ToolSessionContext, tool: string, args: Record<string, unknown>): Promise<ToolResult> {
+  private runReadTool(
+    context: ToolSessionContext,
+    tool: string,
+    args: Record<string, unknown>,
+    /** 调用方的连接与工具超时（委派的「等待」按它定最长等多久、调用方走了就不等）。 */
+    call: { signal?: AbortSignal; toolTimeoutSec?: number } = {},
+  ): Promise<ToolResult> {
     const tools = this.deps.tools;
     const text = toolFormat(context.locale).t.toolReply;
+    if (isDelegationToolName(tool)) {
+      // 深度 1（R2）：委派出来的子会话不能再委派（建线程时已经不挂，这里再拦一次）。
+      if (context.delegateChild === true) return Promise.resolve(failure(toolFormat(context.locale).t.delegation.reply.notMain));
+      const delegation = this.deps.delegationTools;
+      if (!delegation) return Promise.resolve(failure(text.dispatch.delegationToolsUnavailable));
+      switch (tool) {
+        case "suduo_agent_list":
+          return Promise.resolve(delegation.agentList(context));
+        case "suduo_delegate_start":
+          return delegation.start(context, args);
+        case "suduo_delegate_wait":
+          return delegation.wait(context, args, call);
+        case "suduo_delegate_send":
+          return delegation.send(context, args);
+        case "suduo_delegate_cancel":
+          return delegation.cancel(context, args);
+      }
+    }
     const key = (requirementId: string) => context.sessionId + ":" + requirementId;
     const remember = (requirementId: string, sha256: string | null) => {
       this.notesReads.set(key(requirementId), sha256);

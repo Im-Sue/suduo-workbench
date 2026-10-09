@@ -153,6 +153,24 @@ describe("会话账本 → 回合", () => {
     expect(rounds[1]!.seq).toBe(6);
   });
 
+  it("本机队列里被取消的消息单独算一轮已中断，不并进之后的回合；排上后开起来的照常（S8）", () => {
+    const turn = (turnId: string) => ({ turnId });
+    const rounds = projectRounds([
+      { seq: 1, type: "message.submitted", ts: 1, payload: { content: [{ type: "text", text: "排着被取消" }], clientTurnId: "c1" } },
+      { seq: 2, type: "turn.queued", ts: 2, payload: { clientTurnId: "c1" } },
+      { seq: 3, type: "turn.dequeued", ts: 3, payload: { clientTurnId: "c1", reason: "cancelled" } },
+      { seq: 4, type: "message.submitted", ts: 4, payload: { content: [{ type: "text", text: "排着开了" }], clientTurnId: "c2" } },
+      { seq: 5, type: "turn.queued", ts: 5, payload: { clientTurnId: "c2" } },
+      { seq: 6, type: "turn.dequeued", ts: 6, payload: { clientTurnId: "c2", reason: "started", turnId: "t1" } },
+      { seq: 7, type: "turn.started", ts: 7, payload: { turn: { id: "t1" } }, turnRef: turn("t1") },
+      { seq: 8, type: "turn.completed", ts: 8, payload: { turn: { id: "t1", status: "completed" } }, turnRef: turn("t1") },
+    ]);
+    expect(rounds.map((round) => ({ user: round.userText, status: round.status }))).toEqual([
+      { user: "排着被取消", status: "interrupted" },
+      { user: "排着开了", status: "completed" },
+    ]);
+  });
+
   it("命令输出、工具参数与结果、.env 一类文件的改动都打码", () => {
     const rounds = projectRounds([
       { seq: 1, type: "message.submitted", ts: 1, payload: { content: [{ type: "text", text: "看配置" }] } },

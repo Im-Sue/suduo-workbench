@@ -28,11 +28,11 @@ import type { Locale } from "@suduo/client-contracts";
 import { ApiError } from "./api-error.js";
 import { pathKey } from "./project-service.js";
 import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
-import type { SessionService } from "./session-service.js";
+import type { SessionService, SessionThreadSetup } from "./session-service.js";
 import type { DatabasePort } from "../infrastructure/db/database-port.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import type { RequirementSessionRefRepository } from "../infrastructure/db/repositories/requirement-session-ref-repository.js";
-import type { SessionGraphInput } from "../infrastructure/db/repositories/session-repository.js";
+import type { SessionGraphInput, SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
 import type { WorkspaceMappingRecord, WorkspaceMappingRepository } from "../infrastructure/db/repositories/workspace-mapping-repository.js";
 import type { RequirementsCredentialStore } from "../infrastructure/requirements-v2/credential-store.js";
 import type { RequirementsRemoteClient } from "../infrastructure/requirements-v2/remote-client.js";
@@ -427,6 +427,8 @@ export class RequirementsV2Service {
     start: SessionStartOptions = {},
     /** 与另一个会话的关系（接着做，多 Agent 协作 S7）。 */
     graph?: SessionGraphInput,
+    /** 改写开场说明与工具（委派的子会话附角色说明、去掉委派工具，多 Agent 协作 S8）。 */
+    adjustSetup?: (setup: SessionThreadSetup) => SessionThreadSetup,
   ) {
     this.sessions.checkStartOptions(start);
     const sessionContext = this.sessionContext;
@@ -439,11 +441,12 @@ export class RequirementsV2Service {
       // 先打水位线再读需求：开工以后的变化以水位线为分界，不会漏掉两次请求之间的改动。
       const auditAnchor = await sessionContext.captureAnchor(located.projectId, located.id);
       const requirement = await this.remote.getRequirement(requirementId);
-      const setup = await sessionContext.requirementSetup({
+      const baseSetup = await sessionContext.requirementSetup({
         locale,
         projectRoot: localProject.rootPath,
         requirement,
       });
+      const setup = adjustSetup === undefined ? baseSetup : adjustSetup(baseSetup);
       const session = await this.sessions.createFromRequirement(localProject.id, {
         locale,
         title: requirement.title,
@@ -466,19 +469,20 @@ export class RequirementsV2Service {
     remoteProjectId: string,
     locale: Locale,
     start: SessionStartOptions = {},
-    /** 接着做（多 Agent 协作 S7）：沿用原会话的标题，记下关系。 */
-    extra: { title?: string; graph?: SessionGraphInput } = {},
+    /** 接着做 / 委派（多 Agent 协作 S7 / S8）：沿用原会话的标题、记下关系、改写开场说明与工具。 */
+    extra: { title?: string; graph?: SessionGraphInput; adjustSetup?: (setup: SessionThreadSetup) => SessionThreadSetup } = {},
   ) {
     this.sessions.checkStartOptions(start);
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
       const localProject = await this.requireValidatedLocalProject(remoteProjectId);
-      const setup =
+      const baseSetup =
         (await this.sessionContext?.projectSetup({
           locale,
           projectRoot: localProject.rootPath,
           remoteProjectId,
         })) ?? {};
+      const setup = extra.adjustSetup === undefined ? baseSetup : extra.adjustSetup(baseSetup);
       const session = await this.sessions.create(
         localProject.id,
         { purpose: "general", ...(extra.title === undefined ? {} : { title: extra.title }), ...start },
@@ -502,17 +506,38 @@ export class RequirementsV2Service {
     if (source.kind !== "normal") {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.roomTaskNotContinuable);
     }
-    const graph: SessionGraphInput = { parentSessionId: source.id, rootSessionId: source.rootSessionId ?? source.id, relation: "continue" };
+    return this.createRelatedSession(source, locale, start, "continue");
+  }
+
+  /**
+   * 在原会话的需求 / 项目 / 本机项目下开一个有关系的新会话（接着做、委派，多 Agent 协作 S7 / S8）：
+   * 根会话沿用原会话的根；委派的子会话在开场说明后附角色说明、不挂委派工具（深度 1，R2）。
+   */
+  async createRelatedSession(
+    source: SessionRecord,
+    locale: Locale,
+    start: SessionStartOptions,
+    relation: "continue" | "delegate",
+    options: { title?: string; role?: string; dropTools?: (name: string) => boolean } = {},
+  ) {
+    const graph: SessionGraphInput = { parentSessionId: source.id, rootSessionId: source.rootSessionId ?? source.id, relation };
+    const adjustSetup = (setup: SessionThreadSetup): SessionThreadSetup => adjustThreadSetup(setup, options);
+    const title = options.title ?? source.title;
     const context = this.sessionContext?.toolContext(source.id) ?? null;
     if (context?.requirement) {
-      return this.createRequirementSession(context.requirement.remoteRequirementId, locale, start, graph);
+      return this.createRequirementSession(context.requirement.remoteRequirementId, locale, start, graph, adjustSetup);
     }
     if (context !== null) {
-      return this.createProjectSession(context.remoteProjectId, locale, start, { title: source.title, graph });
+      return this.createProjectSession(context.remoteProjectId, locale, start, { title, graph, adjustSetup });
     }
-    // 没关联 SuDuo 项目的本机会话：同一本机项目下开。
+    // 没关联 SuDuo 项目的本机会话：同一本机项目下开（没有 SuDuo 工具，只带角色说明）。
     this.sessions.checkStartOptions(start);
-    const session = await this.sessions.create(source.projectId, { title: source.title, purpose: source.purpose, ...start }, {}, { locale, graph });
+    const session = await this.sessions.create(
+      source.projectId,
+      { title, purpose: source.purpose, ...start },
+      adjustSetup({}),
+      { locale, graph },
+    );
     this.onSessionCreated?.(session.id);
     return session;
   }
@@ -741,4 +766,20 @@ function requirementNumberOf(requirement: object): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
     ? value
     : null;
+}
+
+/** 有关系的会话的开场：在开场说明后附角色说明，去掉不给它的工具（委派的子会话，S8；线程重建时同样套用）。 */
+export function adjustThreadSetup(
+  setup: SessionThreadSetup,
+  options: { role?: string; dropTools?: (name: string) => boolean },
+): SessionThreadSetup {
+  return {
+    ...setup,
+    ...(options.role === undefined
+      ? {}
+      : { developerInstructions: [setup.developerInstructions ?? "", options.role].filter((text) => text !== "").join("\n\n") }),
+    ...(setup.dynamicTools === undefined || options.dropTools === undefined
+      ? {}
+      : { dynamicTools: setup.dynamicTools.filter((tool) => !options.dropTools!(tool.name)) }),
+  };
 }

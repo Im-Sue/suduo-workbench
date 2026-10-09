@@ -67,6 +67,7 @@ export const workbench = {
         user_stop: "你点了停止",
         turn_failed: "上一轮失败了",
         turn_interrupted: "上一轮被中断了",
+        queue_dropped: "上一条在本机队列里没发出",
         send_rejected: "发送失败，已放回队首",
         send_uncertain: "这一条发没发出去还不确定",
         attribution_unconfirmed: "这一条去了哪儿还没确认",

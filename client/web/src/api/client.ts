@@ -9,6 +9,9 @@ import type {
   AgentSettingsDto,
   ApprovalDecision,
   SessionStartOptions,
+  SchedulerSnapshotDto,
+  DelegationDto,
+  StartDelegationRequest,
   UpdateAgentSettingsRequest,
   McpServerDto,
   ApprovalDto,
@@ -564,6 +567,26 @@ export const api = {
   getSession: (sessionId: string) =>
     request<SessionDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}`),
 
+  /** 本机运行面板（多 Agent 协作 S8）。 */
+  schedulerSnapshot: (options: { signal?: AbortSignal } = {}) =>
+    request<SchedulerSnapshotDto>("/api/v1/scheduler", options.signal === undefined ? {} : { signal: options.signal }),
+  promoteSchedulerItem: (itemId: string) =>
+    request<SchedulerSnapshotDto>(`/api/v1/scheduler/${encodeURIComponent(itemId)}/promote`, { method: "POST", body: {} }),
+  cancelSchedulerItem: (itemId: string) =>
+    request<SchedulerSnapshotDto>(`/api/v1/scheduler/${encodeURIComponent(itemId)}/cancel`, { method: "POST", body: {} }),
+
+  /** 委派（多 Agent 协作 S8）。 */
+  listDelegations: (sessionId: string) =>
+    request<{ items: DelegationDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations`),
+  startDelegation: (sessionId: string, body: StartDelegationRequest) =>
+    request<DelegationDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations`, { method: "POST", body }),
+  cancelDelegation: (delegationId: string) =>
+    request<DelegationDto>(`/api/v1/delegations/${encodeURIComponent(delegationId)}/cancel`, { method: "POST", body: {} }),
+  cancelAllDelegations: (sessionId: string) =>
+    request<{ items: DelegationDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations/cancel-all`, { method: "POST", body: {} }),
+  handbackDelegation: (delegationId: string) =>
+    request<DelegationDto>(`/api/v1/delegations/${encodeURIComponent(delegationId)}/handback`, { method: "POST", body: {} }),
+
   /** 交给另一个 Agent 接着做（多 Agent 协作 S7）：同一需求 / 项目下开新会话并记下接续关系。 */
   continueSession: (sessionId: string, body: SessionStartOptions) =>
     request<SessionDto>(`/api/v2/sessions/${encodeURIComponent(sessionId)}/continue`, { method: "POST", body }),
@@ -587,8 +610,9 @@ export const api = {
       body,
     }),
 
-  deleteSession: (sessionId: string) =>
-    request<void>(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
+  /** withChildren：连带删除往下的会话（委派、接着做；需求 R11）。 */
+  deleteSession: (sessionId: string, options: { withChildren?: boolean } = {}) =>
+    request<void>(`/api/v1/sessions/${encodeURIComponent(sessionId)}${options.withChildren === true ? "?withChildren=true" : ""}`, {
       method: "DELETE",
       expectedStatus: 204,
     }),

@@ -31,6 +31,8 @@ function projection(input: {
   meta?: Array<Partial<TurnMeta> & { turnId: string; status: TurnMeta["status"] }>;
   users?: Array<{ clientTurnId: string; turnId: string | null }>;
   lastSeq?: number;
+  /** 服务端本机队列里的排队项（多 Agent 协作 S8）。 */
+  queued?: Array<{ clientTurnId: string; state: "waiting" | "started" | "dropped" | "failed" }>;
 }): ConversationProjection {
   return {
     messages: (input.users ?? []).map((user, index) => ({
@@ -39,6 +41,7 @@ function projection(input: {
     })),
     turns: [], notices: [], runningTurnIds: input.running ?? [], lastSeq: input.lastSeq ?? 0, runtimeError: null,
     turnMeta: new Map((input.meta ?? []).map((meta) => [meta.turnId, { sawStart: true, startedTs: 0, endedTs: null, endedSeq: null, currentStep: null, ...meta }])),
+    timeline: (input.queued ?? []).map((entry, index) => ({ kind: "queued" as const, id: `q${String(index)}`, seq: index, itemId: `item-${String(index)}`, ts: index, ...entry })),
   };
 }
 
@@ -155,6 +158,33 @@ describe("queue 状态机（PR5，spec 第 7 项 9 条）", () => {
     expect(state).toMatchObject({ status: "paused", pausedReason: "attribution_unconfirmed", inflight: null });
     expect(state.items.map((entry) => entry.id)).toEqual(["b"]);
     expect(resume(state).items.map((entry) => entry.id)).toEqual(["b"]);
+  });
+});
+
+describe("queue 状态机 · 服务端本机队列（多 Agent 协作 S8）", () => {
+  it("服务端回「排队中」：轮到之前不算归属超时；轮到后归属期限从那时算起", () => {
+    let state = onSendAccepted(beginDispatch(baselined(enqueue(enqueue(emptyQueue(), item("a")), item("b"))), 0), "c-a", 1_000, true);
+    // 排队事件还没到：凭回执先不算超时。
+    state = reconcile(state, projection({ lastSeq: 1 }), 1_000 + ATTRIBUTION_DEADLINE_MS * 3);
+    expect(state.status).toBe("dispatch");
+    state = reconcile(state, projection({ lastSeq: 2, queued: [{ clientTurnId: "c-a", state: "waiting" }] }), 60_000);
+    expect(state).toMatchObject({ status: "dispatch", inflight: { acceptedAt: 60_000 } });
+    // 轮到了，但归属还没到：从轮到算 10 秒内不暂停。
+    state = reconcile(state, projection({ lastSeq: 3, queued: [{ clientTurnId: "c-a", state: "started" }] }), 60_000 + ATTRIBUTION_DEADLINE_MS);
+    expect(state.status).toBe("dispatch");
+    state = reconcile(state, projection({ lastSeq: 4, queued: [{ clientTurnId: "c-a", state: "started" }], users: [{ clientTurnId: "c-a", turnId: "t1" }] }), 61_000);
+    expect(state.inflight?.awaitingTurnId).toBe("t1");
+  });
+
+  it("排着被取消、重启没发出或会话归档：暂停（queue_dropped），不回队、不重发", () => {
+    let state = onSendAccepted(beginDispatch(baselined(enqueue(enqueue(emptyQueue(), item("a")), item("b"))), 0), "c-a", 1_000, true);
+    state = reconcile(state, projection({ lastSeq: 2, queued: [{ clientTurnId: "c-a", state: "dropped" }] }), 2_000);
+    expect(state).toMatchObject({ status: "paused", pausedReason: "queue_dropped", inflight: null });
+    expect(state.items.map((entry) => entry.id)).toEqual(["b"]);
+    // 轮到了却开不起来：按失败暂停。
+    let failed = onSendAccepted(beginDispatch(baselined(enqueue(emptyQueue(), item("c"))), 0), "c-c", 1_000, true);
+    failed = reconcile(failed, projection({ lastSeq: 2, queued: [{ clientTurnId: "c-c", state: "failed" }] }), 2_000);
+    expect(failed).toMatchObject({ status: "paused", pausedReason: "turn_failed", inflight: null });
   });
 });
 

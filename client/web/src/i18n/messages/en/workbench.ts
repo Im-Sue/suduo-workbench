@@ -62,6 +62,7 @@ export const workbench = {
         user_stop: "You stopped the turn",
         turn_failed: "The last turn failed",
         turn_interrupted: "The last turn was interrupted",
+        queue_dropped: "The last message wasn't sent from the local queue",
         send_rejected: "Couldn't send, so it's back at the front of the queue",
         send_uncertain: "Not sure whether this message was sent",
         attribution_unconfirmed: "Not yet confirmed where this message went",

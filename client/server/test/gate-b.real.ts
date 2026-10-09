@@ -489,7 +489,7 @@ async function sendMessage(
   sessionId: string,
   key: string,
   body: unknown,
-): Promise<SendMessageAccepted> {
+): Promise<SendMessageAccepted & { turnRef: NonNullable<SendMessageAccepted["turnRef"]> }> {
   const response = await api(
     baseUrl,
     cookie,
@@ -498,7 +498,10 @@ async function sendMessage(
     { key, body },
   );
   assertStatus(response, 202, "send message " + key);
-  return response.json() as Promise<SendMessageAccepted>;
+  const accepted = (await response.json()) as SendMessageAccepted;
+  // Gate B 一次只跑一个回合，不会排队（多 Agent 协作 S8 起排队时 turnRef 为 null）。
+  if (accepted.turnRef === null) throw new Error("send message " + key + " was queued unexpectedly");
+  return { ...accepted, turnRef: accepted.turnRef };
 }
 
 async function decideApproval(

@@ -5,6 +5,7 @@ import { projectRoomsQuery } from "../../features/rooms/queries.js";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  ActivityIcon,
   ChartColumnIcon,
   InboxIcon,
   KanbanSquareIcon,
@@ -41,6 +42,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RunPanel, schedulerQuery } from "../../features/scheduler/RunPanel.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useT } from "../../i18n/provider.js";
@@ -249,6 +252,8 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
 
       <div className="flex-1" />
 
+      <RunPanelEntry collapsed={collapsed} itemClass={itemClass(false, collapsed)} />
+
       <NavTip collapsed={collapsed} label={nav.settings}>
         <Link
           to="/settings"
@@ -340,3 +345,37 @@ export function Sidebar({ collapsed, onToggleCollapse }: { collapsed: boolean; o
     </nav>
   );
 }
+
+/** 本机运行面板的入口（多 Agent 协作 S8）：有运行中或排队中的回合时显示数字。 */
+function RunPanelEntry({ collapsed, itemClass: className }: { collapsed: boolean; itemClass: string }) {
+  const t = useT();
+  const text = t.collab.panel;
+  const [open, setOpen] = useState(false);
+  const snapshot = useQuery(schedulerQuery(open)).data;
+  const running = snapshot?.running.length ?? 0;
+  const queued = snapshot?.queued.length ?? 0;
+  const label = text.buttonLabel(running, queued);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <NavTip collapsed={collapsed} label={running + queued > 0 ? label : text.button}>
+        <PopoverTrigger asChild>
+          <button type="button" aria-label={label} className={cn(className, "relative")} data-testid="run-panel-button">
+            <ActivityIcon />
+            {collapsed ? null : <span className="flex-1 text-left">{text.button}</span>}
+            {running + queued === 0 ? null : collapsed ? (
+              <span className="absolute top-1 right-1 size-1.5 rounded-full bg-primary" aria-hidden="true" />
+            ) : (
+              <span className="rounded-full bg-muted px-1.5 text-caption text-muted-foreground" aria-hidden="true" data-testid="run-panel-count">
+                {queued > 0 ? `${running}+${queued}` : running}
+              </span>
+            )}
+          </button>
+        </PopoverTrigger>
+      </NavTip>
+      <PopoverContent side="right" align="end" className="w-[380px] p-0">
+        <RunPanel onNavigate={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+

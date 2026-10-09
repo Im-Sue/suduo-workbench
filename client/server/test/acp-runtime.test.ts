@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue, RuntimeEventDraft, ThreadRef } from "@suduo/client-contracts";
 import { acpProfile, pickMode } from "../src/infrastructure/runtime/acp/acp-profiles.js";
 import { AcpRuntime, isAuthError } from "../src/infrastructure/runtime/acp/acp-runtime.js";
-import { AcpTurnTranslator, suDuoToolName, type TranslatedEvent } from "../src/infrastructure/runtime/acp/acp-translator.js";
+import { AcpTurnTranslator, editPaths, suDuoToolName, type TranslatedEvent } from "../src/infrastructure/runtime/acp/acp-translator.js";
 
 /** 多 Agent S4：标准 ACP 运行时（ADR-0014，技术设计 2.4、4.1、4.2；S0 实测）。 */
 
@@ -68,6 +68,51 @@ describe("ACP 更新翻译成 SuDuo 的条目", () => {
     expect(done[4]).toMatchObject({ server: "Gemini CLI", tool: "github: get issue", status: "failed" });
     expect(events.find((event) => event.type === "plan.updated")!.payload).toMatchObject({ plan: [{ step: "一", status: "inProgress" }] });
     expect(events.find((event) => event.type === "usage.updated")!.payload).toMatchObject({ tokenUsage: { last: { totalTokens: 5000 }, modelContextWindow: 200000 } });
+  });
+
+  it("OpenCode 的 apply_patch：不带 diff 与位置，改动从完成时的 metadata.files 取（新增全文、删除原文、改名带 move_path）", () => {
+    const t = translator();
+    const patch = (file: string, body: string) => `Index: ${file}\n===================================================================\n--- ${file}\n+++ ${file}\n${body}`;
+    const events = [
+      { sessionUpdate: "tool_call", toolCallId: "p1", title: "apply_patch", kind: "edit", status: "pending", locations: [], rawInput: {} },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "p1",
+        status: "completed",
+        rawOutput: {
+          output: "Success.",
+          metadata: {
+            files: [
+              { filePath: "/repo/new.txt", type: "add", patch: patch("/repo/new.txt", "@@ -0,0 +1,2 @@\n+x\n+y\n") },
+              { filePath: "/repo/a.txt", type: "move", movePath: "/repo/b.txt", patch: patch("/repo/a.txt", "@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n") },
+              { filePath: "/repo/old.txt", type: "delete", patch: patch("/repo/old.txt", "@@ -1,1 +0,0 @@\n-gone\n") },
+            ],
+          },
+        },
+      },
+    ].flatMap((update) => t.translate(update));
+    expect(items(events, "item.completed")[0]).toMatchObject({
+      type: "fileChange",
+      changes: [
+        { path: "/repo/new.txt", kind: { type: "add", move_path: null }, diff: "x\ny\n" },
+        { path: "/repo/a.txt", kind: { type: "update", move_path: "/repo/b.txt" }, diff: "--- a/a.txt\n+++ b/b.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n" },
+        { path: "/repo/old.txt", kind: { type: "delete", move_path: null }, diff: "gone\n" },
+      ],
+    });
+  });
+
+  it("编辑涉及的文件：位置、diff、输入路径与补丁头（相对路径按工作目录）", () => {
+    expect(
+      editPaths(
+        {
+          locations: [{ path: "/repo/a.ts" }],
+          content: [{ type: "diff", path: "/repo/b.ts" }],
+          rawInput: { patchText: "*** Begin Patch\n*** Add File: c.ts\n+x\n*** Update File: /repo/a.ts\n*** Move to: ../outside.ts\n*** End Patch" },
+        },
+        "/repo",
+      ),
+    ).toEqual(["/repo/a.ts", "/repo/b.ts", "/repo/c.ts", "/outside.ts"]);
+    expect(editPaths({ rawInput: {} }, "/repo")).toEqual([]);
   });
 
   it("结束原因：取消（发过中断）记 interrupted；拒绝与超限记失败；没收尾的工具记失败", () => {
@@ -212,6 +257,23 @@ describe("ACP 运行时（假 Agent 进程）", () => {
     const answers = context.calls().filter((call) => call["method"] === "permission-answer").map((call) => call["outcome"]);
     expect(answers).toEqual([{ outcome: "selected", optionId: "allow-once" }, { outcome: "selected", optionId: "reject-once" }]);
     expect(context.calls().filter((call) => call["method"] === "session/set_mode").map((call) => call["modeId"])).toEqual(["default", "yolo", "plan"]);
+  });
+
+  it("自动档：工作目录里的编辑直接放行；越界或看不出改哪些文件（apply_patch 不带位置）照样出卡", async () => {
+    const context = setup();
+    const threadRef = await create(context);
+    const inside = JSON.stringify({ patchText: "*** Begin Patch\n*** Update File: src/a.ts\n*** End Patch" });
+    await context.runtime.startTurn(turn(threadRef, `edit-permission ${inside}`, "auto"));
+    await vi.waitFor(() => expect(context.ofType("turn.completed")).toHaveLength(1));
+    expect(context.ofType("approval.requested")).toHaveLength(0);
+    const outside = JSON.stringify({ patchText: "*** Begin Patch\n*** Add File: /etc/suduo-test\n*** End Patch" });
+    await context.runtime.startTurn(turn(threadRef, `edit-permission ${outside}`, "auto"));
+    await vi.waitFor(() => expect(context.ofType("approval.requested")).toHaveLength(1));
+    expect((context.ofType("approval.requested")[0]!.payload as Record<string, JsonValue>)["display"]).toMatchObject({ paths: ["/etc/suduo-test"] });
+    await context.runtime.approve({ sessionId: "s-1", threadRef, approvalRef: (context.ofType("approval.requested")[0]!.payload as Record<string, string>)["approvalRef"]!, decision: "decline", optionId: "reject-once" });
+    await vi.waitFor(() => expect(context.ofType("turn.completed")).toHaveLength(2));
+    await context.runtime.startTurn(turn(threadRef, `edit-permission {}`, "auto"));
+    await vi.waitFor(() => expect(context.ofType("approval.requested")).toHaveLength(2));
   });
 
   it("中断：先把等着的权限请求答成取消、卡片作废，回合记 interrupted；之后照常", async () => {

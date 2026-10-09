@@ -112,6 +112,7 @@ function projectRules(p: PromptMessages): string[] {
  * 需求卡与工具清单。全部从本机库派生，不信任模型或前端给的需求 ID。
  */
 export class SessionContextService {
+  private rebuildAdjust: ((sessionId: string, setup: ThreadSetup | null) => ThreadSetup | null) | null = null;
   constructor(
     private readonly deps: {
       sessions: SessionRepository;
@@ -165,10 +166,12 @@ export class SessionContextService {
         },
       };
     }
+    const delegateChild = session.relation === "delegate";
     const ref = this.deps.refs.getBySessionId(sessionId);
     if (ref !== null) {
       return {
         sessionId,
+        ...(delegateChild ? { delegateChild } : {}),
         locale: session.locale,
         projectRoot: project.rootPath,
         remoteProjectId: ref.remoteProjectId,
@@ -186,6 +189,7 @@ export class SessionContextService {
     }
     return {
       sessionId,
+      ...(delegateChild ? { delegateChild } : {}),
       locale: session.locale,
       projectRoot: project.rootPath,
       remoteProjectId: projectRef.remoteProjectId,
@@ -428,6 +432,16 @@ export class SessionContextService {
    * 旧版需求会话与未关联项目的会话返回 null（旧版会话不补挂工具，保持原样）。
    */
   async rebuildSetup(sessionId: string): Promise<ThreadSetup | null> {
+    const base = await this.rebuildBaseSetup(sessionId);
+    return this.rebuildAdjust === null ? base : this.rebuildAdjust(sessionId, base);
+  }
+
+  /** 重建时按会话关系再调整开场（委派的子会话附角色说明、去掉委派与写工具，S8）。 */
+  setRebuildAdjust(adjust: (sessionId: string, setup: ThreadSetup | null) => ThreadSetup | null): void {
+    this.rebuildAdjust = adjust;
+  }
+
+  private async rebuildBaseSetup(sessionId: string): Promise<ThreadSetup | null> {
     const context = this.toolContext(sessionId);
     if (context === null) {
       return null;

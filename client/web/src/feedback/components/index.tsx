@@ -213,9 +213,15 @@ export function ConfirmDialog({
   confirmLabel,
   onConfirm,
   triggerRef,
+  children,
+  confirmDisabled = false,
 }: DialogBaseProps & {
   confirmLabel?: string;
   onConfirm: () => void;
+  /** 还在准备（如查要连带删除的子会话）时先不让确认。 */
+  confirmDisabled?: boolean;
+  /** 说明下方的附加选项（如「同时删除子会话」）。 */
+  children?: ReactNode;
 }) {
   const t = useT();
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -241,6 +247,7 @@ export function ConfirmDialog({
             </DialogDescription>
           )}
         </DialogHeader>
+        {children}
         <DialogFooter>
           <Button ref={cancelRef} type="button" onClick={close}>
             {t.feedback.dialog.cancel}
@@ -248,6 +255,7 @@ export function ConfirmDialog({
           <Button
             type="button"
             variant="danger"
+            disabled={confirmDisabled}
             onClick={() => {
               onConfirm();
               close();

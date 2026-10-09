@@ -17,5 +17,6 @@ import { conversation } from "./conversation.js";
 import { workbench } from "./workbench.js";
 import { agents } from "./agents.js";
 import { sessionLinks } from "./sessionLinks.js";
+import { collab } from "./collab.js";
 
-export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview, rooms, conversation, workbench, agents, sessionLinks } satisfies Messages;
+export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview, rooms, conversation, workbench, agents, sessionLinks, collab } satisfies Messages;

@@ -1,4 +1,4 @@
-import type { EventEnvelope, JsonValue } from "@suduo/client-contracts";
+import type { DelegationDto, EventEnvelope, JsonValue } from "@suduo/client-contracts";
 import type { ConversationMessage, CurrentStep, TurnMeta, TurnStatus } from "./reducer.js";
 import { completedAgentMessageText, codexErrorDescription, describeCodexError, localizeTurnError, noticeOf, objectValue, describePermissions, runtimeNoticeText } from "./shared.js";
 import {
@@ -129,7 +129,14 @@ export interface TimelineNotice {
 export type TimelineEntry =
   | { kind: "user"; id: string; seq: number; message: ConversationMessage }
   | { kind: "turn"; id: string; seq: number; turn: TurnTimeline }
-  | { kind: "notice"; id: string; seq: number; notice: TimelineNotice };
+  | { kind: "notice"; id: string; seq: number; notice: TimelineNotice }
+  /** 委派卡片（多 Agent 协作 S8）：出现在第一次记下的位置，内容取同一委派最新的一条。 */
+  | { kind: "delegation"; id: string; seq: number; delegation: DelegationDto }
+  /**
+   * 排队中的消息（多 Agent 协作 S8）：带可取消的队列项。state：还在等 / 开起来了 / 没发出（取消、重启、会话归档），
+   * 按 clientTurnId 对上服务端的出队记录；本地队列据此判断这条有没有被收下。
+   */
+  | { kind: "queued"; id: string; seq: number; itemId: string; clientTurnId: string | null; ts: number; state: "waiting" | "started" | "dropped" | "failed" };
 
 /** 上下文用量（输入框的用量环）：最近一次请求占用的 token 与模型上下文窗口。 */
 export interface ContextUsage {
@@ -158,6 +165,9 @@ export function buildTimeline(
   const turns = new Map<string, TurnDraft>();
   const noticeTexts = new Set<string>();
   const userEntries = new Map<string, Extract<TimelineEntry, { kind: "user" }>>();
+  const delegations = new Map<string, Extract<TimelineEntry, { kind: "delegation" }>>();
+  /** 排队提示，按 clientTurnId：回合开起来或取消后不再显示「取消排队」。 */
+  const queued = new Map<string, Extract<TimelineEntry, { kind: "queued" }>>();
   const messageById = new Map(messages.map((message) => [message.id, message]));
   let usage: ContextUsage | null = null;
   let unattached: TurnDraft | null = null;
@@ -243,6 +253,56 @@ export function buildTimeline(
         userEntries.set(message.id, entry);
         entries.push(entry);
       }
+      continue;
+    }
+
+    // 多 Agent 协作 S8：委派卡片与本机队列。
+    if (event.type === "delegation.updated") {
+      const delegation = event.payload as unknown as DelegationDto;
+      const existing = delegations.get(delegation.id);
+      if (existing !== undefined) existing.delegation = delegation;
+      else {
+        const entry = { kind: "delegation" as const, id: `delegation:${delegation.id}`, seq: event.seq, delegation };
+        delegations.set(delegation.id, entry);
+        entries.push(entry);
+      }
+      continue;
+    }
+    if (event.type === "turn.queued") {
+      const itemId = typeof payload["queueItemId"] === "string" ? payload["queueItemId"] : "";
+      const clientTurnId = typeof payload["clientTurnId"] === "string" ? payload["clientTurnId"] : null;
+      const entry = { kind: "queued" as const, id: `queued:${event.eventId}`, seq: event.seq, itemId, clientTurnId, ts: event.ts, state: "waiting" as const };
+      queued.set(clientTurnId ?? itemId, entry);
+      entries.push(entry);
+      continue;
+    }
+    if (event.type === "turn.dequeued") {
+      const entry = queued.get(String(payload["clientTurnId"] ?? payload["queueItemId"] ?? ""));
+      const reason = payload["reason"];
+      // 排上的这条开起来了：撤掉排队提示，不另记一笔。
+      if (reason === "started") {
+        if (entry !== undefined) entry.state = "started";
+        continue;
+      }
+      if (entry !== undefined) entry.state = "dropped";
+      const text =
+        reason === "restart"
+          ? t.collab.queue.dequeuedRestart
+          : reason === "requeued"
+            ? t.collab.queue.dequeuedRequeued
+            : reason === "archived" || reason === "deleted"
+              ? t.collab.queue.dequeuedInactive
+              : t.collab.queue.dequeued;
+      // 工作台自己的说明（这条消息没发给 Agent）：进对话流；info 级是运行时自带的提示，只收进会话头。
+      entries.push({ kind: "notice", id: `notice:${event.eventId}`, seq: event.seq, notice: { id: event.eventId, ts: event.ts, text, level: "important" } });
+      continue;
+    }
+    // 排队的消息开不起来（不属于任何回合）；属于回合的开不起来照旧在下面按回合标失败。
+    if (event.type === "turn.start-failed" && turnId === null) {
+      const entry = queued.get(String(payload["clientTurnId"] ?? ""));
+      if (entry !== undefined) entry.state = "failed";
+      const message = String(objectValue(payload["error"])["message"] ?? "");
+      entries.push({ kind: "notice", id: `notice:${event.eventId}`, seq: event.seq, notice: { id: event.eventId, ts: event.ts, text: t.collab.queue.startFailed(message), level: "error" } });
       continue;
     }
 

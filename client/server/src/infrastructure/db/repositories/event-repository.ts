@@ -205,6 +205,31 @@ export class EventRepository {
       .map((turn) => turn.ref);
   }
 
+  /**
+   * 本机队列相关事件（多 Agent 协作 S8）：排队、出队与开不起来，按先后。本机服务启动时据此给重启前还在排队的消息收尾。
+   */
+  listQueueEvents(): EventRecord[] {
+    return this.database
+      .prepare("SELECT * FROM events WHERE type IN ('turn.queued', 'turn.dequeued', 'turn.start-failed') ORDER BY seq ASC")
+      .all<EventRow>({})
+      .map(mapEvent);
+  }
+
+  /** 会话里某条已提交消息（按 clientTurnId）的内容；没有为 null（重启后委派重新排队时取回）。 */
+  submittedContent(sessionId: string, clientTurnId: string): JsonValue | null {
+    const row = this.database
+      .prepare(
+        [
+          "SELECT payload_json FROM events WHERE session_id = @sessionId AND type = 'message.submitted'",
+          "AND json_extract(payload_json, '$.clientTurnId') = @clientTurnId ORDER BY seq DESC LIMIT 1",
+        ].join(" "),
+      )
+      .get<{ payload_json: string }>({ sessionId, clientTurnId });
+    if (!row) return null;
+    const payload = parseJson(row.payload_json);
+    return payload !== null && typeof payload === "object" && !Array.isArray(payload) ? (payload["content"] ?? null) : null;
+  }
+
   /** 当前最大的事件序号（没有事件时为 0）。本机服务启动时记下，之后据此只看本次启动以来的事件。 */
   lastSeq(): number {
     const row = this.database.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events").get<{ seq: number }>();

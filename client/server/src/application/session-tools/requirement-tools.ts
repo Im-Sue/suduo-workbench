@@ -76,6 +76,8 @@ export interface ToolSessionContext {
     agentId: string;
     allowedTools: readonly string[];
   };
+  /** 委派出来的子会话（多 Agent 协作 S8）：不能再委派（深度 1，R2）。 */
+  delegateChild?: boolean;
 }
 
 /** 图片直接交给模型看的上限；更大的存文件。 */

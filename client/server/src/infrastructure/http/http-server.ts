@@ -96,6 +96,8 @@ import {
   type ProxySettingsRouteDependencies,
 } from "./routes/proxy-settings-routes.js";
 import { registerAgentsRoutes, type AgentsRouteDependencies } from "./routes/agents-routes.js";
+import { registerSchedulerRoutes, type SchedulerRouteDependencies } from "./routes/scheduler-routes.js";
+import { registerDelegationsRoutes, type DelegationsRouteDependencies } from "./routes/delegations-routes.js";
 import { MCP_ENDPOINT_PATH, registerMcpEndpoint, type McpToolHost } from "../mcp/mcp-endpoint.js";
 import type { ToolTokenRegistry } from "../mcp/tool-tokens.js";
 import {
@@ -125,6 +127,8 @@ export interface HttpServerDependencies
     ModelProviderRouteDependencies,
     ProxySettingsRouteDependencies,
     AgentsRouteDependencies,
+    SchedulerRouteDependencies,
+    DelegationsRouteDependencies,
     McpRouteDependencies,
     LocalDirectoryRouteDependencies,
     SystemActivityRouteDependencies {
@@ -268,6 +272,8 @@ export function buildHttpServer(
   registerCodexConfigFileRoutes(server, dependencies);
   registerProxySettingsRoutes(server, dependencies);
   registerAgentsRoutes(server, { ...dependencies, codexModelOptions: () => dependencies.modelProvider.listModelOptions() });
+  registerSchedulerRoutes(server, dependencies);
+  registerDelegationsRoutes(server, dependencies);
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }
@@ -690,7 +696,7 @@ export function buildHttpServer(
       ),
   );
 
-  server.delete<{ Params: { sessionId: string } }>(
+  server.delete<{ Params: { sessionId: string }; Querystring: { withChildren?: string } }>(
     "/api/v1/sessions/:sessionId",
     async (request, reply) =>
       idempotent(
@@ -700,7 +706,11 @@ export function buildHttpServer(
         "sessions:delete:" + request.params.sessionId,
         null,
         async () => {
-          dependencies.sessions.remove(request.params.sessionId);
+          // withChildren=true 连带删除往下的会话（需求 R11）；子会话上没做完的委派先取消。
+          const targets = dependencies.sessions.removalTargets(request.params.sessionId, request.query.withChildren === "true");
+          await dependencies.delegations?.beforeSessionsDeleted(targets);
+          for (const id of targets) dependencies.sessions.remove(id);
+          dependencies.delegations?.afterSessionsDeleted(targets);
           return { statusCode: 204, body: null };
         },
       ),
@@ -744,10 +754,14 @@ export function buildHttpServer(
     "/api/v1/sessions/:sessionId/approvals",
     async (request) => {
       dependencies.sessions.get(request.params.sessionId);
-      return dependencies.approvals.list(
-        request.params.sessionId,
-        approvalQuery(request.query),
+      const query = approvalQuery(request.query);
+      const page = dependencies.approvals.list(request.params.sessionId, query);
+      // 委派出来的子会话等确认的卡片一并列出、标明来源（多 Agent 协作 S8，R6）。
+      if ((query.status ?? "pending") !== "pending" || dependencies.delegations === undefined) return page;
+      const children = dependencies.delegations.activeChildren(request.params.sessionId).flatMap(({ childSessionId, origin }) =>
+        dependencies.approvals.list(childSessionId, { status: "pending" }).items.map((item) => ({ ...item, origin })),
       );
+      return children.length === 0 ? page : { ...page, items: [...page.items, ...children] };
     },
   );
 

@@ -7,6 +7,7 @@ import type {
   AgentStatusReasonCode,
   UpdateAgentSettingsRequest,
 } from "@suduo/client-contracts";
+import { CONCURRENCY_MAX, CONCURRENCY_MIN, DEFAULT_GLOBAL_CONCURRENCY } from "@suduo/client-contracts";
 import { ApiError, type ErrorText } from "../api-error.js";
 import { AGENT_CATALOG, type AgentDescriptor, validateAgentCatalog } from "./catalog.js";
 import { agentChildEnv, execAgentCommand, type AgentExec } from "./agent-exec.js";
@@ -51,6 +52,7 @@ export class AgentCatalogService {
   private readonly cache = new Map<string, CachedStatus>();
   private readonly inflight = new Map<string, Promise<AgentDto>>();
   private readonly authFailures = new Set<string>();
+  private readonly settingsListeners = new Set<() => void>();
 
   constructor(private readonly options: AgentCatalogServiceOptions) {
     this.catalog = options.catalog ?? AGENT_CATALOG;
@@ -129,6 +131,14 @@ export class AgentCatalogService {
     return null;
   }
 
+  /** 能不能把任务委派给这家（多 Agent 协作 S8）：SuDuo 接上了、没在设置里停用。能返回 null。没装、没登录在建子会话时报。 */
+  delegationProblem(agentId: string): ErrorText | null {
+    const descriptor = this.catalog.find((agent) => agent.id === agentId);
+    if (descriptor === undefined || !descriptor.runtimeAvailable) return (t) => t.delegation.reply.agentUnavailable(agentId);
+    if (!this.options.store.entry(agentId).enabled) return (t) => t.delegation.reply.agentDisabled(descriptor.displayName);
+    return null;
+  }
+
   /** 重新检测（用户登录后点的）：之前运行中记下的登录失败也一并放下，下次用到时再确认。 */
   async recheck(agentId: string): Promise<AgentDto> {
     this.authFailures.delete(agentId);
@@ -138,16 +148,39 @@ export class AgentCatalogService {
   settings(): AgentSettingsDto {
     return {
       defaultAgentId: this.options.store.defaultAgentId(),
-      agents: this.catalog.map((agent) => ({ id: agent.id, ...this.options.store.entry(agent.id) })),
+      agents: this.catalog.map((agent) => {
+        const entry = this.options.store.entry(agent.id);
+        return { id: agent.id, enabled: entry.enabled, binOverride: entry.binOverride, concurrency: this.concurrency(agent.id) };
+      }),
+      globalConcurrency: this.globalConcurrency(),
     };
+  }
+
+  /** 这家 Agent 同时运行中的回合上限（多 Agent 协作 S8）：用户设的，没设用配置表的默认值；不认识的 Agent 为 1。 */
+  concurrency(agentId: string): number {
+    const descriptor = this.catalog.find((agent) => agent.id === agentId);
+    return this.options.store.entry(agentId).concurrency ?? descriptor?.defaultConcurrency ?? 1;
+  }
+
+  /** 全部 Agent 合计的上限。 */
+  globalConcurrency(): number {
+    return this.options.store.globalConcurrency() ?? DEFAULT_GLOBAL_CONCURRENCY;
   }
 
   updateSettings(input: UpdateAgentSettingsRequest): AgentSettingsDto {
     if (input.defaultAgentId !== undefined) {
       this.descriptor(input.defaultAgentId);
     }
+    const validConcurrency = (value: unknown) =>
+      typeof value === "number" && Number.isSafeInteger(value) && value >= CONCURRENCY_MIN && value <= CONCURRENCY_MAX;
+    if (input.globalConcurrency !== undefined && !validConcurrency(input.globalConcurrency)) {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.http.concurrencyRange("globalConcurrency", CONCURRENCY_MIN, CONCURRENCY_MAX));
+    }
     for (const change of input.agents ?? []) {
       this.descriptor(change.id);
+      if (change.concurrency !== undefined && !validConcurrency(change.concurrency)) {
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.http.concurrencyRange("concurrency", CONCURRENCY_MIN, CONCURRENCY_MAX));
+      }
       if (change.enabled !== undefined && typeof change.enabled !== "boolean") {
         throw new ApiError(400, "VALIDATION_ERROR", (t) => t.http.mustBeBoolean("enabled"));
       }
@@ -159,7 +192,14 @@ export class AgentCatalogService {
     for (const change of input.agents ?? []) {
       this.cache.delete(change.id);
     }
+    for (const listener of this.settingsListeners) listener();
     return this.settings();
+  }
+
+  /** 设置改了（如并发上限，本机调度据此立即按新上限放行）。 */
+  onSettingsChanged(listener: () => void): () => void {
+    this.settingsListeners.add(listener);
+    return () => this.settingsListeners.delete(listener);
   }
 
   /** 官方登录命令（ADR-0016：登录由用户在官方流程里完成）。 */

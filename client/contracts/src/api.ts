@@ -143,6 +143,8 @@ export interface SessionLinkDto {
 export interface SessionLinksDto {
   continuedFrom: SessionLinkDto | null;
   continuedBy: SessionLinkDto[];
+  /** 往下的会话（委派、接着做……含孙辈，不含已删除）有几个；删除时据此询问是否连带。旧服务端不返回。 */
+  descendantCount?: number;
 }
 
 export interface SessionAgentDto {
@@ -315,9 +317,14 @@ export interface SendMessageAccepted {
   sessionId: string;
   messageEventSeq: number;
   threadRef: ThreadRef;
-  /** 运行中发送时这里可能是一个永不出现在事件流里的幽灵 id，仅供诊断，不参与任何归属判定。 */
-  turnRef: TurnRef;
+  /**
+   * 运行中发送时这里可能是一个永不出现在事件流里的幽灵 id，仅供诊断，不参与任何归属判定。
+   * 本机名额满了、消息在排队（多 Agent 协作 S8）时为 null，回合轮到时才开。
+   */
+  turnRef: TurnRef | null;
   acceptedAt: number;
+  /** 排队中（本机同时运行的回合到上限，需求 4.11「排队不拒绝」）：在本机队列里的项与位置。 */
+  queued?: { itemId: string; position: number };
   /**
    * 发送时生成的关联键（与 message.submitted.payload.clientTurnId 相同）。
    * Codex 会在 userMessage item 里把它连同真正收下这条消息的回合一起报回来，
@@ -354,6 +361,19 @@ export interface ApprovalDto {
   requestedAt: number;
   decidedAt: number | null;
   version: number;
+  /**
+   * 来自委派出来的子会话（多 Agent 协作 S8，R6「审批不越过人、标明来源」）：发起会话的审批坞里
+   * 一并列出子会话等确认的卡片，并写明是哪个委派。自己会话的卡片没有这一项。
+   */
+  origin?: ApprovalOriginDto;
+}
+
+export interface ApprovalOriginDto {
+  sessionId: string;
+  sessionTitle: string;
+  agentName: string;
+  delegationId: string;
+  task: string;
 }
 
 export interface ListApprovalsQuery extends CursorQuery {

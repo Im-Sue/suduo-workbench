@@ -7,6 +7,7 @@ import {
   DEFAULT_CODEX_RUNTIME_ID,
   SUDUO_DEFAULTS,
   type CodexTransportFactory,
+  type Locale,
   type SuDuoRunMode,
 } from "@suduo/client-contracts";
 import { ApprovalService } from "./application/approval-service.js";
@@ -18,7 +19,7 @@ import { SessionEventStream } from "./application/event-stream.js";
 import { IdempotencyService } from "./application/idempotency-service.js";
 import { InterruptService } from "./application/interrupt-service.js";
 import { GitService } from "./application/git-service.js";
-import { MessageService } from "./application/message-service.js";
+import { closeQueuedAfterRestart, MessageService, stableClientTurnId } from "./application/message-service.js";
 import { SettingsService } from "./application/settings-service.js";
 import { ModelProviderService } from "./application/model-provider-service.js";
 import { McpService } from "./application/mcp-service.js";
@@ -26,6 +27,13 @@ import { ProxyConnectivityService } from "./application/proxy-connectivity-servi
 import { agentChildEnv } from "./application/agents/agent-exec.js";
 import { AGENT_CATALOG } from "./application/agents/catalog.js";
 import { SessionReaderService } from "./application/context/session-reader.js";
+import { SchedulerService } from "./application/scheduler/scheduler-service.js";
+import { DelegationService, oneLine } from "./application/collab/delegation-service.js";
+import { DelegationTools } from "./application/collab/delegation-tools.js";
+import { messagesFor } from "./i18n/messages/index.js";
+import { isDelegationToolName, isWriteTool } from "./application/session-tools/catalog.js";
+import { DelegationRepository } from "./infrastructure/db/repositories/delegation-repository.js";
+import { TurnScheduler } from "./application/scheduler/turn-scheduler.js";
 import { applyProxySettings } from "./application/proxy-settings.js";
 import { SkillAdminService } from "./application/skill-admin-service.js";
 import type { SkillRootsProvider } from "./application/skill-roots.js";
@@ -63,7 +71,7 @@ import { RuntimeRegistry } from "./infrastructure/runtime/runtime-registry.js";
 import { StdioCodexTransport } from "./infrastructure/transport/stdio-codex-transport.js";
 import { WorkspaceWatcher } from "./infrastructure/workspace/workspace-watcher.js";
 import { runDoctor } from "./infrastructure/doctor/doctor-service.js";
-import { RequirementsV2Service } from "./application/requirements-v2-service.js";
+import { adjustThreadSetup, RequirementsV2Service } from "./application/requirements-v2-service.js";
 import { retireLegacySessionContext } from "./application/session-tools/legacy-cleanup.js";
 import { RequirementTools } from "./application/session-tools/requirement-tools.js";
 import { SessionContextService } from "./application/session-tools/session-context.js";
@@ -297,6 +305,8 @@ export function createSuDuoApplication(
     remote: requirementsRemote,
     roomTasks,
   });
+  // 本机调度在下方组装；会话状态变化的回调运行时它已就绪。
+  let cancelQueuedTurns: ((sessionId: string, reason?: string) => void) | null = null;
   const sessionService = new SessionService(
     database,
     projects,
@@ -312,6 +322,10 @@ export function createSuDuoApplication(
       onStateChanged: ({ session }) => {
         if (session.state === "deleted") {
           void workspace.forgetSessionBaseline(session.id);
+        }
+        // 删除或归档的会话不再开回合：撤掉它在本机队列里排着的（多 Agent 协作 S8）。
+        if (session.state === "deleted" || session.state === "archived") {
+          cancelQueuedTurns?.(session.id, session.state);
         }
       },
     },
@@ -433,6 +447,96 @@ export function createSuDuoApplication(
     supervisor,
     ledger,
   );
+  // 本机回合调度（多 Agent 协作 S8，需求 4.11）：每家与合计的上限取 AI Agent 设置；回合终态还名额，另有定时对账。
+  const turnScheduler = new TurnScheduler({
+    limits: () => ({ global: agentCatalog.globalConcurrency(), perAgent: (agentId) => agentCatalog.concurrency(agentId) }),
+  });
+  messageService.setScheduler(turnScheduler);
+  cancelQueuedTurns = (sessionId, reason) => turnScheduler.cancelSession(sessionId, reason);
+  agentCatalog.onSettingsChanged(() => turnScheduler.refresh());
+  const releaseOnTurnEnd = broker.subscribeAll((event) => {
+    if (event.turnRef === null) return;
+    if (event.type === "turn.started") {
+      // 运行时自己接着开的回合（Claude、ACP 会话内排队）也占名额。
+      const session = sessions.getById(event.sessionId);
+      turnScheduler.turnStarted({ sessionId: event.sessionId, agentId: session?.agentId ?? "codex", turnId: event.turnRef.turnId, label: session?.title ?? "" });
+    }
+    if (event.type === "turn.completed" || event.type === "turn.interrupted") {
+      turnScheduler.turnEnded(event.sessionId, event.turnRef.turnId);
+    }
+  });
+  const schedulerReconcile = setInterval(() => {
+    turnScheduler.reconcile((sessionId) => events.listRunningTurnRefs(sessionId).map((ref) => ref.turnId), 60_000);
+  }, 30_000);
+  schedulerReconcile.unref();
+  const schedulerService = new SchedulerService({
+    scheduler: turnScheduler,
+    sessions,
+    agentName: (agentId) => AGENT_CATALOG.find((agent) => agent.id === agentId)?.displayName ?? agentId,
+    agentIds: () => AGENT_CATALOG.filter((agent) => agent.runtimeAvailable).map((agent) => agent.id),
+    interrupt: (sessionId, turnId) => interruptService.interrupt(sessionId, { turnId }),
+  });
+  // 委派（多 Agent 协作 S8，需求 4.3）：子会话与发起会话同一需求 / 项目、同一目录，带子任务的角色说明、不挂委派工具。
+  const agentDisplayName = (agentId: string) => AGENT_CATALOG.find((agent) => agent.id === agentId)?.displayName ?? agentId;
+  // 子会话不挂委派工具（深度 1，R2）与对外写工具（技术设计 2.9：评论由发起会话去发）。
+  const delegateDropsTool = (name: string) => isDelegationToolName(name) || isWriteTool(name);
+  const delegateRole = (child: { locale: Locale; parentSessionId?: string | null }) => {
+    const parent = child.parentSessionId ? sessions.getById(child.parentSessionId) : null;
+    return messagesFor(child.locale).delegation.role(agentDisplayName(parent?.agentId ?? "codex"), child.parentSessionId ?? "");
+  };
+  // 线程续接失败要重建时，委派的子会话照样带角色说明、不挂这些工具（否则重建后又能看到委派工具）。
+  sessionContext.setRebuildAdjust((sessionId, setup) => {
+    const session = sessions.getById(sessionId);
+    if (session?.relation !== "delegate") return setup;
+    const adjusted = adjustThreadSetup(setup ?? { developerInstructions: "", dynamicTools: [] }, { role: delegateRole(session), dropTools: delegateDropsTool });
+    return { developerInstructions: adjusted.developerInstructions ?? "", dynamicTools: adjusted.dynamicTools ?? [] };
+  });
+  const delegationService = new DelegationService({
+    delegations: new DelegationRepository(database),
+    sessions,
+    threads,
+    approvals,
+    ledger,
+    broker,
+    messages: messageService,
+    clientTurnId: stableClientTurnId,
+    // Codex 把回合进行中再发的消息并入那一轮；Claude、ACP 排在会话内。
+    mergesIntoRunningTurn: (sessionId) => sessions.getById(sessionId)?.agentId === "codex",
+    interrupt: (sessionId, turnId) => interruptService.interrupt(sessionId, { turnId }),
+    scheduler: {
+      sessionRunning: (sessionId) => turnScheduler.sessionRunning(sessionId),
+      cancel: (itemId) => turnScheduler.cancel(itemId),
+      queuePosition: (sessionId) => turnScheduler.sessionPosition(sessionId),
+      lend: (sessionId) => turnScheduler.lend(sessionId),
+    },
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    createChild: ({ parent, agentId, approvalMode, locale, task }) =>
+      requirementsV2.createRelatedSession(parent, locale, { agentId, approvalMode }, "delegate", {
+        title: oneLine(task, 60),
+        role: delegateRole({ locale, parentSessionId: parent.id }),
+        dropTools: delegateDropsTool,
+      }),
+    agentProblem: (agentId) => agentCatalog.delegationProblem(agentId),
+    agentName: agentDisplayName,
+  });
+  // 重启前还在排队的消息：队列只在内存里，记为「重启没发出」；排队中的委派的那几条随后重新排队（开始监听之后再发）。
+  delegationService.recoverAfterRestart(
+    closeQueuedAfterRestart(events, ledger, (message) => message.source === "delegate" && delegationService.willRequeue(message.sessionId)),
+  );
+  sessionTools.setDelegationTools(
+    new DelegationTools({
+      service: delegationService,
+      agents: () => agentCatalog.listNow().agents,
+      usage: (agentId) => {
+        const snapshot = turnScheduler.snapshot();
+        return {
+          running: snapshot.running.filter((item) => item.agentId === agentId).length,
+          queued: snapshot.queued.filter((item) => item.agentId === agentId).length,
+          limit: agentCatalog.concurrency(agentId),
+        };
+      },
+    }),
+  );
   const eventStream = new SessionEventStream(
     events,
     broker,
@@ -523,6 +627,7 @@ export function createSuDuoApplication(
     sessions: sessionService,
     messages: messageService,
     interrupts: interruptService,
+    cancelQueued: (sessionId) => cancelQueuedTurns?.(sessionId),
     events,
     broker,
     context: sessionContext,
@@ -607,6 +712,8 @@ export function createSuDuoApplication(
     git: gitService,
     settings: settingsService,
     agents: agentCatalog,
+    scheduler: schedulerService,
+    delegations: delegationService,
     openTerminal: terminalOpener(),
     modelProvider: modelProviderService,
     mcp: mcpService,
@@ -655,6 +762,11 @@ export function createSuDuoApplication(
   httpServer = server;
   server.addHook("onListen", (done) => {
     restoration = restore();
+    // 重启前排着的委派消息：等已挂线程续接完再发（MCP 通道的续接在监听之后才有地址）。
+    void restoration
+      .catch(() => undefined)
+      .then(() => delegationService.requeueAfterRestart())
+      .catch((error: unknown) => options.onBackgroundError?.(error));
     done();
   });
   idleMonitor.start();
@@ -680,6 +792,8 @@ export function createSuDuoApplication(
       workspaceWatcher.close();
       await Promise.allSettled([server.close()]);
       if (prewarm !== null) clearTimeout(prewarm);
+      clearInterval(schedulerReconcile);
+      releaseOnTurnEnd();
       claudeRuntime.close();
       for (const acpRuntime of acpRuntimes) acpRuntime.close();
       await Promise.allSettled([

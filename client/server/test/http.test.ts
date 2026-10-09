@@ -1365,6 +1365,7 @@ describe("Gate B HTTP", () => {
       expect((await get(`/api/v1/sessions/${source.id}`)).json<{ links: unknown }>().links).toEqual({
         continuedFrom: null,
         continuedBy: [{ id: next.id, title: source.title, agentId: "codex", agentName: "Codex", state: "active" }],
+        descendantCount: 1,
       });
       expect((await get(`/api/v1/sessions/${next.id}`)).json<{ links: { continuedFrom: { id: string } } }>().links.continuedFrom.id).toBe(source.id);
       // 再接着做一次：根会话仍是最早那个。

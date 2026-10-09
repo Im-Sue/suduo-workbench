@@ -347,6 +347,7 @@ export class SessionService {
         .listChildren(session.id)
         .filter((child) => child.relation === "continue")
         .map(sessionLink),
+      descendantCount: this.sessions.listDescendantIds(session.id).length,
     };
   }
 
@@ -449,6 +450,12 @@ export class SessionService {
       this.notifyStateChanged(session.state, id);
     }
     return this.get(id);
+  }
+
+  /** 要删的会话：它自己，连带时再加上往下的全部会话（多 Agent 协作 S8，需求 R11：会话是软删除，询问只为方便）。 */
+  removalTargets(id: string, withChildren: boolean): string[] {
+    this.requireSession(id);
+    return withChildren ? [id, ...this.sessions.listDescendantIds(id)] : [id];
   }
 
   remove(id: string): void {

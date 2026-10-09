@@ -161,6 +161,16 @@ export function projectRounds(events: Iterable<ProjectableEvent>): ProjectedRoun
         if (round !== null) round.status = "interrupted";
         break;
       }
+      case "turn.dequeued": {
+        // 本机队列里排着的消息被取消（或重启没发出、会话被归档）：它单独算一轮「已中断」，不并进之后的回合。
+        if (payload["reason"] === "started") break;
+        const index = pending.findIndex((message) => message.clientTurnId !== null && message.clientTurnId === payload["clientTurnId"]);
+        if (index >= 0) {
+          const [message] = pending.splice(index, 1);
+          open(event, null, [message!]).status = "interrupted";
+        }
+        break;
+      }
       case "turn.start-failed": {
         // 回合没开起来：还没被收下的消息算作一轮失败的。
         if (pending.length > 0) {

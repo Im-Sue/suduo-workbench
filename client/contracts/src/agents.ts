@@ -100,17 +100,27 @@ export interface AgentSettingDto {
   enabled: boolean;
   /** 可执行文件路径覆盖；null 表示自动查找。 */
   binOverride: string | null;
+  /** 这家 Agent 同时运行中的回合上限（多 Agent 协作 S8；没设时为配置表的默认值）。 */
+  concurrency: number;
 }
 
 export interface AgentSettingsDto {
   defaultAgentId: string;
   agents: AgentSettingDto[];
+  /** 全部 Agent 合计同时运行中的回合上限（默认 4）。 */
+  globalConcurrency: number;
 }
 
 export interface UpdateAgentSettingsRequest {
   defaultAgentId?: string;
-  agents?: Array<{ id: string; enabled?: boolean; binOverride?: string | null }>;
+  agents?: Array<{ id: string; enabled?: boolean; binOverride?: string | null; concurrency?: number }>;
+  globalConcurrency?: number;
 }
+
+/** 并发上限的取值范围（每家与合计都是）。 */
+export const CONCURRENCY_MIN = 1;
+export const CONCURRENCY_MAX = 8;
+export const DEFAULT_GLOBAL_CONCURRENCY = 4;
 
 /** POST /api/v1/agents/:id/login 的结果：桌面环境打开了终端，或者返回命令让用户自己执行。 */
 export interface AgentLoginResultDto {
