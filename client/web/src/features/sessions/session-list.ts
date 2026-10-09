@@ -136,6 +136,37 @@ export function groupByDay(items: readonly SessionListItemDto[], t: Messages = m
   ].filter((group) => group.items.length > 0);
 }
 
+/**
+ * 会话树（多 Agent 协作 S7，需求 4.9）：同一组里，接着做 / 委派出来的会话紧跟在父会话后面（缩进一级）；
+ * 父会话不在这一组里的照常排，行上另写「接续自」。顺序以外不改变分组。
+ */
+export function nestByParent(items: readonly SessionListItemDto[]): Array<{ item: SessionListItemDto; nested: boolean }> {
+  const ids = new Set(items.map((item) => item.id));
+  const children = new Map<string, SessionListItemDto[]>();
+  for (const item of items) {
+    const parent = item.parentSessionId ?? null;
+    if (parent !== null && parent !== item.id && ids.has(parent)) {
+      children.set(parent, [...(children.get(parent) ?? []), item]);
+    }
+  }
+  const placed = new Set<string>();
+  const result: Array<{ item: SessionListItemDto; nested: boolean }> = [];
+  const place = (item: SessionListItemDto, nested: boolean) => {
+    if (placed.has(item.id)) return;
+    placed.add(item.id);
+    result.push({ item, nested });
+    for (const child of children.get(item.id) ?? []) place(child, true);
+  };
+  for (const item of items) {
+    const parent = item.parentSessionId ?? null;
+    if (parent !== null && parent !== item.id && ids.has(parent)) continue;
+    place(item, false);
+  }
+  // 环（不该出现）等兜底：没放进去的按原顺序补上。
+  for (const item of items) place(item, false);
+  return result;
+}
+
 /** 侧栏「会话」旁的数字：需要你处理的会话数（等你确认或上一轮失败）。 */
 export function attentionCount(items: readonly SessionListItemDto[], live: SessionLiveRunState | null): number {
   return items.filter((item) => matchesFilter(rowStatus(item, live), "needs-me")).length;

@@ -7,10 +7,11 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import type { SendMessageAccepted, SkillDto } from "@suduo/client-contracts";
+import type { SendMessageAccepted, SessionListItemDto, SkillDto } from "@suduo/client-contracts";
 import { api } from "../api/client.js";
 import { formatBytes, formatDuration, isSubPath, messageOf } from "../ui/format.js";
-import { ArrowUpIcon, FileIcon, ImageIcon, SquareIcon, XIcon, ZapIcon } from "lucide-react";
+import { ArrowUpIcon, FileIcon, ImageIcon, MessagesSquareIcon, SquareIcon, XIcon, ZapIcon } from "lucide-react";
+import { sessionLinkText } from "../features/sessions/session-links.js";
 import type { SessionUiStatus } from "../ui/session-status.js";
 import type { ContextUsage } from "../event-projection/timeline.js";
 import { Spinner } from "@/components/ui/spinner";
@@ -88,6 +89,8 @@ interface FileIndexCache {
 }
 
 const PALETTE_LIMIT = 8;
+/** 「@」面板里会话最多列几个（其余位置给文件）。 */
+const SESSION_PALETTE_LIMIT = 4;
 
 /**
  * 切换语言时带过重建的草稿（i18n/carry.ts）：输入框里的字与已传好的图片。
@@ -127,6 +130,8 @@ export function Composer(props: {
   usage?: ContextUsage | null;
   /** 输入框为空时按 ↑ 取回的上一条消息。 */
   lastUserText?: string | null;
+  /** 「@」面板列不列本机会话（会话有读会话的工具时才列，多 Agent 协作 S7）。 */
+  referencesSessions?: boolean;
 }) {
   const t = useT();
   const copy = t.workbench.composer;
@@ -153,6 +158,10 @@ export function Composer(props: {
   const sessionRef = useRef(props.sessionId);
   const [palette, setPalette] = useState<PaletteState | null>(null);
   const [fileIndex, setFileIndex] = useState<FileIndexCache | null>(null);
+  /** 「@」面板里可以引用的本机会话（多 Agent 协作 S7）：第一次打开面板时取一次。 */
+  const [referable, setReferable] = useState<SessionListItemDto[] | null>(null);
+  /** 上次取会话列表的时刻：失败或超过半分钟再打开面板时重取（会话随时在变）。 */
+  const referableFetchedAt = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingCaret = useRef<number | null>(null);
@@ -226,6 +235,19 @@ export function Composer(props: {
     return null;
   };
 
+  const ensureReferable = () => {
+    if (props.referencesSessions !== true) return;
+    const fetchedAt = referableFetchedAt.current;
+    if (fetchedAt !== null && Date.now() - fetchedAt < 30_000) return;
+    referableFetchedAt.current = Date.now();
+    api
+      .listAllSessions({ state: "active", limit: 50 })
+      .then((response) => setReferable(response.items))
+      .catch(() => {
+        referableFetchedAt.current = null;
+      });
+  };
+
   const onTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.target.value;
     setText(value);
@@ -234,7 +256,36 @@ export function Composer(props: {
     setPalette(next);
     if (next?.kind === "file") {
       ensureFileIndex();
+      ensureReferable();
     }
+  };
+
+  /** 可以引用的其他会话：标题或 Agent 名包含输入的字，当前项目的在前，最多 4 个（文件在后面）。 */
+  const sessionMatches = (): SessionListItemDto[] => {
+    if (referable === null || props.referencesSessions !== true) return [];
+    const query = (palette?.query ?? "").toLowerCase();
+    return referable
+      .filter(
+        (item) =>
+          item.id !== props.sessionId &&
+          (query === "" ||
+            item.title.toLowerCase().includes(query) ||
+            (item.agent?.displayName ?? item.agentId).toLowerCase().includes(query)),
+      )
+      .toSorted((left, right) => Number(right.project.id === props.projectId) - Number(left.project.id === props.projectId))
+      .slice(0, SESSION_PALETTE_LIMIT);
+  };
+
+  const applySession = (item: SessionListItemDto) => {
+    if (!palette) {
+      return;
+    }
+    const inserted = `${sessionLinkText(item)} `;
+    const nextText = text.slice(0, palette.tokenStart) + inserted + text.slice(palette.caret);
+    setText(nextText);
+    pendingCaret.current = palette.tokenStart + inserted.length;
+    setPalette(null);
+    textareaRef.current?.focus();
   };
 
   const skillMatches = (): SkillDto[] => {
@@ -319,7 +370,21 @@ export function Composer(props: {
             ),
             apply: () => applySkill(skill),
           }))
-        : fileMatches().map((path) => ({
+        : [
+            ...sessionMatches().map((item) => ({
+              key: `session:${item.id}`,
+              node: (
+                <>
+                  <MessagesSquareIcon size={14} />
+                  <span className="min-w-0 truncate font-medium" data-testid="palette-session">{item.title}</span>
+                  <span className="shrink-0 text-caption text-subtle-foreground">
+                    {t.sessionLinks.palette.sessionMeta(item.agent?.displayName ?? item.agentId, item.project.name)}
+                  </span>
+                </>
+              ),
+              apply: () => applySession(item),
+            })),
+            ...fileMatches().map((path) => ({
             key: path,
             node: (
               <>
@@ -329,7 +394,8 @@ export function Composer(props: {
               </>
             ),
             apply: () => applyFile(path),
-          }));
+          })),
+          ];
 
   const canSend =
     !props.disabled &&

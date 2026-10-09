@@ -12,6 +12,7 @@ import {
   type RuntimeToolCallRequest,
   type SuDuoToolConfirmationDto,
 } from "@suduo/client-contracts";
+import type { SessionReaderService } from "../context/session-reader.js";
 import type { ApprovalRecord, ApprovalRepository } from "../../infrastructure/db/repositories/approval-repository.js";
 import type { SessionRepository } from "../../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRecord, SessionThreadRepository } from "../../infrastructure/db/repositories/session-thread-repository.js";
@@ -65,6 +66,8 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
       tools: RequirementTools;
       /** 房间工具（房间任务会话用）；不传时房间工具一律回「不可用」。 */
       roomTools?: RoomTools;
+      /** 跨会话读取（多 Agent 协作 S7）；不传时会话工具一律回「不可用」。 */
+      sessionReader?: Pick<SessionReaderService, "list" | "read">;
       /**
        * 会话记录：会话没关联 SuDuo 项目（取不到工具上下文）时，按它记下的语言回包；
        * 会话记录也查不到时用 `FALLBACK_LOCALE`。必填，免得漏接时英文会话悄悄收到中文。
@@ -375,6 +378,14 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
           : tool === "suduo_room_search"
             ? roomTools.search(context, args)
             : roomTools.fileView(context, args);
+      }
+      case "suduo_session_list":
+      case "suduo_session_read": {
+        const reader = this.deps.sessionReader;
+        if (!reader) {
+          return Promise.resolve(failure(text.dispatch.sessionToolsUnavailable));
+        }
+        return tool === "suduo_session_list" ? Promise.resolve(reader.list(context, args)) : reader.read(context, args);
       }
       default:
         return Promise.resolve(failure(text.dispatch.unknownTool(tool)));

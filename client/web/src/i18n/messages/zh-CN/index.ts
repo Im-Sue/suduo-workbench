@@ -15,11 +15,12 @@ import { rooms } from "./rooms.js";
 import { conversation } from "./conversation.js";
 import { workbench } from "./workbench.js";
 import { agents } from "./agents.js";
+import { sessionLinks } from "./sessionLinks.js";
 
 /**
  * 前端的中文字典，也是英文字典必须对齐的样板（中英双语技术设计 §4.2）：
  * 英文各分区用 `satisfies Messages["分区"]` 约束，少键、多键、参数不一致都是类型错误。
  */
-export const zhCN = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview, rooms, conversation, workbench, agents };
+export const zhCN = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview, rooms, conversation, workbench, agents, sessionLinks };
 
 export type Messages = typeof zhCN;

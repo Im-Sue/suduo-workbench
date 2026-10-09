@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 303,
+  "total": 313,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -54,6 +54,7 @@
       "interrupt-turn",
       "message-input",
       "palette-item",
+      "palette-session",
       "queue-item",
       "queue-item-delete",
       "queue-item-edit",
@@ -287,7 +288,17 @@
       "tool-confirm-duplicate",
       "tool-confirm-title"
     ],
+    "web/src/features/sessions/session-links.tsx": [
+      "continue-session-dialog",
+      "continue-session-start",
+      "session-chip",
+      "session-continued-by",
+      "session-continued-from",
+      "session-links-bar",
+      "session-read-title"
+    ],
     "web/src/features/sessions/SessionHeader.tsx": [
+      "continue-session",
       "rename-session",
       "session-agent",
       "session-status",
@@ -300,6 +311,7 @@
       "session-room-task",
       "session-row",
       "session-row-agent",
+      "session-row-continued-from",
       "session-search",
       "sessions-empty",
       "sessions-rail"

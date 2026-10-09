@@ -1,5 +1,5 @@
 import type { SessionDto } from "@suduo/client-contracts";
-import { FileTextIcon, FolderGit2Icon, InfoIcon, PanelRightIcon, PencilIcon } from "lucide-react";
+import { FileTextIcon, FolderGit2Icon, ForwardIcon, InfoIcon, PanelRightIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
 import { useLossCheck, useT } from "../../i18n/provider.js";
@@ -25,6 +25,7 @@ export function SessionHeader({
   onRename,
   onOpenRequirement,
   onToggleInspector,
+  onContinue,
 }: {
   session: SessionDto;
   status: SessionUiStatus;
@@ -35,6 +36,8 @@ export function SessionHeader({
   onRename(title: string): void;
   onOpenRequirement(): void;
   onToggleInspector(): void;
+  /** 交给另一个 Agent 接着做（多 Agent 协作 S7）；不传时不显示（房间任务、已删除的会话）。 */
+  onContinue?(): void;
 }) {
   const t = useT();
   const text = t.conversation.header;
@@ -138,6 +141,18 @@ export function SessionHeader({
             </ul>
           </PopoverContent>
         </Popover>
+      )}
+      {onContinue === undefined ? null : (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t.sessionLinks.continue.button}
+          title={t.sessionLinks.continue.button}
+          data-testid="continue-session"
+          onClick={onContinue}
+        >
+          <ForwardIcon />
+        </Button>
       )}
       <Tooltip>
         <TooltipTrigger asChild>

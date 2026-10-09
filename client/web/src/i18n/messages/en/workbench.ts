@@ -7,7 +7,7 @@ export const workbench = {
   composer: {
     messageLabel: "Message to the agent",
     placeholder: {
-      default: "Describe the work for the agent. Type / for a Skill, @ to reference a file",
+      default: "Describe the work for the agent. Type / for a Skill, @ to reference a session or file",
       withSkill: (skill: string) => `${skill} selected. Add details, then send…`,
       running: "The agent is working: Enter adds to this turn, Tab queues for later",
     },
@@ -18,7 +18,7 @@ export const workbench = {
     palette: {
       label: "Suggestions",
       skillTitle: "Choose a Skill",
-      fileTitle: "Reference a project file",
+      fileTitle: "Reference a session or project file",
       keys: "↑↓ to select · Enter to confirm · Esc to close",
       indexing: "Indexing project files…",
       indexFailed: "Couldn't index files. Try again later.",

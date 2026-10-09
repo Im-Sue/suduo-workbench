@@ -25,10 +25,13 @@ const DEFAULT_VALUE = "__default__";
 export function StartOptions({
   onChange,
   onNavigate,
+  avoidAgentId,
 }: {
   onChange(options: SessionStartOptions & { agentId: string } | null): void;
   /** 点「管理 Agent」离开对话框前（对话框要先关掉，不然会盖在设置页上）。 */
   onNavigate(): void;
+  /** 默认尽量不选这一家（交给另一个 Agent 接着做时是原会话的 Agent）；只有它能用时照样选它。 */
+  avoidAgentId?: string;
 }) {
   const t = useT();
   const text = t.agents.picker;
@@ -46,8 +49,13 @@ export function StartOptions({
   useEffect(() => {
     if (agentId !== null || agents.data === undefined) return;
     const preferred = preferredAgent(agents.data.agents, agents.data.defaultAgentId);
-    if (preferred !== null) setAgentId(preferred.id);
-  }, [agentId, agents.data]);
+    const other =
+      avoidAgentId !== undefined && preferred?.id === avoidAgentId
+        ? agents.data.agents.find((candidate) => candidate.runtimeAvailable && isUsable(candidate) && candidate.id !== avoidAgentId)
+        : undefined;
+    const chosen = other ?? preferred;
+    if (chosen !== null) setAgentId(chosen.id);
+  }, [agentId, agents.data, avoidAgentId]);
 
   const agent = list.find((candidate) => candidate.id === agentId) ?? null;
   const models = useQuery({ ...agentModelsQuery(agentId ?? ""), enabled: agentId !== null });

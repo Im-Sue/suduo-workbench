@@ -23,6 +23,7 @@ import {
   lastActivity,
   matchesFilter,
   matchesSearch,
+  nestByParent,
   rowStatus,
   type SessionFilter,
 } from "./session-list.js";
@@ -94,6 +95,7 @@ export function SessionList({
   const statuses = new Map(items.map((item) => [item.id, rowStatus(item, live)]));
   const visible = items.filter((item) => matchesFilter(statuses.get(item.id) ?? "idle", filter) && matchesSearch(item, keyword));
   const groups = groupByDay(visible, t);
+  const titles = new Map(items.map((item) => [item.id, item.title]));
   const counted = countItems ?? items;
   const countStatus = (item: SessionListItemDto) => statuses.get(item.id) ?? rowStatus(item, live);
   const runningCount = counted.filter((item) => matchesFilter(countStatus(item), "running")).length;
@@ -185,10 +187,12 @@ export function SessionList({
           <section key={group.label} className="mt-2 flex flex-col gap-0.5" aria-label={group.label}>
             <h3 className="m-0 px-2 pb-1 text-caption font-medium text-subtle-foreground">{group.label}</h3>
             <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-              {group.items.map((item) => (
+              {nestByParent(group.items).map(({ item, nested }) => (
                 <SessionRow
                   key={item.id}
                   item={item}
+                  nested={nested}
+                  parentTitle={item.relation === "continue" && item.parentSessionId ? (titles.get(item.parentSessionId) ?? null) : null}
                   status={statuses.get(item.id) ?? "idle"}
                   active={item.id === activeSessionId}
                   projectName={projectName(item)}
@@ -220,6 +224,8 @@ export function SessionList({
 
 function SessionRow({
   item,
+  nested,
+  parentTitle,
   status,
   active,
   projectName,
@@ -233,6 +239,10 @@ function SessionRow({
   onOpenRoom,
 }: {
   item: SessionListItemDto;
+  /** 接着做 / 委派出来、排在父会话后面的会话：缩进一级（多 Agent 协作 S7）。 */
+  nested: boolean;
+  /** 接续自的会话标题（父会话在列表里才有）。 */
+  parentTitle: string | null;
   status: ReturnType<typeof rowStatus>;
   active: boolean;
   projectName: string;
@@ -256,6 +266,7 @@ function SessionRow({
       className={cn(
         "group/row relative flex items-start rounded-md",
         active ? "bg-muted-strong" : "hover:bg-muted",
+        nested && "ml-4",
       )}
       data-testid="session-row"
       data-session-id={item.id}
@@ -317,6 +328,11 @@ function SessionRow({
               {item.agentId === "codex" ? null : (
                 <span className="shrink-0 rounded-xs bg-muted px-1 text-muted-foreground" title={t.agents.badge(item.agent?.displayName ?? item.agentId)} data-testid="session-row-agent">
                   {item.agent?.displayName ?? item.agentId}
+                </span>
+              )}
+              {parentTitle === null || nested ? null : (
+                <span className="shrink-0 truncate text-muted-foreground" data-testid="session-row-continued-from">
+                  {t.sessionLinks.list.continuedFrom(parentTitle)}
                 </span>
               )}
               <span className="min-w-0 truncate">{preview ?? projectName}</span>

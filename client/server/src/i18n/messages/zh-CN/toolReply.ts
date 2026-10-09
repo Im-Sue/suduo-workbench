@@ -138,6 +138,7 @@ export const toolReply = {
     roomReadOnly: (tool: string) => `房间里的共享 Agent 只能用只读工具，不能调用 ${tool}。`,
     threadMissing: "找不到会话线程，没有执行。",
     roomToolsUnavailable: "房间工具暂时不可用。",
+    sessionToolsUnavailable: "会话工具暂时不可用。",
     unknownTool: (tool: string) => `SuDuo 没有工具 ${tool}。`,
     declinedComment: "用户没有同意，评论没有发出。",
     /** 经 MCP 调用发评论、等用户确认等到快超时（ADR-0015）：卡片留作草稿，不丢。 */

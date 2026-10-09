@@ -161,6 +161,10 @@ export const timeline = {
       suduo_comment_submit: "Post comment",
       suduo_artifact_publish: "Publish confirmed version",
     },
+    sessionLabels: {
+      suduo_session_list: "List readable sessions",
+      suduo_session_read: "Read a session",
+    },
     roomLabels: {
       suduo_room_history: "Browse room messages",
       suduo_room_search: "Search room messages",

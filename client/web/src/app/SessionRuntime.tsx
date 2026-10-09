@@ -98,6 +98,7 @@ import {
   type QueueState,
 } from "../session/queue.js";
 import { SessionModelSwitcher } from "../features/sessions/SessionModelSwitcher.js";
+import { ContinueSessionDialog, SessionLinksBar, takePendingDraft } from "../features/sessions/session-links.js";
 import { ChangesPanel } from "../components/ChangesPanel.js";
 import { usePersistentState } from "../ui/use-persistent-state.js";
 import { INSPECTOR_SIDE_BY_SIDE_QUERY, useMediaQuery } from "../ui/use-breakpoint.js";
@@ -215,6 +216,17 @@ export function SessionRuntime(props: {
   /** 读回快照时的会话：只有同一个会话才沿用快照，不在挂载时清掉（见下面加载会话的 effect）。 */
   const carriedSessionId = useRef(carried === undefined ? null : props.sessionId);
   const [session, setSession] = useState<SessionDto | null>(carried?.session ?? null);
+  /** 交给另一个 Agent 接着做的对话框（多 Agent 协作 S7）。 */
+  const [continueOpen, setContinueOpen] = useState(false);
+  /** 接着做开出的新会话：输入框预填「接着 @原会话 继续：」（只预填，不自动发出）。 */
+  const [prefill, setPrefill] = useState<{ sessionId: string; text: string } | null>(null);
+  useEffect(() => {
+    // 开发模式（StrictMode）下 effect 会跑两遍：第二遍取不到时保留第一遍取到的，换了会话才清。
+    const text = takePendingDraft(props.sessionId);
+    setPrefill((current) =>
+      text !== null ? { sessionId: props.sessionId, text } : current?.sessionId === props.sessionId ? current : null,
+    );
+  }, [props.sessionId]);
   const [events, setEvents] = useState<EventEnvelope<string, JsonValue>[]>(() => carried?.events ?? []);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalDto[]>(carried?.approvals ?? []);
@@ -572,6 +584,11 @@ export function SessionRuntime(props: {
     };
   }, [props.sessionId, contextAttempt]);
   const retryContext = useCallback(() => setContextAttempt((attempt) => attempt + 1), []);
+  /**
+   * 会话能不能引用 / 交给别的会话（多 Agent 协作 S7）：关联了 SuDuo 需求或项目的会话才有读会话的工具；
+   * 本机会话没有，引用了 Agent 也读不了，就不给入口。
+   */
+  const referencesSessions = context.status === "ready" && context.value.kind !== "none" && context.value.contextMode !== "legacy";
 
 
   useEffect(() => {
@@ -998,8 +1015,11 @@ export function SessionRuntime(props: {
               setSideTab("requirement");
             }}
             onToggleInspector={toggleInspector}
+            {...(session.kind === "normal" && session.state !== "deleted" && referencesSessions ? { onContinue: () => setContinueOpen(true) } : {})}
           />
         ) : null}
+        {session ? <SessionLinksBar links={session.links} /> : null}
+        {session ? <ContinueSessionDialog session={session} open={continueOpen} onOpenChange={setContinueOpen} /> : null}
         <PanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
           <Panel id="conversation" minSize={420}>
             <section className="flex h-full min-w-0 flex-col" aria-label={text.conversationLabel}>
@@ -1094,6 +1114,8 @@ export function SessionRuntime(props: {
                     skillPath={skillPath}
                     usage={projection.usage}
                     lastUserText={lastUserText}
+                    referencesSessions={referencesSessions}
+                    {...(prefill === null || prefill.sessionId !== props.sessionId ? {} : { initialDraft: prefill.text, draftKey: prefill.sessionId })}
                     runState={{
                       status: headStatus,
                       stepText: stepText(activeMeta?.currentStep ?? null, t),

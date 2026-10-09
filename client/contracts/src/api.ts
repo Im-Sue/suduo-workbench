@@ -117,6 +117,32 @@ export interface SessionDto {
   lastActivityAt: number | null;
   version: number;
   threads: ThreadBindingDto[];
+  /**
+   * 会话图（多 Agent 协作 S7，ADR-0017）：父会话、根会话（null = 自己就是根）与和父会话的关系；
+   * 没有关系时都为 null。旧服务端不返回。
+   */
+  parentSessionId?: string | null;
+  rootSessionId?: string | null;
+  relation?: SessionRelation | null;
+  /** 只有单个会话的详情带：接续自哪个会话、被哪些会话接着做（需求 4.2「两个会话互相显示」）。 */
+  links?: SessionLinksDto;
+}
+
+/** 与父会话的关系：委派、接着做、评审、试做。 */
+export type SessionRelation = "delegate" | "continue" | "review" | "trial";
+
+/** 关系另一头的会话（标题、Agent 名、状态，界面显示「接续自 Claude Code · 导出接口」）。 */
+export interface SessionLinkDto {
+  id: string;
+  title: string;
+  agentId: string;
+  agentName: string;
+  state: SessionDto["state"];
+}
+
+export interface SessionLinksDto {
+  continuedFrom: SessionLinkDto | null;
+  continuedBy: SessionLinkDto[];
 }
 
 export interface SessionAgentDto {

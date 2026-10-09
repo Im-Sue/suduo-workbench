@@ -1276,6 +1276,16 @@ function registerRequirementsV2Routes(
     },
   );
 
+  // 交给另一个 Agent 接着做（多 Agent 协作 S7，需求 4.2）。
+  server.post<{ Params: { sessionId: string } }>(
+    "/api/v2/sessions/:sessionId/continue",
+    async (request, reply) => {
+      return reply
+        .code(201)
+        .send(await service.continueSession(request.params.sessionId, request.locale, sessionStartOptions(request.body)));
+    },
+  );
+
   server.get<{ Params: { projectId: string } }>(
     "/api/v2/projects/:projectId/sessions",
     async (request) => ({

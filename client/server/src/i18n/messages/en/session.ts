@@ -20,6 +20,7 @@ export const session = {
   requirementRefWriteFailed: "The runtime thread was created, but saving its link to the requirement failed",
   stateInvalid: "Session state must be active or archived",
   approvalModeInvalid: "approvalMode must be readonly, ask, auto, or full",
+  roomTaskNotContinuable: "Room task sessions can't be handed to another agent",
   agentReadOnlyUnsupported: (name: string) => `${name} can't run read-only (it may write files without asking), so the read-only mode isn't available`,
   approvalModeLocked: "Approval mode is capped by the deployment setting SUDUO_MAX_APPROVAL_MODE",
   patchEmpty: "PATCH must include at least one field",

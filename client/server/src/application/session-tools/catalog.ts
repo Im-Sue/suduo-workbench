@@ -146,6 +146,52 @@ function roomSpecs(d: ServerMessages["toolSpec"]): Record<RoomToolName, RuntimeT
   };
 }
 
+/**
+ * 跨会话读取（多 Agent 协作 S7，技术设计 2.9）：主会话（需求会话、项目会话）有；房间任务没有（R10）。
+ * 名字不在契约的 SuDuoToolName 里（与房间工具一样）。
+ */
+export const SESSION_TOOL_NAMES = ["suduo_session_list", "suduo_session_read"] as const;
+export type SessionToolName = (typeof SESSION_TOOL_NAMES)[number];
+
+function sessionSpecs(locale: Locale, d: ServerMessages["toolSpec"]): Record<SessionToolName, RuntimeToolSpec> {
+  const spec = messagesFor(locale).sessionContext.spec;
+  return {
+    suduo_session_list: {
+      name: "suduo_session_list",
+      description: spec.list.description + d.textReturn("suduo_session_list"),
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: spec.list.query },
+          scope: { type: "string", enum: ["project", "all"], description: spec.list.scope },
+          limit: { type: "integer", minimum: 1, maximum: 50, description: spec.list.limit },
+        },
+        additionalProperties: false,
+      },
+    },
+    suduo_session_read: {
+      name: "suduo_session_read",
+      description: spec.read.description + d.textReturn("suduo_session_read"),
+      inputSchema: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string", description: spec.read.sessionId },
+          view: { type: "string", enum: ["summary", "conversation", "turns", "turn", "changes"], description: spec.read.view },
+          turn: { type: "integer", minimum: 1, description: spec.read.turn },
+          rounds: { type: "integer", minimum: 1, maximum: 10, description: spec.read.rounds },
+          page: { type: "integer", minimum: 1, description: spec.read.page },
+        },
+        required: ["sessionId"],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+export function isSessionToolName(name: string): name is SessionToolName {
+  return (SESSION_TOOL_NAMES as readonly string[]).includes(name);
+}
+
 /** 只读与本机笔记工具：需求会话和项目会话都有。 */
 const READ_TOOLS: ActiveSuDuoToolName[] = [
   "suduo_requirement_get",
@@ -181,16 +227,19 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
   const d = messagesFor(locale).toolSpec;
   const specs = requirementSpecs(d);
   const rooms = roomSpecs(d);
-  return sessionToolNames(scope).map((name) => (isRoomToolName(name) ? rooms[name] : specs[name as ActiveSuDuoToolName]));
+  const sessions = sessionSpecs(locale, d);
+  return sessionToolNames(scope).map((name) =>
+    isRoomToolName(name) ? rooms[name] : isSessionToolName(name) ? sessions[name] : specs[name as ActiveSuDuoToolName],
+  );
 }
 
 /** 某个 scope 下挂了哪些工具（调度时据此拒绝清单外的调用）。 */
 export function sessionToolNames(scope: SessionToolScope): string[] {
   switch (scope) {
     case "requirement":
-      return [...READ_TOOLS, ...WRITE_TOOLS];
+      return [...READ_TOOLS, ...WRITE_TOOLS, ...SESSION_TOOL_NAMES];
     case "project":
-      return [...READ_TOOLS];
+      return [...READ_TOOLS, ...SESSION_TOOL_NAMES];
     case "room":
       return [...ROOM_TOOL_NAMES];
     case "room_requirement":
@@ -219,7 +268,7 @@ export function internalToolName(mcpName: string): string {
   return MCP_TOOL_PREFIX + mcpName;
 }
 
-const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES]);
+const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES, ...SESSION_TOOL_NAMES]);
 
 /** 说明与回复文字里提到的 SuDuo 工具名换成 MCP 名（只换认识的工具名，其余原样）。 */
 export function mcpToolText(text: string): string {
@@ -235,8 +284,15 @@ export function mcpToolSpecsFor(toolNames: readonly string[], locale: Locale): R
   const d = messagesFor(locale).toolSpec;
   const specs = requirementSpecs(d);
   const rooms = roomSpecs(d);
+  const sessions = sessionSpecs(locale, d);
   return toolNames.flatMap((name): RuntimeToolSpec[] => {
-    const spec = isRoomToolName(name) ? rooms[name] : KNOWN_TOOL_NAMES.has(name) ? specs[name as ActiveSuDuoToolName] : undefined;
+    const spec = isRoomToolName(name)
+      ? rooms[name]
+      : isSessionToolName(name)
+        ? sessions[name]
+        : KNOWN_TOOL_NAMES.has(name)
+          ? specs[name as ActiveSuDuoToolName]
+          : undefined;
     if (spec === undefined) return [];
     let description = spec.description.replace(d.textReturn(spec.name), "");
     if (spec.name === "suduo_attachment_view") description = d.mcp.attachmentView;

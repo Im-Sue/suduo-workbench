@@ -72,7 +72,7 @@ describe("018 目录关联按服务器区分、会话记住所属项目", () => 
         )
         .run();
 
-      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([18, 19, 20, 21]);
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([18, 19, 20, 21, 22]);
 
       const refs = new ProjectSessionRefRepository(database);
       expect(refs.getBySessionId("plain-mapped")).toEqual({ sessionId: "plain-mapped", remoteProjectId: "proj-a", createdAt: 5 });
@@ -113,7 +113,7 @@ describe("017 会话语言迁移", () => {
   it("v16 本机库升级后存量会话的语言为 zh-CN（它们都是中文说明建的）", () => {
     const { database } = upgradeFrom(16);
     try {
-      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([17, 18, 19, 20, 21]);
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([17, 18, 19, 20, 21, 22]);
       expect(new SessionRepository(database).getById("legacy-session")?.locale).toBe("zh-CN");
     } finally {
       database.close();
@@ -237,7 +237,7 @@ describe("014 会话列表元数据迁移", () => {
           sha: "a".repeat(64),
         });
 
-      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([14, 15, 16, 17, 18, 19, 20, 21]);
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([14, 15, 16, 17, 18, 19, 20, 21, 22]);
 
       const row = (id: string) =>
         database

@@ -22,6 +22,8 @@ export const session = {
   requirementRefWriteFailed: "runtime thread 已创建，但 V2 会话引用写入失败",
   stateInvalid: "会话 state 仅允许 active 或 archived",
   approvalModeInvalid: "approvalMode 仅允许 readonly / ask / auto / full",
+  /** 多 Agent 协作 S7：房间任务会话不能交给别的 Agent 接着做。 */
+  roomTaskNotContinuable: "讨论里的任务会话不能交给别的 Agent 接着做",
   agentReadOnlyUnsupported: (name: string) => `${name} 做不到只读（它可能不经询问就写文件），不能选只读档`,
   approvalModeLocked: "审批模式已被部署上限 SUDUO_MAX_APPROVAL_MODE 锁定",
   patchEmpty: "PATCH 至少提供一个字段",

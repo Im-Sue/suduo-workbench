@@ -49,7 +49,17 @@ export interface SessionRecord {
   deletedAt: number | null;
   error: JsonValue | null;
   version: number;
+  /**
+   * 会话图（迁移 019；多 Agent 协作 S7 起写入，ADR-0017）：父会话、根会话（NULL = 自己就是根）与和父会话的关系。
+   * 可选只为兼容测试里手写的记录；从库里读出的一定有（没有关系时为 null）。
+   */
+  parentSessionId?: string | null;
+  rootSessionId?: string | null;
+  relation?: SessionRelation | null;
 }
+
+/** 与父会话的关系：委派、接着做、评审、试做（迁移 019 的 CHECK）。 */
+export type SessionRelation = "delegate" | "continue" | "review" | "trial";
 
 export interface CreateSessionInput {
   id?: string;
@@ -66,6 +76,14 @@ export interface CreateSessionInput {
   /** 开会话时选的模型与推理强度；不传为跟随默认。 */
   model?: string;
   reasoningEffort?: ReasoningEffort;
+  /** 与另一个会话的关系（接着做等）；根会话取父会话的根。 */
+  graph?: SessionGraphInput;
+}
+
+export interface SessionGraphInput {
+  parentSessionId: string;
+  rootSessionId: string;
+  relation: SessionRelation;
 }
 
 export interface SessionRow {
@@ -81,8 +99,11 @@ export interface SessionRow {
   kind?: SessionKind;
   /** 迁移 017 之前的库没有这一列。 */
   locale?: string;
-  /** 迁移 019 之前的库没有这一列。 */
+  /** 迁移 019 之前的库没有这些列。 */
   agent_id?: string;
+  parent_session_id?: string | null;
+  root_session_id?: string | null;
+  relation?: string | null;
   model: string | null;
   reasoning_effort: string | null;
   created_at: number;
@@ -110,12 +131,13 @@ export class SessionRepository {
     // 只读会话才写 read_only 列（迁移 021 之前的库仍能建普通会话）。
     const readOnly = input.approvalMode === "readonly";
     const chosen = input.model !== undefined || input.reasoningEffort !== undefined;
+    const graph = input.graph;
     this.database
       .prepare(
         [
           "INSERT INTO sessions",
-          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"}${readOnly ? ", read_only" : ""}${chosen ? ", model, reasoning_effort" : ""})`,
-          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"}${readOnly ? ", 1" : ""}${chosen ? ", @model, @reasoningEffort" : ""})`,
+          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"}${readOnly ? ", read_only" : ""}${chosen ? ", model, reasoning_effort" : ""}${graph === undefined ? "" : ", parent_session_id, root_session_id, relation"})`,
+          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"}${readOnly ? ", 1" : ""}${chosen ? ", @model, @reasoningEffort" : ""}${graph === undefined ? "" : ", @parentSessionId, @rootSessionId, @relation"})`,
         ].join(" "),
       )
       .run({
@@ -128,6 +150,7 @@ export class SessionRepository {
         now,
         ...(agentId === null ? {} : { agentId }),
         ...(chosen ? { model: input.model ?? null, reasoningEffort: input.reasoningEffort ?? null } : {}),
+        ...(graph === undefined ? {} : graph),
       });
     return requireSession(this.getById(id), id);
   }
@@ -137,6 +160,14 @@ export class SessionRepository {
       .prepare("SELECT * FROM sessions WHERE id = @id")
       .get<SessionRow>({ id });
     return row ? mapSession(row) : null;
+  }
+
+  /** 以某个会话为父会话的会话（接着做、委派等；不含已删除），按创建先后。 */
+  listChildren(parentSessionId: string): SessionRecord[] {
+    return this.database
+      .prepare("SELECT * FROM sessions WHERE parent_session_id = @parentSessionId AND state != 'deleted' ORDER BY created_at ASC")
+      .all<SessionRow>({ parentSessionId })
+      .map(mapSession);
   }
 
   /** 全部会话 ID（含已删除；启动清理旧版现状文件目录用）。 */
@@ -174,6 +205,21 @@ export class SessionRepository {
         ].join(" "),
       )
       .all<SessionRow>({ remoteProjectId })
+      .map(mapSession);
+  }
+
+  /** 可以被别的会话读取的普通会话（跨会话读取的 scope=all，多 Agent 协作 S7）：不含房间任务与已删除，含已归档。 */
+  listReadable(limit: number): SessionRecord[] {
+    return this.database
+      .prepare(
+        [
+          "SELECT * FROM sessions",
+          "WHERE kind = 'normal' AND state != 'deleted'",
+          "ORDER BY last_activity_at DESC, updated_at DESC, id ASC",
+          "LIMIT @limit",
+        ].join(" "),
+      )
+      .all<SessionRow>({ limit })
       .map(mapSession);
   }
 
@@ -377,7 +423,14 @@ export function mapSession(row: SessionRow): SessionRecord {
     deletedAt: row.deleted_at,
     error: row.error_json ? parseJson(row.error_json) : null,
     version: row.version,
+    parentSessionId: row.parent_session_id ?? null,
+    rootSessionId: row.root_session_id ?? null,
+    relation: isRelation(row.relation) ? row.relation : null,
   };
+}
+
+function isRelation(value: string | null | undefined): value is SessionRelation {
+  return value === "delegate" || value === "continue" || value === "review" || value === "trial";
 }
 
 function requireSession(

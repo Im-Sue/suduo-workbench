@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SUDUO_TOOL_NAMES, isRetiredSuDuoToolName } from "@suduo/client-contracts";
 import { ApiError } from "../src/application/api-error.js";
-import { isWriteTool, sessionToolSpecs } from "../src/application/session-tools/catalog.js";
+import { isWriteTool, sessionToolNames, sessionToolSpecs } from "../src/application/session-tools/catalog.js";
 import { formatTime } from "../src/application/session-tools/format.js";
 import { SessionContextService } from "../src/application/session-tools/session-context.js";
 import { openBetterSqlite3Database } from "../src/infrastructure/db/better-sqlite3-database.js";
@@ -28,7 +28,9 @@ import {
 const ANCHOR_ID = "6f1c2a4e-1b2c-4d3e-8f90-123456789abc";
 const REQ_DIR = join(".suduo", "requirements", "REQ-1-商家端-订单详情优化");
 /** 新会话挂的工具：确认版的三个工具已撤下。 */
-const ALL_TOOLS = SUDUO_TOOL_NAMES.filter((name) => !isRetiredSuDuoToolName(name));
+/** 需求工具（契约里的名字）+ 跨会话读取（多 Agent 协作 S7）。 */
+const SESSION_TOOLS = ["suduo_session_list", "suduo_session_read"];
+const ALL_TOOLS = [...SUDUO_TOOL_NAMES.filter((name) => !isRetiredSuDuoToolName(name)), ...SESSION_TOOLS];
 const PROJECT_TOOLS = ALL_TOOLS.filter((name) => name !== "suduo_comment_submit");
 
 const temporaryPaths: string[] = [];
@@ -260,18 +262,22 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
     expect(card).not.toContain("没有附件");
     expect(card).not.toContain("暂无确认版");
     expect(card).not.toContain("需求没有变化");
-    expect(result.dynamicTools).toHaveLength(7);
+    expect(result.dynamicTools).toHaveLength(9);
   });
 });
 
 describe("工具清单", () => {
-  it("需求会话 7 个；项目会话 6 个（不含写工具）；确认版的三个工具已撤下；说明与参数形状", () => {
+  it("需求会话 9 个；项目会话 8 个（不含写工具）；确认版的三个工具已撤下；说明与参数形状", () => {
     const requirementTools = sessionToolSpecs("requirement", "zh-CN");
     const projectTools = sessionToolSpecs("project", "zh-CN");
     expect(requirementTools.map((tool) => tool.name)).toEqual(ALL_TOOLS);
     expect(projectTools.map((tool) => tool.name)).toEqual(PROJECT_TOOLS);
-    expect(projectTools).toHaveLength(6);
+    expect(projectTools).toHaveLength(8);
     expect(requirementTools.map((tool) => tool.name).filter((name) => name.startsWith("suduo_artifact"))).toEqual([]);
+    // 房间任务不读私人会话（R10）：两种房间范围都没有会话工具（MCP 与 dynamicTools 的清单都从这里来，调用时也按它拒绝）。
+    for (const scope of ["room", "room_requirement"] as const) {
+      expect(sessionToolNames(scope).filter((name) => name.startsWith("suduo_session"))).toEqual([]);
+    }
     expect(projectTools.some((tool) => isWriteTool(tool.name))).toBe(false);
     expect(requirementTools.filter((tool) => isWriteTool(tool.name)).map((tool) => tool.name)).toEqual([
       "suduo_comment_submit",
@@ -287,7 +293,7 @@ describe("工具清单", () => {
     }
   });
 
-  it("projectSetup：项目卡 + 6 个工具；项目名查不到时照样给卡", async () => {
+  it("projectSetup：项目卡 + 8 个工具；项目名查不到时照样给卡", async () => {
     const { root, remote, service } = setup();
     const result = await service.projectSetup({ locale: "zh-CN",  projectRoot: root, remoteProjectId: "proj-1" });
     expect(lines(result.developerInstructions).slice(0, 2)).toEqual([
@@ -300,7 +306,7 @@ describe("工具清单", () => {
     remote.fail.getProject = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "down");
     const degraded = await service.projectSetup({ locale: "zh-CN",  projectRoot: root, remoteProjectId: "proj-1" });
     expect(degraded.developerInstructions).toContain("项目名查不到：需求服务暂时连不上（down）");
-    expect(degraded.dynamicTools).toHaveLength(6);
+    expect(degraded.dynamicTools).toHaveLength(8);
   });
 });
 
@@ -385,25 +391,25 @@ describe("SessionContextService.describe / toolContext / rebuildSetup", () => {
     expect(rebuilt?.developerInstructions.startsWith("# SuDuo 需求会话\n")).toBe(true);
     expect(rebuilt?.developerInstructions).toContain("你在处理需求 REQ-1「商家端-订单详情优化」");
     expect(rebuilt?.developerInstructions).not.toContain("自上次会话");
-    expect(rebuilt?.dynamicTools).toHaveLength(7);
+    expect(rebuilt?.dynamicTools).toHaveLength(9);
 
     // 旧版会话的线程续接失败要重建：新线程没有历史，也给需求卡与工具，并改成新版（审查第 6 条）。
     const legacy = requirementSession({ contextMode: "legacy" });
     const legacyRebuilt = await service.rebuildSetup(legacy.id);
-    expect(legacyRebuilt?.dynamicTools).toHaveLength(7);
+    expect(legacyRebuilt?.dynamicTools).toHaveLength(9);
     expect(refs.getBySessionId(legacy.id)?.contextMode).toBe("tools");
 
     remote.fail.getRequirement = new ApiError(503, "DEPENDENCY_UNAVAILABLE", "down");
     const minimal = await service.rebuildSetup(current.id);
     expect(minimal?.developerInstructions).toContain("你在处理需求 REQ-1「商家端-订单详情优化」。需求详情暂时查不到（需求服务暂时连不上（down））");
-    expect(minimal?.dynamicTools).toHaveLength(7);
+    expect(minimal?.dynamicTools).toHaveLength(9);
 
     const plain = sessions.create({ projectId: project.id, title: "普通会话" });
     expect(await service.rebuildSetup(plain.id)).toBeNull();
     projectRefs.create({ sessionId: plain.id, remoteProjectId: "proj-1" });
     const projectCard = await service.rebuildSetup(plain.id);
     expect(projectCard?.developerInstructions.startsWith("# SuDuo 项目会话")).toBe(true);
-    expect(projectCard?.dynamicTools).toHaveLength(6);
+    expect(projectCard?.dynamicTools).toHaveLength(8);
   });
 
   it("项目会话的所属项目按建时记下的算，不随目录关联或服务器变化；目录关联不会给普通会话安上项目", () => {

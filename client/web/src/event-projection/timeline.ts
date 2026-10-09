@@ -5,8 +5,10 @@ import {
   dynamicToolDetail,
   dynamicToolOutput,
   dynamicToolTitle,
+  sessionReadRef,
   suDuoToolConfirmationOf,
   suDuoToolConfirmationTitle,
+  type SessionReadRef,
 } from "./suduo-tools.js";
 import { currentLocale } from "../i18n/locale.js";
 import { messagesFor, type Messages } from "../i18n/messages/index.js";
@@ -55,6 +57,8 @@ export interface TimelineStep {
   startedTs: number;
   endedTs: number | null;
   seq: number;
+  /** Agent 读另一个会话的步骤（多 Agent 协作 S7）：读的哪个会话、哪一层；界面据此显示会话名。 */
+  sessionRead?: SessionReadRef;
 }
 
 export interface FileChangeEntry {
@@ -622,6 +626,8 @@ function describeItem(step: TimelineStep, item: Record<string, JsonValue>, type:
       step.kind = "tool";
       step.title = dynamicToolTitle(tool, t);
       step.detail = dynamicToolDetail(tool, item["arguments"], t);
+      const read = sessionReadRef(tool, item["arguments"]);
+      if (read !== null) step.sessionRead = read;
       if (typeof item["durationMs"] === "number") step.durationMs = item["durationMs"];
       const output = dynamicToolOutput(item["contentItems"], t);
       if (output !== "") step.output = output;

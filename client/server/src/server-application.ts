@@ -25,6 +25,7 @@ import { McpService } from "./application/mcp-service.js";
 import { ProxyConnectivityService } from "./application/proxy-connectivity-service.js";
 import { agentChildEnv } from "./application/agents/agent-exec.js";
 import { AGENT_CATALOG } from "./application/agents/catalog.js";
+import { SessionReaderService } from "./application/context/session-reader.js";
 import { applyProxySettings } from "./application/proxy-settings.js";
 import { SkillAdminService } from "./application/skill-admin-service.js";
 import type { SkillRootsProvider } from "./application/skill-roots.js";
@@ -74,6 +75,7 @@ import {
   mappedWorkspaceRoots,
 } from "./application/local-directory-service.js";
 import { RequirementSessionRefRepository } from "./infrastructure/db/repositories/requirement-session-ref-repository.js";
+import { SessionReferenceRepository } from "./infrastructure/db/repositories/session-reference-repository.js";
 import { WorkspaceMappingRepository } from "./infrastructure/db/repositories/workspace-mapping-repository.js";
 import { ProjectSessionRefRepository } from "./infrastructure/db/repositories/project-session-ref-repository.js";
 import { RequirementsCredentialStore } from "./infrastructure/requirements-v2/credential-store.js";
@@ -315,6 +317,28 @@ export function createSuDuoApplication(
     },
     projectSessionRefs,
   );
+  // 跨会话读取（多 Agent 协作 S7）：从账本分层读另一个会话；改动用它的工作区基线（WorkspaceService 在下方组装）。
+  const sessionReader = new SessionReaderService({
+    sessions,
+    events,
+    references: new SessionReferenceRepository(database),
+    requirementRefs: requirementSessionRefs,
+    workspace: {
+      hasBaseline: (sessionId) => workspace.hasBaseline(sessionId),
+      listChanges: (sessionId) => workspace.listChanges(sessionId),
+      diff: (sessionId, path) => workspace.diff(sessionId, path),
+    },
+    agentName: (agentId) => AGENT_CATALOG.find((agent) => agent.id === agentId)?.displayName ?? agentId,
+    // 关联的远程项目在别的需求服务上（另一个账号 / 团队）：不列、不读。没关联远程项目的本机会话都算同一个。
+    otherAccount: (sessionId) => {
+      const remoteProjectId =
+        requirementSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? projectSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? null;
+      if (remoteProjectId === null) return false;
+      const mapping = workspaceMappings.getByRemoteProjectId(remoteProjectId);
+      const current = currentServerOrigin();
+      return mapping !== null && mapping.serverOrigin !== null && current !== null && mapping.serverOrigin !== current;
+    },
+  });
   const sessionTools = new SessionToolService({
     runtimes: registry,
     threads,
@@ -323,6 +347,7 @@ export function createSuDuoApplication(
     context: sessionContext,
     tools: new RequirementTools(requirementsRemote),
     roomTools: new RoomTools(requirementsRemote),
+    sessionReader,
     sessions,
   });
   // 登录 / 退出 / 改服务地址后：上游推送重连、本机 Agent 重新登记、续期重新排期（下方组装后绑定）。

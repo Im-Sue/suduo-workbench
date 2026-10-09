@@ -9,6 +9,7 @@ import {
   type RuntimeApprovalMode,
   type RuntimeToolSpec,
   type SessionDto,
+  type SessionLinksDto,
   type SessionStartOptions,
   type SessionPurpose,
   type UpdateSessionRequest,
@@ -17,6 +18,7 @@ import type { DatabasePort } from "../infrastructure/db/database-port.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import type {
   CreateSessionInput,
+  SessionGraphInput,
   SessionKind,
   SessionRecord,
   SessionRepository,
@@ -35,7 +37,7 @@ import {
   type ErrorText,
 } from "./api-error.js";
 import { messagesFor } from "../i18n/messages/index.js";
-import { sessionDto } from "./dto.js";
+import { sessionDto, sessionLink } from "./dto.js";
 import { paginate } from "./pagination.js";
 import { findAgentDescriptor } from "./agents/catalog.js";
 import { effectiveApprovalMode } from "./approval-mode-cap.js";
@@ -87,7 +89,13 @@ export class SessionService {
      * locale：没给标题时默认名用的语言（创建请求的语言）。
      * remoteProjectId：项目会话的所属项目，与会话行同一事务写入，之后不随目录关联变化。
      */
-    options: { kind?: SessionKind; locale: Locale; remoteProjectId?: string },
+    options: {
+      kind?: SessionKind;
+      locale: Locale;
+      remoteProjectId?: string;
+      /** 与另一个会话的关系（接着做等，多 Agent 协作 S7）。 */
+      graph?: SessionGraphInput;
+    },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
@@ -128,6 +136,7 @@ export class SessionService {
         ...(options.kind === undefined ? {} : { kind: options.kind }),
         locale: options.locale,
         agentId,
+        ...(options.graph === undefined ? {} : { graph: options.graph }),
       });
       if (remoteProjectId !== undefined) {
         projectSessionRefs?.create({ sessionId: created.id, remoteProjectId });
@@ -200,6 +209,8 @@ export class SessionService {
       setup: SessionThreadSetup;
       /** 开会话时的选择（Agent、审批档、模型、推理强度）。 */
       start?: SessionStartOptions;
+      /** 与另一个会话的关系（接着做等，多 Agent 协作 S7）。 */
+      graph?: SessionGraphInput;
     },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
@@ -223,6 +234,7 @@ export class SessionService {
       agentId,
       purpose: "general",
       ...start,
+      ...(input.graph === undefined ? {} : { graph: input.graph }),
     });
     const reference = {
       sessionId: session.id,
@@ -315,7 +327,27 @@ export class SessionService {
 
   get(id: string): SessionDto {
     const session = this.requireSession(id);
-    return sessionDto(session, this.threads.listBySession(id));
+    return { ...sessionDto(session, this.threads.listBySession(id)), links: this.links(session) };
+  }
+
+  /** 会话记录（不转 DTO）；不存在报 404。 */
+  record(id: string): SessionRecord {
+    return this.requireSession(id);
+  }
+
+  /** 接续自哪个会话、被哪些会话接着做（需求 4.2）。 */
+  private links(session: SessionRecord): SessionLinksDto {
+    const parent =
+      session.relation === "continue" && session.parentSessionId
+        ? this.sessions.getById(session.parentSessionId)
+        : null;
+    return {
+      continuedFrom: parent === null ? null : sessionLink(parent),
+      continuedBy: this.sessions
+        .listChildren(session.id)
+        .filter((child) => child.relation === "continue")
+        .map(sessionLink),
+    };
   }
 
   /**

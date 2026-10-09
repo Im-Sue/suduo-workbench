@@ -310,7 +310,7 @@ export const conversation = {
         keys.skill,
         " 选择 skill，",
         keys.file,
-        " 引用项目文件。",
+        " 引用别的会话或项目文件。",
       ],
     },
   },

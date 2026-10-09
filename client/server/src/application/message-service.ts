@@ -24,6 +24,9 @@ import { ApiError, IndeterminateOperationError } from "./api-error.js";
 import type { RuntimeSupervisor } from "./runtime-supervisor.js";
 import { WorkspaceContextResolver } from "./workspace-context.js";
 import { sessionRuntimeApprovalMode } from "./approval-mode-cap.js";
+import { sessionHandles } from "./context/session-handles.js";
+import { toolServerTools } from "./runtime-supervisor.js";
+import { messagesFor } from "../i18n/messages/index.js";
 import type { SkillRootsProvider } from "./skill-roots.js";
 
 export class MessageService {
@@ -94,6 +97,11 @@ export class MessageService {
       project.rootPath,
       this.skillRoots.roots(),
     );
+    // 消息里引用了本机别的会话（suduo://session/<ID>，多 Agent 协作 S7）：告诉 Agent 用 SuDuo 工具读，
+    // 别当网址去打开。只加给 Agent，账本里的消息照原样；这个线程没有会话工具时不加（说了也用不了）。
+    if (sessionHandles(input.content).length > 0 && toolServerTools(binding.metadata)?.includes("suduo_session_read") === true) {
+      runtimeInput.push({ type: "text", text: messagesFor(session.locale).sessionContext.handleHint });
+    }
     if (runtimeInput.some((item) => item.type === "skill")) {
       // 失败不阻塞发送：至少让消息发出去，而不是整条消息卡住。
       await this.syncSkillRoots?.(project.rootPath).catch(() => undefined);

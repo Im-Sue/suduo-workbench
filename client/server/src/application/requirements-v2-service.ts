@@ -32,6 +32,7 @@ import type { SessionService } from "./session-service.js";
 import type { DatabasePort } from "../infrastructure/db/database-port.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import type { RequirementSessionRefRepository } from "../infrastructure/db/repositories/requirement-session-ref-repository.js";
+import type { SessionGraphInput } from "../infrastructure/db/repositories/session-repository.js";
 import type { WorkspaceMappingRecord, WorkspaceMappingRepository } from "../infrastructure/db/repositories/workspace-mapping-repository.js";
 import type { RequirementsCredentialStore } from "../infrastructure/requirements-v2/credential-store.js";
 import type { RequirementsRemoteClient } from "../infrastructure/requirements-v2/remote-client.js";
@@ -420,7 +421,13 @@ export class RequirementsV2Service {
   }
 
   /** `locale`：会话的语言（创建请求的语言），需求卡、规则与工具说明按它写。 */
-  async createRequirementSession(requirementId: string, locale: Locale, start: SessionStartOptions = {}) {
+  async createRequirementSession(
+    requirementId: string,
+    locale: Locale,
+    start: SessionStartOptions = {},
+    /** 与另一个会话的关系（接着做，多 Agent 协作 S7）。 */
+    graph?: SessionGraphInput,
+  ) {
     this.sessions.checkStartOptions(start);
     const sessionContext = this.sessionContext;
     if (!sessionContext) {
@@ -447,6 +454,7 @@ export class RequirementsV2Service {
         requirementNumber: requirementNumberOf(requirement),
         setup,
         start,
+        ...(graph === undefined ? {} : { graph }),
       });
       this.onSessionCreated?.(session.id);
       return session;
@@ -454,7 +462,13 @@ export class RequirementsV2Service {
   }
 
   /** `locale`：会话的语言（创建请求的语言）：没给标题时的默认名、项目卡与工具说明按它写。 */
-  async createProjectSession(remoteProjectId: string, locale: Locale, start: SessionStartOptions = {}) {
+  async createProjectSession(
+    remoteProjectId: string,
+    locale: Locale,
+    start: SessionStartOptions = {},
+    /** 接着做（多 Agent 协作 S7）：沿用原会话的标题，记下关系。 */
+    extra: { title?: string; graph?: SessionGraphInput } = {},
+  ) {
     this.sessions.checkStartOptions(start);
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
@@ -465,13 +479,42 @@ export class RequirementsV2Service {
           projectRoot: localProject.rootPath,
           remoteProjectId,
         })) ?? {};
-      const session = await this.sessions.create(localProject.id, { purpose: "general", ...start }, setup, {
-        locale,
-        remoteProjectId,
-      });
+      const session = await this.sessions.create(
+        localProject.id,
+        { purpose: "general", ...(extra.title === undefined ? {} : { title: extra.title }), ...start },
+        setup,
+        { locale, remoteProjectId, ...(extra.graph === undefined ? {} : { graph: extra.graph }) },
+      );
       this.onSessionCreated?.(session.id);
       return session;
     });
+  }
+
+  /**
+   * 交给另一个 Agent 接着做（多 Agent 协作 S7，需求 4.2）：在原会话的需求 / 项目 / 本机项目下开一个新会话，
+   * 记下「接续自」关系（根会话沿用原会话的根）。新会话的首条消息由界面预填「接着 @原会话 继续：」，用户确认后发出。
+   */
+  async continueSession(sourceId: string, locale: Locale, start: SessionStartOptions = {}) {
+    const source = this.sessions.record(sourceId);
+    if (source.state === "deleted") {
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
+    }
+    if (source.kind !== "normal") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.roomTaskNotContinuable);
+    }
+    const graph: SessionGraphInput = { parentSessionId: source.id, rootSessionId: source.rootSessionId ?? source.id, relation: "continue" };
+    const context = this.sessionContext?.toolContext(source.id) ?? null;
+    if (context?.requirement) {
+      return this.createRequirementSession(context.requirement.remoteRequirementId, locale, start, graph);
+    }
+    if (context !== null) {
+      return this.createProjectSession(context.remoteProjectId, locale, start, { title: source.title, graph });
+    }
+    // 没关联 SuDuo 项目的本机会话：同一本机项目下开。
+    this.sessions.checkStartOptions(start);
+    const session = await this.sessions.create(source.projectId, { title: source.title, purpose: source.purpose, ...start }, {}, { locale, graph });
+    this.onSessionCreated?.(session.id);
+    return session;
   }
 
   async listProjectSessions(remoteProjectId: string) {

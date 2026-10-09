@@ -16,5 +16,6 @@ import { rooms } from "./rooms.js";
 import { conversation } from "./conversation.js";
 import { workbench } from "./workbench.js";
 import { agents } from "./agents.js";
+import { sessionLinks } from "./sessionLinks.js";
 
-export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview, rooms, conversation, workbench, agents } satisfies Messages;
+export const en = { common, sessions, setup, shell, timeline, feedback, settings, settingsConnection, settingsAgent, requirements, requirementDetail, myWork, overview, rooms, conversation, workbench, agents, sessionLinks } satisfies Messages;

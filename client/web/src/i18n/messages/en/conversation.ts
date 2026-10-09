@@ -287,7 +287,7 @@ export const conversation = {
         keys.skill,
         " to pick a Skill, or ",
         keys.file,
-        " to reference a project file.",
+        " to reference another session or a project file.",
       ],
     },
   },

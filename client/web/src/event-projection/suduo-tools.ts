@@ -92,12 +92,52 @@ export function dynamicToolTitle(tool: string, t: Messages = messagesFor(current
   return tool === "" ? t.timeline.step.callUnnamedTool : t.timeline.step.callTool(tool);
 }
 
-/** 任一 SuDuo 工具（需求工具或房间工具）的动作名；不认识的返回 null。 */
+/** 任一 SuDuo 工具（需求、房间、会话工具）的动作名；不认识的返回 null。 */
 function suDuoToolTitle(tool: string, t: Messages): string | null {
-  const { labels, roomLabels } = t.timeline.suDuoTool;
+  const { labels, roomLabels, sessionLabels } = t.timeline.suDuoTool;
   if (Object.hasOwn(labels, tool)) return labels[tool as keyof typeof labels];
   if (Object.hasOwn(roomLabels, tool)) return roomLabels[tool as keyof typeof roomLabels];
+  if (Object.hasOwn(sessionLabels, tool)) return sessionLabels[tool as keyof typeof sessionLabels];
   return null;
+}
+
+/** Agent 读另一个会话（session_read，多 Agent 协作 S7）读的是哪个会话、哪一层。 */
+export interface SessionReadRef {
+  sessionId: string;
+  view: "summary" | "conversation" | "turns" | "turn" | "changes";
+  /** conversation 的轮数、turn 的回合序号；其他层为 null。 */
+  number: number | null;
+}
+
+const READ_VIEWS = new Set<SessionReadRef["view"]>(["summary", "conversation", "turns", "turn", "changes"]);
+
+/** 认出 session_read 调用的参数；不是这个工具或参数不全时返回 null（按普通工具步骤显示）。 */
+export function sessionReadRef(tool: string, args: JsonValue | undefined): SessionReadRef | null {
+  if (currentSuDuoToolName(tool) !== "suduo_session_read") return null;
+  const record = objectValue(parseArguments(args));
+  const sessionId = record["sessionId"];
+  if (typeof sessionId !== "string" || sessionId.trim() === "") return null;
+  const raw = typeof record["view"] === "string" ? record["view"] : "summary";
+  const view = READ_VIEWS.has(raw as SessionReadRef["view"]) ? (raw as SessionReadRef["view"]) : "summary";
+  const numberOf = (value: JsonValue | undefined) => {
+    const parsed = typeof value === "string" ? Number(value) : value;
+    return typeof parsed === "number" && Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  };
+  const number = view === "turn" ? numberOf(record["turn"]) : view === "conversation" ? (numberOf(record["rounds"]) ?? 3) : null;
+  return { sessionId: sessionId.trim(), view, number };
+}
+
+/** 读的那一层的说法：「概要」「最近 3 轮」「第 2 回合」。 */
+export function sessionReadViewLabel(ref: SessionReadRef, t: Messages = messagesFor(currentLocale())): string {
+  const views = t.sessionLinks.read.views;
+  switch (ref.view) {
+    case "conversation":
+      return views.conversation(ref.number ?? 3);
+    case "turn":
+      return ref.number === null ? views.turns : views.turn(ref.number);
+    default:
+      return views[ref.view];
+  }
 }
 
 const COMMENT_PREVIEW_CHARS = 60;

@@ -5,7 +5,7 @@ export const workbench = {
   composer: {
     messageLabel: "给 Agent 的消息",
     placeholder: {
-      default: "描述要交给 Agent 的工作；/ 选 skill，@ 引用文件",
+      default: "描述要交给 Agent 的工作；/ 选 skill，@ 引用会话或文件",
       withSkill: (skill: string) => `已选 ${skill}，补充说明后发送…`,
       running: "正在工作：Enter 并入这一轮，Tab 排到之后",
     },
@@ -19,7 +19,7 @@ export const workbench = {
     palette: {
       label: "选择候选",
       skillTitle: "选择 skill",
-      fileTitle: "引用项目文件",
+      fileTitle: "引用会话或项目文件",
       keys: "↑↓ 选择 · Enter 确认 · Esc 关闭",
       indexing: "正在索引项目文件…",
       indexFailed: "索引失败，稍后重试",

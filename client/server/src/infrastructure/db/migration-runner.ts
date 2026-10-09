@@ -80,7 +80,12 @@ const SESSION_READ_ONLY_URL = new URL(
   import.meta.url,
 );
 
-const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+const SESSION_REFERENCES_URL = new URL(
+  "./migrations/022_session_references.sql",
+  import.meta.url,
+);
+
+const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
 
 export function loadM1Migrations(): Migration[] {
   return [
@@ -153,6 +158,11 @@ export function loadM1Migrations(): Migration[] {
       version: 21,
       name: "session_read_only",
       sql: readFileSync(SESSION_READ_ONLY_URL, "utf8"),
+    },
+    {
+      version: 22,
+      name: "session_references",
+      sql: readFileSync(SESSION_REFERENCES_URL, "utf8"),
     },
   ];
 }

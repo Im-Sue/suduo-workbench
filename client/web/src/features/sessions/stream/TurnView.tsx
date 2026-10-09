@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { collapseEmptyThinking, formatElapsed, stepGroupSummary, turnSummaryText } from "./describe.js";
+import { SessionReadTitle } from "../session-links.js";
 import { UserBubble } from "./UserBubble.js";
 
 /**
@@ -218,7 +219,7 @@ function StepRow({ step, now }: { step: TimelineStep; now: number }) {
         <StepStatusMark status={step.status} />
         {step.kind === "approval" ? null : <Icon className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />}
         <span className={cn("min-w-0 flex-1 truncate", step.status === "running" ? "text-foreground" : "text-muted-foreground")}>
-          {step.title}
+          {step.sessionRead === undefined ? step.title : <SessionReadTitle read={step.sessionRead} />}
           {step.progress === null ? null : <span className="text-subtle-foreground"> · {step.progress}</span>}
         </span>
         {step.exitCode !== null && step.exitCode !== 0 ? (

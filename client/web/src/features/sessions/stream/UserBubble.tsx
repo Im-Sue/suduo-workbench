@@ -3,6 +3,7 @@ import type { ConversationMessage } from "../../../event-projection/reducer.js";
 import { useT } from "../../../i18n/provider.js";
 import { formatClock } from "../../../ui/format.js";
 import { cn } from "@/lib/utils";
+import { TextWithSessionLinks } from "../session-links.js";
 
 /**
  * 用户消息。归属三态只说能证实的那一种（需求 R3 / R4）：
@@ -29,7 +30,7 @@ export function UserBubble({ message, inline = false }: { message: ConversationM
             ))}
           </span>
         ) : null}
-        {message.text}
+        <TextWithSessionLinks text={message.text} />
         {message.attachments.length > 0 ? (
           <span className="mt-1.5 flex flex-wrap gap-1">
             {message.attachments.map((attachment) => (

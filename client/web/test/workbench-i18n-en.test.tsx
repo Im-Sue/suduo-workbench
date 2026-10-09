@@ -131,7 +131,7 @@ describe("英文界面：会话输入框", () => {
   it("空闲时：占位、发送、图片按钮与上下文用量", async () => {
     const node = await render(composer());
     const textarea = q(node, "message-input") as HTMLTextAreaElement;
-    expect(textarea.placeholder).toBe("Describe the work for the agent. Type / for a Skill, @ to reference a file");
+    expect(textarea.placeholder).toBe("Describe the work for the agent. Type / for a Skill, @ to reference a session or file");
     expect(node.querySelector("label.sr-only")?.textContent).toBe("Message to the agent");
     expect(q(node, "send-message")?.getAttribute("aria-label")).toBe("Send");
     expect(q(node, "send-message")?.title).toBe("Send (Enter)");

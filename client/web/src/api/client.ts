@@ -564,6 +564,10 @@ export const api = {
   getSession: (sessionId: string) =>
     request<SessionDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}`),
 
+  /** 交给另一个 Agent 接着做（多 Agent 协作 S7）：同一需求 / 项目下开新会话并记下接续关系。 */
+  continueSession: (sessionId: string, body: SessionStartOptions) =>
+    request<SessionDto>(`/api/v2/sessions/${encodeURIComponent(sessionId)}/continue`, { method: "POST", body }),
+
   backfillSessionEvents: (
     sessionId: string,
     input: { after: number; until: number; limit: number },

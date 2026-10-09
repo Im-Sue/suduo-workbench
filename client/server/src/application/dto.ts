@@ -3,6 +3,7 @@ import {
   type ProjectDto,
   type SessionAgentDto,
   type SessionDto,
+  type SessionLinkDto,
   type ThreadBindingDto,
 } from "@suduo/client-contracts";
 import type { ApprovalRecord } from "../infrastructure/db/repositories/approval-repository.js";
@@ -58,6 +59,20 @@ export function sessionDto(
     lastActivityAt: session.lastActivityAt,
     version: session.version,
     threads: bindings.map(threadBindingDto),
+    parentSessionId: session.parentSessionId ?? null,
+    rootSessionId: session.rootSessionId ?? null,
+    relation: session.relation ?? null,
+  };
+}
+
+/** 会话关系另一头的简要信息（多 Agent 协作 S7）。 */
+export function sessionLink(session: SessionRecord): SessionLinkDto {
+  return {
+    id: session.id,
+    title: session.title,
+    agentId: session.agentId,
+    agentName: findAgentDescriptor(session.agentId)?.displayName ?? session.agentId,
+    state: session.state,
   };
 }
 

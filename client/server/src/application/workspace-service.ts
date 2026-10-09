@@ -593,6 +593,15 @@ export class WorkspaceService {
     return { items, additions, deletions };
   }
 
+  /**
+   * 这个会话有没有工作区基线（不现拍）：跨会话读取「改动」时先问它（多 Agent S7），
+   * 没有就退回 Agent 报告的改动——现拍的基线是此刻的目录，会把之前的改动都算没了。
+   */
+  async hasBaseline(sessionId: string): Promise<boolean> {
+    if (this.capturesInFlight.has(sessionId)) return true;
+    return (await this.baselines.load(sessionId).catch(() => null)) !== null;
+  }
+
   /** 单文件 diff：只读这一个文件与它的基线副本，不重拍整个项目。 */
   async diff(sessionId: string, path: string): Promise<WorkspaceDiff> {
     const { project } = this.requireSessionProject(sessionId);
