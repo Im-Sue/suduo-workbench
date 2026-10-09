@@ -129,6 +129,8 @@ export interface SessionDto {
    * 界面据此不给「回到开始前」（检查点是原目录的）。
    */
   workspacePath?: string;
+  /** 开场说明里注入的项目 AI 规范版本（多 Agent 协作 S11）；没注入不带。界面据此提示有新版本。 */
+  rulesVersion?: number;
   /** 只有单个会话的详情带：接续自哪个会话、被哪些会话接着做（需求 4.2「两个会话互相显示」）。 */
   links?: SessionLinksDto;
 }

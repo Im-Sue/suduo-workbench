@@ -61,6 +61,8 @@ export interface SessionStateObserver {
 export interface SessionThreadSetup {
   developerInstructions?: string;
   dynamicTools?: RuntimeToolSpec[];
+  /** 开场说明里注入的项目 AI 规范版本（会话记下它，界面据此提示新版本）。 */
+  rulesVersion?: number;
 }
 
 export class SessionService {
@@ -144,6 +146,8 @@ export class SessionService {
       if (remoteProjectId !== undefined) {
         projectSessionRefs?.create({ sessionId: created.id, remoteProjectId });
       }
+      // 开场说明里注入了哪一版项目 AI 规范（S11）：界面据此提示有新版本。
+      if (setup.rulesVersion !== undefined) this.sessions.setRulesVersion(created.id, setup.rulesVersion);
       return created;
     })();
     let started;
@@ -242,6 +246,7 @@ export class SessionService {
       ...(input.graph === undefined ? {} : { graph: input.graph }),
       ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
     });
+    if (input.setup.rulesVersion !== undefined) this.sessions.setRulesVersion(session.id, input.setup.rulesVersion);
     const reference = {
       sessionId: session.id,
       remoteProjectId: input.remoteProjectId,

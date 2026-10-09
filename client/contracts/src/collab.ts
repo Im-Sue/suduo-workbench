@@ -1,6 +1,7 @@
 /**
  * 多 Agent 协作（ADR-0017，技术设计 7.3）：本机调度、委派等的契约。
  */
+import type { SharedItemContent, SharedItemKind } from "@suduo/cloud-contracts";
 
 /** 回合从哪来：主会话的用户消息、委派、房间任务、评审、试做。 */
 export type SchedulerSource = "user" | "delegate" | "room" | "review" | "trial";
@@ -269,4 +270,98 @@ export interface TrialRepoStateDto {
   isGitRepo: boolean;
   branch: string | null;
   dirty: boolean;
+}
+
+/**
+ * 共享对象草稿（多 Agent 协作 S11，需求 4.7 / 4.13）：交接包（Agent 用 handoff_submit 起草）、评审报告（从评审卡生成）、
+ * 会话快照（选定若干回合）。本人编辑、预览后发布到需求；发布前本机扫一遍疑似密钥，标出位置，由人决定（不拦截）。
+ */
+export type SharedDraftStatus = "draft" | "published" | "discarded";
+
+/** 疑似密钥：在哪个字段（如 `summary`、`todo[1]`、`rounds[2].answer`）、像什么、遮住中间的片段。 */
+export interface SecretHitDto {
+  field: string;
+  kind: string;
+  excerpt: string;
+}
+
+export interface SharedDraftDto {
+  id: string;
+  kind: SharedItemKind;
+  /** 起草它的会话（会话删了为 null）。 */
+  sessionId: string | null;
+  /** 从哪次评审生成（评审报告）。 */
+  reviewId: string | null;
+  remoteRequirementId: string;
+  agentId: string | null;
+  title: string;
+  content: SharedItemContent;
+  status: SharedDraftStatus;
+  /** 发布到需求后云端的编号。 */
+  publishedItemId: string | null;
+  secretHits: SecretHitDto[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * 时间线上的草稿卡（`shared_draft.updated` 的载荷）：只带卡片要的字段，全文由发布对话框按编号去取（不把几 MB 的快照
+ * 一遍遍写进账本）。
+ */
+export interface SharedDraftSummaryDto {
+  id: string;
+  kind: SharedItemKind;
+  sessionId: string | null;
+  title: string;
+  status: SharedDraftStatus;
+  publishedItemId: string | null;
+  secretHitCount: number;
+  updatedAt: number;
+}
+
+/**
+ * PUT /api/v1/shared-drafts/:id：改标题与内容；回包重新扫过疑似密钥。`expectedUpdatedAt` 是打开对话框时看到的版本：
+ * 期间 Agent 又交了一版时回 409 并带上最新的，由人决定载入它还是用自己的覆盖（不带就直接覆盖）。
+ */
+export interface UpdateSharedDraftRequest {
+  title?: string;
+  content?: SharedItemContent;
+  expectedUpdatedAt?: number;
+}
+
+/**
+ * POST /api/v1/shared-drafts/:id/publish：`expectedUpdatedAt` 是用户预览时的版本。发布到团队是不可逆的对外副作用
+ * （ADR-0004 红线），预览之后内容变了就不发，回 409 带上最新的请人再看一遍。
+ */
+export interface PublishSharedDraftRequest {
+  expectedUpdatedAt?: number;
+}
+
+/**
+ * GET /api/v1/sessions/:id/ai-rules：会话开工 / 重建线程时注入的项目 AI 规范版本（used，没注入为 null）与项目当前版本
+ * （current，没写过或读不到为 null）。current 比 used 新时界面提示，可以一键应用（多 Agent 协作 S11）。
+ */
+export interface SessionAiRulesDto {
+  used: number | null;
+  /** 项目当前的版本；带上内容，应用前给用户看（第二轮复核：不把没看过的规范发给 Agent）。 */
+  current: { version: number; content: string; updatedBy: string | null; updatedAt: string | null } | null;
+}
+
+/** POST /api/v1/sessions/:id/ai-rules/apply：发用户看过的那一版（期间又有新版本时，提示照旧留着）。 */
+export interface ApplySessionAiRulesRequest {
+  version: number;
+}
+
+/** GET /api/v1/sessions/:id/rounds：会话快照选回合用的摘要（序号与快照一致）。 */
+export interface SessionRoundSummaryDto {
+  index: number;
+  /** 提问的开头。 */
+  userText: string;
+  status: "running" | "completed" | "failed" | "interrupted";
+  startedAt: number;
+}
+
+/** POST /api/v1/sessions/:id/snapshot：选这些回合（从 1 开始的回合序号）生成会话快照草稿。 */
+export interface CreateSnapshotDraftRequest {
+  rounds: number[];
 }

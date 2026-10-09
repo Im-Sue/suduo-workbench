@@ -1,4 +1,4 @@
-import type { DelegationDto, EventEnvelope, JsonValue, ReviewDto } from "@suduo/client-contracts";
+import type { DelegationDto, EventEnvelope, JsonValue, ReviewDto, SharedDraftSummaryDto } from "@suduo/client-contracts";
 import type { ConversationMessage, CurrentStep, TurnMeta, TurnStatus } from "./reducer.js";
 import { completedAgentMessageText, codexErrorDescription, describeCodexError, localizeTurnError, noticeOf, objectValue, describePermissions, runtimeNoticeText } from "./shared.js";
 import {
@@ -134,6 +134,8 @@ export type TimelineEntry =
   | { kind: "delegation"; id: string; seq: number; delegation: DelegationDto }
   /** 交叉评审（多 Agent 协作 S9）：同一评审只出一张卡片，取最新状态。 */
   | { kind: "review"; id: string; seq: number; review: ReviewDto }
+  /** 共享对象草稿（多 Agent 协作 S11）：交接包、评审报告、会话快照，同一份只出一张卡片，取最新状态。 */
+  | { kind: "sharedDraft"; id: string; seq: number; draft: SharedDraftSummaryDto }
   /**
    * 排队中的消息（多 Agent 协作 S8）：带可取消的队列项。state：还在等 / 开起来了 / 没发出（取消、重启、会话归档），
    * 按 clientTurnId 对上服务端的出队记录；本地队列据此判断这条有没有被收下。
@@ -169,6 +171,7 @@ export function buildTimeline(
   const userEntries = new Map<string, Extract<TimelineEntry, { kind: "user" }>>();
   const delegations = new Map<string, Extract<TimelineEntry, { kind: "delegation" }>>();
   const reviews = new Map<string, Extract<TimelineEntry, { kind: "review" }>>();
+  const drafts = new Map<string, Extract<TimelineEntry, { kind: "sharedDraft" }>>();
   /** 排队提示，按 clientTurnId：回合开起来或取消后不再显示「取消排队」。 */
   const queued = new Map<string, Extract<TimelineEntry, { kind: "queued" }>>();
   const messageById = new Map(messages.map((message) => [message.id, message]));
@@ -278,6 +281,17 @@ export function buildTimeline(
       else {
         const entry = { kind: "review" as const, id: `review:${review.id}`, seq: event.seq, review };
         reviews.set(review.id, entry);
+        entries.push(entry);
+      }
+      continue;
+    }
+    if (event.type === "shared_draft.updated") {
+      const draft = event.payload as unknown as SharedDraftSummaryDto;
+      const existing = drafts.get(draft.id);
+      if (existing !== undefined) existing.draft = draft;
+      else {
+        const entry = { kind: "sharedDraft" as const, id: `shared-draft:${draft.id}`, seq: event.seq, draft };
+        drafts.set(draft.id, entry);
         entries.push(entry);
       }
       continue;

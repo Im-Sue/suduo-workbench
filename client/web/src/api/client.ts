@@ -19,6 +19,10 @@ import type {
   TrialDto,
   TrialPrecheckDto,
   TrialRepoStateDto,
+  SharedDraftDto,
+  SessionAiRulesDto,
+  SessionRoundSummaryDto,
+  UpdateSharedDraftRequest,
   TrialTarget,
   UpdateAgentSettingsRequest,
   McpServerDto,
@@ -125,6 +129,13 @@ import type {
   RoomViewerStateDto,
   SendRoomMessageRequest,
   UpdateRoomRequest,
+  ListAiActivityResponse,
+  ListProjectAiRulesVersionsResponse,
+  ListSharedItemsResponse,
+  ProjectAiRulesDto,
+  ProjectAiRulesVersionDetailDto,
+  SaveProjectAiRulesResponse,
+  SharedItemDetailDto,
 } from "@suduo/cloud-contracts";
 import { ROOM_FILE_MAX_BYTES } from "@suduo/cloud-contracts";
 
@@ -612,6 +623,41 @@ export const api = {
   cleanupTrial: (trialId: string, entryIds: string[], forceBranches: string[] = []) =>
     request<TrialDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/cleanup`, { method: "POST", body: { entryIds, forceBranches } }),
   trialRepo: (trialId: string) => request<TrialRepoStateDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/repo`),
+
+  /** 共享对象草稿与团队共享（多 Agent 协作 S11）。 */
+  getSessionAiRules: (sessionId: string) => request<SessionAiRulesDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-rules`),
+  applySessionAiRules: (sessionId: string, version: number) =>
+    request<SessionAiRulesDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-rules/apply`, { method: "POST", body: { version } }),
+  getAiActivityReporting: (sessionId: string) => request<{ enabled: boolean }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-activity-reporting`),
+  setAiActivityReporting: (sessionId: string, enabled: boolean) =>
+    request<{ enabled: boolean }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-activity-reporting`, { method: "PUT", body: { enabled } }),
+  listSessionRounds: (sessionId: string) => request<{ items: SessionRoundSummaryDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/rounds`),
+  listSharedDrafts: (sessionId: string) => request<{ items: SharedDraftDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/shared-drafts`),
+  createSnapshotDraft: (sessionId: string, rounds: number[]) =>
+    request<SharedDraftDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/snapshot`, { method: "POST", body: { rounds }, expectedStatus: 201 }),
+  createReviewDraft: (reviewId: string) => request<SharedDraftDto>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/draft`, { method: "POST", body: {}, expectedStatus: 201 }),
+  getSharedDraft: (draftId: string) => request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}`),
+  updateSharedDraft: (draftId: string, body: UpdateSharedDraftRequest) =>
+    request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}`, { method: "PUT", body }),
+  /** expectedUpdatedAt：预览时的版本；之后变了服务端回 409 不发（发布不可逆）。 */
+  publishSharedDraft: (draftId: string, expectedUpdatedAt?: number) =>
+    request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}/publish`, { method: "POST", body: expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt } }),
+  createManualHandoff: (sessionId: string) => request<SharedDraftDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/handoff`, { method: "POST", body: {}, expectedStatus: 201 }),
+  discardSharedDraft: (draftId: string) => request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}/discard`, { method: "POST", body: {} }),
+  listSharedItems: (requirementId: string) => request<ListSharedItemsResponse>(`/api/v2/requirements/${encodeURIComponent(requirementId)}/shared-items`),
+  getSharedItem: (itemId: string) => request<SharedItemDetailDto>(`/api/v2/shared-items/${encodeURIComponent(itemId)}`),
+  retractSharedItem: (itemId: string) => request<SharedItemDetailDto>(`/api/v2/shared-items/${encodeURIComponent(itemId)}/retract`, { method: "POST", body: {} }),
+  listAiActivity: (requirementId: string) => request<ListAiActivityResponse>(`/api/v2/requirements/${encodeURIComponent(requirementId)}/ai-activity`),
+  getProjectAiRules: (projectId: string) => request<ProjectAiRulesDto>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules`),
+  listProjectAiRulesVersions: (projectId: string) => request<ListProjectAiRulesVersionsResponse>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules/versions`),
+  getProjectAiRulesVersion: (projectId: string, version: number) =>
+    request<ProjectAiRulesVersionDetailDto>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules/versions/${String(version)}`),
+  /** baseVersion：开始编辑时看到的版本，只用来检测（回包列出这期间别人存过的版本），不拒绝。 */
+  saveProjectAiRules: (projectId: string, content: string, baseVersion?: number) =>
+    request<SaveProjectAiRulesResponse>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules`, {
+      method: "PUT",
+      body: { content, ...(baseVersion === undefined ? {} : { baseVersion }) },
+    }),
 
   /** 交叉评审（多 Agent 协作 S9）。 */
   listReviews: (sessionId: string) =>

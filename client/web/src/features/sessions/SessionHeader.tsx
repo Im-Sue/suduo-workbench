@@ -1,11 +1,12 @@
 import type { SessionDto } from "@suduo/client-contracts";
 import { Link } from "@tanstack/react-router";
-import { FileTextIcon, FolderGit2Icon, ForwardIcon, GitForkIcon, InfoIcon, PanelRightIcon, PencilIcon, ScanSearchIcon } from "lucide-react";
+import { FileTextIcon, FolderGit2Icon, ForwardIcon, GitForkIcon, InfoIcon, PanelRightIcon, PencilIcon, ScanSearchIcon, Share2Icon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
 import { useLossCheck, useT } from "../../i18n/provider.js";
 import { sessionStatusLabel, type SessionUiStatus } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,6 +29,7 @@ export function SessionHeader({
   onToggleInspector,
   onContinue,
   onReview,
+  onShare,
   trialId,
 }: {
   session: SessionDto;
@@ -43,6 +45,10 @@ export function SessionHeader({
   onContinue?(): void;
   /** 请另一个 Agent 评审（多 Agent 协作 S9）；不传时不显示（房间任务、评审会话、已删除的会话）。 */
   onReview?(): void;
+  /**
+   * 共享到需求（多 Agent 协作 S11）：只有需求会话有。让 Agent 起草交接包（只给能交的主会话）、手写交接包、发布会话快照。
+   */
+  onShare?: { handoff?: () => void; writeHandoff(): void; snapshot(): void; reporting?: { enabled: boolean; toggle(): void } };
   /** 并行试做的一版：比较视图的链接（多 Agent 协作 S10）。 */
   trialId?: string;
 }) {
@@ -156,6 +162,33 @@ export function SessionHeader({
             {t.collab.trial.pageTitle}
           </Link>
         </Button>
+      )}
+      {onShare === undefined ? null : (
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon-sm" variant="ghost" aria-label={t.collab.share.menu} title={t.collab.share.menu} data-testid="share-session">
+              <Share2Icon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {onShare.handoff === undefined ? null : (
+              <DropdownMenuItem onSelect={onShare.handoff} data-testid="share-handoff">
+                {t.collab.share.makeHandoff}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={onShare.writeHandoff} data-testid="share-write-handoff">
+              {t.collab.share.writeHandoff}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onShare.snapshot} data-testid="share-snapshot">
+              {t.collab.share.makeSnapshot}
+            </DropdownMenuItem>
+            {onShare.reporting === undefined ? null : (
+              <DropdownMenuItem onSelect={onShare.reporting.toggle} title={t.collab.share.reportingHint} data-testid="share-reporting">
+                {t.collab.share.reporting(onShare.reporting.enabled)}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
       {onReview === undefined ? null : (
         <Button

@@ -323,24 +323,68 @@ function reviewSpecs(locale: Locale, d: ServerMessages["toolSpec"]): Record<Revi
 }
 
 /**
- * 委派出来的子会话不挂的工具（技术设计 2.9）：委派与请求评审（深度 1，R2）、对外写工具（评论由发起会话去发）。
- * 建子会话与线程重建时都用它。
+ * 交接包（多 Agent 协作 S11，需求 4.7）：提交交接包草稿（主会话，用户确认后发布到需求）与读需求上同事发布的交接包。
+ * 只有需求会话有（交接包挂在需求上）。
  */
-export function delegateChildDropsTool(name: string): boolean {
-  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name);
+export const HANDOFF_TOOL_NAMES = ["suduo_handoff_submit", "suduo_handoff_read"] as const;
+export type HandoffToolName = (typeof HANDOFF_TOOL_NAMES)[number];
+
+export function isHandoffToolName(name: string): name is HandoffToolName {
+  return (HANDOFF_TOOL_NAMES as readonly string[]).includes(name);
 }
 
-/** 评审会话不挂的工具（技术设计 2.9）：结论笔记、对外写、委派与请求评审；另加 `review_submit`。 */
-export function reviewerDropsTool(name: string): boolean {
-  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_notes_save";
+function handoffSpecs(locale: Locale, d: ServerMessages["toolSpec"]): Record<HandoffToolName, RuntimeToolSpec> {
+  const spec = messagesFor(locale).sharedDraft.spec;
+  const list = (description: string) => ({ type: "array", items: { type: "string" }, description });
+  return {
+    suduo_handoff_submit: {
+      name: "suduo_handoff_submit",
+      description: spec.submit.description + d.textReturn("suduo_handoff_submit"),
+      inputSchema: {
+        type: "object",
+        properties: {
+          summary: { type: "string", description: spec.submit.summary },
+          decisions: list(spec.submit.decisions),
+          todo: list(spec.submit.todo),
+          risks: list(spec.submit.risks),
+          branch: { type: "string", description: spec.submit.branch },
+          files: list(spec.submit.files),
+        },
+        required: ["summary"],
+        additionalProperties: false,
+      },
+    },
+    suduo_handoff_read: {
+      name: "suduo_handoff_read",
+      description: spec.read.description + d.textReturn("suduo_handoff_read"),
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string", description: spec.read.id } },
+        additionalProperties: false,
+      },
+    },
+  };
 }
 
 /**
- * 并行试做的一版不挂的工具（技术设计 2.9；S10）：委派与请求评审（R2）、对外写工具；结论笔记也不给
+ * 委派出来的子会话不挂的工具（技术设计 2.9）：委派与请求评审（深度 1，R2）、对外写工具（评论由发起会话去发）、
+ * 提交交接包（交接由主线做）。建子会话与线程重建时都用它。
+ */
+export function delegateChildDropsTool(name: string): boolean {
+  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_handoff_submit";
+}
+
+/** 评审会话不挂的工具（技术设计 2.9）：结论笔记、对外写、委派与请求评审、提交交接包；另加 `review_submit`。 */
+export function reviewerDropsTool(name: string): boolean {
+  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_notes_save" || name === "suduo_handoff_submit";
+}
+
+/**
+ * 并行试做的一版不挂的工具（技术设计 2.9；S10）：委派与请求评审（R2）、对外写工具、提交交接包；结论笔记也不给
  * （它在自己的 worktree 里，删了就没了；结论记在主线上）。
  */
 export function trialDropsTool(name: string): boolean {
-  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_notes_save";
+  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_notes_save" || name === "suduo_handoff_submit";
 }
 
 /** 评审会话的工具（建评审会话时加在 scope 的工具之外）。 */
@@ -386,6 +430,7 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
   const sessions = sessionSpecs(locale, d);
   const delegations = delegationSpecs(locale, d);
   const reviews = reviewSpecs(locale, d);
+  const handoffs = handoffSpecs(locale, d);
   return sessionToolNames(scope).map((name) =>
     isRoomToolName(name)
       ? rooms[name]
@@ -395,7 +440,9 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
           ? delegations[name]
           : isReviewToolName(name)
             ? reviews[name]
-            : specs[name as ActiveSuDuoToolName],
+            : isHandoffToolName(name)
+              ? handoffs[name]
+              : specs[name as ActiveSuDuoToolName],
   );
 }
 
@@ -403,7 +450,7 @@ export function sessionToolSpecs(scope: SessionToolScope, locale: Locale): Runti
 export function sessionToolNames(scope: SessionToolScope): string[] {
   switch (scope) {
     case "requirement":
-      return [...READ_TOOLS, ...WRITE_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, "suduo_review_request"];
+      return [...READ_TOOLS, ...WRITE_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, "suduo_review_request", ...HANDOFF_TOOL_NAMES];
     case "project":
       return [...READ_TOOLS, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, "suduo_review_request"];
     case "room":
@@ -434,7 +481,7 @@ export function internalToolName(mcpName: string): string {
   return MCP_TOOL_PREFIX + mcpName;
 }
 
-const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, ...REVIEW_TOOL_NAMES]);
+const KNOWN_TOOL_NAMES = new Set<string>([...READ_TOOLS, ...WRITE_TOOLS, ...ROOM_TOOL_NAMES, ...SESSION_TOOL_NAMES, ...DELEGATION_TOOL_NAMES, ...REVIEW_TOOL_NAMES, ...HANDOFF_TOOL_NAMES]);
 
 /** 说明与回复文字里提到的 SuDuo 工具名换成 MCP 名（只换认识的工具名，其余原样）。 */
 export function mcpToolText(text: string): string {
@@ -453,6 +500,7 @@ export function mcpToolSpecsFor(toolNames: readonly string[], locale: Locale): R
   const sessions = sessionSpecs(locale, d);
   const delegations = delegationSpecs(locale, d);
   const reviews = reviewSpecs(locale, d);
+  const handoffs = handoffSpecs(locale, d);
   return toolNames.flatMap((name): RuntimeToolSpec[] => {
     const spec = isRoomToolName(name)
       ? rooms[name]
@@ -462,6 +510,8 @@ export function mcpToolSpecsFor(toolNames: readonly string[], locale: Locale): R
           ? delegations[name]
           : isReviewToolName(name)
             ? reviews[name]
+          : isHandoffToolName(name)
+            ? handoffs[name]
           : KNOWN_TOOL_NAMES.has(name)
           ? specs[name as ActiveSuDuoToolName]
           : undefined;

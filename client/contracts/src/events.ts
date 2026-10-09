@@ -40,6 +40,8 @@ export type KnownEventType =
   /** 这个会话发起的委派有了变化（载荷是 DelegationDto，委派卡片取同一委派最新的一条）。 */
   | "delegation.updated"
   | "review.updated"
+  /** 共享对象草稿有了变化（载荷是 SharedDraftDto，多 Agent 协作 S11）。 */
+  | "shared_draft.updated"
   | "approval.requested"
   | "approval.resolved"
   | "approval.orphaned"

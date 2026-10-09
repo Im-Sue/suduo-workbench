@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 387,
+  "total": 431,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -110,6 +110,46 @@
       "start-options",
       "start-permission"
     ],
+    "web/src/features/collab/ProjectAiRules.tsx": [
+      "project-ai-rules",
+      "project-ai-rules-content",
+      "project-ai-rules-history",
+      "project-ai-rules-save",
+      "project-ai-rules-version"
+    ],
+    "web/src/features/collab/RulesNotice.tsx": [
+      "rules-apply",
+      "rules-content",
+      "rules-dialog",
+      "rules-notice",
+      "rules-view"
+    ],
+    "web/src/features/collab/SharedContentView.tsx": [
+      "shared-content"
+    ],
+    "web/src/features/collab/SharedDraftDialog.tsx": [
+      "shared-draft-branch",
+      "shared-draft-conflict",
+      "shared-draft-decisions",
+      "shared-draft-dialog",
+      "shared-draft-discard",
+      "shared-draft-files",
+      "shared-draft-load-latest",
+      "shared-draft-overwrite",
+      "shared-draft-preview",
+      "shared-draft-publish",
+      "shared-draft-risks",
+      "shared-draft-save",
+      "shared-draft-secrets",
+      "shared-draft-summary",
+      "shared-draft-title",
+      "shared-draft-todo"
+    ],
+    "web/src/features/collab/SnapshotDialog.tsx": [
+      "snapshot-create",
+      "snapshot-dialog",
+      "snapshot-round"
+    ],
     "web/src/features/my-work/MyWorkPage.tsx": [
       "session-activity",
       "setup-checklist",
@@ -171,6 +211,14 @@
     "web/src/features/requirements/sections/ActivityFeed.tsx": [
       "activity-comment",
       "comment-files"
+    ],
+    "web/src/features/requirements/sections/AiCollab.tsx": [
+      "ai-activity",
+      "ai-collab-section",
+      "shared-item",
+      "shared-item-retract",
+      "shared-item-view",
+      "shared-item-viewer"
     ],
     "web/src/features/requirements/sections/CommentFiles.tsx": [
       "comment-pending-files"
@@ -335,6 +383,11 @@
       "session-status",
       "session-title",
       "session-title-input",
+      "share-handoff",
+      "share-reporting",
+      "share-session",
+      "share-snapshot",
+      "share-write-handoff",
       "side-requirement-entry"
     ],
     "web/src/features/sessions/SessionList.tsx": [
@@ -377,10 +430,15 @@
       "review-finding-check",
       "review-findings",
       "review-open",
+      "review-publish",
       "review-status",
       "review-stop",
       "review-summary",
       "review-unstructured"
+    ],
+    "web/src/features/sessions/stream/SharedDraftCard.tsx": [
+      "shared-draft-card",
+      "shared-draft-open"
     ],
     "web/src/features/sessions/stream/TurnView.tsx": [
       "assistant-text",

@@ -1,3 +1,7 @@
+import { RulesNotice } from "../features/collab/RulesNotice.js";
+import { ShareContext } from "../features/collab/share-context.js";
+import { SharedDraftDialog } from "../features/collab/SharedDraftDialog.js";
+import { SnapshotDialog } from "../features/collab/SnapshotDialog.js";
 import {
   useCallback,
   useEffect,
@@ -10,6 +14,7 @@ import {
 } from "react";
 import { BACKFILL_OMITTED_EVENT_TYPES } from "@suduo/client-contracts";
 import type {
+  SessionAiRulesDto,
   GitCheckpointDto,
   ApprovalMode,
   ApprovalDto,
@@ -145,6 +150,8 @@ const EVENT_TYPES = [
   "turn.dequeued",
   "delegation.updated",
   "review.updated",
+  // 多 Agent 协作 S11：共享对象草稿卡。
+  "shared_draft.updated",
   ...BACKFILL_OMITTED_EVENT_TYPES,
 ] as const;
 
@@ -227,6 +234,9 @@ export function SessionRuntime(props: {
   /** 交给另一个 Agent 接着做的对话框（多 Agent 协作 S7）。 */
   const [continueOpen, setContinueOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  /** 共享到需求（多 Agent 协作 S11）：正在预览的草稿、选回合的快照对话框。 */
+  const [openDraftId, setOpenDraftId] = useState<string | null>(null);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
   // 并行试做的一版（S10）：会话头给「并行试做」比较视图的链接。
   const [trialId, setTrialId] = useState<string | null>(null);
   /** 接着做开出的新会话：输入框预填「接着 @原会话 继续：」（只预填，不自动发出）。 */
@@ -609,6 +619,106 @@ export function SessionRuntime(props: {
   /** 能不能在输入框 @ Agent 委派（多 Agent 协作 S8）：主会话才行（子会话、评审会话、试做会话不能委派，R2）。 */
   const canDelegate =
     referencesSessions && session !== null && session.kind === "normal" && session.relation !== "delegate" && session.relation !== "review" && session.relation !== "trial";
+  /**
+   * 共享到需求（多 Agent 协作 S11）：需求会话才能发布交接包、评审报告、会话快照（挂在需求上）；房间任务会话不给。
+   * 团队服务器还不支持时发布会报错说明（会话页不包 QueryClientProvider，不在这里查服务器能力）。
+   */
+  const canShare = context.status === "ready" && context.value.kind === "requirement" && session !== null && session.kind === "normal" && session.state !== "deleted";
+  /**
+   * 让 Agent 起草交接包：只给有 handoff_submit 的主会话（子会话、评审、试做没有这个工具；旧版上下文的会话也没有）。
+   * 在 S11 之前建的线程里也没有：消息里写明没有工具就直接在回复里写，另有「手写交接包」兜底（R13）。
+   */
+  const canAgentHandoff =
+    canShare && context.status === "ready" && context.value.contextMode !== "legacy" && session.relation !== "delegate" && session.relation !== "review" && session.relation !== "trial";
+  const shareActions = useMemo(() => ({ canPublish: canShare, openDraft: (draftId: string) => setOpenDraftId(draftId) }), [canShare]);
+  /** 替用户发一条请 Agent 调 handoff_submit 的消息：只入队（经调度，时间线可见），不顺带恢复暂停中的队列。 */
+  const requestHandoff = () => {
+    setQueue((current) => enqueueItem(current, { id: crypto.randomUUID(), text: t.collab.share.makeHandoffMessage, attachmentIds: [] }));
+    if (queue.status === "paused") showMessage(t.collab.share.handoffQueuedPaused, "info");
+  };
+  /**
+   * 项目 AI 规范（S11）：会话用的版本与项目当前版本，有新版本时提示、一键应用；协作记录上报的开关。
+   * 不用 useQuery（会话页的部分外壳不包 QueryClientProvider），进会话时取一次。
+   */
+  const linkedProject = context.status === "ready" && context.value.kind !== "none";
+  /** 提示只给主会话（委派的子会话、评审、试做、已删除的不提示：它们跟着发起的会话走）。 */
+  const rulesNoticeFor =
+    linkedProject && session !== null && session.kind === "normal" && session.state !== "deleted" && session.relation !== "delegate" && session.relation !== "review" && session.relation !== "trial";
+  const [rulesStatus, setRulesStatus] = useState<SessionAiRulesDto | null>(null);
+  const [reporting, setReporting] = useState<boolean | null>(null);
+  /** 每次取规范状态（与应用）的序号：晚到的旧结果不盖掉新的（比如应用的回包之后才回来的重取）。 */
+  const rulesRequest = useRef(0);
+  /**
+   * 进会话时取一次；项目成员随时可能存新版本，回到这个窗口时再取（会话页不接云端事件）。重取不先清空，
+   * 免得提示条闪一下、打开着的查看对话框被卸掉；focus 与 visibilitychange 一起来时只取一次。
+   */
+  useEffect(() => {
+    setRulesStatus(null);
+    if (!rulesNoticeFor) return;
+    const load = () => {
+      const request = ++rulesRequest.current;
+      void Promise.resolve()
+        .then(() => api.getSessionAiRules(props.sessionId))
+        .then((status) => {
+          if (rulesRequest.current === request) setRulesStatus(status);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    let last = Date.now();
+    const refresh = () => {
+      if (document.visibilityState !== "visible" || Date.now() - last < 2000) return;
+      last = Date.now();
+      load();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      rulesRequest.current += 1;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [rulesNoticeFor, props.sessionId]);
+  useEffect(() => {
+    setReporting(null);
+    let cancelled = false;
+    if (canShare) {
+      void Promise.resolve()
+        .then(() => api.getAiActivityReporting(props.sessionId))
+        .then((state) => {
+          if (!cancelled) setReporting(state.enabled);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [canShare, props.sessionId]);
+  const applyRules = async (version: number) => {
+    try {
+      rulesRequest.current += 1;
+      const next = await api.applySessionAiRules(props.sessionId, version);
+      rulesRequest.current += 1;
+      setRulesStatus(next);
+      if (next.used !== null) showMessage(t.collab.share.rulesNotice.applied(next.used), "success");
+    } catch (cause) {
+      reportFailure(cause, { surface: "action", title: t.collab.share.rulesNotice.failed });
+    }
+  };
+  const toggleReporting = () => {
+    if (reporting === null) return;
+    void api
+      .setAiActivityReporting(props.sessionId, !reporting)
+      .then((state) => setReporting(state.enabled))
+      .catch((cause: unknown) => reportError(cause, "action"));
+  };
+  /** 手写交接包：新起一份空的草稿，直接打开发布对话框。 */
+  const writeHandoff = () => {
+    void api
+      .createManualHandoff(props.sessionId)
+      .then((draft) => setOpenDraftId(draft.id))
+      .catch((cause: unknown) => reportError(cause, "action"));
+  };
   /** 会话在独立工作目录（并行试做的 worktree，S10）里干活：检查点是原目录的，不给「回到开始前」。 */
   const isolated = session?.workspacePath !== undefined;
   /** 文件树、预览、用编辑器打开、回答里的路径链接按会话的工作目录找文件（只在独立目录里的会话带上会话）。 */
@@ -1089,9 +1199,20 @@ export function SessionRuntime(props: {
             {...(session.kind === "normal" && session.state !== "deleted" && referencesSessions ? { onContinue: () => setContinueOpen(true) } : {})}
             {...(session.kind === "normal" && session.state !== "deleted" && session.relation !== "review" && referencesSessions ? { onReview: () => setReviewOpen(true) } : {})}
             {...(trialId === null ? {} : { trialId })}
+            {...(canShare
+              ? {
+                  onShare: {
+                    ...(canAgentHandoff ? { handoff: requestHandoff } : {}),
+                    writeHandoff,
+                    snapshot: () => setSnapshotOpen(true),
+                    ...(reporting === null ? {} : { reporting: { enabled: reporting, toggle: toggleReporting } }),
+                  },
+                }
+              : {})}
           />
         ) : null}
         {session ? <SessionLinksBar links={session.links} /> : null}
+        <RulesNotice status={rulesStatus} onApply={applyRules} />
         {session ? <ContinueSessionDialog session={session} open={continueOpen} onOpenChange={setContinueOpen} /> : null}
         {session ? <ReviewDialog session={session} open={reviewOpen} onOpenChange={setReviewOpen} /> : null}
         <CascadeStopDialog
@@ -1113,29 +1234,42 @@ export function SessionRuntime(props: {
             <section className="flex h-full min-w-0 flex-col" aria-label={text.conversationLabel}>
               {/* 回答里的项目文件链接点开在右侧文件面板（需求 4.6）。 */}
               <MarkdownLinkContext.Provider value={markdownLinks}>
-                <ConversationStream
-                  key={props.sessionId}
-                  scrollCarryKey={`conversation-scroll:session:${props.sessionId}`}
-                  timeline={streamTimeline}
-                  historyLoading={historyLoading}
-                  now={now}
-                  actions={{
-                    onOpenChange: openChange,
-                    displayPath,
-                    onViewChanges: () => {
-                      setDrawer(null);
-                      setSideOpen(true);
-                      setSideTab("changes");
-                    },
-                    // 房间任务会话只读：在这里重试等于私下追问，回答回不到房间；重试在房间消息上做。
-                    ...(roomTaskSession ? {} : { onRetry: retryTurn }),
-                    // ADR-0004 红线：还原会覆盖 Codex 正在写的文件，有回合在跑时不提供（与环境页的还原一致）；
-                    // 在独立工作目录里干活的会话也不提供（检查点是原目录的，还原会改到原目录）。
-                    ...(running > 0 || isolated ? {} : { onRestoreBefore: (turn: TurnTimeline) => void restoreBefore(turn) }),
-                  }}
-                  empty={<EmptyConversation />}
-                />
+                <ShareContext.Provider value={shareActions}>
+                  <ConversationStream
+                    key={props.sessionId}
+                    scrollCarryKey={`conversation-scroll:session:${props.sessionId}`}
+                    timeline={streamTimeline}
+                    historyLoading={historyLoading}
+                    now={now}
+                    actions={{
+                      onOpenChange: openChange,
+                      displayPath,
+                      onViewChanges: () => {
+                        setDrawer(null);
+                        setSideOpen(true);
+                        setSideTab("changes");
+                      },
+                      // 房间任务会话只读：在这里重试等于私下追问，回答回不到房间；重试在房间消息上做。
+                      ...(roomTaskSession ? {} : { onRetry: retryTurn }),
+                      // ADR-0004 红线：还原会覆盖 Codex 正在写的文件，有回合在跑时不提供（与环境页的还原一致）；
+                      // 在独立工作目录里干活的会话也不提供（检查点是原目录的，还原会改到原目录）。
+                      ...(running > 0 || isolated ? {} : { onRestoreBefore: (turn: TurnTimeline) => void restoreBefore(turn) }),
+                    }}
+                    empty={<EmptyConversation />}
+                  />
+                </ShareContext.Provider>
               </MarkdownLinkContext.Provider>
+              {openDraftId === null ? null : <SharedDraftDialog draftId={openDraftId} onClose={() => setOpenDraftId(null)} />}
+              {snapshotOpen ? (
+                <SnapshotDialog
+                  sessionId={props.sessionId}
+                  onClose={() => setSnapshotOpen(false)}
+                  onCreated={(draftId) => {
+                    setSnapshotOpen(false);
+                    setOpenDraftId(draftId);
+                  }}
+                />
+              ) : null}
               <ConfirmDialog
                 open={restoreTarget !== null}
                 onOpenChange={(open) => !open && setRestoreTarget(null)}

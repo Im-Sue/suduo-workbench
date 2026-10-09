@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import type { ReviewDto, ReviewFindingDto } from "@suduo/client-contracts";
-import { CheckIcon, ClockIcon, CornerDownLeftIcon, ExternalLinkIcon, ScanSearchIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
+import { CheckIcon, ClockIcon, CornerDownLeftIcon, ExternalLinkIcon, ScanSearchIcon, SquareIcon, TriangleAlertIcon, UploadIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../api/client.js";
 import { reportFailure } from "../../../feedback/report.js";
 import { useT } from "../../../i18n/provider.js";
+import { useShare } from "../../collab/share-context.js";
 import { Markdown } from "../../../ui/markdown.js";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,7 +29,20 @@ export function ReviewCard({ review }: { review: ReviewDto }) {
     setSelected(defaults());
     // 只在意见本身变化时重置（交回后 appliedFindingIds 变化不重置，由交回时清空）。
   }, [signature]);
-  const [busy, setBusy] = useState<"stop" | "apply" | null>(null);
+  const [busy, setBusy] = useState<"stop" | "apply" | "publish" | null>(null);
+  const share = useShare();
+  /** 发布到需求（S11）：从这次评审生成评审报告草稿，交给发布对话框预览。 */
+  const publish = async () => {
+    setBusy("publish");
+    try {
+      const draft = await api.createReviewDraft(review.id);
+      share.openDraft(draft.id);
+    } catch (cause) {
+      reportFailure(cause, { surface: "action", title: t.collab.share.dialog.failures.load });
+    } finally {
+      setBusy(null);
+    }
+  };
   const toggle = (id: string, on: boolean) =>
     setSelected((current) => {
       const next = new Set(current);
@@ -117,6 +131,12 @@ export function ReviewCard({ review }: { review: ReviewDto }) {
               {text.apply(chosen)}
             </Button>
           )}
+          {review.status === "submitted" && share.canPublish ? (
+            <Button size="sm" variant="ghost" loading={busy === "publish"} data-testid="review-publish" onClick={() => void publish()}>
+              <UploadIcon />
+              {t.collab.share.reviewPublish}
+            </Button>
+          ) : null}
         </div>
       </div>
     </section>

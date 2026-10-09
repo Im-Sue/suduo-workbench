@@ -1,3 +1,4 @@
+import type { HandoffTools } from "../collab/handoff-tools.js";
 import { randomUUID } from "node:crypto";
 import {
   SUDUO_MCP_CONNECTION_ID,
@@ -22,7 +23,7 @@ import type { ToolConfirmationHandler } from "../approval-service.js";
 import type { EventLedger } from "../event-ledger.js";
 import type { McpToolCallResult, McpToolContent, McpToolDefinition, McpToolHost } from "../../infrastructure/mcp/mcp-endpoint.js";
 import type { ToolGrant } from "../../infrastructure/mcp/tool-tokens.js";
-import { internalToolName, isDelegationToolName, isReviewToolName, isWriteTool, mcpToolSpecsFor, mcpToolText, sessionToolNames, type SessionToolScope } from "./catalog.js";
+import { internalToolName, isDelegationToolName, isHandoffToolName, isReviewToolName, isWriteTool, mcpToolSpecsFor, mcpToolText, sessionToolNames, type SessionToolScope } from "./catalog.js";
 import { failure, limitToolResult, textResult, toolFormat, type ToolResult } from "./format.js";
 import type { RequirementTools, ToolSessionContext } from "./requirement-tools.js";
 import type { RoomTools } from "./room-tools.js";
@@ -74,6 +75,8 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
       delegationTools?: DelegationTools;
       /** 交叉评审（多 Agent 协作 S9）；不传时评审工具一律回「不可用」。 */
       reviewTools?: ReviewTools;
+      /** 交接包（多 Agent 协作 S11）；不传时交接包工具一律回「不可用」。 */
+      handoffTools?: HandoffTools;
       /**
        * 会话记录：会话没关联 SuDuo 项目（取不到工具上下文）时，按它记下的语言回包；
        * 会话记录也查不到时用 `FALLBACK_LOCALE`。必填，免得漏接时英文会话悄悄收到中文。
@@ -93,6 +96,11 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
   /** 评审工具同理（依赖发消息、调度）。 */
   setReviewTools(tools: ReviewTools): void {
     this.deps.reviewTools = tools;
+  }
+
+  /** 交接包工具同理（依赖草稿服务）。 */
+  setHandoffTools(tools: HandoffTools): void {
+    this.deps.handoffTools = tools;
   }
 
   /** MCP tools/list（ADR-0015）：给令牌授予的工具（建线程时定下），说明不用代码模式的写法。 */
@@ -369,6 +377,11 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
   ): Promise<ToolResult> {
     const tools = this.deps.tools;
     const text = toolFormat(context.locale).t.toolReply;
+    if (isHandoffToolName(tool)) {
+      const handoffs = this.deps.handoffTools;
+      if (!handoffs) return Promise.resolve(failure(text.dispatch.handoffToolsUnavailable));
+      return tool === "suduo_handoff_submit" ? Promise.resolve(handoffs.submit(context, args)) : handoffs.read(context, args);
+    }
     if (isReviewToolName(tool)) {
       const reviews = this.deps.reviewTools;
       if (!reviews) return Promise.resolve(failure(text.dispatch.reviewToolsUnavailable));

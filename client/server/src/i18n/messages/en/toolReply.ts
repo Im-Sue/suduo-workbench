@@ -137,6 +137,7 @@ export const toolReply = {
     sessionToolsUnavailable: "Session tools are unavailable right now.",
     delegationToolsUnavailable: "Delegation tools are unavailable right now.",
     reviewToolsUnavailable: "Review tools are unavailable right now.",
+    handoffToolsUnavailable: "Handoff tools are unavailable right now.",
     unknownTool: (tool: string) => `SuDuo has no tool named ${tool}.`,
     declinedComment: "The user didn't approve, so the comment wasn't posted.",
     commentDraftSaved: "The user hasn't confirmed yet, so the comment was saved as a draft (not posted). The user can send or discard it from SuDuo later; don't call the comment tool again.",

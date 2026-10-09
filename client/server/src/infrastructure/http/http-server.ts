@@ -100,6 +100,7 @@ import { registerSchedulerRoutes, type SchedulerRouteDependencies } from "./rout
 import { registerDelegationsRoutes, type DelegationsRouteDependencies } from "./routes/delegations-routes.js";
 import { registerReviewsRoutes, type ReviewsRouteDependencies } from "./routes/reviews-routes.js";
 import { registerTrialsRoutes, type TrialsRouteDependencies } from "./routes/trials-routes.js";
+import { registerSharedDraftsRoutes, type SharedDraftsRouteDependencies } from "./routes/shared-drafts-routes.js";
 import { MCP_ENDPOINT_PATH, registerMcpEndpoint, type McpToolHost } from "../mcp/mcp-endpoint.js";
 import type { ToolTokenRegistry } from "../mcp/tool-tokens.js";
 import {
@@ -133,6 +134,7 @@ export interface HttpServerDependencies
     DelegationsRouteDependencies,
     ReviewsRouteDependencies,
     TrialsRouteDependencies,
+    SharedDraftsRouteDependencies,
     McpRouteDependencies,
     LocalDirectoryRouteDependencies,
     SystemActivityRouteDependencies {
@@ -280,6 +282,7 @@ export function buildHttpServer(
   registerDelegationsRoutes(server, dependencies);
   registerReviewsRoutes(server, dependencies);
   registerTrialsRoutes(server, dependencies);
+  registerSharedDraftsRoutes(server, dependencies);
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }

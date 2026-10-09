@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDto, TrialDto } from "@suduo/client-contracts";
 import type { ProjectedRound } from "../src/application/context/session-projection.js";
+import type { AiActivityEvent } from "../src/application/collab/ai-activity-reporter.js";
 import { isTestCommand, TrialService } from "../src/application/collab/trial-service.js";
 import { WorktreeManager } from "../src/application/collab/worktree-manager.js";
 import { openBetterSqlite3Database } from "../src/infrastructure/db/better-sqlite3-database.js";
@@ -53,6 +54,7 @@ function setup(options: { gitRepo?: boolean; subdir?: string; worktrees?: Worktr
   const rounds = new Map<string, ProjectedRound[]>();
   const activity = new Map<string, "queued" | "running" | "idle">();
   const archived: string[] = [];
+  const reports: AiActivityEvent[] = [];
   const flags = { projectGone: false, failSend: false };
   const trials = new TrialRepository(database);
   const service = new TrialService({
@@ -87,13 +89,14 @@ function setup(options: { gitRepo?: boolean; subdir?: string; worktrees?: Worktr
     },
     agentProblem: (agentId) => (agentId === "cursor" ? (t) => t.delegation.reply.agentDisabled("Cursor") : null),
     agentName: (agentId) => ({ codex: "Codex", "claude-code": "Claude Code" })[agentId] ?? agentId,
+    activity: (event) => reports.push(event),
     log: () => undefined,
   });
   const settle = async (id: string, predicate: (trial: TrialDto) => boolean) => {
     await vi.waitFor(async () => expect(predicate(await service.get(id))).toBe(true), { timeout: 15_000, interval: 50 });
     return service.get(id);
   };
-  return { root, repoRoot, git, worktreeRoot, project, sessions, trials, service, created, sent, rounds, activity, archived, flags, settle };
+  return { root, repoRoot, git, worktreeRoot, project, sessions, trials, service, created, sent, rounds, activity, archived, flags, settle, reports };
 }
 
 describe("并行试做", () => {
@@ -184,6 +187,10 @@ describe("并行试做", () => {
     expect(started.entries[1]!.branch).toMatch(/^suduo\/trial-[0-9a-f]{8}-codex-2$/u);
     const done = await context.settle(started.id, (trial) => trial.entries.every((entry) => entry.state === "setup_failed"));
     expect(done.entries[0]).toMatchObject({ state: "setup_failed", setupLog: "missing", sessionId: null });
+    // 协作记录：两版各一条开始、一条失败。
+    const ids = started.entries.map((entry) => entry.id);
+    expect(context.reports.slice(0, 2).map((event) => [event.localRef, event.status])).toEqual(ids.map((id) => [id, "started"]));
+    expect(context.reports.slice(2).map((event) => [event.localRef, event.status]).sort()).toEqual(ids.map((id) => [id, "failed"]).sort());
   });
 
   it("比较：最终回答、相对基点的改动（含新文件）、测试命令与退出码、耗时；状态按会话的排队 / 运行 / 结果", async () => {
@@ -297,6 +304,10 @@ describe("并行试做", () => {
     expect(context.archived.sort()).toEqual([first!.sessionId, second!.sessionId, reviewer.id, third!.sessionId].sort());
     // 空了的试做组目录一并删掉。
     expect(existsSync(join(context.worktreeRoot, context.project.id))).toBe(false);
+    // 协作记录：采用成了的两版停在「已采用」，没采用的那版清理后记「已清理」；有会话后带上会话（按会话的开关）。
+    const last = new Map(context.reports.map((event) => [event.localRef, event]));
+    expect([first, second, third].map((entry) => last.get(entry!.id)?.status)).toEqual(["adopted", "adopted", "discarded"]);
+    expect(last.get(third!.id)?.sessionId).toBe(third!.sessionId);
   });
 
   it("分支名被别人抢先建了：这一版没建成，清理不碰那个分支；分支建了、检出失败：清理照样删这一版的分支", async () => {

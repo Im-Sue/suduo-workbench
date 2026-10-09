@@ -1,4 +1,5 @@
 export * from "./activity.js";
+export * from "./ai-collab.js";
 export * from "./auth.js";
 export * from "./artifact-versions.js";
 export * from "./collaboration.js";

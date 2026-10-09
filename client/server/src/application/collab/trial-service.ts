@@ -21,6 +21,7 @@ import { ApiError, type ErrorText } from "../api-error.js";
 import type { ProjectedRound } from "../context/session-projection.js";
 import type { SchedulerSource } from "../scheduler/turn-scheduler.js";
 import { oneLine } from "./delegation-service.js";
+import type { AiActivityEvent } from "./ai-activity-reporter.js";
 import type { ChangedFile, WorktreeManager } from "./worktree-manager.js";
 
 const MIN_AGENTS = 2;
@@ -83,6 +84,8 @@ export interface TrialDependencies {
   archiveSession(sessionId: string): Promise<void>;
   agentProblem(agentId: string): ErrorText | null;
   agentName(agentId: string): string;
+  /** 协作记录上报（S11，P2-D1）：需求上的试做开始、采用。 */
+  activity?: (event: AiActivityEvent) => void;
   now?: () => number;
   log?: (line: Record<string, unknown>) => void;
 }
@@ -104,13 +107,15 @@ export class TrialService {
    */
   recoverAfterRestart(): void {
     for (const entry of this.deps.trials.listPreparing()) {
-      const locale = this.deps.trials.getGroup(entry.groupId)?.locale ?? "zh-CN";
+      const group = this.deps.trials.getGroup(entry.groupId);
+      const locale = group?.locale ?? "zh-CN";
       this.deps.trials.updateEntry(
         entry.id,
         // git 先建分支再建目录，路径每组唯一：目录在就说明分支与目录都是这一版建的。
         { status: "failed", error: messagesFor(locale).trial.restartInterrupted, ...(existsSync(entry.path) ? { branchCreated: true, worktreeCreated: true } : {}) },
         this.now(),
       );
+      if (group !== null) this.report(group, entry, "failed");
     }
   }
 
@@ -180,6 +185,9 @@ export class TrialService {
       }
       return { group, entries };
     });
+    for (const entry of entries) {
+      this.report(group, entry, "started");
+    }
     // 各版独立准备：一版失败不挡别的。
     const names = agents.map((agent) => this.deps.agentName(agent.agentId));
     for (const [index, entry] of entries.entries()) {
@@ -269,6 +277,9 @@ export class TrialService {
     // 冲突、git 拒绝不算采用成了（横幅照样说明结果）。
     const done = result.kind === "merged" || result.kind === "kept";
     this.deps.trials.updateGroup(id, { status: group.status === "closed" ? "closed" : done ? "adopted" : group.status, adoptedEntryId: entry.id }, this.now());
+    if (done) {
+      this.report(group, entry, "adopted");
+    }
     return this.get(id);
   }
 
@@ -301,6 +312,9 @@ export class TrialService {
         }
       }
       this.deps.trials.updateEntry(entry.id, { status: "removed", error: null }, this.now());
+      // 采用成了的版本（合并了或保留了分支）记录停在「已采用」；其余的记为「已清理」。
+      const adopted = (entry.adoptResult as TrialAdoptResultDto | null)?.kind;
+      if (adopted !== "merged" && adopted !== "kept") this.report(group, entry, "discarded");
       // 工作目录删了，在里面干活的会话没有目录可用了：归档（只删分支的那次不再重复）。
       if (plan.worktree) await this.archiveSessions(group, entry);
       if (plan.branch === "delete-unmerged" && !confirmedForce.has(entry.id)) {
@@ -338,7 +352,7 @@ export class TrialService {
     try {
       const root = this.deps.localProject(group.projectId)?.rootPath;
       if (root === undefined) {
-        this.deps.trials.updateEntry(entry.id, { status: "failed", error: t.projectMissing }, this.now());
+        this.fail(group, entry, "failed", t.projectMissing);
         return;
       }
       // 分支与工作目录分两步建、分开记：检出失败（磁盘满、LFS 出错）时分支已在，清理照样删它；同名分支已存在时
@@ -348,7 +362,7 @@ export class TrialService {
         this.deps.trials.updateEntry(entry.id, { branchCreated: true }, this.now());
         await this.deps.worktrees.addWorktree(root, entry.path, entry.branch);
       } catch (error) {
-        this.deps.trials.updateEntry(entry.id, { status: "failed", error: t.worktreeFailed(errorMessage(error)) }, this.now());
+        this.fail(group, entry, "failed", t.worktreeFailed(errorMessage(error)));
         return;
       }
       this.deps.trials.updateEntry(entry.id, { worktreeCreated: true }, this.now());
@@ -358,7 +372,7 @@ export class TrialService {
         const setup = await this.deps.worktrees.setup(workDir, group.setupCommand);
         this.deps.trials.updateEntry(entry.id, { setupLog: setup.log === "" ? null : setup.log }, this.now());
         if (!setup.ok) {
-          this.deps.trials.updateEntry(entry.id, { status: "setup_failed", error: t.setupFailed }, this.now());
+          this.fail(group, entry, "setup_failed", t.setupFailed);
           return;
         }
       }
@@ -374,7 +388,7 @@ export class TrialService {
           role: input.role,
         });
       } catch (error) {
-        this.deps.trials.updateEntry(entry.id, { status: "failed", error: t.sessionFailed(errorMessage(error)) }, this.now());
+        this.fail(group, entry, "failed", t.sessionFailed(errorMessage(error)));
         return;
       }
       this.deps.trials.updateEntry(entry.id, { sessionId: session.id, status: "started" }, this.now());
@@ -382,14 +396,26 @@ export class TrialService {
         .send(session.id, { content: [{ type: "text", text: group.task }] }, `trial:${entry.id}:start`, { locale: group.locale, source: "trial", label: oneLine(group.task, 80) })
         .catch((error: unknown) => {
           // 会话开好了、任务没发出：记为失败并说明怎么补发（用户在这一版的会话里再发一次，状态随回合走）。
-          this.deps.trials.updateEntry(entry.id, { status: "failed", error: t.sendFailed(errorMessage(error)) }, this.now());
+          this.fail(group, entry, "failed", t.sendFailed(errorMessage(error)));
         });
     } catch (error) {
       this.log({ event: "suduo.trial.prepare_failed", entryId: entry.id, message: String(error) });
       if (this.deps.trials.getEntry(entry.id)?.status === "preparing") {
-        this.deps.trials.updateEntry(entry.id, { status: "failed", error: t.prepareFailed(errorMessage(error)) }, this.now());
+        this.fail(group, entry, "failed", t.prepareFailed(errorMessage(error)));
       }
     }
+  }
+
+  /** 这一版失败：记在这一版上，并报一条协作记录。 */
+  private fail(group: TrialGroupRecord, entry: TrialEntryRecord, status: "failed" | "setup_failed", error: string): void {
+    this.deps.trials.updateEntry(entry.id, { status, error }, this.now());
+    this.report(group, entry, "failed");
+  }
+
+  /** 协作记录（S11，P2-D1）：有会话了就按会话的开关（会话开出来之前的「开始」没有会话可关）。 */
+  private report(group: TrialGroupRecord, entry: TrialEntryRecord, status: string): void {
+    const sessionId = this.deps.trials.getEntry(entry.id)?.sessionId ?? entry.sessionId;
+    this.deps.activity?.({ sessionId, requirementId: group.remoteRequirementId, localRef: entry.id, kind: "trial", status, agentId: entry.agentId, branch: entry.branch });
   }
 
   private async entryDto(group: TrialGroupRecord, entry: TrialEntryRecord, root: string | null): Promise<TrialEntryDto> {

@@ -37,6 +37,7 @@ import { useCreateComment, useRequirement, useRequirementIdByRef, useUpdateRequi
 import { useReadMarker } from "./read-marker.js";
 import { ActivityFeed, type ActivityFilter } from "./sections/ActivityFeed.js";
 import { LocalSessions } from "./sections/LocalSessions.js";
+import { AiCollabSection } from "./sections/AiCollab.js";
 import { PendingCommentFiles, useCommentFiles, type SentBatch } from "./sections/CommentFiles.js";
 import { MaterialsPanel, renamePastedImage } from "./sections/Materials.js";
 import { RequirementRooms } from "../rooms/sections/RequirementRooms.js";
@@ -772,6 +773,7 @@ function PropertiesRail({
         </h2>
         <LocalSessions projectId={projectId} requirementId={requirement.id} />
       </section>
+      <AiCollabSection requirementId={requirement.id} />
     </aside>
   );
 }

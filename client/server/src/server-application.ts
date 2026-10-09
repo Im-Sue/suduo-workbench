@@ -1,3 +1,9 @@
+import { AI_COLLAB_FEATURE, AiActivityReporter, activityStatusOf } from "./application/collab/ai-activity-reporter.js";
+import { AiActivitySettingRepository } from "./infrastructure/db/repositories/ai-activity-setting-repository.js";
+import { ProjectRulesService } from "./application/collab/project-rules-service.js";
+import { HandoffTools } from "./application/collab/handoff-tools.js";
+import { SharedDraftService } from "./application/collab/shared-draft-service.js";
+import { SharedDraftRepository } from "./infrastructure/db/repositories/shared-draft-repository.js";
 import type { FastifyInstance } from "fastify";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -199,6 +205,33 @@ export function createSuDuoApplication(
     requirementsCredentials,
   );
   const broker = new EventBroker();
+  // 协作记录上报（多 Agent 协作 S11，P2-D1）：只含元数据，默认开，可按会话关（接着做、委派、评审跟着发起的会话）。
+  const aiActivity = new AiActivityReporter({
+    requirementOf: (sessionId) => requirementSessionRefs.getBySessionId(sessionId)?.remoteRequirementId ?? null,
+    settings: new AiActivitySettingRepository(database),
+    parentOf: (sessionId) => sessions.getById(sessionId)?.parentSessionId ?? null,
+    remote: { recordAiActivity: (requirementId, input) => requirementsRemote.recordAiActivity(requirementId, input) },
+    supportsActivity: async () => {
+      const baseUrl = requirementsSettings.getBaseUrl();
+      if (baseUrl === null) return null;
+      const health = await requirementsRemote.testConnection(baseUrl, "en").catch(() => null);
+      return health === null ? null : health.features.includes(AI_COLLAB_FEATURE);
+    },
+  });
+  // 委派、评审的状态变化（卡片事件）顺带报成协作记录。
+  broker.subscribeAll((event) => {
+    if (event.type !== "delegation.updated" && event.type !== "review.updated") return;
+    const payload = event.payload as Record<string, unknown>;
+    const sessionId = event.type === "delegation.updated" ? payload["parentSessionId"] : payload["targetSessionId"];
+    if (typeof sessionId !== "string" || typeof payload["id"] !== "string" || typeof payload["agentId"] !== "string" || typeof payload["status"] !== "string") return;
+    aiActivity.report({
+      sessionId,
+      localRef: payload["id"],
+      kind: event.type === "delegation.updated" ? "delegate" : "review",
+      status: activityStatusOf(payload["status"]),
+      agentId: payload["agentId"],
+    });
+  });
   const ledger = new EventLedger(database, events, approvals, broker);
   const codexGlobalState = new CodexGlobalState();
   const ingestor = new RuntimeEventIngestor(threads, ledger, codexGlobalState);
@@ -387,7 +420,14 @@ export function createSuDuoApplication(
     database,
     sessionContext,
     () => remoteConnectionChanged(),
-    (sessionId) => void workspace.captureBaselineInBackground(sessionId),
+    (sessionId) => {
+      void workspace.captureBaselineInBackground(sessionId);
+      // 协作记录（S11，P2-D1）：需求会话开工。委派、评审、试做的会话由各自的记录报，不重复。
+      const created = sessions.getById(sessionId);
+      if (created !== null && (created.relation === null || created.relation === undefined || created.relation === "continue")) {
+        aiActivity.report({ sessionId, localRef: sessionId, kind: "session", status: "opened", agentId: created.agentId });
+      }
+    },
   );
   const myWorkbench = new MyWorkbenchService({
     refs: requirementSessionRefs,
@@ -553,8 +593,9 @@ export function createSuDuoApplication(
     closeQueuedAfterRestart(events, ledger, (message) => message.source === "delegate" && delegationService.willRequeue(message.sessionId)),
   );
   // 交叉评审（多 Agent 协作 S9，需求 4.4）：评审会话与被评会话同一需求 / 项目、同一目录，固定只读。
+  const reviewRepository = new ReviewRepository(database);
   const reviewService = new ReviewService({
-    reviews: new ReviewRepository(database),
+    reviews: reviewRepository,
     sessions,
     threads,
     ledger,
@@ -607,9 +648,34 @@ export function createSuDuoApplication(
     },
     agentProblem: (agentId) => agentCatalog.delegationProblem(agentId),
     agentName: agentDisplayName,
+    activity: (event) => aiActivity.report(event),
   });
   trialService.recoverAfterRestart();
   sessionTools.setReviewTools(new ReviewTools({ service: reviewService }));
+  // 共享对象草稿与交接包（多 Agent 协作 S11，需求 4.7 / 4.13）：本机起草、编辑，本人确认后发布到需求。
+  const sharedDraftService = new SharedDraftService({
+    drafts: new SharedDraftRepository(database),
+    sessions,
+    requirementOf: (sessionId) => requirementSessionRefs.getBySessionId(sessionId)?.remoteRequirementId ?? null,
+    sessionRoot: (sessionId) => {
+      const session = sessions.getById(sessionId);
+      return session === null ? null : (session.workspacePath ?? projects.getById(session.projectId)?.rootPath ?? null);
+    },
+    reviews: reviewRepository,
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    remote: requirementsRemote,
+    ledger,
+    threads,
+    activity: (event) => aiActivity.report(event),
+  });
+  sessionTools.setHandoffTools(new HandoffTools({ drafts: sharedDraftService, remote: requirementsRemote, agentName: agentDisplayName }));
+  // 项目 AI 规范的新版本提示与一键应用（S11，需求 4.8）。
+  const projectRulesService = new ProjectRulesService({
+    sessions,
+    remoteProjectOf: (sessionId) => requirementSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? projectSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? null,
+    remote: requirementsRemote,
+    messages: messageService,
+  });
   sessionTools.setDelegationTools(
     new DelegationTools({
       service: delegationService,
@@ -804,6 +870,10 @@ export function createSuDuoApplication(
     delegations: delegationService,
     reviews: reviewService,
     trials: trialService,
+    sharedDrafts: sharedDraftService,
+    sessionAiRules: projectRulesService,
+    aiActivity,
+    aiCollabRemote: requirementsRemote,
     openTerminal: terminalOpener(),
     modelProvider: modelProviderService,
     mcp: mcpService,

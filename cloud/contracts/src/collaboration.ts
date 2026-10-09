@@ -77,6 +77,10 @@ export const AUDIT_RESOURCE_TYPES = [
   "room",
   /** Agent 共享到房间的开关记录。 */
   "agent_share",
+  /** 需求共享对象（交接包、评审报告、会话快照）的发布与撤回（多 Agent 协作）。 */
+  "shared_item",
+  /** 项目 AI 规范的保存：只属于项目。 */
+  "ai_rules",
 ] as const;
 
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPES)[number];
@@ -132,12 +136,21 @@ export const ROOM_AUDIT_ACTIONS = [
 
 export type RoomAuditAction = (typeof ROOM_AUDIT_ACTIONS)[number];
 
+/**
+ * 多 Agent 协作的审计动作：共享对象发布 / 撤回、项目 AI 规范保存。同房间动作，暂不并入 `AUDIT_ACTIONS`，
+ * `/v2/audit` 过渡期内不返回；界面从共享对象与规范版本列表看到谁何时做了什么。
+ */
+export const AI_COLLAB_AUDIT_ACTIONS = ["shared_item.published", "shared_item.retracted", "ai_rules.updated"] as const;
+
+export type AiCollabAuditAction = (typeof AI_COLLAB_AUDIT_ACTIONS)[number];
+
 /** 服务端实际写入审计表的全部动作。 */
 export const RECORDED_AUDIT_ACTIONS = [
   ...AUDIT_ACTIONS,
   REQUIREMENT_ASSIGNEE_CHANGED_ACTION,
   REQUIREMENT_PRIORITY_CHANGED_ACTION,
   ...ROOM_AUDIT_ACTIONS,
+  ...AI_COLLAB_AUDIT_ACTIONS,
 ] as const;
 
 export type RecordedAuditAction = (typeof RECORDED_AUDIT_ACTIONS)[number];
@@ -195,6 +208,12 @@ export const REQUIREMENTS_EVENT_TYPES = [
   "comment.created",
   "attachment.changed",
   "artifact.published",
+  /** 需求共享对象发布或撤回（带 requirementId）。 */
+  "shared_item.changed",
+  /** 需求的协作记录有新增或更新（带 requirementId）。 */
+  "ai_activity.changed",
+  /** 项目 AI 规范有新版本（只带 projectId）。 */
+  "ai_rules.changed",
 ] as const;
 
 export type RequirementsEventType =

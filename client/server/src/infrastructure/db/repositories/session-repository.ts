@@ -58,6 +58,8 @@ export interface SessionRecord {
   relation?: SessionRelation | null;
   /** 会话实际干活的目录（并行试做的 git worktree，多 Agent 协作 S10）；null = 项目目录。 */
   workspacePath?: string | null;
+  /** 开场说明里注入的项目 AI 规范版本（多 Agent 协作 S11）；没注入为 null。 */
+  rulesVersion?: number | null;
 }
 
 /** 与父会话的关系：委派、接着做、评审、试做（迁移 019 的 CHECK）。 */
@@ -111,6 +113,7 @@ export interface SessionRow {
   relation?: string | null;
   /** 迁移 019 之前的库没有这一列。 */
   workspace_path?: string | null;
+  rules_version?: number | null;
   model: string | null;
   reasoning_effort: string | null;
   created_at: number;
@@ -351,6 +354,11 @@ export class SessionRepository {
     );
   }
 
+  /** 记下开场说明里注入的项目 AI 规范版本（建线程、重建线程、用户应用新版本时）。不改会话版本号与活动时间。 */
+  setRulesVersion(sessionId: string, rulesVersion: number | null): void {
+    this.database.prepare("UPDATE sessions SET rules_version = @rulesVersion WHERE id = @sessionId").run({ sessionId, rulesVersion });
+  }
+
   updateState(
     id: string,
     expectedVersion: number,
@@ -459,6 +467,7 @@ export function mapSession(row: SessionRow): SessionRecord {
     rootSessionId: row.root_session_id ?? null,
     relation: isRelation(row.relation) ? row.relation : null,
     workspacePath: row.workspace_path ?? null,
+    rulesVersion: row.rules_version ?? null,
   };
 }
 

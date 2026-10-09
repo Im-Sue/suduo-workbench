@@ -63,6 +63,7 @@ export function sessionDto(
     rootSessionId: session.rootSessionId ?? null,
     relation: session.relation ?? null,
     ...(session.workspacePath === null || session.workspacePath === undefined ? {} : { workspacePath: session.workspacePath }),
+    ...(session.rulesVersion === null || session.rulesVersion === undefined ? {} : { rulesVersion: session.rulesVersion }),
   };
 }
 

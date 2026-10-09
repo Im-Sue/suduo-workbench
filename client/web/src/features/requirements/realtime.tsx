@@ -57,6 +57,16 @@ export function invalidateForEvent(queryClient: QueryClient, event: Requirements
         void queryClient.invalidateQueries({ queryKey: [...requirementKeys.project(event.projectId), "assigned-to-me"] });
       }
       return;
+    // AI 协作（S11）：只重取「AI 协作」区自己的那一块。
+    case "shared_item.changed":
+      if (event.requirementId !== undefined) void queryClient.invalidateQueries({ queryKey: requirementKeys.sharedItems(event.requirementId) });
+      return;
+    case "ai_activity.changed":
+      if (event.requirementId !== undefined) void queryClient.invalidateQueries({ queryKey: requirementKeys.aiActivity(event.requirementId) });
+      return;
+    case "ai_rules.changed":
+      void queryClient.invalidateQueries({ queryKey: requirementKeys.aiRules(event.projectId) });
+      return;
   }
 }
 

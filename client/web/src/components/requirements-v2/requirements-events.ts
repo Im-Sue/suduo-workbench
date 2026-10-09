@@ -18,7 +18,10 @@ export function parseRequirementsEvent(value: string): RequirementsEventDto | nu
         event.type !== "requirement.changed" &&
         event.type !== "comment.created" &&
         event.type !== "attachment.changed" &&
-        event.type !== "artifact.published")
+        event.type !== "artifact.published" &&
+        event.type !== "shared_item.changed" &&
+        event.type !== "ai_activity.changed" &&
+        event.type !== "ai_rules.changed")
     ) {
       return null;
     }

@@ -100,7 +100,12 @@ const TRIALS_URL = new URL(
   import.meta.url,
 );
 
-const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
+const SHARED_DRAFTS_URL = new URL(
+  "./migrations/026_shared_drafts.sql",
+  import.meta.url,
+);
+
+const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
 
 export function loadM1Migrations(): Migration[] {
   return [
@@ -193,6 +198,11 @@ export function loadM1Migrations(): Migration[] {
       version: 25,
       name: "trials",
       sql: readFileSync(TRIALS_URL, "utf8"),
+    },
+    {
+      version: 26,
+      name: "shared_drafts",
+      sql: readFileSync(SHARED_DRAFTS_URL, "utf8"),
     },
   ];
 }

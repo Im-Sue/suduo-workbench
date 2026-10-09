@@ -7,6 +7,7 @@ import {
   REQUIREMENTS_V2_SCHEMAS,
   REQUIREMENT_PRIORITIES,
   REQUIREMENT_COMMENT_MAX_FILES,
+  AI_COLLAB_AUDIT_ACTIONS,
   CLOUD_FEATURES,
   formatRequirementNumber,
   parseRequirementNumberQuery,
@@ -132,7 +133,7 @@ describe("评论文件", () => {
     expect(schema.properties.body.minLength).toBe(0);
     expect(schema.properties.fileIds.maxItems).toBe(REQUIREMENT_COMMENT_MAX_FILES);
     expect(REQUIREMENT_COMMENT_MAX_FILES).toBe(10);
-    expect(CLOUD_FEATURES).toEqual(["requirement_priority", "comment_files", "agent_kinds_v2"]);
+    expect(CLOUD_FEATURES).toEqual(["requirement_priority", "comment_files", "agent_kinds_v2", "ai_collab_v1"]);
     expectTypeOf<{ fileIds: string[] }>().toMatchTypeOf<CreateCommentRequest>();
     expectTypeOf<CommentDto["files"]>().toEqualTypeOf<CommentFileDto[] | undefined>();
   });
@@ -145,7 +146,13 @@ describe("活动时间线", () => {
       "requirement.assignee_changed",
       "requirement.priority_changed",
       ...ROOM_AUDIT_ACTIONS,
+      ...AI_COLLAB_AUDIT_ACTIONS,
     ]);
+    // 多 Agent 协作的动作同房间，不进 /v2/audit 的契约动作表，也不进需求活动时间线（在「AI 协作」区看）。
+    for (const action of AI_COLLAB_AUDIT_ACTIONS) {
+      expect(AUDIT_ACTIONS).not.toContain(action);
+      expect(REQUIREMENT_ACTIVITY_ACTIONS).not.toContain(action);
+    }
     // 过渡期：负责人变更不进 /v2/audit 的契约动作表，避免旧界面穷举文案表编译失败。
     expect(AUDIT_ACTIONS).not.toContain("requirement.assignee_changed");
     expect(AUDIT_ACTIONS).not.toContain("requirement.priority_changed");

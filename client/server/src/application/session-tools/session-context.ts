@@ -8,6 +8,7 @@ import {
   type RequirementActivityEntryDto,
   type RequirementDetailDto,
 } from "@suduo/cloud-contracts";
+import { aiRulesLines } from "../collab/ai-rules-text.js";
 import { ApiError } from "../api-error.js";
 import type { ProjectRepository } from "../../infrastructure/db/repositories/project-repository.js";
 import type {
@@ -36,11 +37,13 @@ import { readNotes, resolveNotesDir } from "./requirement-dir.js";
 export interface ThreadSetup {
   developerInstructions: string;
   dynamicTools: RuntimeToolSpec[];
+  /** 注入了哪一版项目 AI 规范（S11）；没注入不带。 */
+  rulesVersion?: number;
 }
 
 export type SessionContextRemote = Pick<
   RequirementsRemoteClient,
-  "getRequirement" | "getProject" | "listAttachments" | "listRequirementActivity" | "listAudit"
+  "getRequirement" | "getProject" | "listAttachments" | "listRequirementActivity" | "listAudit" | "listSharedItems" | "getProjectAiRules"
 >;
 
 /** 需求卡里正文的上限，超出提示用工具看全文。 */
@@ -287,10 +290,24 @@ export class SessionContextService {
     sessionId?: string;
   }): Promise<ThreadSetup> {
     const p = toolFormat(input.locale).t.prompt;
-    const card = await this.requirementCard({ ...input, personal: true });
-    // 规则在前、需求证据在后，免得证据里的文字被当成规则的一部分。
-    const lines = [card[0] ?? p.requirementTitle, "", ...requirementRules(p), "", ...card.slice(1)];
-    return { developerInstructions: lines.join("\n"), dynamicTools: sessionToolSpecs("requirement", input.locale) };
+    const [card, rules] = await Promise.all([this.requirementCard({ ...input, personal: true }), this.projectAiRules(input.requirement.projectId, input.locale)]);
+    // 规则在前（SuDuo 的规则、项目 AI 规范）、需求证据在后，免得证据里的文字被当成规则的一部分。
+    const lines = [card[0] ?? p.requirementTitle, "", ...requirementRules(p), ...rules.lines, "", ...card.slice(1)];
+    return {
+      developerInstructions: lines.join("\n"),
+      dynamicTools: sessionToolSpecs("requirement", input.locale),
+      ...(rules.version === undefined ? {} : { rulesVersion: rules.version }),
+    };
+  }
+
+  /**
+   * 项目 AI 规范（多 Agent 协作 S11，需求 4.8）：团队服务器上的当前版本，跟在 SuDuo 的规则后面注入（通过指令通道，
+   * 不改仓库里的 AGENTS.md、CLAUDE.md，R12）。没写过、读不到（老服务器没有这个功能、连不上）就不注入，不写「查不到」。
+   */
+  private async projectAiRules(remoteProjectId: string, locale: Locale): Promise<{ lines: string[]; version?: number }> {
+    const rules = await this.deps.remote.getProjectAiRules(remoteProjectId).catch(() => null);
+    if (rules === null || rules.version === 0 || rules.content.trim() === "") return { lines: [] };
+    return { lines: ["", ...aiRulesLines(locale, rules.version, rules.content)], version: rules.version };
   }
 
   /**
@@ -361,7 +378,7 @@ export class SessionContextService {
     const { requirement, projectRoot } = input;
     const f = toolFormat(input.locale);
     const card = f.t.prompt.card;
-    const [attachments, notes, previous, agents] = await Promise.all([
+    const [attachments, notes, previous, agents, handoffs] = await Promise.all([
       settle(this.deps.remote.listAttachments(requirement.id).then((r) => r.items)),
       input.personal
         ? settle(
@@ -372,6 +389,13 @@ export class SessionContextService {
         ? settle(this.changesSincePreviousSession(requirement, input.sessionId, input.locale))
         : Promise.resolve<Settled<string | null>>({ ok: true, value: null }),
       findAgentsFiles(projectRoot),
+      // 同事发布的交接包（S11）：查不到（老服务器没有这个功能）就不列，不写「查不到」。
+      input.personal
+        ? this.deps.remote.listSharedItems(requirement.id).then(
+            (r) => r.items.filter((item) => item.kind === "handoff" && item.retractedAt === null),
+            () => [],
+          )
+        : Promise.resolve([]),
     ]);
     const summary = requirement.summary.trim();
     const heading = card.heading(
@@ -397,6 +421,12 @@ export class SessionContextService {
     ];
     if (previous.ok && previous.value !== null) {
       evidence.push(previous.value);
+    }
+    if (handoffs.length > 0) {
+      // 交接包是同事写的材料：和正文一样放在证据里，不当规则。
+      // 标题是成员写的：去掉证据区的起止标记，免得提前关上证据区。
+      const neutral = (text: string) => text.split(card.evidenceOpen).join("").split(card.evidenceClose).join("");
+      evidence.push(card.handoffs(handoffs.slice(0, 10).map((item) => `- ${item.id} · ${neutral(item.title)} · ${neutral(item.publishedBy.displayName)} · ${formatTime(item.publishedAt)}`)));
     }
     const lines = [
       ...(input.personal ? [f.t.prompt.requirementTitle, card.workingOn(heading)] : [card.roomRequirement(heading)]),
@@ -438,7 +468,13 @@ export class SessionContextService {
       lines.push(p.card.agentsFiles(agents));
     }
     lines.push("", ...projectRules(p));
-    return { developerInstructions: lines.join("\n"), dynamicTools: sessionToolSpecs("project", input.locale) };
+    const rules = await this.projectAiRules(input.remoteProjectId, input.locale);
+    lines.push(...rules.lines);
+    return {
+      developerInstructions: lines.join("\n"),
+      dynamicTools: sessionToolSpecs("project", input.locale),
+      ...(rules.version === undefined ? {} : { rulesVersion: rules.version }),
+    };
   }
 
   /**
@@ -447,6 +483,8 @@ export class SessionContextService {
    */
   async rebuildSetup(sessionId: string): Promise<ThreadSetup | null> {
     const base = await this.rebuildBaseSetup(sessionId);
+    // 重建的线程用的是当前这一版规范：记到会话上（界面据此不再提示新版本）。
+    if (base?.rulesVersion !== undefined) this.deps.sessions.setRulesVersion(sessionId, base.rulesVersion);
     return this.rebuildAdjust === null ? base : this.rebuildAdjust(sessionId, base);
   }
 
