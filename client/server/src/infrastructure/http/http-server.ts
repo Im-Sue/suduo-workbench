@@ -99,6 +99,7 @@ import { registerAgentsRoutes, type AgentsRouteDependencies } from "./routes/age
 import { registerSchedulerRoutes, type SchedulerRouteDependencies } from "./routes/scheduler-routes.js";
 import { registerDelegationsRoutes, type DelegationsRouteDependencies } from "./routes/delegations-routes.js";
 import { registerReviewsRoutes, type ReviewsRouteDependencies } from "./routes/reviews-routes.js";
+import { registerTrialsRoutes, type TrialsRouteDependencies } from "./routes/trials-routes.js";
 import { MCP_ENDPOINT_PATH, registerMcpEndpoint, type McpToolHost } from "../mcp/mcp-endpoint.js";
 import type { ToolTokenRegistry } from "../mcp/tool-tokens.js";
 import {
@@ -131,6 +132,7 @@ export interface HttpServerDependencies
     SchedulerRouteDependencies,
     DelegationsRouteDependencies,
     ReviewsRouteDependencies,
+    TrialsRouteDependencies,
     McpRouteDependencies,
     LocalDirectoryRouteDependencies,
     SystemActivityRouteDependencies {
@@ -277,6 +279,7 @@ export function buildHttpServer(
   registerSchedulerRoutes(server, dependencies);
   registerDelegationsRoutes(server, dependencies);
   registerReviewsRoutes(server, dependencies);
+  registerTrialsRoutes(server, dependencies);
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }
@@ -426,6 +429,7 @@ export function buildHttpServer(
       return dependencies.workspace.listDirectory(
         request.params.projectId,
         query["path"] ?? "",
+        query["sessionId"],
       );
     },
   );
@@ -433,11 +437,12 @@ export function buildHttpServer(
   server.get<{ Params: { projectId: string } }>(
     "/api/v1/projects/:projectId/files/content",
     async (request) => {
-      const path = queryObject(request.query)["path"];
+      const query = queryObject(request.query);
+      const path = query["path"];
       if (!path) {
         throw validation((t) => t.http.previewPathRequired);
       }
-      return dependencies.workspace.readContent(request.params.projectId, path);
+      return dependencies.workspace.readContent(request.params.projectId, path, query["sessionId"]);
     },
   );
 
@@ -449,13 +454,15 @@ export function buildHttpServer(
   server.get<{ Params: { projectId: string } }>(
     "/api/v1/projects/:projectId/files/raw",
     async (request, reply) => {
-      const path = queryObject(request.query)["path"];
+      const query = queryObject(request.query);
+      const path = query["path"];
       if (!path) {
         throw validation((t) => t.http.rawPathRequired);
       }
       const file = await dependencies.workspace.resolveRawFile(
         request.params.projectId,
         path,
+        query["sessionId"],
       );
       return reply
         .type(file.mediaType)
@@ -544,6 +551,7 @@ export function buildHttpServer(
         body.path,
         body.mode,
         body.line,
+        typeof body.sessionId === "string" ? body.sessionId : undefined,
       );
       return reply.code(204).send();
     },
@@ -560,7 +568,7 @@ export function buildHttpServer(
       ) {
         throw validation((t) => t.http.existingPathsInvalid(EXISTING_FILES_LIMIT));
       }
-      return dependencies.workspace.existingFiles(request.params.projectId, body.paths);
+      return dependencies.workspace.existingFiles(request.params.projectId, body.paths, typeof body.sessionId === "string" ? body.sessionId : undefined);
     },
   );
 

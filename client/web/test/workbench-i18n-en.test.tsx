@@ -316,6 +316,29 @@ describe("英文界面：检查面板", () => {
     );
     expect(node.textContent).toContain("No changes yet");
   });
+
+  it("在独立工作目录里干活的会话（并行试做，S10）：环境标签只说明，不给原目录的检查点与还原", async () => {
+    const node = await render(
+      <ChangesPanel
+        tab="env"
+        changes={[]}
+        additions={0}
+        deletions={0}
+        projectId="p1"
+        projectRoot="/repo"
+        isolatedPath="/data/worktrees/p1/g1/codex"
+        running={false}
+        openTargets={[]}
+        onOpen={() => undefined}
+        onCollapse={() => undefined}
+        onSystemOpen={() => undefined}
+        onError={() => undefined}
+      />,
+    );
+    expect(q(node, "env-isolated")?.textContent).toContain("/data/worktrees/p1/g1/codex");
+    expect(q(node, "env-isolated")?.textContent).toContain("aren't offered here");
+    expect(api.gitStatus).not.toHaveBeenCalled();
+  });
 });
 
 describe("英文界面：环境面板", () => {

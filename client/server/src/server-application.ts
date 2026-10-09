@@ -8,6 +8,7 @@ import {
   SUDUO_DEFAULTS,
   type CodexTransportFactory,
   type Locale,
+  type SessionStartOptions,
   type SuDuoRunMode,
 } from "@suduo/client-contracts";
 import { ApprovalService } from "./application/approval-service.js";
@@ -31,7 +32,10 @@ import { SchedulerService } from "./application/scheduler/scheduler-service.js";
 import { DelegationService, oneLine } from "./application/collab/delegation-service.js";
 import { DelegationTools } from "./application/collab/delegation-tools.js";
 import { messagesFor } from "./i18n/messages/index.js";
-import { delegateChildDropsTool, reviewerDropsTool, reviewSubmitSpec } from "./application/session-tools/catalog.js";
+import { delegateChildDropsTool, reviewerDropsTool, reviewSubmitSpec, trialDropsTool } from "./application/session-tools/catalog.js";
+import { TrialService } from "./application/collab/trial-service.js";
+import { WorktreeManager } from "./application/collab/worktree-manager.js";
+import { TrialRepository } from "./infrastructure/db/repositories/trial-repository.js";
 import { ReviewService } from "./application/collab/review-service.js";
 import { ReviewTools } from "./application/collab/review-tools.js";
 import { ReviewRepository } from "./infrastructure/db/repositories/review-repository.js";
@@ -45,11 +49,11 @@ import { ProjectService } from "./application/project-service.js";
 import { consumeRuntimeUntilAborted } from "./application/runtime-consumer.js";
 import { RuntimeEventIngestor } from "./application/runtime-event-ingestor.js";
 import { RuntimeSupervisor } from "./application/runtime-supervisor.js";
-import { SessionService } from "./application/session-service.js";
+import { SessionService, type SessionThreadSetup } from "./application/session-service.js";
 import { SessionRunStatusService } from "./application/session-run-status-service.js";
 import { SessionListService } from "./application/session-list-service.js";
 import { SessionListRepository } from "./infrastructure/db/repositories/session-list-repository.js";
-import { sharedWorkspace } from "./application/workspace-context.js";
+import { WorkspaceContextResolver } from "./application/workspace-context.js";
 import { WorkspaceService } from "./application/workspace-service.js";
 import { openBetterSqlite3Database } from "./infrastructure/db/better-sqlite3-database.js";
 import type { DatabasePort } from "./infrastructure/db/database-port.js";
@@ -311,6 +315,8 @@ export function createSuDuoApplication(
   });
   // 本机调度在下方组装；会话状态变化的回调运行时它已就绪。
   let cancelQueuedTurns: ((sessionId: string, reason?: string) => void) | null = null;
+  // 会话在哪个目录干活：记了工作目录的（并行试做的 worktree，多 Agent 协作 S10）用它，其余在项目目录。
+  const workspaces = new WorkspaceContextResolver((sessionId) => sessions.getById(sessionId)?.workspacePath ?? null);
   const sessionService = new SessionService(
     database,
     projects,
@@ -318,7 +324,7 @@ export function createSuDuoApplication(
     threads,
     supervisor,
     () => settingsService.defaultApprovalMode(),
-    undefined,
+    workspaces,
     requirementSessionRefs,
     undefined,
     {
@@ -441,6 +447,7 @@ export function createSuDuoApplication(
     skillRoots,
     gitService,
     syncSkillRoots,
+    workspaces,
   );
   const interruptService = new InterruptService(
     projects,
@@ -450,6 +457,7 @@ export function createSuDuoApplication(
     registry,
     supervisor,
     ledger,
+    workspaces,
   );
   // 本机回合调度（多 Agent 协作 S8，需求 4.11）：每家与合计的上限取 AI Agent 设置；回合终态还名额，另有定时对账。
   const turnScheduler = new TurnScheduler({
@@ -494,18 +502,22 @@ export function createSuDuoApplication(
     const target = reviewer.parentSessionId ? sessions.getById(reviewer.parentSessionId) : null;
     return messagesFor(reviewer.locale).review.role(agentDisplayName(target?.agentId ?? "codex"), reviewer.parentSessionId ?? "");
   };
-  // 线程续接失败要重建时，委派的子会话、评审会话照样带角色说明与各自的工具（否则重建后又能看到委派工具）。
+  // 线程续接失败要重建时，委派的子会话、评审会话、试做的版本照样带角色说明与各自的工具（否则重建后又能看到委派工具）。
   sessionContext.setRebuildAdjust((sessionId, setup) => {
     const session = sessions.getById(sessionId);
-    if (session?.relation !== "delegate" && session?.relation !== "review") return setup;
+    const relation = session?.relation;
+    if (session === null || session === undefined || (relation !== "delegate" && relation !== "review" && relation !== "trial")) return setup;
+    const base = setup ?? { developerInstructions: "", dynamicTools: [] };
     const adjusted =
-      session.relation === "delegate"
-        ? adjustThreadSetup(setup ?? { developerInstructions: "", dynamicTools: [] }, { role: delegateRole(session), dropTools: delegateDropsTool })
-        : adjustThreadSetup(setup ?? { developerInstructions: "", dynamicTools: [] }, {
-            role: reviewerRole(session),
-            dropTools: reviewerDropsTool,
-            ...(setup === null ? {} : { addTools: [reviewSubmitSpec(session.locale)] }),
-          });
+      relation === "delegate"
+        ? adjustThreadSetup(base, { role: delegateRole(session), dropTools: delegateDropsTool })
+        : relation === "trial"
+          ? adjustThreadSetup(base, { role: messagesFor(session.locale).trial.role([]), dropTools: trialDropsTool })
+          : adjustThreadSetup(base, {
+              role: reviewerRole(session),
+              dropTools: reviewerDropsTool,
+              ...(setup === null ? {} : { addTools: [reviewSubmitSpec(session.locale)] }),
+            });
     return { developerInstructions: adjusted.developerInstructions ?? "", dynamicTools: adjusted.dynamicTools ?? [] };
   });
   const delegationService = new DelegationService({
@@ -568,6 +580,35 @@ export function createSuDuoApplication(
     },
   });
   reviewService.recoverAfterRestart();
+  // 并行试做（多 Agent 协作 S10，需求 4.5）：各版在 SuDuo 数据目录下的 git worktree 里，会话按 workspace_path 干活。
+  const trialService = new TrialService({
+    trials: new TrialRepository(database),
+    worktrees: new WorktreeManager(),
+    worktreeRoot: resolve(dirname(options.databasePath), "worktrees"),
+    resolveTarget: (target) => requirementsV2.localProjectFor(target),
+    localProject: (projectId) => projects.getById(projectId),
+    createSession: ({ target, agentId, start, locale, workspacePath, title, role }) => {
+      const graph = { parentSessionId: null, rootSessionId: null, relation: "trial" as const };
+      const adjustSetup = (setup: SessionThreadSetup) => adjustThreadSetup(setup, { role, dropTools: trialDropsTool });
+      const options = { agentId, ...start } as SessionStartOptions;
+      return "remoteRequirementId" in target
+        ? requirementsV2.createRequirementSession(target.remoteRequirementId, locale, options, graph, adjustSetup, title, workspacePath)
+        : requirementsV2.createProjectSession(target.remoteProjectId, locale, options, { title, graph, adjustSetup, workspacePath });
+    },
+    messages: messageService,
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    sessionActivity: (sessionId) =>
+      turnScheduler.sessionRunning(sessionId) || events.listRunningTurnRefs(sessionId).length > 0 ? "running" : turnScheduler.sessionQueued(sessionId) ? "queued" : "idle",
+    turnSpan: (sessionId) => events.turnSpan(sessionId),
+    pendingApprovals: (sessionId) => approvals.countPendingBySession(sessionId),
+    sessionsInWorkspace: (path) => sessions.listActiveIdsByWorkspacePath(path),
+    archiveSession: async (sessionId) => {
+      await sessionService.update(sessionId, null, { state: "archived" });
+    },
+    agentProblem: (agentId) => agentCatalog.delegationProblem(agentId),
+    agentName: agentDisplayName,
+  });
+  trialService.recoverAfterRestart();
   sessionTools.setReviewTools(new ReviewTools({ service: reviewService }));
   sessionTools.setDelegationTools(
     new DelegationTools({
@@ -702,6 +743,7 @@ export function createSuDuoApplication(
       sessions,
       threads,
       supervisor,
+      workspaces,
       signal: consumerAbort.signal,
       ...(runtimeId === undefined ? {} : { runtimeId }),
       ...(options.onBackgroundError === undefined
@@ -761,6 +803,7 @@ export function createSuDuoApplication(
     scheduler: schedulerService,
     delegations: delegationService,
     reviews: reviewService,
+    trials: trialService,
     openTerminal: terminalOpener(),
     modelProvider: modelProviderService,
     mcp: mcpService,
@@ -883,6 +926,7 @@ async function restoreAttachedThreads(input: {
   sessions: SessionRepository;
   threads: SessionThreadRepository;
   supervisor: RuntimeSupervisor;
+  workspaces: WorkspaceContextResolver;
   signal: AbortSignal;
   onError?: (error: unknown) => void;
   /** 只恢复这个运行时的线程；不传为全部（启动时）。 */
@@ -906,7 +950,7 @@ async function restoreAttachedThreads(input: {
     try {
       await input.supervisor.ensureReady({
         session,
-        workspace: sharedWorkspace(project, session.id),
+        workspace: input.workspaces.forSession(project, session.id),
         binding,
       });
     } catch (error) {

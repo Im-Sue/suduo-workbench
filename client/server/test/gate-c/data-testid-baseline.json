@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 356,
+  "total": 387,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -42,6 +42,7 @@
     "web/src/components/ChangesPanel.tsx": [
       "change-item",
       "change-list",
+      "env-isolated",
       "side-file-tree",
       "side-tab-changes",
       "side-tab-env",
@@ -150,7 +151,8 @@
     ],
     "web/src/features/requirements/components/StartSessionDialog.tsx": [
       "start-options-confirm",
-      "start-session-dialog"
+      "start-session-dialog",
+      "start-trial"
     ],
     "web/src/features/requirements/RequirementDetailPage.tsx": [
       "comment-composer",
@@ -326,6 +328,7 @@
     ],
     "web/src/features/sessions/SessionHeader.tsx": [
       "continue-session",
+      "open-trial",
       "rename-session",
       "review-session",
       "session-agent",
@@ -506,6 +509,38 @@
     "web/src/features/settings/SettingsPage.tsx": [
       "settings-page",
       "settings-unsaved-dialog"
+    ],
+    "web/src/features/trials/TrialForm.tsx": [
+      "trial-agent",
+      "trial-checkpoint",
+      "trial-dirty",
+      "trial-form",
+      "trial-not-git",
+      "trial-setup",
+      "trial-start",
+      "trial-task"
+    ],
+    "web/src/features/trials/TrialPage.tsx": [
+      "trial-adopt",
+      "trial-adopt-again",
+      "trial-adopt-confirm",
+      "trial-adopt-dialog",
+      "trial-adopt-dirty",
+      "trial-adopt-keep",
+      "trial-adopt-merge",
+      "trial-adopt-result",
+      "trial-cleanup",
+      "trial-cleanup-confirm",
+      "trial-cleanup-dialog",
+      "trial-cleanup-entry",
+      "trial-cleanup-plan",
+      "trial-entry",
+      "trial-files",
+      "trial-open",
+      "trial-page",
+      "trial-state",
+      "trial-tests",
+      "trial-waiting"
     ],
     "web/src/feedback/components/index.tsx": [
       "confirm-dialog",

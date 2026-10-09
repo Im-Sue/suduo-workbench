@@ -1,4 +1,4 @@
-import { CheckIcon, CircleIcon, MessageSquareIcon, MessageSquarePlusIcon, RotateCwIcon } from "lucide-react";
+import { CheckIcon, CircleIcon, GitForkIcon, MessageSquareIcon, MessageSquarePlusIcon, RotateCwIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { DirectoryPicker } from "./DirectoryPicker.js";
 import { localAgentsQuery, preferredAgent, rememberAgent } from "../../agents/queries.js";
 import { needsAgentChoice, StartOptions } from "../../agents/StartOptions.js";
+import { TrialForm } from "../../trials/TrialForm.js";
 import { formatRelativeTime } from "../../../ui/format.js";
 import { useT } from "../../../i18n/provider.js";
 import type { Messages } from "../../../i18n/messages/index.js";
@@ -43,6 +44,8 @@ type Step =
   | { name: "choose"; existing: RequirementsSessionReferenceDto[] }
   | { name: "directory"; initialPath: string; notice: DirectoryNotice | null }
   | { name: "options" }
+  /** 并行试做（多 Agent 协作 S10）：从「选 Agent」那一步切过来。 */
+  | { name: "trial" }
   | { name: "preparing"; startedAt: number; rootPath: string | null }
   | { name: "failed"; failure: Failure; retry: "check" | "create"; agentNotReady: boolean };
 
@@ -79,6 +82,7 @@ export function StartSessionDialog({
   onClose,
   onReady,
   onBackgroundFailed,
+  onTrialStarted,
 }: {
   request: LaunchRequest;
   /** 标题下一行的主体说明：需求编号与标题，或项目名。 */
@@ -89,6 +93,8 @@ export function StartSessionDialog({
   onBackgroundFailed?(): void;
   /** 会话已就绪。detached=true 表示用户已关掉对话框，由调用方决定如何告知。 */
   onReady(session: SessionDto, detached: boolean): void;
+  /** 并行试做已发起（多 Agent 协作 S10）：去比较视图。不传时不给「并行试做」入口。 */
+  onTrialStarted?(trialId: string): void;
 }) {
   const t = useT();
   const [step, setStep] = useState<Step>({ name: "checking" });
@@ -256,7 +262,9 @@ export function StartSessionDialog({
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent size={step.name === "directory" ? "lg" : "md"} data-testid="start-session-dialog">
         <DialogHeader>
-          <DialogTitle>{step.name === "directory" ? t.requirements.startSession.directoryTitle : t.requirements.startSession.title}</DialogTitle>
+          <DialogTitle>
+            {step.name === "directory" ? t.requirements.startSession.directoryTitle : step.name === "trial" ? t.collab.trial.title : t.requirements.startSession.title}
+          </DialogTitle>
           <DialogDescription className="truncate">{subject}</DialogDescription>
         </DialogHeader>
 
@@ -288,6 +296,12 @@ export function StartSessionDialog({
           <>
             <StartOptions onChange={setStartOptions} onNavigate={close} />
             <DialogFooter>
+              {onTrialStarted === undefined ? null : (
+                <Button variant="ghost" className="mr-auto" title={t.collab.trial.entryHint} data-testid="start-trial" onClick={() => update({ name: "trial" })}>
+                  <GitForkIcon />
+                  {t.collab.trial.entry}
+                </Button>
+              )}
               <Button variant="secondary" onClick={close}>{t.feedback.dialog.close}</Button>
               <Button
                 variant="primary"
@@ -302,6 +316,16 @@ export function StartSessionDialog({
               </Button>
             </DialogFooter>
           </>
+        ) : null}
+        {step.name === "trial" ? (
+          <TrialForm
+            target={request.kind === "requirement" ? { remoteRequirementId: request.requirementId } : { remoteProjectId: request.remoteProjectId }}
+            onBack={() => update({ name: "options" })}
+            onStarted={(trialId) => {
+              close();
+              onTrialStarted?.(trialId);
+            }}
+          />
         ) : null}
         {step.name === "preparing" ? (
           <PreparingBody

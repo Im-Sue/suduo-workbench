@@ -95,7 +95,12 @@ const REVIEW_REPORTS_URL = new URL(
   import.meta.url,
 );
 
-const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
+const TRIALS_URL = new URL(
+  "./migrations/025_trials.sql",
+  import.meta.url,
+);
+
+const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
 
 export function loadM1Migrations(): Migration[] {
   return [
@@ -183,6 +188,11 @@ export function loadM1Migrations(): Migration[] {
       version: 24,
       name: "review_reports",
       sql: readFileSync(REVIEW_REPORTS_URL, "utf8"),
+    },
+    {
+      version: 25,
+      name: "trials",
+      sql: readFileSync(TRIALS_URL, "utf8"),
     },
   ];
 }

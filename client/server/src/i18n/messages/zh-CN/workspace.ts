@@ -88,6 +88,7 @@ export const workspace = {
   git: {
     unavailable: "本机未检测到 git，无法初始化版本管理",
     alreadyRepo: "该项目已是 git 仓库",
+    skippedMerging: "项目目录正在合并（有没解决的冲突），这次没有自动存档：解决冲突并提交（或 git merge --abort）后恢复。",
     notRepo: "该项目不是 git 仓库",
     hashInvalid: "提交号格式无效",
     /** stderr 是 git 自己的输出，原样附上。 */

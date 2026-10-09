@@ -15,7 +15,7 @@ export class ReviewTools {
     const t = messagesFor(ctx.locale);
     const r = t.review.reply;
     // 子会话、评审会话不挂这个工具（建线程时已去掉），这里再拦一次。
-    if (ctx.delegateChild === true || ctx.reviewer === true) return failure(r.notMain);
+    if (ctx.delegateChild === true || ctx.reviewer === true || ctx.trial === true) return failure(r.notMain);
     const agentId = typeof args["agentId"] === "string" ? args["agentId"].trim() : "";
     if (agentId === "") return failure(r.agentIdMissing);
     const focus = Array.isArray(args["focus"]) ? args["focus"].filter((item): item is string => typeof item === "string") : undefined;

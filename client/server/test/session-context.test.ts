@@ -71,8 +71,9 @@ function setup() {
     contextMode?: "tools" | "legacy";
     anchorAt?: string;
     state?: "active" | "deleted";
+    workspacePath?: string;
   } = {}) => {
-    const session = sessions.create({ projectId: project.id, title: "需求会话" });
+    const session = sessions.create({ projectId: project.id, title: "需求会话", ...(options.workspacePath === undefined ? {} : { workspacePath: options.workspacePath }) });
     refs.create({
       sessionId: session.id,
       remoteProjectId: "proj-1",
@@ -173,6 +174,23 @@ describe("SessionContextService.requirementSetup：开场需求卡", () => {
       `上次会话结论（${join(REQ_DIR, "notes.md")}，节选，全文用 suduo_notes_read）：\n${"记".repeat(800)}……`,
     );
     expect(long.developerInstructions).not.toContain("记".repeat(801));
+  });
+
+  it("在独立工作目录（并行试做的 worktree，S10）里干活的会话：需求卡的结论笔记读原项目目录（`.suduo` 不进 git，worktree 里没有）", async () => {
+    const { root, service, requirementSession } = setup();
+    mkdirSync(join(root, REQ_DIR), { recursive: true });
+    writeFileSync(join(root, REQ_DIR, "notes.md"), "# 结论\n- 入口 src/a.ts\n");
+    const worktree = mkdtempSync(join(tmpdir(), "suduo-context-worktree-"));
+    temporaryPaths.push(worktree);
+    const card = await service.requirementSetup({ locale: "zh-CN", projectRoot: worktree, notesRoot: root, requirement: requirementFixture() });
+    expect(card.developerInstructions).toContain("# 结论\n- 入口 src/a.ts");
+    // 给的是绝对路径：相对路径在 worktree 里找不到。
+    expect(card.developerInstructions).toContain(`上次会话结论（${join(root, REQ_DIR, "notes.md")}）`);
+    // 工具上下文：执行根是 worktree，笔记根是原项目目录；线程重建的需求卡同样读得到。
+    const session = requirementSession({ workspacePath: worktree });
+    expect(service.toolContext(session.id)).toMatchObject({ projectRoot: worktree, notesRoot: root });
+    const rebuilt = await service.rebuildSetup(session.id);
+    expect(rebuilt?.developerInstructions).toContain("# 结论\n- 入口 src/a.ts");
   });
 
   it("上一次会话以来的变化：以上一次会话的开工水位线为界，旧的在前；不含会话自己", async () => {

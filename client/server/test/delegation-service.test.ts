@@ -150,10 +150,19 @@ describe("委派", () => {
     expect(context.service.get(delegation.id).status).toBe("running");
   });
 
-  it("评审会话也不能委派（R2）", async () => {
+  it("评审会话、试做会话也不能委派（R2；试做各家各做一版）", async () => {
     const context = setup();
     const reviewer = context.sessions.create({ projectId: context.parent.projectId, title: "评审", state: "active", agentId: "codex", graph: { parentSessionId: context.parent.id, rootSessionId: context.parent.id, relation: "review" } });
     await expect(context.service.start({ parentSessionId: reviewer.id, agentId: "codex", task: "x", origin: "user" })).rejects.toMatchObject({ statusCode: 400 });
+    const trial = context.sessions.create({
+      projectId: context.parent.projectId,
+      title: "试做",
+      state: "active",
+      agentId: "codex",
+      graph: { parentSessionId: null, rootSessionId: null, relation: "trial" },
+      workspacePath: "/tmp/worktree",
+    });
+    await expect(context.service.start({ parentSessionId: trial.id, agentId: "codex", task: "x", origin: "user" })).rejects.toMatchObject({ statusCode: 400 });
   });
 
   it("深度 1：子会话不能再委派；Agent 不能委派、任务为空都报错", async () => {

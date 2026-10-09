@@ -144,6 +144,31 @@ describe.skipIf(!gitAvailable)("GitService（真实 git 往返）", () => {
     expect(status.lastError).toBeNull();
   });
 
+  it("合并进行中（有冲突）时回合前自动存档跳过并说明，不把冲突标记提交掉（并行试做采用时的冲突，S10）", async () => {
+    writeFileSync(join(root, "a.md"), "base\n", "utf8");
+    await service.init("p1", "zh-CN");
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@localhost", ...args], { encoding: "utf8" });
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "-q", "-b", "other");
+    writeFileSync(join(root, "a.md"), "theirs\n", "utf8");
+    git("commit", "-qam", "theirs");
+    git("checkout", "-q", main);
+    writeFileSync(join(root, "a.md"), "ours\n", "utf8");
+    git("commit", "-qam", "ours");
+    expect(() => git("merge", "other")).toThrow();
+    const head = git("rev-parse", "HEAD").trim();
+    await service.autoCheckpoint("p1", root);
+    expect(git("rev-parse", "HEAD").trim()).toBe(head);
+    expect((await service.status("p1", "zh-CN")).lastError).toContain("正在合并");
+    // 放弃合并后照常存档、说明清掉。
+    git("merge", "--abort");
+    writeFileSync(join(root, "b.md"), "new\n", "utf8");
+    await service.autoCheckpoint("p1", root);
+    expect(git("rev-parse", "HEAD").trim()).not.toBe(head);
+    expect((await service.status("p1", "zh-CN")).lastError).toBeNull();
+  });
+
   it("检查点按提交里的标记行识别，给出类型与说明；旧标题与英文标题都认", async () => {
     writeFileSync(join(root, "a.md"), "v1", "utf8");
     await service.init("p1", "zh-CN");

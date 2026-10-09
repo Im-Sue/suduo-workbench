@@ -14,6 +14,12 @@ import type {
   ReviewDto,
   StartDelegationRequest,
   StartReviewRequest,
+  AdoptTrialRequest,
+  StartTrialRequest,
+  TrialDto,
+  TrialPrecheckDto,
+  TrialRepoStateDto,
+  TrialTarget,
   UpdateAgentSettingsRequest,
   McpServerDto,
   ApprovalDto,
@@ -231,6 +237,11 @@ export interface WorkspaceDiff {
   before: string;
   after: string;
   truncated: boolean;
+}
+
+/** 文件接口的会话参数（会话在独立工作目录里干活时按那个目录找文件）。 */
+function sessionParam(sessionId: string | undefined): string {
+  return sessionId === undefined ? "" : `&sessionId=${encodeURIComponent(sessionId)}`;
 }
 
 export const api = {
@@ -587,6 +598,21 @@ export const api = {
   cancelAllDelegations: (sessionId: string) =>
     request<{ items: DelegationDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations/cancel-all`, { method: "POST", body: {} }),
 
+  /** 并行试做（多 Agent 协作 S10）。 */
+  trialPrecheck: (target: TrialTarget) =>
+    request<TrialPrecheckDto>(
+      `/api/v1/trials/precheck?${"remoteRequirementId" in target ? `remoteRequirementId=${encodeURIComponent(target.remoteRequirementId)}` : `remoteProjectId=${encodeURIComponent(target.remoteProjectId)}`}`,
+    ),
+  startTrial: (body: StartTrialRequest) => request<TrialDto>("/api/v1/trials", { method: "POST", body }),
+  getTrial: (trialId: string, options: { signal?: AbortSignal } = {}) =>
+    request<TrialDto>(`/api/v1/trials/${encodeURIComponent(trialId)}`, options.signal === undefined ? {} : { signal: options.signal }),
+  trialOfSession: (sessionId: string) => request<{ trialId: string | null }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/trial`),
+  adoptTrial: (trialId: string, body: AdoptTrialRequest) => request<TrialDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/adopt`, { method: "POST", body }),
+  /** forceBranches：确认对话框写明「没合并的提交会丢」且勾上的版本（只有它们的分支用 -D 删）。 */
+  cleanupTrial: (trialId: string, entryIds: string[], forceBranches: string[] = []) =>
+    request<TrialDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/cleanup`, { method: "POST", body: { entryIds, forceBranches } }),
+  trialRepo: (trialId: string) => request<TrialRepoStateDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/repo`),
+
   /** 交叉评审（多 Agent 协作 S9）。 */
   listReviews: (sessionId: string) =>
     request<{ items: ReviewDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/reviews`),
@@ -660,9 +686,10 @@ export const api = {
       { method: "POST", body: { decision, ...(optionId === undefined ? {} : { optionId }) } },
     ),
 
-  listFiles: (projectId: string, path = "") =>
+  /** sessionId：会话页带上，会话在独立工作目录（并行试做的 worktree）里干活时按那个目录列（下同）。 */
+  listFiles: (projectId: string, path = "", sessionId?: string) =>
     request<ListFilesResponse>(
-      `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`,
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}${sessionParam(sessionId)}`,
     ),
 
   fileIndex: (projectId: string) =>
@@ -671,18 +698,18 @@ export const api = {
     ),
 
   /** line 只对 vscode 生效：打开后跳到这一行。 */
-  openFile: (projectId: string, path: string, mode: SystemOpenTarget, line?: number | null) =>
+  openFile: (projectId: string, path: string, mode: SystemOpenTarget, line?: number | null, sessionId?: string) =>
     request(`/api/v1/projects/${encodeURIComponent(projectId)}/files/open`, {
       method: "POST",
-      body: { path, mode, ...(line === undefined || line === null ? {} : { line }) },
+      body: { path, mode, ...(line === undefined || line === null ? {} : { line }), ...(sessionId === undefined ? {} : { sessionId }) },
       expectedStatus: 204,
     }),
 
   /** 批量确认项目内文件是否存在（会话回答里的路径要不要变成链接）；一次最多 200 条。 */
-  existingFiles: (projectId: string, paths: readonly string[]) =>
+  existingFiles: (projectId: string, paths: readonly string[], sessionId?: string) =>
     request<ExistingFilesResponse>(`/api/v1/projects/${encodeURIComponent(projectId)}/files/exists`, {
       method: "POST",
-      body: { paths },
+      body: { paths, ...(sessionId === undefined ? {} : { sessionId }) },
       // 只读查询：不带幂等键。
       idempotent: false,
     }),
@@ -847,9 +874,9 @@ export const api = {
       expectedStatus: 204,
     }),
 
-  readFile: (projectId: string, path: string) =>
+  readFile: (projectId: string, path: string, sessionId?: string) =>
     request<FileContentDto>(
-      `/api/v1/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(path)}`,
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(path)}${sessionParam(sessionId)}`,
     ),
 
   uploadAttachment: (

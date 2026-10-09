@@ -135,3 +135,138 @@ export interface StartReviewRequest {
 export interface ApplyReviewRequest {
   findingIds: string[];
 }
+
+/**
+ * 并行试做（多 Agent 协作 S10，需求 4.5）一版的状态：准备中（建工作目录、跑准备命令）/ 准备失败 / 开会话失败 /
+ * 排队中 / 运行中 / 做完 / 回合失败 / 已中断 / 工作目录已删除。
+ */
+export type TrialEntryState = "preparing" | "setup_failed" | "failed" | "queued" | "running" | "completed" | "turn_failed" | "interrupted" | "removed";
+
+export interface TrialChangedFileDto {
+  path: string;
+  kind: "add" | "delete" | "update";
+  /** 二进制文件为 null。 */
+  additions: number | null;
+  deletions: number | null;
+}
+
+/** 一版试做（比较视图的一列）。 */
+export interface TrialEntryDto {
+  id: string;
+  agentId: string;
+  agentName: string;
+  /** 这一版的试做会话；还没建好或建失败为 null。 */
+  sessionId: string | null;
+  /** worktree 路径与分支。 */
+  path: string;
+  branch: string;
+  state: TrialEntryState;
+  /** 准备命令的输出末尾（准备失败时看它）。 */
+  setupLog: string | null;
+  error: string | null;
+  /** 最终回答。 */
+  finalMessage: string | null;
+  changedFiles: TrialChangedFileDto[];
+  additions: number;
+  deletions: number;
+  /** 测试类命令与退出码（从这一版执行过的命令里挑）。 */
+  tests: Array<{ command: string; exitCode: number | null }>;
+  /** 从开始到最后一轮结束的时长；还没开始为 null。 */
+  durationMs: number | null;
+  /** 删除工作目录时分支也删了（采用为保留分支的那一版只删工作目录）。 */
+  branchRemoved: boolean;
+  /** 这一版的会话里等你确认的操作数。 */
+  pendingApprovals: number;
+  /** 这一版的目录还在被用：还在准备，或这一版的会话 / 从它开的评审、接着做有回合在排队或运行（清理不动它）。 */
+  busy: boolean;
+  /** 这一版的采用方式与结果；没采用为 null。 */
+  adoptMode: "merge" | "keep-branch" | null;
+  adoptResult: TrialAdoptResultDto | null;
+  /** 清理这一版会做什么（确认对话框照它列出）；没有可清理的为 null。 */
+  cleanup: TrialCleanupPlanDto | null;
+}
+
+/**
+ * 清理一版会做什么：删不删工作目录；分支 delete-merged = `git branch -d`（提交都已在当前分支里）、
+ * delete-unmerged = `-D`（没合并的提交会丢；只有确认对话框写明了、用户勾上了才执行）、keep = 保留（采用为保留分支）、
+ * none = 没有分支可删（分支不是这一版建的——同名分支可能是别人的——或已经不在）。
+ */
+export interface TrialCleanupPlanDto {
+  worktree: boolean;
+  branch: "delete-merged" | "delete-unmerged" | "keep" | "none";
+  /** 上次 `git branch -d` 被拒时 git 的原话（这次按没合并处理）。 */
+  gitSaid: string | null;
+}
+
+/** 采用的结果：合并成功 / 有冲突（停在冲突状态由人处理）/ git 拒绝合并 / 保留分支。 */
+export type TrialAdoptResultDto =
+  | { kind: "merged"; commit: string }
+  | { kind: "conflict"; files: string[]; message: string }
+  | { kind: "refused"; message: string }
+  | { kind: "kept"; branch: string };
+
+export interface TrialDto {
+  id: string;
+  projectId: string;
+  remoteProjectId: string | null;
+  remoteRequirementId: string | null;
+  /** 「REQ-12 标题」；项目会话发起为 null。 */
+  requirementLabel: string | null;
+  task: string;
+  /** 各版都基于这次提交。 */
+  baseCommit: string;
+  baseBranch: string | null;
+  setupCommand: string | null;
+  status: "active" | "adopted" | "closed";
+  /** 最近一次采用的版本与它的方式、结果（结果横幅用；各版自己的在 entries 里）。 */
+  adoptedEntryId: string | null;
+  adoptMode: "merge" | "keep-branch" | null;
+  adoptResult: TrialAdoptResultDto | null;
+  entries: TrialEntryDto[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 发起前 / 采用前看一眼：是不是 git 仓库、有没有未提交的改动（试做版本基于最近一次提交，不含它们）、记下的准备命令。 */
+export interface TrialPrecheckDto {
+  isGitRepo: boolean;
+  dirty: boolean;
+  head: string | null;
+  branch: string | null;
+  setupCommand: string | null;
+  localProjectId: string;
+}
+
+export type TrialTarget = { remoteRequirementId: string } | { remoteProjectId: string };
+
+/** POST /api/v1/trials：同一任务交给两三家 Agent 各做一版。 */
+export interface StartTrialRequest {
+  target: TrialTarget;
+  agents: Array<{ agentId: string; approvalMode?: "ask" | "auto" | "full"; model?: string; reasoningEffort?: string }>;
+  task: string;
+  /** 工作目录准备命令（如 pnpm install）；给了就按项目记住，空字符串表示不跑。不给用记下的。 */
+  setupCommand?: string | null;
+}
+
+/** POST /api/v1/trials/:id/adopt：采用一版——合并到原分支，或保留分支稍后提 PR。 */
+export interface AdoptTrialRequest {
+  entryId: string;
+  mode: "merge" | "keep-branch";
+}
+
+/** POST /api/v1/trials/:id/cleanup：删除这几版的工作目录与分支（界面先列出路径与分支请用户确认，R11）。 */
+export interface CleanupTrialRequest {
+  entryIds: string[];
+  /**
+   * 用户在确认对话框里看到「分支有没合并的提交，会丢」并勾上的版本：只有它们的分支会用 `-D` 删。
+   * 执行时分支的状态变成要 `-D`、但不在这里的，分支留着并说明（再确认一次）。
+   */
+  forceBranches?: string[];
+}
+
+/** GET /api/v1/trials/:id/repo：试做所在的原工作目录现在的状态（采用前看：合并到哪个分支、有没有未提交的改动）。 */
+export interface TrialRepoStateDto {
+  isGitRepo: boolean;
+  branch: string | null;
+  dirty: boolean;
+}

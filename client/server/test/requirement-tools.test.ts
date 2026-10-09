@@ -99,6 +99,24 @@ describe("参数与长内容（审查第 1、4 条）", () => {
     expect(read).toContain("太长，不在这里显示");
     expect(read).not.toContain("长长长长长长长长长长");
   });
+
+  it("在独立工作目录（并行试做的 worktree）里干活的会话：笔记读写原项目目录，给的路径是绝对路径（在 worktree 里也找得到）", async () => {
+    const { root, tools, ctx } = setup();
+    const worktree = temporaryDirectory();
+    const isolated: ToolSessionContext = { ...ctx, projectRoot: worktree, notesRoot: root };
+    const memory = notesMemory();
+    const long = "# 结论\n" + "长".repeat(12_000);
+    const saved = textOf(await tools.notesSave(isolated, { content: long }, memory.lastRead, memory.remember));
+    const notesPath = join(root, REQ_DIR, "notes.md");
+    expect(readFileSync(notesPath, "utf8")).toBe(long);
+    expect(existsSync(join(worktree, ".suduo"))).toBe(false);
+    expect(saved).toContain(notesPath);
+    const read = textOf(await tools.notesRead(isolated, {}, memory.remember));
+    expect(read).toContain(notesPath);
+    // 再存一次：覆盖前的备份路径也是绝对路径。
+    const again = textOf(await tools.notesSave(isolated, { content: "# 新结论" }, memory.lastRead, memory.remember));
+    expect(again).toContain(join(root, REQ_DIR, "notes.history"));
+  });
 });
 
 describe("suduo_requirement_get", () => {

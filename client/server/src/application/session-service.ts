@@ -95,6 +95,8 @@ export class SessionService {
       remoteProjectId?: string;
       /** 与另一个会话的关系（接着做等，多 Agent 协作 S7）。 */
       graph?: SessionGraphInput;
+      /** 会话实际干活的目录（并行试做的 worktree，S10）。 */
+      workspacePath?: string;
     },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
@@ -137,6 +139,7 @@ export class SessionService {
         locale: options.locale,
         agentId,
         ...(options.graph === undefined ? {} : { graph: options.graph }),
+        ...(options.workspacePath === undefined ? {} : { workspacePath: options.workspacePath }),
       });
       if (remoteProjectId !== undefined) {
         projectSessionRefs?.create({ sessionId: created.id, remoteProjectId });
@@ -211,6 +214,8 @@ export class SessionService {
       start?: SessionStartOptions;
       /** 与另一个会话的关系（接着做等，多 Agent 协作 S7）。 */
       graph?: SessionGraphInput;
+      /** 会话实际干活的目录（并行试做的 worktree，S10）。 */
+      workspacePath?: string;
     },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
@@ -235,6 +240,7 @@ export class SessionService {
       purpose: "general",
       ...start,
       ...(input.graph === undefined ? {} : { graph: input.graph }),
+      ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
     });
     const reference = {
       sessionId: session.id,

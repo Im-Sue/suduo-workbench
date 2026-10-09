@@ -87,13 +87,16 @@ export class MessageService {
     if (!project || project.state !== "active") {
       throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.projectUnavailable);
     }
-    // 回合前自动存档（按项目开关；失败不阻塞发消息）。房间任务是只读沙箱，不会改文件，不存档。
-    if (session.kind !== "room_task") {
+    // 会话在哪个目录干活：并行试做的版本在自己的 worktree 里（S10），其余在项目目录。
+    const workspace = this.workspaces.forSession(project, sessionId);
+    // 回合前自动存档（按项目开关；失败不阻塞发消息）。房间任务是只读沙箱，不会改文件，不存档；
+    // 试做版本不动原工作目录，也不存档（它的改动在自己的分支上，采用时由 SuDuo 提交）。
+    const checkpoints = session.kind !== "room_task" && workspace.mode === "shared";
+    if (checkpoints) {
       await this.git?.autoCheckpoint(project.id, project.rootPath, options.locale);
     }
     let binding = this.route(sessionId, input);
     // resume 失败时自动重建 thread（F3 承诺：会话必须能继续新回合）。
-    const workspace = this.workspaces.forSession(project, sessionId);
     const threadSetup = this.threadSetup;
     const rebuilt = await this.supervisor.ensureReadyOrRebuild({
       session,
@@ -152,7 +155,7 @@ export class MessageService {
           throw new QueuedSessionGoneError(fresh?.state ?? "deleted");
         }
         current = fresh;
-        if (current.kind !== "room_task") {
+        if (checkpoints) {
           await this.git?.autoCheckpoint(project.id, project.rootPath, options.locale);
         }
       }
@@ -163,8 +166,8 @@ export class MessageService {
           threadRef: threadBinding.threadRef,
           clientTurnId,
           input: runtimeInput,
-          projectRoot: project.rootPath,
-          workspaceRoots: [project.rootPath],
+          projectRoot: workspace.executionRoot,
+          workspaceRoots: [workspace.executionRoot],
           // 房间任务会话固定为只读档（Codex 换算为只读 + 联网 + 不审批）；其余按会话审批档。
           approvalMode: sessionRuntimeApprovalMode(current, this.approvalModeEnvironment),
           // 审批档每回合都显式下发；模型 / 推理强度只在需要改变时由 runtime 下发

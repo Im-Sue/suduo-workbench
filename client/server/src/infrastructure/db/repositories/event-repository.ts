@@ -215,6 +215,21 @@ export class EventRepository {
       .map(mapEvent);
   }
 
+  /** 会话第一个回合开始到最后一个回合结束（并行试做的耗时）；还没有回合为 null。 */
+  turnSpan(sessionId: string): { startedAt: number; endedAt: number | null } | null {
+    const row = this.database
+      .prepare(
+        [
+          "SELECT MIN(CASE WHEN type = 'turn.started' THEN ts END) AS started,",
+          "MAX(CASE WHEN type IN ('turn.completed', 'turn.interrupted') THEN ts END) AS ended",
+          "FROM events WHERE session_id = @sessionId AND type IN ('turn.started', 'turn.completed', 'turn.interrupted')",
+        ].join(" "),
+      )
+      .get<{ started: number | null; ended: number | null }>({ sessionId });
+    if (!row || row.started === null) return null;
+    return { startedAt: row.started, endedAt: row.ended !== null && row.ended >= row.started ? row.ended : null };
+  }
+
   /** 会话里某条已提交消息（按 clientTurnId）的内容；没有为 null（重启后委派重新排队时取回）。 */
   submittedContent(sessionId: string, clientTurnId: string): JsonValue | null {
     const row = this.database

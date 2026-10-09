@@ -1,5 +1,6 @@
 import type { SessionDto } from "@suduo/client-contracts";
-import { FileTextIcon, FolderGit2Icon, ForwardIcon, InfoIcon, PanelRightIcon, PencilIcon, ScanSearchIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { FileTextIcon, FolderGit2Icon, ForwardIcon, GitForkIcon, InfoIcon, PanelRightIcon, PencilIcon, ScanSearchIcon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
 import { useLossCheck, useT } from "../../i18n/provider.js";
@@ -27,6 +28,7 @@ export function SessionHeader({
   onToggleInspector,
   onContinue,
   onReview,
+  trialId,
 }: {
   session: SessionDto;
   status: SessionUiStatus;
@@ -41,6 +43,8 @@ export function SessionHeader({
   onContinue?(): void;
   /** 请另一个 Agent 评审（多 Agent 协作 S9）；不传时不显示（房间任务、评审会话、已删除的会话）。 */
   onReview?(): void;
+  /** 并行试做的一版：比较视图的链接（多 Agent 协作 S10）。 */
+  trialId?: string;
 }) {
   const t = useT();
   const text = t.conversation.header;
@@ -144,6 +148,14 @@ export function SessionHeader({
             </ul>
           </PopoverContent>
         </Popover>
+      )}
+      {trialId === undefined ? null : (
+        <Button asChild size="sm" variant="ghost">
+          <Link to="/trials/$trialId" params={{ trialId }} data-testid="open-trial">
+            <GitForkIcon />
+            {t.collab.trial.pageTitle}
+          </Link>
+        </Button>
       )}
       {onReview === undefined ? null : (
         <Button

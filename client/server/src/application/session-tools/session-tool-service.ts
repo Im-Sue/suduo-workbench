@@ -376,7 +376,7 @@ export class SessionToolService implements ToolConfirmationHandler, McpToolHost 
     }
     if (isDelegationToolName(tool)) {
       // 深度 1（R2）：委派出来的子会话、评审会话不能再委派（建线程时已经不挂，这里再拦一次）。
-      if (context.delegateChild === true || context.reviewer === true) return Promise.resolve(failure(toolFormat(context.locale).t.delegation.reply.notMain));
+      if (context.delegateChild === true || context.reviewer === true || context.trial === true) return Promise.resolve(failure(toolFormat(context.locale).t.delegation.reply.notMain));
       const delegation = this.deps.delegationTools;
       if (!delegation) return Promise.resolve(failure(text.dispatch.delegationToolsUnavailable));
       switch (tool) {

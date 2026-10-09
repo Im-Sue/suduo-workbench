@@ -1378,6 +1378,20 @@ describe("Gate B HTTP", () => {
       expect(projectNext.title).toBe(project.title);
       expect(context.projectSessionRefs.getBySessionId(projectNext.id)?.remoteProjectId).toBe(SESSION_PROJECT_ID);
 
+      // 在独立工作目录（并行试做的 worktree，S10）里干活的会话：接着做的新会话也在那里，不回到项目目录。
+      const worktreePath = join(context.projectRoot, "trial-worktree");
+      mkdirSync(worktreePath);
+      context.database.prepare("UPDATE sessions SET workspace_path = @path WHERE id = @id").run({ path: worktreePath, id: project.id });
+      const isolatedNext = (await post(`/api/v2/sessions/${project.id}/continue`)).json<{ id: string; workspacePath?: string }>();
+      expect(isolatedNext.workspacePath).toBe(worktreePath);
+      expect(context.sessions.getById(isolatedNext.id)?.workspacePath).toBe(worktreePath);
+      expect((await get(`/api/v1/sessions/${source.id}`)).json<{ workspacePath?: string }>().workspacePath).toBeUndefined();
+      // 工作目录删了（试做清理过）：说明没法从它开新会话。
+      rmSync(worktreePath, { recursive: true, force: true });
+      const gone = await post(`/api/v2/sessions/${project.id}/continue`);
+      expect(gone.statusCode).toBe(400);
+      expect(gone.json<{ error: { message: string } }>().error.message).toContain("工作目录已经删了");
+
       const roomTask = context.sessions.create({ projectId: context.sessions.getById(source.id)!.projectId, title: "房间任务", kind: "room_task", state: "active" });
       expect((await post(`/api/v2/sessions/${roomTask.id}/continue`)).statusCode).toBe(400);
       expect((await post(`/api/v2/sessions/nope/continue`)).statusCode).toBe(404);

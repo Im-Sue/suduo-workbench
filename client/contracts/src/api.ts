@@ -124,6 +124,11 @@ export interface SessionDto {
   parentSessionId?: string | null;
   rootSessionId?: string | null;
   relation?: SessionRelation | null;
+  /**
+   * 会话在独立工作目录里干活（并行试做的 worktree，多 Agent 协作 S10）时的目录；在项目目录里干活时不带。
+   * 界面据此不给「回到开始前」（检查点是原目录的）。
+   */
+  workspacePath?: string;
   /** 只有单个会话的详情带：接续自哪个会话、被哪些会话接着做（需求 4.2「两个会话互相显示」）。 */
   links?: SessionLinksDto;
 }
@@ -494,12 +499,16 @@ export interface OpenFileRequest {
   mode: SystemOpenTarget;
   /** 只对 vscode 生效：打开后跳到这一行（从 1 开始）。 */
   line?: number;
+  /** 会话页带上：会话在独立工作目录（并行试做的 worktree）里干活时按那个目录找文件。 */
+  sessionId?: string;
 }
 
 /** 批量确认项目内文件是否存在（会话回答里的路径要不要变成链接）。最多 200 条。 */
 export interface ExistingFilesRequest {
   /** 项目内相对路径。 */
   paths: string[];
+  /** 同 OpenFileRequest.sessionId。 */
+  sessionId?: string;
 }
 
 export interface ExistingFilesResponse {

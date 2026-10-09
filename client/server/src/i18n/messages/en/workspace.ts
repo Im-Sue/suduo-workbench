@@ -80,6 +80,7 @@ export const workspace = {
   git: {
     unavailable: "Git wasn't found on this computer, so version control can't be initialized",
     alreadyRepo: "This project is already a Git repository",
+    skippedMerging: "The project directory is in the middle of a merge (unresolved conflicts), so no auto-save was made this time. It resumes after you resolve and commit (or run git merge --abort).",
     notRepo: "This project isn't a Git repository",
     hashInvalid: "The commit hash isn't valid",
     commandFailed: (stderr: string) => `Git command failed: ${stderr}`,

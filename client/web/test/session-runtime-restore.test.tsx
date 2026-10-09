@@ -28,6 +28,7 @@ const apiMocks = vi.hoisted(() => ({
   gitStatus: vi.fn(),
   gitCheckpoints: vi.fn(),
   gitRestore: vi.fn(),
+  trialOfSession: vi.fn(),
 }));
 
 const cacheMocks = vi.hoisted(() => ({
@@ -190,5 +191,20 @@ describe("「回到这一轮开始前？」里的检查点名称", () => {
     document.body.innerHTML = "";
     const plain = await openRestoreDialog([checkpoint({ subject: "Fix login redirect" })]);
     expect(plain).toContain("The closest one is “Fix login redirect”");
+  });
+});
+
+describe("在独立工作目录里干活的会话（并行试做，S10）", () => {
+  it("不给「回到开始前」：检查点是原目录的；页头显示 worktree 路径", async () => {
+    apiMocks.getSession.mockResolvedValue({ ...session(), relation: "trial", workspacePath: "/data/worktrees/p1/g1/codex" });
+    apiMocks.trialOfSession.mockResolvedValue({ trialId: null });
+    apiMocks.gitCheckpoints.mockResolvedValue({ items: [checkpoint({ subject: "x" })] });
+    const node = await render(<SessionRuntime projectId="p1" sessionId="s1" />);
+    await settle();
+    const label = messagesFor("zh-CN").conversation.turn.restoreBefore;
+    expect([...node.querySelectorAll<HTMLButtonElement>("button")].some((element) => element.textContent === label)).toBe(false);
+    expect(node.querySelector('[title="/data/worktrees/p1/g1/codex"]')).not.toBeNull();
+    // 文件树按会话的工作目录列。
+    expect(apiMocks.listFiles).toHaveBeenCalledWith("p1", "", "s1");
   });
 });

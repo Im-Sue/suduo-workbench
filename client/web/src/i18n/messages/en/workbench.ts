@@ -109,6 +109,8 @@ export const workbench = {
     },
     collapse: "Hide inspector panel",
     collapseTitle: "Hide inspector panel (⌘J)",
+    isolated: (path: string) =>
+      `This session works in its own working directory: ${path}. Checkpoints, restore, and git status belong to the original project directory, so they aren't offered here; adopt or clean up this version on the parallel trial page.`,
   },
   changes: {
     emptyTitle: "No changes yet",

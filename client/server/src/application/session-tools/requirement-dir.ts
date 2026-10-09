@@ -81,6 +81,20 @@ export async function resolveRequirementDir(
   return { projectRoot, absolutePath, relativePath: relative(projectRoot, absolutePath) };
 }
 
+/**
+ * 结论笔记所在的需求文件夹：在 `notesRoot`（原项目目录）。会话在别的目录（并行试做的 worktree）里干活时，
+ * 给它看的路径用绝对路径——`.suduo` 不进 git，相对路径在它的工作目录里找不到（长笔记就读不到全文）。
+ */
+export async function resolveNotesDir(
+  roots: { projectRoot: string; notesRoot?: string | undefined },
+  requirement: { number: number; title: string },
+  options: { create: boolean } = { create: true },
+): Promise<RequirementDir> {
+  const root = roots.notesRoot ?? roots.projectRoot;
+  const dir = await resolveRequirementDir(root, requirement, options);
+  return root === roots.projectRoot ? dir : { ...dir, relativePath: dir.absolutePath };
+}
+
 export function materialsDir(dir: RequirementDir): RequirementDir {
   return childDir(dir, "materials");
 }

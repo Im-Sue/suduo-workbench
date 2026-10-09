@@ -107,6 +107,10 @@ export function SessionLauncherProvider({ children }: { children: ReactNode }) {
             setActive(null);
           }}
           onReady={(session, detached) => onReady(active.request, session, detached)}
+          onTrialStarted={(trialId) => {
+            setActive(null);
+            void navigate({ to: "/trials/$trialId", params: { trialId } });
+          }}
           onBackgroundFailed={() => inBackground.current.delete(backgroundKey(active.request))}
         />
       )}

@@ -160,7 +160,8 @@ export class DelegationService {
   }): Promise<DelegationDto> {
     const parent = this.deps.sessions.getById(input.parentSessionId);
     if (parent === null || parent.state === "deleted") throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
-    if (parent.kind !== "normal" || parent.relation === "delegate" || parent.relation === "review") {
+    // 子会话、评审会话、试做会话都不能委派（R2；试做各家各做一版，委派工具本来就不挂）。
+    if (parent.kind !== "normal" || parent.relation === "delegate" || parent.relation === "review" || parent.relation === "trial") {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.delegation.reply.notMain);
     }
     const problem = this.deps.agentProblem(input.agentId);

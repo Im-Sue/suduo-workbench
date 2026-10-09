@@ -114,6 +114,9 @@ export const workbench = {
     },
     collapse: "收起检查面板",
     collapseTitle: "收起检查面板（⌘J）",
+    /** 会话在独立工作目录（并行试做的 worktree）里干活时，「环境」标签只说明，不给原目录的检查点与还原。 */
+    isolated: (path: string) =>
+      `这个会话在独立的工作目录里干活：${path}。检查点、还原与 git 状态属于原项目目录，在这里不提供；这一版的采用与清理在并行试做页里做。`,
   },
   /** 检查面板「改动」标签。 */
   changes: {

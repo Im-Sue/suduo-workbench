@@ -24,6 +24,7 @@ export const session = {
   approvalModeInvalid: "approvalMode 仅允许 readonly / ask / auto / full",
   /** 多 Agent 协作 S7：房间任务会话不能交给别的 Agent 接着做。 */
   roomTaskNotContinuable: "讨论里的任务会话不能交给别的 Agent 接着做",
+  workspaceGone: "这个会话干活的独立工作目录已经删了（并行试做清理过），没法从它开新会话。",
   agentReadOnlyUnsupported: (name: string) => `${name} 做不到只读（它可能不经询问就写文件），不能选只读档`,
   approvalModeLocked: "审批模式已被部署上限 SUDUO_MAX_APPROVAL_MODE 锁定",
   patchEmpty: "PATCH 至少提供一个字段",

@@ -4,6 +4,7 @@ import type { EventLedger } from "../src/application/event-ledger.js";
 import { closeQueuedAfterRestart, MessageService } from "../src/application/message-service.js";
 import type { RuntimeSupervisor } from "../src/application/runtime-supervisor.js";
 import { TurnScheduler } from "../src/application/scheduler/turn-scheduler.js";
+import { WorkspaceContextResolver } from "../src/application/workspace-context.js";
 import { openBetterSqlite3Database } from "../src/infrastructure/db/better-sqlite3-database.js";
 import { runMigrations } from "../src/infrastructure/db/migration-runner.js";
 import { EventRepository } from "../src/infrastructure/db/repositories/event-repository.js";
@@ -176,6 +177,54 @@ describe("发消息经本机调度", () => {
     context.scheduler.cancelSession(room.id);
     expect(await waiting).toBeInstanceOf(Error);
     expect(context.events.filter((event) => event.sessionId === room.id).at(-1)).toMatchObject({ type: "turn.dequeued", payload: { reason: "cancelled" } });
+  });
+});
+
+describe("会话在自己的工作目录里干活（并行试做，S10）", () => {
+  it("记了工作目录的会话：回合在那个目录开（projectRoot / workspaceRoots），不给原项目目录存档；其余照旧", async () => {
+    const database = openBetterSqlite3Database(":memory:");
+    runMigrations(database);
+    closers.push(() => database.close());
+    const projects = new ProjectRepository(database);
+    const sessions = new SessionRepository(database);
+    const threads = new SessionThreadRepository(database);
+    const project = projects.create({ name: "p", rootPath: "/tmp/suduo-main", rootPathKey: "/tmp/suduo-main" });
+    const attach = (sessionId: string) =>
+      threads.attach({ sessionId, threadRef: { runtimeId: "codex-local", runtimeKind: "codex", threadId: "t-" + sessionId }, role: "primary", ordinal: 0, primary: true, metadata: {} });
+    const trial = sessions.create({ projectId: project.id, title: "试做", state: "active", graph: { parentSessionId: null, rootSessionId: null, relation: "trial" }, workspacePath: "/tmp/suduo-worktree/codex" });
+    const plain = sessions.create({ projectId: project.id, title: "普通", state: "active" });
+    attach(trial.id);
+    attach(plain.id);
+    const roots: Array<[string, string, string[]]> = [];
+    const checkpoints: string[] = [];
+    const runtimes = {
+      get: () => ({
+        startTurn: async (input: { sessionId: string; projectRoot: string; workspaceRoots: string[] }) => {
+          roots.push([input.sessionId, input.projectRoot, input.workspaceRoots]);
+          return { turnRef: { threadId: "t", turnId: "turn-" + input.sessionId }, acceptedAt: 1 };
+        },
+      }),
+    } as unknown as RuntimeRegistry;
+    const service = new MessageService(
+      projects,
+      sessions,
+      threads,
+      runtimes,
+      { ensureReadyOrRebuild: async () => null } as unknown as RuntimeSupervisor,
+      { append: () => ({ seq: 1 }) } as unknown as EventLedger,
+      null,
+      { roots: () => [] },
+      { autoCheckpoint: async (_projectId: string, root: string) => void checkpoints.push(root) } as never,
+      null,
+      new WorkspaceContextResolver((sessionId) => sessions.getById(sessionId)?.workspacePath ?? null),
+    );
+    await service.send(trial.id, { content: [{ type: "text", text: "做" }] }, "k1");
+    await service.send(plain.id, { content: [{ type: "text", text: "做" }] }, "k2");
+    expect(roots).toEqual([
+      [trial.id, "/tmp/suduo-worktree/codex", ["/tmp/suduo-worktree/codex"]],
+      [plain.id, "/tmp/suduo-main", ["/tmp/suduo-main"]],
+    ]);
+    expect(checkpoints).toEqual(["/tmp/suduo-main"]);
   });
 });
 

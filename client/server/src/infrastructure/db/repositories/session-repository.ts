@@ -56,6 +56,8 @@ export interface SessionRecord {
   parentSessionId?: string | null;
   rootSessionId?: string | null;
   relation?: SessionRelation | null;
+  /** 会话实际干活的目录（并行试做的 git worktree，多 Agent 协作 S10）；null = 项目目录。 */
+  workspacePath?: string | null;
 }
 
 /** 与父会话的关系：委派、接着做、评审、试做（迁移 019 的 CHECK）。 */
@@ -78,11 +80,14 @@ export interface CreateSessionInput {
   reasoningEffort?: ReasoningEffort;
   /** 与另一个会话的关系（接着做等）；根会话取父会话的根。 */
   graph?: SessionGraphInput;
+  /** 会话实际干活的目录（并行试做的 worktree，S10）；不传 = 项目目录。 */
+  workspacePath?: string;
 }
 
 export interface SessionGraphInput {
-  parentSessionId: string;
-  rootSessionId: string;
+  /** 父会话；并行试做的各版没有父会话（S10）为 null。 */
+  parentSessionId: string | null;
+  rootSessionId: string | null;
   relation: SessionRelation;
 }
 
@@ -104,6 +109,8 @@ export interface SessionRow {
   parent_session_id?: string | null;
   root_session_id?: string | null;
   relation?: string | null;
+  /** 迁移 019 之前的库没有这一列。 */
+  workspace_path?: string | null;
   model: string | null;
   reasoning_effort: string | null;
   created_at: number;
@@ -132,12 +139,13 @@ export class SessionRepository {
     const readOnly = input.approvalMode === "readonly";
     const chosen = input.model !== undefined || input.reasoningEffort !== undefined;
     const graph = input.graph;
+    const workspacePath = input.workspacePath;
     this.database
       .prepare(
         [
           "INSERT INTO sessions",
-          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"}${readOnly ? ", read_only" : ""}${chosen ? ", model, reasoning_effort" : ""}${graph === undefined ? "" : ", parent_session_id, root_session_id, relation"})`,
-          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"}${readOnly ? ", 1" : ""}${chosen ? ", @model, @reasoningEffort" : ""}${graph === undefined ? "" : ", @parentSessionId, @rootSessionId, @relation"})`,
+          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"}${readOnly ? ", read_only" : ""}${chosen ? ", model, reasoning_effort" : ""}${graph === undefined ? "" : ", parent_session_id, root_session_id, relation"}${workspacePath === undefined ? "" : ", workspace_path"})`,
+          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"}${readOnly ? ", 1" : ""}${chosen ? ", @model, @reasoningEffort" : ""}${graph === undefined ? "" : ", @parentSessionId, @rootSessionId, @relation"}${workspacePath === undefined ? "" : ", @workspacePath"})`,
         ].join(" "),
       )
       .run({
@@ -151,6 +159,7 @@ export class SessionRepository {
         ...(agentId === null ? {} : { agentId }),
         ...(chosen ? { model: input.model ?? null, reasoningEffort: input.reasoningEffort ?? null } : {}),
         ...(graph === undefined ? {} : graph),
+        ...(workspacePath === undefined ? {} : { workspacePath }),
       });
     return requireSession(this.getById(id), id);
   }
@@ -182,6 +191,14 @@ export class SessionRepository {
         ].join(" "),
       )
       .all<{ id: string }>({ sessionId })
+      .map((row) => row.id);
+  }
+
+  /** 在某个独立工作目录里干活、还没归档或删除的会话 ID（并行试做清理时一并归档，多 Agent 协作 S10）。 */
+  listActiveIdsByWorkspacePath(workspacePath: string): string[] {
+    return this.database
+      .prepare("SELECT id FROM sessions WHERE workspace_path = @workspacePath AND state = 'active'")
+      .all<{ id: string }>({ workspacePath })
       .map((row) => row.id);
   }
 
@@ -441,6 +458,7 @@ export function mapSession(row: SessionRow): SessionRecord {
     parentSessionId: row.parent_session_id ?? null,
     rootSessionId: row.root_session_id ?? null,
     relation: isRelation(row.relation) ? row.relation : null,
+    workspacePath: row.workspace_path ?? null,
   };
 }
 

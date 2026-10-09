@@ -21,6 +21,7 @@ export const session = {
   stateInvalid: "Session state must be active or archived",
   approvalModeInvalid: "approvalMode must be readonly, ask, auto, or full",
   roomTaskNotContinuable: "Room task sessions can't be handed to another agent",
+  workspaceGone: "This session's separate working directory has been deleted (the parallel trial was cleaned up), so no new session can be started from it.",
   agentReadOnlyUnsupported: (name: string) => `${name} can't run read-only (it may write files without asking), so the read-only mode isn't available`,
   approvalModeLocked: "Approval mode is capped by the deployment setting SUDUO_MAX_APPROVAL_MODE",
   patchEmpty: "PATCH must include at least one field",

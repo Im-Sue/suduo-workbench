@@ -227,6 +227,8 @@ export function SessionRuntime(props: {
   /** 交给另一个 Agent 接着做的对话框（多 Agent 协作 S7）。 */
   const [continueOpen, setContinueOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // 并行试做的一版（S10）：会话头给「并行试做」比较视图的链接。
+  const [trialId, setTrialId] = useState<string | null>(null);
   /** 接着做开出的新会话：输入框预填「接着 @原会话 继续：」（只预填，不自动发出）。 */
   const [prefill, setPrefill] = useState<{ sessionId: string; text: string } | null>(null);
   useEffect(() => {
@@ -604,8 +606,29 @@ export function SessionRuntime(props: {
    * 本机会话没有，引用了 Agent 也读不了，就不给入口。
    */
   const referencesSessions = context.status === "ready" && context.value.kind !== "none" && context.value.contextMode !== "legacy";
-  /** 能不能在输入框 @ Agent 委派（多 Agent 协作 S8）：主会话才行（子会话、评审会话不能委派，R2）。 */
-  const canDelegate = referencesSessions && session !== null && session.kind === "normal" && session.relation !== "delegate" && session.relation !== "review";
+  /** 能不能在输入框 @ Agent 委派（多 Agent 协作 S8）：主会话才行（子会话、评审会话、试做会话不能委派，R2）。 */
+  const canDelegate =
+    referencesSessions && session !== null && session.kind === "normal" && session.relation !== "delegate" && session.relation !== "review" && session.relation !== "trial";
+  /** 会话在独立工作目录（并行试做的 worktree，S10）里干活：检查点是原目录的，不给「回到开始前」。 */
+  const isolated = session?.workspacePath !== undefined;
+  /** 文件树、预览、用编辑器打开、回答里的路径链接按会话的工作目录找文件（只在独立目录里的会话带上会话）。 */
+  const fileScope = isolated ? props.sessionId : undefined;
+
+  const isTrial = session?.relation === "trial";
+  useEffect(() => {
+    if (!isTrial) return;
+    let cancelled = false;
+    // 不用 useQuery（同上）；取不到就不显示链接。
+    void Promise.resolve()
+      .then(() => api.trialOfSession(props.sessionId))
+      .then((found) => {
+        if (!cancelled) setTrialId(found.trialId);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isTrial, props.sessionId]);
   // 不用 useQuery：会话页的测试与部分外壳不包 QueryClientProvider（S5 的教训）。能委派时取一次本机 Agent。
   const [delegateAgents, setDelegateAgents] = useState<ReadonlyArray<{ id: string; name: string }>>([]);
   useEffect(() => {
@@ -633,8 +656,7 @@ export function SessionRuntime(props: {
   useEffect(() => {
     let cancelled = false;
     const refreshFiles = () => {
-      void api
-        .listFiles(props.projectId)
+      void (fileScope === undefined ? api.listFiles(props.projectId) : api.listFiles(props.projectId, "", fileScope))
         .then((response) => {
           if (!cancelled) {
             setFiles((current) => ({ ...current, "": response.entries }));
@@ -659,7 +681,7 @@ export function SessionRuntime(props: {
       cancelled = true;
       watcher.close();
     };
-  }, [props.projectId, props.sessionId]);
+  }, [props.projectId, props.sessionId, fileScope]);
 
   useEffect(() => {
     if (carriedSessionId.current !== props.sessionId) setApprovals([]);
@@ -781,7 +803,7 @@ export function SessionRuntime(props: {
     setExpanded(next);
     if (!files[path]) {
       try {
-        const response = await api.listFiles(props.projectId, path);
+        const response = fileScope === undefined ? await api.listFiles(props.projectId, path) : await api.listFiles(props.projectId, path, fileScope);
         setFiles((current) => ({ ...current, [path]: response.entries }));
       } catch (cause) {
         reportError(cause, "region");
@@ -794,7 +816,7 @@ export function SessionRuntime(props: {
     try {
       setDrawer({
         mode: "preview",
-        content: await api.readFile(props.projectId, path),
+        content: fileScope === undefined ? await api.readFile(props.projectId, path) : await api.readFile(props.projectId, path, fileScope),
         line,
       });
     } catch (cause) {
@@ -819,7 +841,9 @@ export function SessionRuntime(props: {
   };
 
   const systemOpen = (path: string, mode: SystemOpenTarget) => {
-    void api.openFile(props.projectId, path, mode).catch((cause) => reportError(cause, "action"));
+    void (fileScope === undefined ? api.openFile(props.projectId, path, mode) : api.openFile(props.projectId, path, mode, null, fileScope)).catch((cause: unknown) =>
+      reportError(cause, "action"),
+    );
   };
 
   const decideApproval = async (
@@ -870,16 +894,17 @@ export function SessionRuntime(props: {
     }
   };
 
-  /** Codex 报回的是绝对路径：换成项目内相对路径再查改动；不在项目里的说清楚。 */
+  /** Codex 报回的是绝对路径：换成会话工作目录（独立目录里的会话是它的 worktree）内的相对路径再查改动；不在里面的说清楚。 */
+  const workRoot = session?.workspacePath ?? projectRoot;
   const openChange = (path: string) => {
-    const relative = toProjectPath(path, projectRoot);
+    const relative = toProjectPath(path, workRoot);
     if (relative === null) {
       setPersistentError(text.outsideProject(path), "stale_state");
       return;
     }
     void openDiff(relative);
   };
-  const displayPath = (path: string) => displayProjectPath(path, projectRoot);
+  const displayPath = (path: string) => displayProjectPath(path, workRoot);
   /**
    * 回答里的项目文件链接（需求 4.6；会话回答里的文件路径可点击）：单击在右侧文件面板打开并定位到行；
    * ⌘ / Ctrl 单击用本机编辑器打开（有 VS Code 时跳到行，没有就用系统默认应用）。
@@ -890,23 +915,28 @@ export function SessionRuntime(props: {
   const openTargetsRef = useRef(openTargets);
   openTargetsRef.current = openTargets;
   const fileExistence = useMemo(
-    () => new FileExistenceStore(async (paths) => (await api.existingFiles(props.projectId, paths)).files),
-    [props.projectId],
+    () =>
+      new FileExistenceStore(async (paths) =>
+        (fileScope === undefined ? await api.existingFiles(props.projectId, paths) : await api.existingFiles(props.projectId, paths, fileScope)).files,
+      ),
+    [props.projectId, fileScope],
   );
   const markdownLinks = useMemo<MarkdownLinkHandlers>(
     () => ({
-      projectRoot,
+      projectRoot: workRoot,
       files: fileExistence,
       onOpenPath: (path, line, options) => {
         if (options?.external === true) {
           const mode = openTargetsRef.current.includes("vscode") ? "vscode" : "open";
-          void api.openFile(props.projectId, path, mode, line).catch((cause: unknown) => reportError(cause, "action"));
+          void (fileScope === undefined ? api.openFile(props.projectId, path, mode, line) : api.openFile(props.projectId, path, mode, line, fileScope)).catch(
+            (cause: unknown) => reportError(cause, "action"),
+          );
           return;
         }
         void openPreviewRef.current(path, line);
       },
     }),
-    [projectRoot, fileExistence, props.projectId],
+    [workRoot, fileExistence, props.projectId, fileScope],
   );
   /** 文件改动审批要改的文件：v2 审批只带 itemId，从时间线里同一 item 的改动卡取。 */
   const changesForApproval = (approval: ApprovalDto): FileChangeEntry[] => {
@@ -1007,6 +1037,7 @@ export function SessionRuntime(props: {
         deletions={changeStats.deletions}
         projectId={props.projectId}
         projectRoot={projectRoot}
+        {...(session?.workspacePath === undefined ? {} : { isolatedPath: session.workspacePath })}
         running={running > 0}
         openTargets={openTargets}
         onOpen={(path) => void openDiff(path)}
@@ -1045,7 +1076,7 @@ export function SessionRuntime(props: {
             session={session}
             status={headStatus}
             requirement={linkedRequirement === null ? null : { title: linkedRequirement.title }}
-            projectRoot={projectRoot}
+            projectRoot={session.workspacePath ?? projectRoot}
             notices={infoNotices}
             inspectorOpen={inspectorVisible}
             onRename={(title) => void renameSession(title)}
@@ -1057,6 +1088,7 @@ export function SessionRuntime(props: {
             onToggleInspector={toggleInspector}
             {...(session.kind === "normal" && session.state !== "deleted" && referencesSessions ? { onContinue: () => setContinueOpen(true) } : {})}
             {...(session.kind === "normal" && session.state !== "deleted" && session.relation !== "review" && referencesSessions ? { onReview: () => setReviewOpen(true) } : {})}
+            {...(trialId === null ? {} : { trialId })}
           />
         ) : null}
         {session ? <SessionLinksBar links={session.links} /> : null}
@@ -1097,8 +1129,9 @@ export function SessionRuntime(props: {
                     },
                     // 房间任务会话只读：在这里重试等于私下追问，回答回不到房间；重试在房间消息上做。
                     ...(roomTaskSession ? {} : { onRetry: retryTurn }),
-                    // ADR-0004 红线：还原会覆盖 Codex 正在写的文件，有回合在跑时不提供（与环境页的还原一致）。
-                    ...(running > 0 ? {} : { onRestoreBefore: (turn: TurnTimeline) => void restoreBefore(turn) }),
+                    // ADR-0004 红线：还原会覆盖 Codex 正在写的文件，有回合在跑时不提供（与环境页的还原一致）；
+                    // 在独立工作目录里干活的会话也不提供（检查点是原目录的，还原会改到原目录）。
+                    ...(running > 0 || isolated ? {} : { onRestoreBefore: (turn: TurnTimeline) => void restoreBefore(turn) }),
                   }}
                   empty={<EmptyConversation />}
                 />

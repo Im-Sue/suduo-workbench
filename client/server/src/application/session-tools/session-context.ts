@@ -30,7 +30,7 @@ import {
   type ToolFormat,
 } from "./format.js";
 import { describeActivity, newestFirst, type ToolSessionContext } from "./requirement-tools.js";
-import { readNotes, resolveRequirementDir } from "./requirement-dir.js";
+import { readNotes, resolveNotesDir } from "./requirement-dir.js";
 
 /** 新建线程时下发给 Codex 的开场内容：需求卡（developerInstructions）与工具清单。 */
 export interface ThreadSetup {
@@ -168,14 +168,20 @@ export class SessionContextService {
     }
     const delegateChild = session.relation === "delegate";
     const reviewer = session.relation === "review";
+    const trial = session.relation === "trial";
+    // 并行试做的版本在自己的 worktree 里干活（S10）：材料、相对路径都相对它；结论笔记仍在原项目目录（`.suduo` 不进 git）。
+    const root = session.workspacePath ?? project.rootPath;
+    const notesRoot = session.workspacePath === null || session.workspacePath === undefined ? {} : { notesRoot: project.rootPath };
     const ref = this.deps.refs.getBySessionId(sessionId);
     if (ref !== null) {
       return {
         sessionId,
         ...(delegateChild ? { delegateChild } : {}),
         ...(reviewer ? { reviewer } : {}),
+        ...(trial ? { trial } : {}),
         locale: session.locale,
-        projectRoot: project.rootPath,
+        projectRoot: root,
+        ...notesRoot,
         remoteProjectId: ref.remoteProjectId,
         requirement: {
           remoteRequirementId: ref.remoteRequirementId,
@@ -193,8 +199,10 @@ export class SessionContextService {
       sessionId,
       ...(delegateChild ? { delegateChild } : {}),
       ...(reviewer ? { reviewer } : {}),
+      ...(trial ? { trial } : {}),
       locale: session.locale,
-      projectRoot: project.rootPath,
+      projectRoot: root,
+      ...notesRoot,
       remoteProjectId: projectRef.remoteProjectId,
       requirement: null,
     };
@@ -272,6 +280,8 @@ export class SessionContextService {
     /** 会话的语言（建会话的请求的语言）：需求卡、规则与工具说明按它写。 */
     locale: Locale;
     projectRoot: string;
+    /** 结论笔记所在的项目目录（会话在独立工作目录里干活时是原项目目录）；缺省 = projectRoot。 */
+    notesRoot?: string;
     requirement: RequirementDetailDto;
     /** 重建线程时排除会话自己，找「上一次」会话。 */
     sessionId?: string;
@@ -343,6 +353,7 @@ export class SessionContextService {
   private async requirementCard(input: {
     locale: Locale;
     projectRoot: string;
+    notesRoot?: string;
     requirement: RequirementDetailDto;
     sessionId?: string;
     personal: boolean;
@@ -354,7 +365,7 @@ export class SessionContextService {
       settle(this.deps.remote.listAttachments(requirement.id).then((r) => r.items)),
       input.personal
         ? settle(
-            resolveRequirementDir(projectRoot, requirement, { create: false }).then((dir) => readNotes(dir)),
+            resolveNotesDir({ projectRoot, notesRoot: input.notesRoot }, requirement, { create: false }).then((dir) => readNotes(dir)),
           )
         : Promise.resolve<Settled<null>>({ ok: true, value: null }),
       input.personal
@@ -477,7 +488,13 @@ export class SessionContextService {
       }
       try {
         const requirement = await this.deps.remote.getRequirement(ref.remoteRequirementId);
-        return await this.requirementSetup({ locale: context.locale, projectRoot: context.projectRoot, requirement, sessionId });
+        return await this.requirementSetup({
+          locale: context.locale,
+          projectRoot: context.projectRoot,
+          ...(context.notesRoot === undefined ? {} : { notesRoot: context.notesRoot }),
+          requirement,
+          sessionId,
+        });
       } catch (error) {
         // 需求查不到也要能继续对话：给一张最小的卡，工具照挂，模型可以自己再查。
         const f = toolFormat(context.locale);

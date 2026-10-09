@@ -162,6 +162,12 @@ export class GitService {
       if (!(await this.available()) || !(await this.isRepoRoot(projectRoot))) {
         return;
       }
+      // 合并进行中（比如采用并行试做的一版时有冲突）：自动存档会把冲突标记当合并提交提交掉、让 merge --abort 失效。
+      // 这次不存，在环境页说明。
+      if (await this.mergeInProgress(projectRoot)) {
+        this.lastErrors.set(projectId, (t) => t.workspace.git.skippedMerging);
+        return;
+      }
       await this.snapshot(projectRoot, true, undefined, locale ?? this.uiLocale());
       this.lastErrors.delete(projectId);
     } catch (cause) {
@@ -286,6 +292,13 @@ export class GitService {
       }
       throw cause;
     }
+  }
+
+  private async mergeInProgress(root: string): Promise<boolean> {
+    return this.run(root, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]).then(
+      () => true,
+      () => false,
+    );
   }
 
   private async available(): Promise<boolean> {

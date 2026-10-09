@@ -335,6 +335,14 @@ export function reviewerDropsTool(name: string): boolean {
   return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_notes_save";
 }
 
+/**
+ * 并行试做的一版不挂的工具（技术设计 2.9；S10）：委派与请求评审（R2）、对外写工具；结论笔记也不给
+ * （它在自己的 worktree 里，删了就没了；结论记在主线上）。
+ */
+export function trialDropsTool(name: string): boolean {
+  return isDelegationToolName(name) || isReviewToolName(name) || isWriteTool(name) || name === "suduo_notes_save";
+}
+
 /** 评审会话的工具（建评审会话时加在 scope 的工具之外）。 */
 export function reviewSubmitSpec(locale: Locale): RuntimeToolSpec {
   return reviewSpecs(locale, messagesFor(locale).toolSpec).suduo_review_submit;
