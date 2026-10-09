@@ -6,6 +6,7 @@ import { api } from "../../../api/client.js";
 import { reportFailure } from "../../../feedback/report.js";
 import { useT } from "../../../i18n/provider.js";
 import { Markdown } from "../../../ui/markdown.js";
+import { StallNote } from "../../collab/StallNote.js";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -59,6 +60,7 @@ export function DelegationCard({ delegation }: { delegation: DelegationDto }) {
               {text.waitingApproval(delegation.pendingApprovals)}
             </span>
           ) : null}
+          {active ? <StallNote stall={delegation.stalled} /> : null}
         </p>
         {delegation.error === null ? null : <p className="m-0 text-caption text-danger">{text.error(delegation.error)}</p>}
         {result === null || active ? null : (

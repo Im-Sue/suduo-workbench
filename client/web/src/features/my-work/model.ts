@@ -18,6 +18,7 @@ import type { SessionUiStatus } from "../../ui/session-status.js";
 export type AttentionItem =
   | { kind: "pending_approval"; key: string; action: Extract<WorkbenchActionDto, { kind: "pending_approval" }> }
   | { kind: "failed_turn"; key: string; action: Extract<WorkbenchActionDto, { kind: "failed_turn" }> }
+  | { kind: "pending_review"; key: string; action: Extract<WorkbenchActionDto, { kind: "pending_review" }> }
   | { kind: "new_comments"; key: string; requirement: MyRequirement; count: number }
   | { kind: "drift"; key: string; requirement: WorkbenchRequirementDto }
   | { kind: "stale"; key: string; requirement: MyRequirement; days: number }
@@ -26,6 +27,7 @@ export type AttentionItem =
 const URGENCY: Record<AttentionItem["kind"], number> = {
   pending_approval: 0,
   failed_turn: 1,
+  pending_review: 1.5,
   new_comments: 2,
   drift: 3,
   stale: 4,
@@ -48,6 +50,7 @@ export function attentionItems(
   for (const action of actions ?? []) {
     if (action.kind === "invalid_mapping") items.push({ kind: action.kind, key: `mapping:${action.remoteProjectId}`, action });
     else if (action.kind === "pending_approval") items.push({ kind: action.kind, key: `approval:${action.sessionId}`, action });
+    else if (action.kind === "pending_review") items.push({ kind: action.kind, key: `review:${action.reviewId}`, action });
     else items.push({ kind: action.kind, key: `failed:${action.sessionId}`, action });
   }
   for (const requirement of requirements ?? []) {
@@ -75,6 +78,7 @@ function recency(item: AttentionItem): number {
   if (item.kind === "new_comments") return item.requirement.updatedAt ?? 0;
   // 停滞：越久越靠前。
   if (item.kind === "stale") return item.days;
+  if (item.kind === "pending_review") return item.action.finishedAt;
   return item.action.lastActivityAt ?? 0;
 }
 

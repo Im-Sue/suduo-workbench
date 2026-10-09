@@ -10,6 +10,9 @@ import {
   type DoctorOptions,
 } from "../server/src/infrastructure/doctor/doctor-service.js";
 import { messagesFor } from "../server/src/i18n/messages/index.js";
+import { AgentCatalogService } from "../server/src/application/agents/agent-catalog-service.js";
+import { AgentSettingsStore, agentSettingsPathFor } from "../server/src/application/agents/agent-settings-store.js";
+import { defaultSuDuoDataDir } from "../server/src/infrastructure/platform/host-platform.js";
 
 const workspaceRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 // 输出跟随系统语言（SUDUO_LOCALE → LC_ALL → LC_MESSAGES → LANG → 系统区域，见 cliLocale）；--json 里的文字同样。
@@ -45,17 +48,25 @@ function parseOptions(args: string[]): DoctorOptions {
       process.env["CODEX_HOME"] ??
       resolve(homedir(), ".codex"),
   );
+  const codexBin = resolveCommand(
+    value("--codex-bin") ??
+      process.env["SUDUO_CODEX_BIN"] ??
+      defaultCodexCommand(),
+  );
+  // 各家 Agent 按本机服务同样的设置检测（启用、路径覆盖、默认 Agent 存在数据目录的 agent-settings.json 里）。
+  const dataDir = process.env["SUDUO_DATA_DIR"] ?? defaultSuDuoDataDir();
+  const agents = new AgentCatalogService({
+    store: new AgentSettingsStore(agentSettingsPathFor(resolve(dataDir, "settings.json"))),
+    codexBin,
+  });
   return {
     installed,
     allowPortInUse: args.includes("--allow-port-in-use"),
     port,
     codexHome,
-    codexBin: resolveCommand(
-      value("--codex-bin") ??
-        process.env["SUDUO_CODEX_BIN"] ??
-        defaultCodexCommand(),
-    ),
+    codexBin,
     checkPnpm: !installed,
+    agents: () => agents.list(),
   };
 }
 

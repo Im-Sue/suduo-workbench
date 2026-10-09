@@ -12,6 +12,7 @@ import {
   type ReviewSeverity,
   type ReviewStatus,
   type SessionDto,
+  type StallDto,
 } from "@suduo/client-contracts";
 import { messagesFor } from "../../i18n/messages/index.js";
 import type { ReviewRecord, ReviewRepository } from "../../infrastructure/db/repositories/review-repository.js";
@@ -23,6 +24,7 @@ import type { EventBroker } from "../event-broker.js";
 import type { EventLedger } from "../event-ledger.js";
 import type { SchedulerSource } from "../scheduler/turn-scheduler.js";
 import { countDiff, oneLine } from "./delegation-service.js";
+import { StallWatch } from "./stall-watch.js";
 
 /**
  * 交叉评审（多 Agent 协作 S9，技术设计 2.11、需求 4.4）：请本机另一个 Agent 在只读评审会话里评审一个会话的改动，
@@ -36,6 +38,8 @@ import { countDiff, oneLine } from "./delegation-service.js";
  */
 export interface ReviewDependencies {
   reviews: ReviewRepository;
+  /** 评审会话里还在等确认的操作（卡住提醒用；不给就只看有没有动静）。 */
+  approvals?: { oldestPendingAt(sessionId: string): number | null };
   sessions: Pick<SessionRepository, "getById">;
   threads: Pick<SessionThreadRepository, "getPrimary">;
   ledger: Pick<EventLedger, "append">;
@@ -79,7 +83,26 @@ export class ReviewService {
   /** 开始 / 结束先于发送回执到达的回合（回执来了再认）。 */
   private readonly unclaimed = new Map<string, Map<string, Outcome | null>>();
 
+  /** 卡住提醒（S12）：评审会话只读、不出审批，只会是很久没动静。 */
+  private readonly stalls = new StallWatch({
+    now: () => this.now(),
+    oldestApprovalAt: (sessionId) => this.deps.approvals?.oldestPendingAt(sessionId) ?? null,
+  });
+
   constructor(private readonly deps: ReviewDependencies) {}
+
+  /** 定时看一遍没结束的评审：卡住与否变了就刷新卡片（本机服务每分钟调一次）。 */
+  checkStalls(): void {
+    for (const record of this.deps.reviews.listUnfinished()) {
+      if (this.stalls.changed(record.id, this.stallOf(record))) this.emit(record);
+    }
+  }
+
+  private stallOf(record: ReviewRecord): StallDto | null {
+    return record.status === "queued" || record.status === "running"
+      ? this.stalls.stalled(record.id, record.reviewerSessionId, record.status === "running")
+      : null;
+  }
 
   /** 本机服务启动时：没做完的评审收尾——已经提交过意见的保留「已提交」，其余标「已中断」（可以重新发起）。 */
   recoverAfterRestart(): void {
@@ -229,6 +252,7 @@ export class ReviewService {
       finalMessage: record.finalMessage,
       appliedFindingIds: record.appliedFindingIds,
       error: record.error,
+      stalled: this.stallOf(record),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       finishedAt: record.finishedAt,
@@ -282,12 +306,14 @@ export class ReviewService {
   private unwatch(id: string): void {
     this.watching.get(id)?.();
     this.watching.delete(id);
+    this.stalls.forget(id);
     this.tracked.delete(id);
     this.unclaimed.delete(id);
   }
 
   /** 只认评审任务那条消息与它的回合；用户在评审会话里自己接着聊的回合不改报告。 */
   private onReviewerEvent(id: string, event: EventEnvelope<string, JsonValue>): void {
+    this.stalls.touch(id);
     const entry = this.tracked.get(id);
     if (entry === undefined) return;
     const payload = objectOf(event.payload);
@@ -421,13 +447,16 @@ export class ReviewService {
   private emit(record: ReviewRecord): void {
     const binding = this.deps.threads.getPrimary(record.targetSessionId);
     if (binding === null || binding === undefined) return;
+    const dto = this.dto(record);
+    // 卡片显示的卡住与否以这一条为准（定时检查据此判断变没变，不重复写同样的事件）。
+    this.stalls.changed(record.id, dto.stalled);
     this.deps.ledger.append({
       sessionId: record.targetSessionId,
       sessionThreadId: binding.id,
       event: {
         source: "suduo:review",
         type: "review.updated",
-        payload: this.dto(record) as unknown as JsonValue,
+        payload: dto as unknown as JsonValue,
         threadRef: binding.threadRef,
         turnRef: null,
         ts: this.now(),

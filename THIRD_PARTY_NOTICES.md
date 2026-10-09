@@ -21,10 +21,14 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 
 ## client/ (frontend and local backend)
 
-366 packages.
+453 packages.
 
 | Package | Version | License |
 |---|---|---|
+| @agentclientprotocol/sdk | 1.7.0 | Apache-2.0 |
+| @anthropic-ai/claude-agent-sdk | 0.3.293 | Proprietary (© Anthropic PBC; see below) |
+| @anthropic-ai/sdk | 0.132.1 | MIT |
+| @babel/runtime | 7.29.10 | MIT |
 | @dnd-kit/accessibility | 3.1.1 | MIT |
 | @dnd-kit/core | 6.3.1 | MIT |
 | @dnd-kit/utilities | 3.2.2 | MIT |
@@ -41,11 +45,13 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | @floating-ui/utils | 0.2.12 | MIT |
 | @fontsource/ibm-plex-sans | 5.3.0 | OFL-1.1 |
 | @fontsource/jetbrains-mono | 5.3.0 | OFL-1.1 |
+| @hono/node-server | 2.1.4 | MIT |
 | @jridgewell/gen-mapping | 0.3.13 | MIT |
 | @jridgewell/remapping | 2.3.5 | MIT |
 | @jridgewell/resolve-uri | 3.1.2 | MIT |
 | @jridgewell/sourcemap-codec | 1.5.5 | MIT |
 | @jridgewell/trace-mapping | 0.3.31 | MIT |
+| @modelcontextprotocol/sdk | 1.32.1 | MIT |
 | @oxc-project/types | 0.139.0 | MIT |
 | @pinojs/redact | 0.4.0 | MIT |
 | @radix-ui/number | 1.1.3 | MIT |
@@ -96,6 +102,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | @reduxjs/toolkit | 2.13.0 | MIT |
 | @rolldown/binding-darwin-arm64 | 1.1.5 | MIT |
 | @rolldown/pluginutils | 1.0.1 | MIT |
+| @stablelib/base64 | 1.0.1 | MIT |
 | @standard-schema/spec | 1.1.0 | MIT |
 | @standard-schema/utils | 0.3.0 | MIT |
 | @tailwindcss/node | 4.3.3 | MIT |
@@ -134,6 +141,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | @types/use-sync-external-store | 0.0.6 | MIT |
 | @ungap/structured-clone | 1.3.3 | ISC |
 | abstract-logging | 2.0.1 | MIT |
+| accepts | 2.0.0 | MIT |
 | adler-32 | 1.3.1 | Apache-2.0 |
 | ajv | 8.20.0 | MIT |
 | ajv-formats | 3.0.1 | MIT |
@@ -145,7 +153,11 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | better-sqlite3 | 12.11.1 | MIT |
 | bindings | 1.5.0 | MIT |
 | bl | 4.1.0 | MIT |
+| body-parser | 2.3.0 | MIT |
 | buffer | 5.7.1 | MIT |
+| bytes | 3.1.2 | MIT |
+| call-bind-apply-helpers | 1.0.2 | MIT |
+| call-bound | 1.0.4 | MIT |
 | ccount | 2.0.1 | MIT |
 | cfb | 1.2.2 | Apache-2.0 |
 | character-entities | 2.0.2 | MIT |
@@ -158,9 +170,14 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | cmdk | 1.1.1 | MIT |
 | codepage | 1.15.0 | Apache-2.0 |
 | comma-separated-tokens | 2.0.3 | MIT |
-| cookie | 1.1.1 | MIT |
+| content-disposition | 1.1.0 | MIT |
+| content-type | 1.0.5, 2.1.0 | MIT |
+| cookie | 0.7.2, 1.1.1 | MIT |
 | cookie-es | 3.1.1 | MIT |
+| cookie-signature | 1.2.2 | MIT |
+| cors | 2.8.6 | MIT |
 | crc-32 | 1.2.2 | Apache-2.0 |
+| cross-spawn | 7.0.6 | MIT |
 | csstype | 3.2.3 | MIT |
 | d3-array | 3.2.4 | ISC |
 | d3-color | 3.1.0 | ISC |
@@ -179,59 +196,91 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | decode-named-character-reference | 1.3.0 | MIT |
 | decompress-response | 6.0.0 | MIT |
 | deep-extend | 0.6.0 | MIT |
+| depd | 2.0.0 | MIT |
 | dequal | 2.0.3 | MIT |
 | detect-libc | 2.1.2 | Apache-2.0 |
 | detect-node-es | 1.1.0 | MIT |
 | devlop | 1.1.0 | MIT |
 | dompurify | 3.2.7, 3.4.12 | (MPL-2.0 OR Apache-2.0) |
+| dunder-proto | 1.0.1 | MIT |
+| ee-first | 1.1.1 | MIT |
+| encodeurl | 2.0.0 | MIT |
 | end-of-stream | 1.4.5 | MIT |
 | enhanced-resolve | 5.24.3 | MIT |
+| es-define-property | 1.0.1 | MIT |
+| es-errors | 1.3.0 | MIT |
+| es-object-atoms | 1.1.2 | MIT |
 | es-toolkit | 1.52.0 | MIT |
 | esbuild | 0.28.1 | MIT |
+| escape-html | 1.0.3 | MIT |
 | escape-string-regexp | 5.0.0 | MIT |
 | estree-util-is-identifier-name | 3.0.0 | MIT |
+| etag | 1.8.1 | MIT |
 | eventemitter3 | 5.0.4 | MIT |
+| eventsource | 3.0.7 | MIT |
+| eventsource-parser | 3.1.1 | MIT |
 | expand-template | 2.0.3 | (MIT OR WTFPL) |
+| express | 5.2.1 | MIT |
+| express-rate-limit | 8.7.1 | MIT |
 | extend | 3.0.2 | MIT |
 | fast-decode-uri-component | 1.0.1 | MIT |
 | fast-deep-equal | 3.1.3 | MIT |
 | fast-json-stringify | 7.0.1 | MIT |
 | fast-querystring | 1.1.2 | MIT |
+| fast-sha256 | 1.3.0 | Unlicense |
 | fast-uri | 3.1.5, 4.1.2 | BSD-3-Clause |
 | fastify | 5.11.3 | MIT |
 | fastq | 1.20.1 | ISC |
 | fdir | 6.5.0 | MIT |
 | fflate | 0.8.2 | MIT |
 | file-uri-to-path | 1.0.0 | MIT |
+| finalhandler | 2.1.1 | MIT |
 | find-my-way | 9.7.0 | MIT |
+| forwarded | 0.2.0 | MIT |
 | frac | 1.1.2 | Apache-2.0 |
+| fresh | 2.0.0 | MIT |
 | fs-constants | 1.0.0 | MIT |
 | fsevents | 2.3.3 | MIT |
+| function-bind | 1.1.2 | MIT |
+| get-intrinsic | 1.3.0 | MIT |
 | get-nonce | 1.0.1 | MIT |
+| get-proto | 1.0.1 | MIT |
 | github-from-package | 0.0.0 | MIT |
+| gopd | 1.2.0 | MIT |
 | graceful-fs | 4.2.11 | ISC |
+| has-symbols | 1.1.0 | MIT |
+| hasown | 2.0.4 | MIT |
 | hast-util-is-element | 3.0.0 | MIT |
 | hast-util-to-jsx-runtime | 2.3.6 | MIT |
 | hast-util-to-text | 4.0.2 | MIT |
 | hast-util-whitespace | 3.0.0 | MIT |
 | highlight.js | 11.11.1 | BSD-3-Clause |
+| hono | 4.13.13 | MIT |
 | html-url-attributes | 3.0.1 | MIT |
+| http-errors | 2.0.1 | MIT |
+| iconv-lite | 0.7.3 | MIT |
 | ieee754 | 1.2.1 | BSD-3-Clause |
 | immer | 11.1.18 | MIT |
 | inherits | 2.0.4 | ISC |
 | ini | 1.3.8 | ISC |
 | inline-style-parser | 0.2.7 | MIT |
 | internmap | 2.0.3 | ISC |
-| ipaddr.js | 2.4.0 | MIT |
+| ip-address | 10.7.3 | MIT |
+| ipaddr.js | 1.9.1, 2.4.0 | MIT |
 | is-alphabetical | 2.0.1 | MIT |
 | is-alphanumerical | 2.0.1 | MIT |
 | is-decimal | 2.0.1 | MIT |
 | is-hexadecimal | 2.0.1 | MIT |
 | is-plain-obj | 4.1.0 | MIT |
+| is-promise | 4.0.0 | MIT |
 | isbot | 5.2.2 | Unlicense |
+| isexe | 2.0.0 | ISC |
 | jiti | 2.7.0 | MIT |
+| jose | 6.2.12 | MIT |
 | json-schema-ref-resolver | 3.0.0 | MIT |
+| json-schema-to-ts | 3.1.1 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
+| json-schema-typed | 8.0.2 | BSD-2-Clause |
 | light-my-request | 6.6.0 | BSD-3-Clause |
 | lightningcss | 1.32.0 | MPL-2.0 |
 | lightningcss-darwin-arm64 | 1.32.0 | MPL-2.0 |
@@ -241,6 +290,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | magic-string | 0.30.21 | MIT |
 | markdown-table | 3.0.4 | MIT |
 | marked | 14.0.0 | MIT |
+| math-intrinsics | 1.1.0 | MIT |
 | mdast-util-find-and-replace | 3.0.2 | MIT |
 | mdast-util-from-markdown | 2.0.3 | MIT |
 | mdast-util-gfm | 3.1.0 | MIT |
@@ -256,6 +306,8 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | mdast-util-to-hast | 13.2.1 | MIT |
 | mdast-util-to-markdown | 2.1.2 | MIT |
 | mdast-util-to-string | 4.0.0 | MIT |
+| media-typer | 1.1.1 | MIT |
+| merge-descriptors | 2.0.0 | MIT |
 | micromark | 4.0.2 | MIT |
 | micromark-core-commonmark | 2.0.3 | MIT |
 | micromark-extension-gfm | 3.0.0 | MIT |
@@ -284,6 +336,8 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | micromark-util-subtokenize | 2.1.0 | MIT |
 | micromark-util-symbol | 2.0.1 | MIT |
 | micromark-util-types | 2.0.2 | MIT |
+| mime-db | 1.54.0 | MIT |
+| mime-types | 3.0.2 | MIT |
 | mimic-response | 3.1.0 | MIT |
 | minimist | 1.2.8 | MIT |
 | mkdirp-classic | 0.5.3 | MIT |
@@ -291,21 +345,33 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | ms | 2.1.3 | MIT |
 | nanoid | 3.3.15 | MIT |
 | napi-build-utils | 2.0.0 | MIT |
+| negotiator | 1.1.0 | MIT |
 | node-abi | 3.94.0 | MIT |
+| object-assign | 4.1.1 | MIT |
+| object-inspect | 1.13.4 | MIT |
 | on-exit-leak-free | 2.1.2 | MIT |
+| on-finished | 2.4.1 | MIT |
 | once | 1.4.0 | ISC |
 | parse-entities | 4.0.2 | MIT |
+| parseurl | 1.3.3 | MIT |
+| path-key | 3.1.1 | MIT |
+| path-to-regexp | 8.4.2 | MIT |
 | picocolors | 1.1.1 | ISC |
 | picomatch | 4.0.5 | MIT |
 | pino | 10.3.1 | MIT |
 | pino-abstract-transport | 3.0.0 | MIT |
 | pino-std-serializers | 7.1.0 | MIT |
+| pkce-challenge | 5.0.1 | MIT |
 | postcss | 8.5.16 | MIT |
 | prebuild-install | 7.1.3 | MIT |
 | process-warning | 4.0.1, 5.1.0 | MIT |
 | property-information | 7.2.0 | MIT |
+| proxy-addr | 2.0.8 | MIT |
 | pump | 3.0.4 | MIT |
+| qs | 6.16.0 | BSD-3-Clause |
 | quick-format-unescaped | 4.0.4 | MIT |
+| range-parser | 1.3.0 | MIT |
+| raw-body | 3.0.2 | MIT |
 | rc | 1.2.8 | (BSD-2-Clause OR MIT OR Apache-2.0) |
 | react | 19.2.7 | MIT |
 | react-dom | 19.2.7 | MIT |
@@ -332,15 +398,26 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | reusify | 1.1.0 | MIT |
 | rfdc | 1.4.1 | MIT |
 | rolldown | 1.1.5 | MIT |
+| router | 2.2.0 | MIT |
 | safe-buffer | 5.2.1 | MIT |
 | safe-regex2 | 5.1.1 | MIT |
 | safe-stable-stringify | 2.5.0 | MIT |
+| safer-buffer | 2.1.2 | MIT |
 | scheduler | 0.27.0 | MIT |
 | secure-json-parse | 4.1.0 | BSD-3-Clause |
 | semver | 7.8.5 | ISC |
+| send | 1.2.1 | MIT |
 | seroval | 1.6.8 | MIT |
 | seroval-plugins | 1.6.8 | MIT |
+| serve-static | 2.2.1 | MIT |
 | set-cookie-parser | 2.7.2 | MIT |
+| setprototypeof | 1.2.0 | ISC |
+| shebang-command | 2.0.0 | MIT |
+| shebang-regex | 3.0.0 | MIT |
+| side-channel | 1.1.1 | MIT |
+| side-channel-list | 1.0.1 | MIT |
+| side-channel-map | 1.0.1 | MIT |
+| side-channel-weakmap | 1.0.2 | MIT |
 | simple-concat | 1.0.1 | MIT |
 | simple-get | 4.0.1 | MIT |
 | sonic-boom | 4.2.1 | MIT |
@@ -349,6 +426,8 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | space-separated-tokens | 2.0.2 | MIT |
 | split2 | 4.2.0 | ISC |
 | ssf | 0.11.2 | Apache-2.0 |
+| standardwebhooks | 1.1.1 | MIT |
+| statuses | 2.0.2 | MIT |
 | string_decoder | 1.3.0 | MIT |
 | stringify-entities | 4.0.4 | MIT |
 | strip-json-comments | 2.0.1 | MIT |
@@ -363,12 +442,15 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | tiny-invariant | 1.3.3 | MIT |
 | tinyglobby | 0.2.17 | MIT |
 | toad-cache | 3.7.4 | MIT |
+| toidentifier | 1.0.1 | MIT |
 | trim-lines | 3.0.1 | MIT |
 | trough | 2.2.0 | MIT |
+| ts-algebra | 2.0.0 | MIT |
 | tslib | 2.8.1 | 0BSD |
 | tsx | 4.23.0 | MIT |
 | tunnel-agent | 0.6.0 | Apache-2.0 |
 | tw-animate-css | 1.4.0 | MIT |
+| type-is | 2.1.0 | MIT |
 | undici-types | 8.3.0 | MIT |
 | unified | 11.0.5 | MIT |
 | unist-util-find-after | 5.0.0 | MIT |
@@ -377,20 +459,29 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | unist-util-stringify-position | 4.0.0 | MIT |
 | unist-util-visit | 5.1.0 | MIT |
 | unist-util-visit-parents | 6.0.2 | MIT |
+| unpipe | 1.0.0 | MIT |
 | use-callback-ref | 1.3.3 | MIT |
 | use-sidecar | 1.1.3 | MIT |
 | use-sync-external-store | 1.7.0 | MIT |
 | util-deprecate | 1.0.2 | MIT |
+| vary | 1.1.2 | MIT |
 | vfile | 6.0.3 | MIT |
 | vfile-message | 4.0.3 | MIT |
 | victory-vendor | 37.3.6 | MIT AND ISC |
 | vite | 8.1.4 | MIT |
+| which | 2.0.2 | ISC |
 | wmf | 1.0.2 | Apache-2.0 |
 | word | 0.3.0 | Apache-2.0 |
 | wrappy | 1.0.2 | ISC |
 | xlsx | 0.18.5 | Apache-2.0 |
 | yaml | 2.8.1 | ISC |
+| zod | 4.6.5 | MIT |
+| zod-to-json-schema | 3.25.2 | ISC |
 | zwitch | 2.0.4 | MIT |
+
+`@anthropic-ai/claude-agent-sdk` (used to drive a locally installed Claude Code) is not open source. Its package states: "© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements outlined here: https://code.claude.com/docs/en/legal-and-compliance." SuDuo uses it to run the Claude Code you installed and signed in to yourself; SuDuo never reads or stores your Claude credentials.
+
+`@agentclientprotocol/sdk` (Apache-2.0) is used to drive other agents over the Agent Client Protocol.
 
 ## cloud/ (requirements service)
 

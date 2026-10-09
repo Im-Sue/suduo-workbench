@@ -46,14 +46,16 @@ const assigned = (id: string, patch: Partial<RequirementListItemDto> = {}) =>
   }) as RequirementListItemDto & { projectName: string | null };
 
 describe("我的工作 · 需要你处理", () => {
-  it("按紧急程度：等你确认 > 上一轮失败 > 开工后需求有变化 > 代码目录失效", () => {
+  it("按紧急程度：等你确认 > 上一轮失败 > 评审意见待处理 > 开工后需求有变化 > 代码目录失效", () => {
     const actions: WorkbenchActionDto[] = [
       { kind: "invalid_mapping", remoteProjectId: "p2", localProjectId: null, projectName: "支付", message: "目录不存在" },
       { kind: "failed_turn", sessionId: "s2", sessionTitle: "失败的", localProjectId: "l1", projectName: "订单", lastActivityAt: 5 },
       { kind: "pending_approval", sessionId: "s1", sessionTitle: "等确认", localProjectId: "l1", projectName: "订单", pendingApprovals: 2, lastActivityAt: 1 },
+      { kind: "pending_review", reviewId: "rv1", sessionId: "s3", sessionTitle: "被评的", localProjectId: "l1", projectName: "订单", agentName: "Codex", findings: 3, finishedAt: 9 },
     ];
     const items = attentionItems(actions, [working("r1", { drift: true }), working("r2")]);
-    expect(items.map((item) => item.kind)).toEqual(["pending_approval", "failed_turn", "drift", "invalid_mapping"]);
+    expect(items.map((item) => item.kind)).toEqual(["pending_approval", "failed_turn", "pending_review", "drift", "invalid_mapping"]);
+    expect(items[2]!.key).toBe("review:rv1");
   });
 
   it("我负责的需求有新评论、按节奏停滞较久也要处理；顺序：确认 > 失败 > 新评论 > 需求变化 > 停滞 > 目录失效", () => {

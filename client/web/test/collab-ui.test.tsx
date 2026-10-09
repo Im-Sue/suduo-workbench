@@ -60,6 +60,7 @@ function delegation(patch: Partial<DelegationDto> = {}): DelegationDto {
     autoHandback: false,
     delivered: false,
     pendingApprovals: 0,
+    stalled: null,
     result: null,
     error: null,
     createdAt: 1,
@@ -156,6 +157,26 @@ describe("委派卡片", () => {
     await act(async () => q("delegation-stop")?.click());
     expect(apiMocks.cancelDelegation).toHaveBeenCalledWith("d1");
     expect(q("delegation-handback")).toBeNull();
+  });
+
+  it("卡住提醒（S12）：等确认太久、很久没动静各说一句；做完了不提；老事件没有这个字段也照常显示", async () => {
+    await render(<DelegationCard delegation={delegation({ pendingApprovals: 1, stalled: { reason: "approval", since: Date.now() - 12 * 60_000 } })} />);
+    expect(q("stall-note")?.textContent).toBe("已等你确认 12 分钟");
+    await act(async () => root?.unmount());
+    document.body.innerHTML = "";
+    await render(<DelegationCard delegation={delegation({ stalled: { reason: "silent", since: Date.now() - 16 * 60_000 } })} />);
+    expect(q("stall-note")?.textContent).toContain("16 分钟没有动静");
+    await act(async () => root?.unmount());
+    document.body.innerHTML = "";
+    await render(<DelegationCard delegation={delegation({ status: "completed", stalled: { reason: "silent", since: 0 } })} />);
+    expect(q("stall-note")).toBeNull();
+    await act(async () => root?.unmount());
+    document.body.innerHTML = "";
+    const legacy = delegation();
+    delete (legacy as Partial<DelegationDto>).stalled;
+    await render(<DelegationCard delegation={legacy} />);
+    expect(q("delegation-card")).not.toBeNull();
+    expect(q("stall-note")).toBeNull();
   });
 
   it("做完了没交回：显示结果与改动，「让原 Agent 继续」；子会话删了说明一句", async () => {

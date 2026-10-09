@@ -10,6 +10,7 @@ import { extensionSeamStep } from "./extension-seam.js";
 import { requirementsBoardStep } from "./requirements-board.js";
 import { sessionsRailStep } from "./sessions-rail.js";
 import { mcpSettingsStep } from "./mcp-settings.js";
+import { multiAgentWalkthroughStep } from "./multi-agent-walkthrough.js";
 import { overviewWorkbenchStep } from "./overview-workbench.js";
 import { settingsCodexStep } from "./settings-codex.js";
 import { settingsShellStep } from "./settings-shell.js";
@@ -51,6 +52,8 @@ export const gateCSteps = defineGateCSteps(
   visualCloseoutStep,
   a11yAuditStep,
   extensionSeamStep,
+  // 多 Agent「模拟示例」（S12）：会把项目目录变成 git 仓库，放最后。
+  multiAgentWalkthroughStep,
 );
 
 /**
@@ -90,6 +93,7 @@ export const gateCStepPrerequisites: Readonly<Record<string, readonly string[]>>
     "visual-closeout": ["v2-user-path"],
     "a11y-audit": ["v2-user-path"],
     "extension-seam": [],
+    "multi-agent-walkthrough": ["v2-user-path"],
   });
 
 /**

@@ -30,6 +30,11 @@ export const myWork = {
         plural("en", count, { one: "1 approval waiting for you", other: `${String(count)} approvals waiting for you` }),
       action: "Review",
     },
+    pendingReview: {
+      title: (session: string) => `Review feedback to handle · ${session}`,
+      detail: (agent: string, count: number) => `${agent} returned ${plural("en", count, { one: "1 finding", other: `${String(count)} findings` })}, none handed back yet`,
+      action: "Take a look",
+    },
     failedTurn: {
       title: (session: string) => `Last turn didn't finish · ${session}`,
       action: "See why",

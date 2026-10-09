@@ -1,10 +1,14 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 431,
+  "total": 435,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
+    ],
+    "web/src/app/pages/SetupPage.tsx": [
+      "setup-agents",
+      "setup-agents-next"
     ],
     "web/src/app/SessionRuntime.tsx": [
       "drawer-loading",
@@ -149,6 +153,9 @@
       "snapshot-create",
       "snapshot-dialog",
       "snapshot-round"
+    ],
+    "web/src/features/collab/StallNote.tsx": [
+      "stall-note"
     ],
     "web/src/features/my-work/MyWorkPage.tsx": [
       "session-activity",
@@ -480,6 +487,7 @@
       "settings-logout"
     ],
     "web/src/features/settings/sections/AgentsSection.tsx": [
+      "agent-unverified",
       "agents-concurrency",
       "agents-default",
       "agents-list",

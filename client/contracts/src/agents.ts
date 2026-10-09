@@ -76,8 +76,10 @@ export interface AgentDto {
   version: string | null;
   /** 低于它无法使用；null 表示不设门槛。 */
   minVersion: string | null;
-  /** SuDuo 实测过的版本，只用于提示（ADR-0004：不拦截）。 */
-  verifiedVersion: string | null;
+  /** SuDuo 实测过的版本（同一大版本、次版本的补丁版本也算），只用于提示（ADR-0004：不拦截）。 */
+  verifiedVersions: string[];
+  /** 读到的版本在不在验证过的范围里；没读到版本、或这家还没有验证过的版本时为 null。 */
+  versionVerified: boolean | null;
   executablePath: string | null;
   actions: AgentActionDto[];
   capabilities: AgentCapability[];

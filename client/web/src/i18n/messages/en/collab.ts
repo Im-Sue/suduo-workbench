@@ -4,6 +4,10 @@ import type { Messages } from "../zh-CN/index.js";
 const files = (count: number) => plural("en", count, { one: "1 file", other: `${count} files` });
 
 export const collab = {
+  stall: {
+    approval: (minutes: number) => `Waiting for your approval for ${String(minutes)} min`,
+    silent: (minutes: number) => `No activity for ${String(minutes)} min (open it to check, or stop it)`,
+  },
   delegation: {
     title: (agent: string) => `Delegated · ${agent}`,
     status: {

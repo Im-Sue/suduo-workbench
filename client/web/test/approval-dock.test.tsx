@@ -114,6 +114,8 @@ describe("审批卡标题", () => {
     expect(approvalQuestion("command", { request: { kind: "command", command: "npm test" } })).toBe("Agent 想运行命令");
     expect(approvalQuestion("command", { request: { command: "npm test" } })).toBe("Agent 想运行命令");
     expect(approvalQuestion("permissions", { request: {} })).toBe("Agent 想变更权限");
+    // 多 Agent S12：写 Agent 的名字。
+    expect(approvalQuestion("command", { request: { command: "npm test" } }, undefined, "Claude Code")).toBe("Claude Code 想运行命令");
   });
 });
 

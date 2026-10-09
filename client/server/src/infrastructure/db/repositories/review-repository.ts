@@ -84,6 +84,18 @@ export class ReviewRepository {
       .map(mapRow);
   }
 
+  /** 交回了结构化意见、还一条都没交回原 Agent 修改的（「我的工作 · 待处理的评审意见」，S12）。 */
+  listAwaitingHandback(since: number): ReviewRecord[] {
+    return this.database
+      .prepare(
+        "SELECT * FROM review_reports WHERE status = 'submitted' AND finished_at >= @since " +
+          "AND findings_json IS NOT NULL AND json_array_length(findings_json) > 0 AND json_array_length(applied_json) = 0 " +
+          "ORDER BY finished_at DESC LIMIT 50",
+      )
+      .all<ReviewRow>({ since })
+      .map(mapRow);
+  }
+
   /** 还没结束的（排队中、评审中，以及回合中途已提交的）：本机服务启动时收尾。 */
   listUnfinished(): ReviewRecord[] {
     return this.database

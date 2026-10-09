@@ -2,6 +2,11 @@
  * 多 Agent 协作（S8）：委派卡片、运行面板、排队提示、审批来源、停止级联、输入框 @ Agent 委派、并发设置。
  */
 export const collab = {
+  /** 委派、评审的卡住提醒（S12）：只提醒。 */
+  stall: {
+    approval: (minutes: number) => `已等你确认 ${String(minutes)} 分钟`,
+    silent: (minutes: number) => `${String(minutes)} 分钟没有动静（可以打开看看，或停止）`,
+  },
   delegation: {
     /** 卡片标题：「委派 · Claude Code」。 */
     title: (agent: string) => `委派 · ${agent}`,

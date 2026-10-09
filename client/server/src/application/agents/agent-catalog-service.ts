@@ -9,7 +9,7 @@ import type {
 } from "@suduo/client-contracts";
 import { CONCURRENCY_MAX, CONCURRENCY_MIN, DEFAULT_GLOBAL_CONCURRENCY } from "@suduo/client-contracts";
 import { ApiError, type ErrorText } from "../api-error.js";
-import { AGENT_CATALOG, type AgentDescriptor, validateAgentCatalog } from "./catalog.js";
+import { AGENT_CATALOG, type AgentDescriptor, isVerifiedVersion, validateAgentCatalog } from "./catalog.js";
 import { agentChildEnv, execAgentCommand, type AgentExec } from "./agent-exec.js";
 import type { AgentSettingsStore } from "./agent-settings-store.js";
 import { resolveExecutable, type ResolveExecutableOptions } from "./resolver.js";
@@ -108,7 +108,8 @@ export class AgentCatalogService {
       reasonDetail: null,
       version: null,
       minVersion: descriptor.minVersion,
-      verifiedVersion: descriptor.verifiedVersion,
+      verifiedVersions: [...descriptor.verifiedVersions],
+      versionVerified: null,
       executablePath: null,
       actions: [],
       capabilities: [...descriptor.capabilities],
@@ -302,7 +303,8 @@ export class AgentCatalogService {
         reasonDetail: null,
         version: null,
         minVersion: descriptor.minVersion,
-        verifiedVersion: descriptor.verifiedVersion,
+        verifiedVersions: [...descriptor.verifiedVersions],
+        versionVerified: null,
         executablePath: executablePath ?? null,
         actions: [],
         capabilities: [...descriptor.capabilities],
@@ -312,6 +314,7 @@ export class AgentCatalogService {
         checkedAt: this.now(),
         ...extra,
       };
+      dto.versionVerified = isVerifiedVersion(dto.version, descriptor.verifiedVersions);
       dto.actions = this.actionsFor(descriptor, dto.status);
       return dto;
     };
@@ -319,7 +322,7 @@ export class AgentCatalogService {
     if (executablePath === null) {
       return base("not_installed", "binary_not_found");
     }
-    const versionRun = await this.exec(executablePath, descriptor.versionArgs, { timeoutMs: VERSION_TIMEOUT_MS, env });
+    const versionRun = await this.exec(executablePath, descriptor.versionArgs, { timeoutMs: descriptor.versionTimeoutMs ?? VERSION_TIMEOUT_MS, env });
     if (versionRun.spawnError !== null) {
       return base("not_installed", "binary_not_found", { reasonDetail: versionRun.spawnError });
     }

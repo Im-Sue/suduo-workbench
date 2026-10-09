@@ -30,8 +30,10 @@ export interface AgentDescriptor {
   versionArgs: string[];
   /** 低于它无法使用；没有可靠依据时为 null（不设门槛）。 */
   minVersion: string | null;
-  /** S0 实测过的版本，只用于提示。 */
-  verifiedVersion: string | null;
+  /** 实测过的版本（S0 与各分片的真实链路），只用于提示；同一大版本、次版本的补丁版本也算验证过。 */
+  verifiedVersions: string[];
+  /** 读版本的超时；首启慢的（OpenCode 冷启动要建缓存）单独放宽，不设用默认。 */
+  versionTimeoutMs?: number;
   auth: AgentAuthCheck;
   /** 官方登录命令，在终端里执行；用户自己完成登录（ADR-0016 第 2 条）。 */
   loginCommand: string | null;
@@ -71,7 +73,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     launchArgs: [],
     versionArgs: ["--version"],
     minVersion: null,
-    verifiedVersion: "2.1.284",
+    verifiedVersions: ["2.1.284"],
     auth: "claude-auth-status",
     loginCommand: "claude auth login",
     install: {
@@ -95,7 +97,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     launchArgs: [],
     versionArgs: ["--version"],
     minVersion: null,
-    verifiedVersion: "0.159.2",
+    verifiedVersions: ["0.159.2"],
     auth: "bundled-codex",
     loginCommand: null,
     install: { unix: null, windows: null },
@@ -113,7 +115,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     binaryNames: ["copilot"],
     launchArgs: ["--acp"],
     minVersion: null,
-    verifiedVersion: "1.0.93",
+    verifiedVersions: ["1.0.93"],
     loginCommand: "copilot login",
     install: { unix: "npm install -g @github/copilot", windows: "npm install -g @github/copilot" },
     homepageUrl: "https://github.com/features/copilot/cli",
@@ -129,7 +131,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     binaryNames: ["gemini"],
     launchArgs: ["--acp"],
     minVersion: null,
-    verifiedVersion: "0.63.0",
+    verifiedVersions: ["0.63.0"],
     loginCommand: "gemini",
     install: { unix: "npm install -g @google/gemini-cli", windows: "npm install -g @google/gemini-cli" },
     homepageUrl: "https://github.com/google-gemini/gemini-cli",
@@ -145,7 +147,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     binaryNames: ["cursor-agent", "agent"],
     launchArgs: ["acp"],
     minVersion: null,
-    verifiedVersion: null,
+    verifiedVersions: [],
     loginCommand: "cursor-agent login",
     install: { unix: "curl https://cursor.com/install -fsS | bash", windows: null },
     homepageUrl: "https://cursor.com/cli",
@@ -161,7 +163,9 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     binaryNames: ["opencode"],
     launchArgs: ["acp"],
     minVersion: null,
-    verifiedVersion: "1.18.35",
+    verifiedVersions: ["1.18.35"],
+    // 冷启动单跑要 3 秒，和别家一起检测、首次运行建缓存时超过 20 秒见过（S4 遗留）。
+    versionTimeoutMs: 45_000,
     loginCommand: "opencode auth login",
     install: { unix: "curl -fsSL https://opencode.ai/install | bash", windows: "npm install -g opencode-ai" },
     homepageUrl: "https://opencode.ai",
@@ -181,7 +185,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     binaryNames: ["qwen"],
     launchArgs: ["--acp"],
     minVersion: null,
-    verifiedVersion: "0.25.0",
+    verifiedVersions: ["0.25.0"],
     loginCommand: "qwen",
     install: { unix: "npm install -g @qwen-code/qwen-code", windows: "npm install -g @qwen-code/qwen-code" },
     homepageUrl: "https://github.com/QwenLM/qwen-code",
@@ -197,7 +201,7 @@ export const AGENT_CATALOG: readonly AgentDescriptor[] = [
     binaryNames: ["kimi"],
     launchArgs: ["acp"],
     minVersion: null,
-    verifiedVersion: null,
+    verifiedVersions: [],
     loginCommand: "kimi",
     install: { unix: null, windows: null },
     homepageUrl: "https://www.kimi.com/code",
@@ -228,6 +232,13 @@ export function validateAgentCatalog(catalog: readonly AgentDescriptor[]): void 
       throw new Error(`agent catalog: ${agent.id} concurrency must be >= 1`);
     }
   }
+}
+
+/** 版本在不在验证过的范围里（同一大版本、次版本即算）；没读到版本或没有验证过的版本时为 null。 */
+export function isVerifiedVersion(version: string | null, verified: readonly string[]): boolean | null {
+  if (version === null || verified.length === 0) return null;
+  const minor = (value: string) => value.split(/[.+-]/u).slice(0, 2).join(".");
+  return verified.some((entry) => minor(entry) === minor(version));
 }
 
 export function findAgentDescriptor(id: string, catalog: readonly AgentDescriptor[] = AGENT_CATALOG): AgentDescriptor | undefined {

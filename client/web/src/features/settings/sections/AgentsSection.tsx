@@ -23,13 +23,10 @@ const STATUS_TONE: Record<AgentStatus, "success" | "warning" | "danger" | "neutr
   error: "danger",
 };
 
-/** 设置 › AI Agent（需求 4.1）：本机能用哪些 Agent、怎么装、怎么登录，新会话默认用哪家。 */
-export function AgentsSection() {
-  const t = useT();
-  const text = t.agents.section;
+/** 检测与设默认（设置 › AI Agent 与首启向导「连接 Agent」共用，S12）。 */
+export function useAgentControls() {
   const queryClient = useQueryClient();
   const agents = useQuery(localAgentsQuery);
-  const failure = useQueryFailure(agents);
   const [defaultSaved, trackDefault] = useSaveIndicator();
   const [rechecking, setRechecking] = useState<ReadonlySet<string>>(new Set());
 
@@ -49,6 +46,15 @@ export function AgentsSection() {
     trackDefault(
       api.updateAgentSettings({ defaultAgentId: agentId }).then(() => queryClient.invalidateQueries({ queryKey: localAgentsKey })),
     );
+  return { agents, defaultSaved, rechecking, recheck, setDefault };
+}
+
+/** 设置 › AI Agent（需求 4.1）：本机能用哪些 Agent、怎么装、怎么登录，新会话默认用哪家。 */
+export function AgentsSection() {
+  const t = useT();
+  const text = t.agents.section;
+  const { agents, defaultSaved, rechecking, recheck, setDefault } = useAgentControls();
+  const failure = useQueryFailure(agents);
 
   if (agents.isPending) {
     return (
@@ -167,13 +173,14 @@ function NumberChoice({ label, value, onChange, testId }: { label: string; value
   );
 }
 
-function AgentRow({
+export function AgentRow({
   agent,
   isDefault,
   canBeDefault,
   rechecking,
   onRecheck,
   onSetDefault,
+  stacked = false,
 }: {
   agent: AgentDto;
   isDefault: boolean;
@@ -181,6 +188,8 @@ function AgentRow({
   rechecking: boolean;
   onRecheck(): void;
   onSetDefault(): void;
+  /** 窄的地方（首启向导）：说明在上、操作另起一行。 */
+  stacked?: boolean;
 }) {
   const t = useT();
   const text = t.agents.section;
@@ -195,8 +204,10 @@ function AgentRow({
           ? text.reason[agent.reasonCode]
           : null;
   const meta = [text.channel[agent.channel], agent.version === null ? null : text.version(agent.version)].filter((part) => part !== null).join(" · ");
+  /** 版本没在 SuDuo 验证过的范围里：只提示（S12，ADR-0004 不拦）。 */
+  const unverified = agent.versionVerified === false ? text.unverified(agent.verifiedVersions.join(", ")) : null;
   return (
-    <ItemRow data-testid={`agent-row-${agent.id}`}>
+    <ItemRow data-testid={`agent-row-${agent.id}`} className={stacked ? "flex-col items-stretch" : undefined}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-body font-medium text-foreground">{agent.displayName}</span>
@@ -206,6 +217,11 @@ function AgentRow({
         <span className="text-caption text-subtle-foreground" title={agent.channel === "acp" ? text.channelHint : undefined}>
           {meta}
           {detail === null ? null : ` · ${detail}`}
+          {unverified === null ? null : (
+            <span className="text-warning" data-testid="agent-unverified">
+              {` · ${unverified}`}
+            </span>
+          )}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">

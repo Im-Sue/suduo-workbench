@@ -437,6 +437,9 @@ export function createSuDuoApplication(
     projects,
     mappings: currentServerMappings,
     remote: requirementsRemote,
+    // 待处理的评审意见（S12）：评审仓库在后面才建，用到时再取。
+    reviews: { listAwaitingHandback: (since) => reviewRepository.listAwaitingHandback(since) },
+    agentName: (agentId) => agentDisplayName(agentId),
   });
   const approvalService = new ApprovalService(
     approvals,
@@ -518,7 +521,11 @@ export function createSuDuoApplication(
     }
   });
   const schedulerReconcile = setInterval(() => {
-    turnScheduler.reconcile((sessionId) => events.listRunningTurnRefs(sessionId).map((ref) => ref.turnId), 60_000);
+    try {
+      turnScheduler.reconcile((sessionId) => events.listRunningTurnRefs(sessionId).map((ref) => ref.turnId), 60_000);
+    } catch (error) {
+      console.error(JSON.stringify({ event: "suduo.scheduler_reconcile.failed", message: error instanceof Error ? error.message : String(error) }));
+    }
   }, 30_000);
   schedulerReconcile.unref();
   const schedulerService = new SchedulerService({
@@ -596,6 +603,7 @@ export function createSuDuoApplication(
   const reviewRepository = new ReviewRepository(database);
   const reviewService = new ReviewService({
     reviews: reviewRepository,
+    approvals,
     sessions,
     threads,
     ledger,
@@ -621,6 +629,17 @@ export function createSuDuoApplication(
     },
   });
   reviewService.recoverAfterRestart();
+  // 委派、评审的卡住提醒（S12）：每分钟看一遍，等确认太久或很久没动静时刷新卡片（只提醒）。
+  const stallCheck = setInterval(() => {
+    try {
+      delegationService.checkStalls();
+      reviewService.checkStalls();
+    } catch (error) {
+      // 定时器里抛出会成为未捕获异常、打崩本机服务：只记日志，下一分钟再试。
+      console.error(JSON.stringify({ event: "suduo.stall_check.failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+  }, 60_000);
+  stallCheck.unref();
   // 并行试做（多 Agent 协作 S10，需求 4.5）：各版在 SuDuo 数据目录下的 git worktree 里，会话按 workspace_path 干活。
   const trialService = new TrialService({
     trials: new TrialRepository(database),
@@ -907,6 +926,9 @@ export function createSuDuoApplication(
         codexHome,
         codexBin: options.codexBin,
         checkPnpm: !(options.installed ?? false),
+        agents: () => agentCatalog.list(),
+        agentsNow: () => agentCatalog.listNow(),
+        toolServerUrl,
       }, locale),
     webRoot:
       options.webRoot ??
@@ -953,6 +975,7 @@ export function createSuDuoApplication(
       await Promise.allSettled([server.close()]);
       if (prewarm !== null) clearTimeout(prewarm);
       clearInterval(schedulerReconcile);
+      clearInterval(stallCheck);
       releaseOnTurnEnd();
       claudeRuntime.close();
       for (const acpRuntime of acpRuntimes) acpRuntime.close();

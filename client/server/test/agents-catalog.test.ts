@@ -187,7 +187,7 @@ describe("Agent 状态检测", () => {
     });
     const { agents } = await service({ exec, found: { opencode: "/usr/local/bin/opencode" } }).list();
     const opencode = byId(agents, "opencode");
-    expect(opencode).toMatchObject({ status: "installed", version: "1.18.35", verifiedVersion: "1.18.35", executablePath: "/usr/local/bin/opencode" });
+    expect(opencode).toMatchObject({ status: "installed", version: "1.18.35", verifiedVersions: ["1.18.35"], versionVerified: true, executablePath: "/usr/local/bin/opencode" });
     expect(opencode.actions.find((action) => action.kind === "open_terminal_login")?.command).toBe("opencode auth login");
   });
 

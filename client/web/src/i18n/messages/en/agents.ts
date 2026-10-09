@@ -37,6 +37,7 @@ export const agents = {
       disabled: "Turned off",
     },
     minVersion: (version: string) => `Needs ${version} or later`,
+    unverified: (verified: string) => `SuDuo has verified ${verified}; this version isn't verified but usually works`,
     version: (version: string) => `Version ${version}`,
     defaultBadge: "Default",
     setDefault: "Make default",

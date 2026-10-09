@@ -23,6 +23,9 @@ const apiMocks = vi.hoisted(() => ({
   updateRequirementsSettings: vi.fn(),
   createRequirementsProject: vi.fn(),
   saveRequirementsMapping: vi.fn(),
+  listLocalAgents: vi.fn(),
+  recheckAgent: vi.fn(),
+  updateAgentSettings: vi.fn(),
 }));
 
 vi.mock("../src/api/client.js", () => ({
@@ -42,7 +45,7 @@ import { AppErrorBoundary } from "../src/app/AppErrorBoundary.js";
 import { BootFailure, BootSplash } from "../src/app/pages/BootScreens.js";
 import { summarizeDoctor } from "../src/app/pages/doctor-summary.js";
 import { LoginPage } from "../src/app/pages/LoginPage.js";
-import { SetupPage } from "../src/app/pages/SetupPage.js";
+import { SetupPage, validateSetupSearch } from "../src/app/pages/SetupPage.js";
 import { readSetupPending, recordMappingPending } from "../src/app/pages/setup-pending.js";
 import { applyLocalePreference } from "../src/i18n/locale.js";
 import { messagesFor } from "../src/i18n/messages/index.js";
@@ -84,10 +87,7 @@ async function renderPage(path: string): Promise<HTMLDivElement> {
     createRoute({
       getParentRoute: () => rootRoute,
       path: "/setup",
-      validateSearch: (search: Record<string, unknown>): { step?: number } => {
-        const step = Number(search["step"]);
-        return Number.isInteger(step) && step >= 1 && step <= 5 ? { step } : {};
-      },
+      validateSearch: validateSetupSearch,
       component: SetupPage,
     }),
     createRoute({ getParentRoute: () => rootRoute, path: "/my", component: () => <div data-testid="my-stub" /> }),
@@ -145,7 +145,7 @@ describe("英文界面：首启向导", () => {
   it("第 1 步：连接需求服务", async () => {
     apiMocks.requirementsSettings.mockResolvedValue({ configured: false, baseUrl: null, session: null, mappingCount: 0 });
     const node = await renderPage("/setup");
-    expect(node.textContent).toContain("Step 1 of 5");
+    expect(node.textContent).toContain("Step 1 of 6");
     expect(node.querySelector("h2")?.textContent).toBe("Connect to your team's requirements service");
     expect(node.querySelector('ol[aria-label="Setup steps"]')?.textContent).toContain("Connect requirements service");
     expect(node.querySelector("input")?.getAttribute("placeholder")).toBe("e.g. http://192.168.1.10:4100");
@@ -162,7 +162,7 @@ describe("英文界面：首启向导", () => {
       ],
     });
     const node = await renderPage("/setup?step=3");
-    expect(node.textContent).toContain("Step 3 of 5");
+    expect(node.textContent).toContain("Step 3 of 6");
     expect(node.textContent).toContain("Installed, version 0.159.2");
     expect(node.textContent).toContain("View all 2 checks");
     expect(node.textContent).toContain("1 item needs attention. You can continue and handle it later in Settings.");
@@ -171,6 +171,27 @@ describe("英文界面：首启向导", () => {
     const next = [...node.querySelectorAll("button")].find((button) => button.textContent === "Next");
     await act(async () => next?.click());
     expect(readSetupPending().map((item) => item.title)).toEqual(["Model service"]);
+  });
+
+  it("第 4 步：连接 Agent（S12），可以直接下一步；第 6 步：完成页（路由认得第 6 步）", async () => {
+    apiMocks.requirementsSettings.mockResolvedValue(signedIn());
+    apiMocks.listLocalAgents.mockResolvedValue({
+      defaultAgentId: "codex",
+      agents: [
+        { id: "codex", displayName: "Codex", vendor: "OpenAI", channel: "codex-app-server", bundled: true, runtimeAvailable: true, enabled: true, status: "ready", reasonCode: null, reasonDetail: null, version: "0.159.2", minVersion: null, verifiedVersions: ["0.159.2"], versionVerified: true, executablePath: "/x/codex", actions: [], capabilities: [], readOnlyCapable: true, homepageUrl: "https://openai.com", termsUrl: null, checkedAt: 1 },
+      ],
+    });
+    const node = await renderPage("/setup?step=4");
+    expect(node.textContent).toContain("Step 4 of 6");
+    expect(node.querySelector("h2")?.textContent).toBe("Connect AI agents");
+    expect(node.querySelector('[data-testid="agent-row-codex"]')).not.toBeNull();
+    await act(async () => node.querySelector<HTMLButtonElement>('[data-testid="setup-agents-next"]')?.click());
+    expect(node.textContent).toContain("Step 5 of 6");
+    await act(async () => root?.unmount());
+    document.body.innerHTML = "";
+    const done = await renderPage("/setup?step=6");
+    expect(done.textContent).toContain("Step 6 of 6");
+    expect(done.textContent).toContain("You're all set");
   });
 });
 

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { StallNote } from "../../collab/StallNote.js";
 
 /**
  * 被评会话里的评审卡片（多 Agent 协作 S9，需求 4.4）：评审 Agent、关注点、状态；拿到结构化意见时逐条列出（严重程度、
@@ -78,6 +79,13 @@ export function ReviewCard({ review }: { review: ReviewDto }) {
           <span>{review.origin === "user" ? text.fromUser : text.fromAgent}</span>
           {review.note === null ? null : <span className="min-w-0 truncate" title={review.note}>{review.note}</span>}
         </p>
+        {review.status === "queued" || review.status === "running" ? (
+          (review.stalled ?? null) === null ? null : (
+            <p className="m-0 text-caption">
+              <StallNote stall={review.stalled} />
+            </p>
+          )
+        ) : null}
         {review.error === null ? null : <p className="m-0 text-caption text-danger">{text.error(review.error)}</p>}
         {review.summary === null ? null : (
           <p className="m-0 text-foreground" data-testid="review-summary">

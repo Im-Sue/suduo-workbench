@@ -85,8 +85,11 @@ export function ApprovalDock({
   changesFor,
   onViewPatch,
   displayPath = (path) => path,
+  agentName = null,
 }: {
   approvals: ApprovalDto[];
+  /** 这个会话的 Agent 的名字（标题写「Claude Code 想运行命令」）；委派来的审批用来源里的名字。 */
+  agentName?: string | null;
   onDecide(approval: ApprovalDto, decision: ApprovalDecisionInput, optionId?: string): Promise<void>;
   /** 文件改动审批要改的文件（从同一 item 的改动卡取；v2 审批请求本身不带文件列表）。 */
   changesFor?(approval: ApprovalDto): FileChangeEntry[];
@@ -196,7 +199,9 @@ export function ApprovalDock({
       <header className="flex items-center gap-2 px-3.5 pt-3 text-small">
         <HandIcon className="size-4 text-warning" aria-hidden="true" />
         <span className="font-medium text-foreground">
-          {current.kind === "file-change" && pending.length > 0 ? text.editFiles(pending.length) : approvalQuestion(current.kind, current.request, t)}
+          {current.kind === "file-change" && pending.length > 0
+            ? text.editFiles(pending.length, current.origin?.agentName ?? agentName)
+            : approvalQuestion(current.kind, current.request, t, current.origin?.agentName ?? agentName)}
         </span>
         {current.origin === undefined ? null : <OriginBadge origin={current.origin} />}
         {ordered.length > 1 ? (
@@ -392,18 +397,18 @@ function requestOf(payload: JsonValue): Record<string, JsonValue> {
 }
 
 /** 审批卡的标题。命令审批里 kind=writeStdin 是向已在运行的命令（终端）输入内容，不是运行新命令。 */
-export function approvalQuestion(kind: ApprovalKind, payload: JsonValue, t: Messages = messagesFor(currentLocale())): string {
+export function approvalQuestion(kind: ApprovalKind, payload: JsonValue, t: Messages = messagesFor(currentLocale()), agent: string | null = null): string {
   const question = t.conversation.approval.question;
-  if (kind === "command" && requestOf(payload)["kind"] === "writeStdin") return question.stdin;
+  if (kind === "command" && requestOf(payload)["kind"] === "writeStdin") return question.stdin(agent);
   switch (kind) {
     case "command":
-      return question.command;
+      return question.command(agent);
     case "file-change":
-      return question.fileChange;
+      return question.fileChange(agent);
     case "permissions":
-      return question.permissions;
+      return question.permissions(agent);
     case "other":
-      return question.other;
+      return question.other(agent);
   }
 }
 

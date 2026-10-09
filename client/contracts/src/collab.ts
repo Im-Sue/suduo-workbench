@@ -41,6 +41,15 @@ export interface DelegationResultDto {
   deletions: number;
 }
 
+/**
+ * 卡住提醒（多 Agent S12）：等你确认超过 10 分钟（approval），或回合在跑却 15 分钟没有动静（silent）。
+ * since 是开始等的时间。只提醒，不自动停。
+ */
+export interface StallDto {
+  reason: "approval" | "silent";
+  since: number;
+}
+
 /** 一次委派（发起会话里的委派卡片、运行面板、委派工具的回包都用它）。 */
 export interface DelegationDto {
   id: string;
@@ -58,6 +67,8 @@ export interface DelegationDto {
   delivered: boolean;
   /** 子会话里等你确认的操作数（卡片显示「等审批」）。 */
   pendingApprovals: number;
+  /** 卡住提醒；没卡住为 null。 */
+  stalled: StallDto | null;
   result: DelegationResultDto | null;
   error: string | null;
   createdAt: number;
@@ -120,6 +131,8 @@ export interface ReviewDto {
   /** 已经交回原 Agent 修改的意见编号。 */
   appliedFindingIds: string[];
   error: string | null;
+  /** 卡住提醒（评审会话只读，实际只会是很久没动静）；没卡住为 null。 */
+  stalled: StallDto | null;
   createdAt: number;
   updatedAt: number;
   finishedAt: number | null;

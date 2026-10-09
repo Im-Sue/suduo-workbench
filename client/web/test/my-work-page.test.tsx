@@ -349,6 +349,6 @@ describe("我的工作", () => {
     const button = [...section(page, "setup-checklist").querySelectorAll("button")].find((item) => item.textContent === "去关联");
     await act(async () => button?.click());
     await settle();
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/setup?step=4");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/setup?step=5");
   });
 });

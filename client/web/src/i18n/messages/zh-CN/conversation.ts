@@ -111,15 +111,16 @@ export const conversation = {
   /** 审批坞：普通审批与 SuDuo 写工具的确认卡。 */
   approval: {
     label: "等你确认",
+    /** 标题写 Agent 的名字（多 Agent S12：「Claude Code 想运行命令」）；不知道是哪家时写「Agent」。 */
     question: {
-      command: "Agent 想运行命令",
-      fileChange: "Agent 想修改文件",
-      permissions: "Agent 想变更权限",
-      other: "Agent 请你确认后继续",
+      command: (agent: string | null) => `${agent ?? "Agent"} 想运行命令`,
+      fileChange: (agent: string | null) => `${agent ?? "Agent"} 想修改文件`,
+      permissions: (agent: string | null) => `${agent ?? "Agent"} 想变更权限`,
+      other: (agent: string | null) => `${agent ?? "Agent"} 请你确认后继续`,
       /** 命令审批里向已在运行的命令（终端）输入内容。 */
-      stdin: "Agent 想向正在运行的命令输入内容",
+      stdin: (agent: string | null) => `${agent ?? "Agent"} 想向正在运行的命令输入内容`,
     },
-    editFiles: (count: number) => `Agent 想修改 ${String(count)} 个文件`,
+    editFiles: (count: number, agent: string | null) => `${agent ?? "Agent"} 想修改 ${String(count)} 个文件`,
     /** 多个待确认时：眼下处理的总是第 1 个。 */
     position: (total: number) => `第 1 个，共 ${String(total)} 个`,
     cwd: (cwd: string) => `在 ${cwd}`,

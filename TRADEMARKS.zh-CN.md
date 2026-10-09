@@ -22,4 +22,4 @@
 
 ## 第三方商标
 
-Codex 与 OpenAI 是 OpenAI 的商标。SuDuo 调用的是你在自己电脑上安装并配置的 Codex CLI，与 OpenAI 没有隶属关系，也未获其认可。其他名称归各自所有者所有。
+Codex 与 OpenAI 是 OpenAI 的商标，Claude 与 Claude Code 是 Anthropic 的商标。SuDuo 调用的是你在自己电脑上安装并登录的 Codex CLI 和其他 Agent 命令行，与 OpenAI、Anthropic 及其他 Agent 厂商没有隶属关系，也未获其认可。其他名称归各自所有者所有。

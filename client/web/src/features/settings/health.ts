@@ -1,7 +1,8 @@
-import type {
-  CodexModelsResponse,
-  McpServerDto,
-  ModelProviderSettingsDto,
+import {
+  SUDUO_DOCTOR_CHECK_IDS,
+  type CodexModelsResponse,
+  type McpServerDto,
+  type ModelProviderSettingsDto,
 } from "@suduo/client-contracts";
 import type { RequirementsSettingsDto, RequirementsWorkspaceMappingDto, WorkspaceMappingVerification } from "../../api/client.js";
 import { summarizeDoctor, type DoctorCheck } from "../../app/pages/doctor-summary.js";
@@ -21,7 +22,8 @@ export type HealthStatus = "ok" | "warn" | "fail" | "checking" | "unknown";
 export type HealthFix = { label: string; section: SettingsSectionId } | { label: string; login: true };
 
 export interface HealthItem {
-  key: "service" | "login" | "codex" | "model" | "network" | "mcp" | "workspace" | "runtime";
+  /** 各家 Agent 一项（多 Agent S12）：`agent:<id>`。 */
+  key: "service" | "login" | "codex" | "model" | "network" | "mcp" | "workspace" | "runtime" | `agent:${string}`;
   title: string;
   status: HealthStatus;
   detail: string;
@@ -94,6 +96,23 @@ export function doctorHealth(
   const item = summarizeDoctor(probe.data.checks, t).find((entry) => entry.key === key);
   if (item === undefined) return { key, title, status: "unknown", detail: text.noResult };
   return { key, title, status: item.status, detail: item.detail };
+}
+
+/**
+ * 各家 Agent（多 Agent S12）：自检里 Codex 以外的每家一项（启用了、装了的，没装的只在它是默认 Agent 时出现），
+ * 结论与说明都来自服务端（命令行 doctor 同一份）。没通过的给「AI Agent」设置入口；自检还没出来时不占位。
+ */
+export function agentHealthItems(probe: Probe<{ checks: DoctorCheck[] }>, t: Messages = messagesFor(currentLocale())): HealthItem[] {
+  const fix = { label: t.settings.health.fix.view, section: "agents" as const };
+  return (probe.data?.checks ?? [])
+    .filter((check) => check.id === SUDUO_DOCTOR_CHECK_IDS.agent && check.agentId !== undefined)
+    .map((check) => ({
+      key: `agent:${check.agentId ?? ""}` as const,
+      title: check.name,
+      status: check.status === "pass" ? "ok" : check.status,
+      detail: check.message,
+      ...(check.status === "pass" ? {} : { fix }),
+    }));
 }
 
 export function modelHealth(

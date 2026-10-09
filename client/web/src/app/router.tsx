@@ -31,7 +31,7 @@ import {
 } from "../features/settings/sections.js";
 import { BootFailure, BootSplash, RouteLoading } from "./pages/BootScreens.js";
 import { LoginPage } from "./pages/LoginPage.js";
-import { SetupPage } from "./pages/SetupPage.js";
+import { SetupPage, validateSetupSearch } from "./pages/SetupPage.js";
 import { pickProject, readLastProjectId, rememberProjectId, useProjects } from "./project-context.js";
 import { queryKeys, settingsQuery } from "./queries.js";
 import { AppShell } from "./shell/AppShell.js";
@@ -112,10 +112,7 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/setup",
-  validateSearch: (search: Record<string, unknown>): { step?: number } => {
-    const step = Number(search["step"]);
-    return Number.isInteger(step) && step >= 1 && step <= 5 ? { step } : {};
-  },
+  validateSearch: validateSetupSearch,
   component: SetupPage,
 });
 

@@ -8,6 +8,7 @@ import type {
   MessageContent,
   RuntimeApprovalMode,
   SessionDto,
+  StallDto,
 } from "@suduo/client-contracts";
 import { randomUUID } from "node:crypto";
 import { messagesFor, type ServerMessages } from "../../i18n/messages/index.js";
@@ -20,6 +21,7 @@ import { changedPaths, type ProjectedRound } from "../context/session-projection
 import type { EventBroker } from "../event-broker.js";
 import type { EventLedger } from "../event-ledger.js";
 import type { SchedulerSource } from "../scheduler/turn-scheduler.js";
+import { StallWatch } from "./stall-watch.js";
 
 /**
  * 委派（多 Agent 协作 S8，技术设计 2.10 / 4.4、需求 4.3 / 4.11）：主会话把子任务交给本机另一个 Agent。
@@ -36,7 +38,7 @@ export interface DelegationDependencies {
   delegations: DelegationRepository;
   sessions: Pick<SessionRepository, "getById">;
   threads: Pick<SessionThreadRepository, "getPrimary">;
-  approvals: { countPendingBySession(sessionId: string): number };
+  approvals: { countPendingBySession(sessionId: string): number; oldestPendingAt?(sessionId: string): number | null };
   ledger: Pick<EventLedger, "append">;
   broker: Pick<EventBroker, "subscribe">;
   /** 发消息（经本机调度）。 */
@@ -107,7 +109,24 @@ export class DelegationService {
   /** 重启后要重新排队的委派消息（等本机服务开始监听、线程续接之后再发）。 */
   private requeueList: Array<{ id: string; childSessionId: string; content: MessageContent[] }> = [];
 
+  /** 卡住提醒（S12）。 */
+  private readonly stalls = new StallWatch({
+    now: () => this.now(),
+    oldestApprovalAt: (sessionId) => this.deps.approvals.oldestPendingAt?.(sessionId) ?? null,
+  });
+
   constructor(private readonly deps: DelegationDependencies) {}
+
+  /** 定时看一遍没结束的委派：卡住与否变了就刷新卡片（本机服务每分钟调一次）。 */
+  checkStalls(): void {
+    for (const record of this.deps.delegations.listUnfinished()) {
+      if (this.stalls.changed(record.id, this.stallOf(record))) this.emit(record);
+    }
+  }
+
+  private stallOf(record: DelegationRecord): StallDto | null {
+    return FINISHED.has(record.status) ? null : this.stalls.stalled(record.id, record.childSessionId, record.status === "running");
+  }
 
   /**
    * 本机服务启动时（技术设计 2.7）：排队中的委派重新排队——重启前排着、没发出的那几条（`closed`，按 clientTurnId 认出是
@@ -505,6 +524,7 @@ export class DelegationService {
       autoHandback: record.autoHandback,
       delivered: record.delivered,
       pendingApprovals: record.childSessionId === null || FINISHED.has(record.status) ? 0 : this.deps.approvals.countPendingBySession(record.childSessionId),
+      stalled: this.stallOf(record),
       result: record.result,
       error: record.error,
       createdAt: record.createdAt,
@@ -523,6 +543,7 @@ export class DelegationService {
   private unwatch(id: string): void {
     this.watching.get(id)?.();
     this.watching.delete(id);
+    this.stalls.forget(id);
     this.pending.delete(id);
     this.unclaimed.delete(id);
     this.outcomes.delete(id);
@@ -534,6 +555,7 @@ export class DelegationService {
    * 子会话页）记为已取消；叫停时还在开的回合，开起来就停掉。
    */
   private onChildEvent(id: string, event: EventEnvelope<string, JsonValue>): void {
+    this.stalls.touch(id);
     const record = this.deps.delegations.getById(id);
     const list = this.pending.get(id) ?? [];
     if (record === null || list.length === 0) return;
@@ -714,13 +736,16 @@ export class DelegationService {
   private emit(record: DelegationRecord): void {
     const binding = this.deps.threads.getPrimary(record.parentSessionId);
     if (binding === null || binding === undefined) return;
+    const dto = this.dto(record);
+    // 卡片显示的卡住与否以这一条为准（定时检查据此判断变没变，不重复写同样的事件）。
+    this.stalls.changed(record.id, dto.stalled);
     this.deps.ledger.append({
       sessionId: record.parentSessionId,
       sessionThreadId: binding.id,
       event: {
         source: "suduo:delegation",
         type: "delegation.updated",
-        payload: this.dto(record) as unknown as JsonValue,
+        payload: dto as unknown as JsonValue,
         threadRef: binding.threadRef,
         turnRef: null,
         ts: this.now(),

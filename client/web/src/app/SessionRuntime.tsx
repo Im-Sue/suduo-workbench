@@ -1289,6 +1289,7 @@ export function SessionRuntime(props: {
               <div className="shrink-0 px-6 pb-4">
                 <ApprovalDock
                   approvals={approvals}
+                  agentName={session === null ? null : (session.agent?.displayName ?? (session.agentId === "codex" ? "Codex" : session.agentId))}
                   onDecide={decideApproval}
                   changesFor={changesForApproval}
                   displayPath={displayPath}

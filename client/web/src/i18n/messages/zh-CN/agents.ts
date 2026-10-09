@@ -36,6 +36,7 @@ export const agents = {
       disabled: "已停用",
     },
     minVersion: (version: string) => `需要 ${version} 或更高`,
+    unverified: (verified: string) => `SuDuo 验证过的是 ${verified}，这个版本没验证过，一般也能用`,
     version: (version: string) => `版本 ${version}`,
     defaultBadge: "默认",
     setDefault: "设为默认",

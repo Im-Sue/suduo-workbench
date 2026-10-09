@@ -19,6 +19,7 @@
 #                                         宿主机上设了下面两个变量时原样带进虚拟机（只认字母、数字、. _ -）：
 #                                           SUDUO_GATE_LOCALE=en   跑英文冒烟（缺省按中文跑全量）
 #                                           SUDUO_VISUAL_LABEL=…   视觉基线这一组的名字（缺省 current）
+#                                           SUDUO_GATE_WALKTHROUGH_AGENT=…  多 Agent 模拟示例里假 Agent 占哪一家的位置（缺省 opencode）
 #   sh scripts/gate-c-vm.sh start|stop|shell|status|delete
 set -eu
 
@@ -210,7 +211,7 @@ copy_model_catalog() {
 
 # 宿主机上设了的 gate-c 变量带进虚拟机（拼成 export 的参数）；值只认安全字符，免得拼进命令时出岔子。
 gate_c_env() {
-  for name in SUDUO_GATE_LOCALE SUDUO_VISUAL_LABEL; do
+  for name in SUDUO_GATE_LOCALE SUDUO_VISUAL_LABEL SUDUO_GATE_WALKTHROUGH_AGENT; do
     value=$(printenv "$name" || true)
     [ -n "$value" ] || continue
     case "$value" in
