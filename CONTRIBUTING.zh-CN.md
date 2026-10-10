@@ -91,7 +91,7 @@ sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /e
 sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
 ```
 
-`pnpm run doctor` 会检查沙箱，不通过时给出处理办法。终端输出跟随系统语言；很多 Linux 系统和 CI 默认是 `C.UTF-8`，这时是英文，可以用 `SUDUO_LOCALE=zh-CN` 或 `SUDUO_LOCALE=en` 指定。Windows 安装器暂未发布，见 [client/scripts/dist-win/README.md](client/scripts/dist-win/README.md)。
+`pnpm run doctor` 会检查沙箱，不通过时给出处理办法。终端输出跟随系统语言；很多 Linux 系统和 CI 默认是 `C.UTF-8`，这时是英文，可以用 `SUDUO_LOCALE=zh-CN` 或 `SUDUO_LOCALE=en` 指定。macOS 与 Windows 的桌面应用由 `client/desktop` 构建，见 [client/desktop/README.md](client/desktop/README.md)。
 
 ## 设计原则
 

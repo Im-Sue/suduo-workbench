@@ -10,7 +10,7 @@ SuDuo 客户端运行在每个人自己的电脑上：一个只监听 `127.0.0.1
 
 ## 桌面应用（试用版）
 
-桌面应用自带客户端需要的一切，不用装 Node.js 和 pnpm（git 只在检查点和分支状态里用到）。它是试用版：还没有签名，也不会自动更新。
+桌面应用自带客户端需要的一切，不用装 Node.js 和 pnpm（git 只在检查点和分支状态里用到）。它是试用版：还没有签名。
 
 1. 从[最新版本](https://github.com/Im-Sue/suduo-workbench/releases/latest)下载适合你电脑的安装包。同一页的 `SHA256SUMS.txt` 列出了校验值。
 
@@ -28,11 +28,10 @@ SuDuo 客户端运行在每个人自己的电脑上：一个只监听 `127.0.0.1
 需要知道的几点：
 
 - **关掉窗口不等于退出。** SuDuo 会留在菜单栏（macOS）或任务栏通知区域（Windows）继续运行，进行中的会话不会中断，房间里共享的 Agent 也会继续响应。从这个图标退出，或在 macOS 上按 ⌘Q。有进行中的会话时，SuDuo 会先问你。
-- **Codex。** 应用自带 SuDuo 测试过的 Codex CLI 版本，使用你的 `~/.codex`，已经登录过的 Codex 或配置好的模型服务可以直接用。否则在「设置 → 模型服务」里填 API Key，或在终端里用自带的 Codex 登录 ChatGPT：
-  - macOS（Apple 芯片）：`"/Applications/SuDuo.app/Contents/Resources/codex/aarch64-apple-darwin/bin/codex" login`（Intel 把路径里的 `aarch64-apple-darwin` 换成 `x86_64-apple-darwin`）
-  - Windows：在 PowerShell 里运行 `& "$env:LOCALAPPDATA\Programs\suduo-desktop\resources\codex\x86_64-pc-windows-msvc\bin\codex.exe" login`
+- **Codex。** 应用自带 SuDuo 测试过的 Codex CLI 版本，使用你的 `~/.codex`，已经登录过的 Codex 或配置好的模型服务可以直接用。否则在「设置 → 模型服务」里填 API Key，或在那里点「用 ChatGPT 账号登录」：在浏览器里完成授权，登录由 Codex 自己保存。
+- **开机自启**和数据、日志目录在「设置 → 桌面应用」里。开机自启默认关；打开后开机时在后台运行、不弹窗口。macOS 上可能还要在「系统设置 → 通用 → 登录项」里允许 SuDuo。
 - **数据位置**：macOS 在 `~/Library/Application Support/SuDuo Desktop`，Windows 在 `%LOCALAPPDATA%\SuDuo Desktop`。它和源码运行的数据分开；应用监听 8790 端口（源码运行是 8787），两者可以同时用。需求和房间都在团队的服务器上；源码运行里的会话仍留在源码运行那边。
-- **更新**：下载新版本。macOS 上先从菜单栏退出 SuDuo，再替换「应用程序」里的 SuDuo；Windows 上直接运行新的安装程序。数据会保留。
+- **更新**：SuDuo 在启动时和每天检查一次有没有新版本（可以在「设置 → 桌面应用」里关掉或立即检查），有新版本时在窗口顶部提示，不会自己更新。Windows 上点「更新」：下载新版本，有进行中的会话时先问，然后退出、安装并重新打开。macOS（未签名的试用版不能替换自己）点「去下载」打开发布页：先从菜单栏退出 SuDuo，再替换「应用程序」里的 SuDuo。数据会保留。
 - **卸载**：macOS 上退出 SuDuo，把它从「应用程序」移到废纸篓；上面的数据目录会留着，需要时自己删除。Windows 上在「设置 → 应用 → SuDuo → 卸载」，卸载时会问是否同时删除本机数据（默认保留）。
 - SuDuo 起不来时，窗口里会说明原因和日志位置（数据目录下的 `logs`），并提供「运行自检」按钮。
 

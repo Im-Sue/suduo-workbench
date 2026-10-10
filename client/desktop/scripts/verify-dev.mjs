@@ -5,6 +5,7 @@
 // 要求端口 8790–8799 空闲（不要同时开着桌面版）。
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -97,8 +98,20 @@ function portFree(port) {
   });
 }
 
+// D3：本地的更新源，声明有 SuDuo 99.0.0（开发态的外壳经 SUDUO_DESKTOP_UPDATE_FEED 改从这里检查更新）。
+const feed = createHttpServer((request, response) => {
+  if (request.url?.startsWith("/latest-mac.yml") || request.url?.startsWith("/latest.yml")) {
+    response.end(["version: 99.0.0", "files:", "  - url: SuDuo-99.0.0-mac-arm64.dmg", "    sha512: x", "    size: 1", "  - url: SuDuo-Setup-99.0.0-x64.exe", "    sha512: x", "    size: 1", "path: SuDuo-99.0.0-mac-arm64.dmg", "sha512: x", "releaseDate: '2026-10-10T00:00:00.000Z'", ""].join("\n"));
+    return;
+  }
+  response.statusCode = 404;
+  response.end();
+});
+await new Promise((resolve) => feed.listen(0, "127.0.0.1", resolve));
+const feedUrl = `http://127.0.0.1:${String(feed.address().port)}/`;
+
 // ---------- 1. 首次启动 ----------
-let { app, window } = await launch();
+let { app, window } = await launch({ SUDUO_DESKTOP_UPDATE_FEED: feedUrl });
 const reachedApp = await waitFor(async () => window.url().startsWith("http://127.0.0.1:"), 90_000, "app url");
 check("首次启动后窗口载入本机服务地址", reachedApp, window.url());
 const port = Number(new URL(window.url()).port);
@@ -186,6 +199,24 @@ const cancelled = await window.evaluate(async (id) => {
 }, login.loginId);
 check("取消登录", cancelled.status === "cancelled", JSON.stringify(cancelled));
 await window.goto(`http://127.0.0.1:${port}/`);
+
+// ---------- D3：应用内更新（本地更新源） ----------
+await window.waitForLoadState("domcontentloaded");
+await window.evaluate(() => {
+  window.__updateEvents = [];
+  window.suDuoDesktop.onUpdateState((state) => window.__updateEvents.push(state.kind));
+});
+const checked = await window.evaluate(() => window.suDuoDesktop.checkForUpdates());
+check("手动检查更新：发现新版本，Mac 未签名时不在应用里安装", checked.kind === "available" && checked.version === "99.0.0" && checked.canInstall === false && /\/releases\/tag\/v99\.0\.0$/.test(checked.notesUrl), JSON.stringify(checked));
+const updateEvents = await window.evaluate(() => window.__updateEvents);
+check("页面收到更新状态（检查中 → 有新版本）", updateEvents.includes("checking") && updateEvents.at(-1) === "available", JSON.stringify(updateEvents));
+await window.evaluate(() => window.suDuoDesktop.installUpdate());
+await delay(300);
+const openedRelease = await app.evaluate(() => globalThis.__opened);
+check("Mac 上点「更新」打开这个版本的发布页", openedRelease.some((url) => /\/releases\/tag\/v99\.0\.0$/.test(url)), JSON.stringify(openedRelease));
+const autoOff = await window.evaluate(() => window.suDuoDesktop.setPreferences({ autoCheckUpdates: false }));
+check("关掉自动检查更新后记进 desktop.json", autoOff.autoCheckUpdates === false && prefs().autoCheckUpdates === false, JSON.stringify(autoOff));
+await window.evaluate(() => window.suDuoDesktop.setPreferences({ autoCheckUpdates: true }));
 
 // ---------- 2. 关窗只隐藏 ----------
 const browserWindow = await app.browserWindow(window);

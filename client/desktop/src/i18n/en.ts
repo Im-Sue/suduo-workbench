@@ -81,6 +81,15 @@ export const en: DesktopMessages = {
     quit: "Quit",
     cancel: "Cancel",
   },
+  update: {
+    trayItem: (version: string) => `Update to SuDuo ${version}`,
+    devBuild: "The development build doesn't check for updates.",
+    failed: (reason: string) => `Couldn't update: ${reason}`,
+    confirmMessage: (count: number) => (count === 1 ? "1 session is in progress" : `${String(count)} sessions are in progress`),
+    confirmDetail: "Updating quits SuDuo first, which interrupts them. SuDuo reopens after the update is installed.",
+    confirmInstall: "Update",
+    cancel: "Cancel",
+  },
   backgroundHint: {
     title: "SuDuo is still running",
     body: (where) =>

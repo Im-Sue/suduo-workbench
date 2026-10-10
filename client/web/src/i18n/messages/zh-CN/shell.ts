@@ -144,6 +144,16 @@ export const shell = {
     retry: "立即重试",
     recovered: "连接已恢复",
   },
+  /** 桌面应用有新版本（D3）：只提示，不强制。 */
+  update: {
+    available: (version: string) => `SuDuo ${version} 可用`,
+    notes: "更新说明",
+    later: "稍后",
+    install: "更新",
+    download: "去下载",
+    downloading: (version: string, percent: number) => `正在下载 SuDuo ${version}…${String(percent)}%（下好后会先退出 SuDuo 再安装）`,
+    close: "关闭",
+  },
   createProject: {
     title: "新建项目",
     description: "项目是团队共享需求的容器，所有成员都能看到。",

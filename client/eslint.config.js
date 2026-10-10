@@ -48,7 +48,6 @@ const I18N_EXEMPT = [
   // 桌面外壳自己的文字（菜单、托盘、启动页）放在它的字典里。
   "desktop/src/i18n/**",
   "web/src/dev/**",
-  "scripts/dist-win/**",
 ];
 
 export default tseslint.config(

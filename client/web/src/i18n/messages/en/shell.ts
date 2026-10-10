@@ -141,6 +141,15 @@ export const shell = {
     retry: "Retry now",
     recovered: "Connection restored",
   },
+  update: {
+    available: (version: string) => `SuDuo ${version} is available`,
+    notes: "Release notes",
+    later: "Later",
+    install: "Update",
+    download: "Download",
+    downloading: (version: string, percent: number) => `Downloading SuDuo ${version}… ${String(percent)}% (SuDuo quits before installing)`,
+    close: "Close",
+  },
   createProject: {
     title: "New project",
     description: "A project holds the requirements your team shares. Every member can see it.",

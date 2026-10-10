@@ -91,7 +91,7 @@ sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /e
 sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
 ```
 
-`pnpm run doctor` checks the sandbox and explains what to do when it fails. Terminal output follows the system locale; many Linux systems and CI runners default to `C.UTF-8`, which gives English. Set `SUDUO_LOCALE=zh-CN` or `SUDUO_LOCALE=en` to choose. The Windows installer is not released yet; see [client/scripts/dist-win/README.md](client/scripts/dist-win/README.md) (in Chinese).
+`pnpm run doctor` checks the sandbox and explains what to do when it fails. Terminal output follows the system locale; many Linux systems and CI runners default to `C.UTF-8`, which gives English. Set `SUDUO_LOCALE=zh-CN` or `SUDUO_LOCALE=en` to choose. The desktop app for macOS and Windows is built from `client/desktop`; see [client/desktop/README.md](client/desktop/README.md).
 
 ## Design principles
 

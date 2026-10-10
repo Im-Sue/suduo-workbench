@@ -28,14 +28,19 @@ export interface SystemActivityResponse {
   runningSessions: number;
 }
 
-/** preload 暴露给前端的 window.suDuoDesktop；只在桌面应用里存在。更新相关的方法随 D3 加（技术设计 §7.2）。 */
+/** preload 暴露给前端的 window.suDuoDesktop；只在桌面应用里存在（技术设计 §7.2）。 */
 export interface SuDuoDesktopBridge {
   info(): Promise<SuDuoDesktopInfo>;
   /** 界面语言变化时告知外壳，菜单、托盘与提示框跟着换。 */
   setLocale(locale: "zh-CN" | "en"): void;
   /** 「设置 → 桌面应用」的偏好（D2）。 */
   getPreferences(): Promise<DesktopPreferencesDto>;
-  setPreferences(patch: Partial<Pick<DesktopPreferencesDto, "openAtLogin">>): Promise<DesktopPreferencesDto>;
+  setPreferences(patch: Partial<Pick<DesktopPreferencesDto, "openAtLogin" | "autoCheckUpdates">>): Promise<DesktopPreferencesDto>;
+  /** 应用内更新（D3）：现在的状态、手动检查、更新（Windows 下载并安装；Mac 未签名时打开下载页）、订阅状态变化。 */
+  getUpdateState(): Promise<DesktopUpdateState>;
+  checkForUpdates(): Promise<DesktopUpdateState>;
+  installUpdate(): Promise<void>;
+  onUpdateState(listener: (state: DesktopUpdateState) => void): () => void;
   /** 用系统的文件管理器打开数据目录或日志目录。 */
   openDirectory(kind: "data" | "logs"): Promise<void>;
   /** 把窗口带到前面（点系统通知时：窗口可能关到了菜单栏 / 通知区域）。 */
@@ -51,7 +56,21 @@ export interface DesktopPreferencesDto {
    * unavailable 这个运行方式设不了（开发态不改系统的登录项）；unknown 读不到。
    */
   openAtLoginStatus: "enabled" | "disabled" | "requiresApproval" | "unavailable" | "unknown";
+  /** 自动检查更新（默认开：启动 30 秒后一次，之后每 24 小时一次）。 */
+  autoCheckUpdates: boolean;
 }
+
+/**
+ * 应用内更新的状态（技术设计 §4.3，需求 R5：只提示、不强制）。
+ * - available：有新版本（notesUrl 是这个版本的发布页）；Windows 点「更新」下载并安装，Mac 打开发布页下载；
+ * - downloading：Windows 在下载；
+ * - failed：手动检查或下载出错（自动检查出错只记日志，不打扰）。
+ */
+export type DesktopUpdateState =
+  | { kind: "idle" | "checking" | "upToDate" }
+  | { kind: "available"; version: string; notesUrl: string; canInstall: boolean }
+  | { kind: "downloading"; version: string; percent: number }
+  | { kind: "failed"; message: string };
 
 export interface SuDuoDesktopInfo {
   version: string;

@@ -233,6 +233,17 @@ export const settingsAgent = {
       requiresApproval: "To take effect, also allow SuDuo in System Settings > General > Login Items.",
       unavailable: "The development build doesn't change your system's login items; this works in the installed app.",
     },
+    updates: {
+      title: "Updates",
+      description: "When a new version is out, SuDuo tells you at the top of the window; it never updates on its own. On Windows you can download and install it in the app; the Mac trial opens the download page so you can replace the app.",
+      auto: "Check automatically (at startup and once a day)",
+      check: "Check for updates",
+      upToDate: "You're up to date.",
+      available: (version: string) => `SuDuo ${version} is available.`,
+      install: "Update",
+      download: "Download",
+      downloading: (percent: number) => `Downloading… ${String(percent)}%`,
+    },
     address: {
       title: "Local address",
       description: "The address of the local service. It also works in a browser, with the same data.",

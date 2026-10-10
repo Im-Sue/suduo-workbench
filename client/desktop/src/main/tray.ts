@@ -32,6 +32,8 @@ export class SuDuoTray {
         { label: t.tray.openInBrowser, enabled: this.actions.ready(), click: () => this.actions.openInBrowser() },
         // Windows 没有菜单栏：日志目录放在这里（Mac 的在「帮助」菜单）。
         ...(process.platform === "darwin" ? [] : [{ label: t.tray.openLogs, click: () => this.actions.openLogs() }]),
+        // 有新版本时（D3）。
+        ...updateItem(this.actions),
         { type: "separator" },
         { label: t.tray.quit, click: () => this.actions.quit() },
       ]),
@@ -41,4 +43,9 @@ export class SuDuoTray {
   destroy(): void {
     this.tray.destroy();
   }
+}
+
+function updateItem(actions: MenuActions): Electron.MenuItemConstructorOptions[] {
+  const label = actions.updateLabel();
+  return label === null ? [] : [{ type: "separator" }, { label, click: () => actions.installUpdate() }];
 }

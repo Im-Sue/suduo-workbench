@@ -7,6 +7,11 @@ export const IPC = {
   setPreferences: "suduo-desktop:set-preferences",
   openDirectory: "suduo-desktop:open-directory",
   showWindow: "suduo-desktop:show-window",
+  getUpdateState: "suduo-desktop:get-update-state",
+  checkForUpdates: "suduo-desktop:check-for-updates",
+  installUpdate: "suduo-desktop:install-update",
+  /** 主进程 → 页面：更新状态变了。 */
+  updateState: "suduo-desktop:update-state",
   /** 启动页（file://）↔ 主进程。 */
   startupReady: "suduo-startup:ready",
   startupView: "suduo-startup:view",

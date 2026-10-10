@@ -10,6 +10,7 @@ import { RoomWindow } from "../../features/rooms/window/RoomWindow.js";
 import { usePersistentState } from "../../ui/use-persistent-state.js";
 import { CommandPalette } from "./CommandPalette.js";
 import { ConnectionBanner } from "./ConnectionBanner.js";
+import { UpdateBanner } from "./UpdateBanner.js";
 import { CreateProjectDialog } from "./CreateProjectDialog.js";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog.js";
 import { SessionLauncherProvider } from "./SessionLauncher.js";
@@ -120,6 +121,7 @@ export function AppShell() {
           className="my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card"
         >
           <ConnectionBanner />
+          <UpdateBanner />
           <div className="flex min-h-0 flex-1">
             {pageFailure === null ? (
               <Outlet />

@@ -8,7 +8,7 @@ The list was generated on macOS (Apple silicon), so a few platform-specific pack
 
 ## Desktop app
 
-The desktop installers include the runtime packages of `client/` listed below (bundled into the local service and the web interface), and also:
+The desktop installers include the runtime packages of `client/` listed below (bundled into the local service, the web interface and the desktop shell, which includes `electron-updater` for in-app updates), and also:
 
 | Component | Version | License | License text in the app |
 |---|---|---|---|
@@ -21,7 +21,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 
 ## client/ (frontend and local backend)
 
-453 packages.
+465 packages.
 
 | Package | Version | License |
 |---|---|---|
@@ -145,6 +145,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | adler-32 | 1.3.1 | Apache-2.0 |
 | ajv | 8.20.0 | MIT |
 | ajv-formats | 3.0.1 | MIT |
+| argparse | 2.0.1 | Python-2.0 |
 | aria-hidden | 1.2.6 | MIT |
 | atomic-sleep | 1.0.0 | MIT |
 | avvio | 9.3.0 | MIT |
@@ -155,6 +156,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | bl | 4.1.0 | MIT |
 | body-parser | 2.3.0 | MIT |
 | buffer | 5.7.1 | MIT |
+| builder-util-runtime | 9.7.0 | MIT |
 | bytes | 3.1.2 | MIT |
 | call-bind-apply-helpers | 1.0.2 | MIT |
 | call-bound | 1.0.4 | MIT |
@@ -204,6 +206,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | dompurify | 3.2.7, 3.4.12 | (MPL-2.0 OR Apache-2.0) |
 | dunder-proto | 1.0.1 | MIT |
 | ee-first | 1.1.1 | MIT |
+| electron-updater | 6.8.9 | MIT |
 | encodeurl | 2.0.0 | MIT |
 | end-of-stream | 1.4.5 | MIT |
 | enhanced-resolve | 5.24.3 | MIT |
@@ -240,6 +243,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | frac | 1.1.2 | Apache-2.0 |
 | fresh | 2.0.0 | MIT |
 | fs-constants | 1.0.0 | MIT |
+| fs-extra | 10.1.0 | MIT |
 | fsevents | 2.3.3 | MIT |
 | function-bind | 1.1.2 | MIT |
 | get-intrinsic | 1.3.0 | MIT |
@@ -277,13 +281,18 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | isexe | 2.0.0 | ISC |
 | jiti | 2.7.0 | MIT |
 | jose | 6.2.12 | MIT |
+| js-yaml | 4.3.2 | MIT |
 | json-schema-ref-resolver | 3.0.0 | MIT |
 | json-schema-to-ts | 3.1.1 | MIT |
 | json-schema-traverse | 1.0.0 | MIT |
 | json-schema-typed | 8.0.2 | BSD-2-Clause |
+| jsonfile | 6.2.1 | MIT |
+| lazy-val | 1.0.5 | MIT |
 | light-my-request | 6.6.0 | BSD-3-Clause |
 | lightningcss | 1.32.0 | MPL-2.0 |
 | lightningcss-darwin-arm64 | 1.32.0 | MPL-2.0 |
+| lodash.escaperegexp | 4.1.2 | MIT |
+| lodash.isequal | 4.5.0 | MIT |
 | longest-streak | 3.1.0 | MIT |
 | lowlight | 3.3.0 | MIT |
 | lucide-react | 1.26.0 | ISC |
@@ -403,9 +412,10 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | safe-regex2 | 5.1.1 | MIT |
 | safe-stable-stringify | 2.5.0 | MIT |
 | safer-buffer | 2.1.2 | MIT |
+| sax | 1.6.1 | BlueOak-1.0.0 |
 | scheduler | 0.27.0 | MIT |
 | secure-json-parse | 4.1.0 | BSD-3-Clause |
-| semver | 7.8.5 | ISC |
+| semver | 7.7.4, 7.8.5 | ISC |
 | send | 1.2.1 | MIT |
 | seroval | 1.6.8 | MIT |
 | seroval-plugins | 1.6.8 | MIT |
@@ -440,6 +450,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | tar-stream | 2.2.0 | MIT |
 | thread-stream | 4.2.0 | MIT |
 | tiny-invariant | 1.3.3 | MIT |
+| tiny-typed-emitter | 2.1.0 | MIT |
 | tinyglobby | 0.2.17 | MIT |
 | toad-cache | 3.7.4 | MIT |
 | toidentifier | 1.0.1 | MIT |
@@ -459,6 +470,7 @@ The paths are relative to the app's resources folder: `SuDuo.app/Contents/Resour
 | unist-util-stringify-position | 4.0.0 | MIT |
 | unist-util-visit | 5.1.0 | MIT |
 | unist-util-visit-parents | 6.0.2 | MIT |
+| universalify | 2.0.1 | MIT |
 | unpipe | 1.0.0 | MIT |
 | use-callback-ref | 1.3.3 | MIT |
 | use-sidecar | 1.1.3 | MIT |
