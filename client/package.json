@@ -42,10 +42,6 @@
     "gate:b": "pnpm --filter @suduo/client-server run gate:b",
     "gate:c": "pnpm build && pnpm testid:check && tsx server/test/gate-c.real.ts",
     "doctor": "tsx scripts/doctor.ts",
-    "dist:win:fetch": "node scripts/dist-win/fetch-assets.mjs",
-    "dist:win": "node scripts/dist-win/build.mjs",
-    "dist:win:offline": "node scripts/dist-win/build.mjs --offline",
-    "dist:win:clean": "node scripts/dist-win/clean.mjs",
     "install:m1": "node scripts/install.mjs",
     "uninstall:m1": "node scripts/uninstall.mjs"
   },

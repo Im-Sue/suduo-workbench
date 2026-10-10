@@ -19,7 +19,14 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions,
 } from "electron";
-import { CODEX_VERSION, SUDUO_DOCTOR_CHECK_IDS, type DesktopPreferencesDto, type DoctorResultDto, type SuDuoDesktopInfo } from "@suduo/client-contracts";
+import {
+  CODEX_VERSION,
+  SUDUO_DOCTOR_CHECK_IDS,
+  type DesktopPreferencesDto,
+  type DesktopUpdateState,
+  type DoctorResultDto,
+  type SuDuoDesktopInfo,
+} from "@suduo/client-contracts";
 import { chooseDesktopLocale, desktopMessages, parseStoredLocale, type DesktopLocale, type DesktopMessages } from "../i18n/index.js";
 import { IPC, STARTUP_ACTIONS, type StartupActionId, type StartupView } from "../shared/ipc.js";
 import { buildServerEnvironment } from "./environment.js";
@@ -34,6 +41,8 @@ import { loadPreferences, savePreferences, type DesktopPreferences, type WindowB
 import { ServerProcess, nextRestartDelay, runningSessionsAt, stopOrphan, type StartFailure } from "./server-process.js";
 import { loadShellEnvironment, needsShellEnvironment } from "./shell-env.js";
 import { SuDuoTray } from "./tray.js";
+import { createUpdateBackend } from "./update-backend.js";
+import { DesktopUpdater } from "./updater.js";
 
 /**
  * SuDuo 桌面外壳入口（技术设计 §二、§四）：单实例 → 启动页 → 读登录 shell 环境 → 选端口 → 拉起本机服务 → 窗口载入本机地址；
@@ -120,6 +129,10 @@ class DesktopController {
   private orphanDecision: "stop" | "wait" | null = null;
   private doctor: { running: boolean; output: string } = { running: false, output: "" };
   private boundsTimer: NodeJS.Timeout | null = null;
+  /** 应用内更新（D3）；start() 里建。 */
+  private updater: DesktopUpdater | null = null;
+  /** 为了安装更新而退出：退出流程停掉本机服务后由它接手（静默安装并重启），不再 app.quit()。 */
+  private installAfterQuit: (() => void) | null = null;
   /** 启动页正在载入：载入完它会自己要视图（startupReady），这期间不要再发起载入，免得一次次互相打断。 */
   private startupLoading = false;
 
@@ -130,6 +143,11 @@ class DesktopController {
     },
     openHelp: (kind) => void shell.openExternal(helpUrl(kind, this.locale())),
     openLogs: () => void shell.openPath(paths.logDir),
+    updateLabel: () => {
+      const state = this.updater?.current();
+      return state?.kind === "available" ? this.t().update.trayItem(state.version) : null;
+    },
+    installUpdate: () => void this.updater?.install(),
     quit: () => app.quit(),
     ready: () => this.baseUrl !== null,
     devTools: !app.isPackaged || process.env["SUDUO_DESKTOP_DEVTOOLS"] === "1",
@@ -157,6 +175,9 @@ class DesktopController {
     if (this.smokeReport !== null) {
       setTimeout(() => void this.finishSmoke({ ok: false, failure: "timeout" }), SMOKE_TIMEOUT_MS).unref();
     }
+    this.updater = this.createUpdater();
+    // 冒烟只验启动与退出，不去 GitHub 查更新。
+    if (this.smokeReport === null) this.updater.startAuto(() => this.prefs.autoCheckUpdates);
     this.boot();
   }
 
@@ -738,12 +759,61 @@ class DesktopController {
     } finally {
       if (this.quitState !== "running") {
         this.quitState = "done";
+        this.updater?.stop();
         this.tray?.destroy();
         this.tray = null;
-        if (this.exitCode !== 0) app.exit(this.exitCode);
+        const install = this.installAfterQuit;
+        this.installAfterQuit = null;
+        if (install !== null) {
+          install();
+          // 安装没能拉起（electron-updater 只记错、不退出）：服务已停、托盘已收，别留一个空进程。
+          setTimeout(() => app.exit(0), 15_000).unref();
+        } else if (this.exitCode !== 0) app.exit(this.exitCode);
         else app.quit();
       }
     }
+  }
+
+  /** 应用内更新（D3，技术设计 §4.3）。 */
+  private createUpdater(): DesktopUpdater {
+    const text = () => this.t().update;
+    return new DesktopUpdater({
+      backend: createUpdateBackend({ packaged: app.isPackaged, feedUrl: process.env["SUDUO_DESKTOP_UPDATE_FEED"] || null, log: (line) => this.log(line) }),
+      canInstall: process.platform === "win32",
+      releasePage: (version) => `https://github.com/Im-Sue/suduo-workbench/releases/tag/v${version}`,
+      openExternal: (url) => void shell.openExternal(url),
+      emit: (state) => this.emitUpdateState(state),
+      confirmInstall: async () => {
+        const running = this.server === null ? 0 : await this.server.runningSessions();
+        if (running === 0) return true;
+        this.showWindow();
+        const t = text();
+        const options: MessageBoxOptions = { type: "warning", buttons: [t.confirmInstall, t.cancel], defaultId: 1, cancelId: 1, message: t.confirmMessage(running), detail: t.confirmDetail };
+        const window = this.window;
+        const { response } =
+          window === null || window.isDestroyed() ? await dialog.showMessageBox(options) : await dialog.showMessageBox(window, options);
+        return response === 0;
+      },
+      quitAndInstall: (install) => {
+        // 正在退出（退出确认框开着、或已经在停服务）：这次不装，免得标记留到下次退出时顺带装上。
+        if (this.quitState !== "running") return false;
+        this.installAfterQuit = install;
+        this.skipQuitConfirm = true;
+        void this.requestQuit();
+        return true;
+      },
+      log: (line) => this.log(line),
+      text: () => text(),
+    });
+  }
+
+  private emitUpdateState(state: DesktopUpdateState): void {
+    const window = this.window;
+    if (window !== null && !window.isDestroyed() && isAppPageUrl(window.webContents.getURL(), this.baseUrl)) {
+      window.webContents.send(IPC.updateState, state);
+    }
+    // 托盘菜单里的「更新到 x.y.z」跟着变（下载进度不影响它）。
+    if (state.kind !== "downloading") this.tray?.update(this.t(), this.view.kind === "failed");
   }
 
   private async confirmQuit(running: number): Promise<boolean> {
@@ -801,7 +871,12 @@ class DesktopController {
     });
     ipcMain.handle(IPC.setPreferences, (event, patch: unknown): DesktopPreferencesDto => {
       if (!fromApp(event)) throw new Error("untrusted sender");
-      const openAtLogin = patch !== null && typeof patch === "object" ? (patch as Record<string, unknown>)["openAtLogin"] : undefined;
+      const value = patch !== null && typeof patch === "object" ? (patch as Record<string, unknown>) : {};
+      if (typeof value["autoCheckUpdates"] === "boolean") {
+        this.prefs = { ...this.prefs, autoCheckUpdates: value["autoCheckUpdates"] };
+        this.savePrefs();
+      }
+      const openAtLogin = value["openAtLogin"];
       if (typeof openAtLogin === "boolean") {
         try {
           applyLoginItem(this.loginHost, openAtLogin);
@@ -817,6 +892,18 @@ class DesktopController {
       if (!fromApp(event) || (kind !== "data" && kind !== "logs")) throw new Error("untrusted sender");
       const failure = await shell.openPath(kind === "data" ? paths.dataDir : paths.logDir);
       if (failure !== "") this.log(`could not open ${kind} directory: ${failure}`);
+    });
+    ipcMain.handle(IPC.getUpdateState, (event): DesktopUpdateState => {
+      if (!fromApp(event)) throw new Error("untrusted sender");
+      return this.updater?.current() ?? { kind: "idle" };
+    });
+    ipcMain.handle(IPC.checkForUpdates, async (event): Promise<DesktopUpdateState> => {
+      if (!fromApp(event)) throw new Error("untrusted sender");
+      return (await this.updater?.check(true)) ?? { kind: "idle" };
+    });
+    ipcMain.handle(IPC.installUpdate, async (event): Promise<void> => {
+      if (!fromApp(event)) throw new Error("untrusted sender");
+      await this.updater?.install();
     });
     ipcMain.on(IPC.showWindow, (event) => {
       if (fromApp(event)) this.showWindow();
@@ -870,7 +957,7 @@ class DesktopController {
   }
 
   private preferencesDto(): DesktopPreferencesDto {
-    return { openAtLogin: this.prefs.openAtLogin, openAtLoginStatus: loginItemStatus(this.loginHost) };
+    return { openAtLogin: this.prefs.openAtLogin, openAtLoginStatus: loginItemStatus(this.loginHost), autoCheckUpdates: this.prefs.autoCheckUpdates };
   }
 
   private savePrefs(): void {

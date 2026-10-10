@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { DesktopPreferencesDto, SuDuoDesktopBridge } from "@suduo/client-contracts";
+import type { DesktopPreferencesDto, DesktopUpdateState, SuDuoDesktopBridge } from "@suduo/client-contracts";
 import { act, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +33,7 @@ const { DesktopSection } = await import("../src/features/settings/sections/Deskt
 const { ChatGptAccountRow } = await import("../src/features/settings/sections/ChatGptAccount.js");
 const { TooltipProvider } = await import("@/components/ui/tooltip");
 const { useAttentionSignals } = await import("../src/features/sessions/attention.js");
+const { UpdateBanner } = await import("../src/app/shell/UpdateBanner.js");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -54,9 +55,11 @@ async function settle() {
 }
 const q = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
-function installBridge(preferences: DesktopPreferencesDto): SuDuoDesktopBridge & { calls: unknown[] } {
+function installBridge(preferences: Omit<DesktopPreferencesDto, "autoCheckUpdates"> & { autoCheckUpdates?: boolean }, update: DesktopUpdateState = { kind: "idle" }): SuDuoDesktopBridge & { calls: unknown[]; push(state: DesktopUpdateState): void } {
   const calls: unknown[] = [];
-  let current = preferences;
+  let current: DesktopPreferencesDto = { autoCheckUpdates: true, ...preferences };
+  const listeners = new Set<(state: DesktopUpdateState) => void>();
+  let updateState = update;
   const bridge = {
     calls,
     info: vi.fn(async () => ({ version: "0.11.0", platform: "darwin" as const, arch: "arm64", baseUrl: "http://127.0.0.1:8790/", dataDir: "/d", logDir: "/l" })),
@@ -71,6 +74,22 @@ function installBridge(preferences: DesktopPreferencesDto): SuDuoDesktopBridge &
       calls.push(["openDirectory", kind]);
     }),
     showWindow: vi.fn(() => calls.push(["showWindow"])),
+    getUpdateState: vi.fn(async () => updateState),
+    checkForUpdates: vi.fn(async () => {
+      calls.push(["checkForUpdates"]);
+      return updateState;
+    }),
+    installUpdate: vi.fn(async () => {
+      calls.push(["installUpdate"]);
+    }),
+    onUpdateState: vi.fn((listener: (state: DesktopUpdateState) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }),
+    push(state: DesktopUpdateState) {
+      updateState = state;
+      for (const listener of listeners) listener(state);
+    },
   };
   (window as unknown as { suDuoDesktop?: unknown }).suDuoDesktop = bridge;
   return bridge;
@@ -206,5 +225,51 @@ describe("系统通知", () => {
       vi.unstubAllGlobals();
       window.localStorage.removeItem("suduo.notify.system");
     }
+  });
+});
+
+describe("应用内更新", () => {
+  it("有新版本时顶部提示（Mac 写「去下载」、Windows 写「更新」）；点了交给外壳；「稍后」这个版本不再提示", async () => {
+    const bridge = installBridge({ openAtLogin: false, openAtLoginStatus: "disabled" }, { kind: "available", version: "1.2.0", notesUrl: "https://x/v1.2.0", canInstall: false });
+    window.localStorage.removeItem("suduo.update.dismissed");
+    await render(<UpdateBanner />);
+    expect(q("update-banner")?.textContent).toContain("SuDuo 1.2.0 可用");
+    expect(q("update-install")?.textContent).toBe("去下载");
+    await act(async () => q("update-install")?.click());
+    expect(bridge.calls).toContainEqual(["installUpdate"]);
+    await act(async () => bridge.push({ kind: "available", version: "1.2.0", notesUrl: "https://x/v1.2.0", canInstall: true }));
+    expect(q("update-install")?.textContent).toBe("更新");
+    await act(async () => q("update-later")?.click());
+    expect(q("update-banner")).toBeNull();
+    await act(async () => bridge.push({ kind: "available", version: "1.3.0", notesUrl: "https://x/v1.3.0", canInstall: true }));
+    expect(q("update-banner")?.textContent).toContain("1.3.0");
+    window.localStorage.removeItem("suduo.update.dismissed");
+  });
+
+  it("下载中显示进度；下载失败说明原因；浏览器里不出现", async () => {
+    const bridge = installBridge({ openAtLogin: false, openAtLoginStatus: "disabled" }, { kind: "downloading", version: "1.2.0", percent: 40 });
+    await render(<UpdateBanner />);
+    expect(q("update-banner")?.textContent).toContain("40%");
+    await act(async () => bridge.push({ kind: "failed", message: "没能更新：disk full" }));
+    expect(q("update-banner")?.textContent).toContain("disk full");
+    await act(async () => bridge.push({ kind: "available", version: "1.2.0", notesUrl: "https://x/v1.2.0", canInstall: true }));
+    expect(q("update-banner")?.textContent).toContain("SuDuo 1.2.0 可用");
+    await act(async () => root?.unmount());
+    document.body.innerHTML = "";
+    delete (window as unknown as { suDuoDesktop?: unknown }).suDuoDesktop;
+    await render(<UpdateBanner />);
+    expect(q("update-banner")).toBeNull();
+  });
+
+  it("「桌面应用」里：自动检查开关经桥保存；点「检查更新」交给外壳并显示结果", async () => {
+    const bridge = installBridge({ openAtLogin: false, openAtLoginStatus: "disabled" });
+    await render(<DesktopSection />);
+    await act(async () => q("desktop-auto-update")?.click());
+    await settle();
+    expect(bridge.calls).toContainEqual(["setPreferences", { autoCheckUpdates: false }]);
+    await act(async () => q("desktop-check-update")?.click());
+    await act(async () => bridge.push({ kind: "upToDate" }));
+    expect(bridge.calls).toContainEqual(["checkForUpdates"]);
+    expect(q("desktop-update-status")?.textContent).toBe("已是最新版本。");
   });
 });

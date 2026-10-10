@@ -82,6 +82,16 @@ export const zhCN = {
     quit: "退出",
     cancel: "取消",
   },
+  /** 应用内更新（D3）。 */
+  update: {
+    trayItem: (version: string) => `更新到 SuDuo ${version}`,
+    devBuild: "开发版不检查更新。",
+    failed: (reason: string) => `没能更新：${reason}`,
+    confirmMessage: (count: number) => `有 ${String(count)} 个会话正在进行`,
+    confirmDetail: "更新要先退出 SuDuo，会中断它们；装好后 SuDuo 会自动重新打开。",
+    confirmInstall: "更新",
+    cancel: "取消",
+  },
   backgroundHint: {
     title: "SuDuo 仍在后台运行",
     body: (where: string) => `进行中的会话不会中断，房间里共享的 Agent 继续响应。可以从${where}的图标打开或退出。`,

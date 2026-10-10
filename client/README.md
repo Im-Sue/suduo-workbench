@@ -8,7 +8,7 @@ Your team also needs a SuDuo server; see the [deployment guide](../cloud/DEPLOYM
 
 ## Desktop app (trial)
 
-The desktop app includes everything the client needs, so you don't need Node.js or pnpm (git is only used for checkpoints and branch status). It's a trial: it isn't signed yet and doesn't update itself.
+The desktop app includes everything the client needs, so you don't need Node.js or pnpm (git is only used for checkpoints and branch status). It's a trial: it isn't signed yet.
 
 1. Download the installer for your computer from the [latest release](https://github.com/Im-Sue/suduo-workbench/releases/latest). `SHA256SUMS.txt` in the same release lists the checksums.
 
@@ -26,11 +26,10 @@ The desktop app includes everything the client needs, so you don't need Node.js 
 Good to know:
 
 - **Closing the window doesn't quit SuDuo.** It keeps running in the menu bar (macOS) or the notification area (Windows), so sessions keep going and Agents you share in rooms keep responding. Quit from that icon, or with ⌘Q on macOS. If sessions are in progress, SuDuo asks first.
-- **Codex.** The app includes the Codex CLI version SuDuo is tested with and uses your `~/.codex`, so an existing Codex sign-in or model setup works as it is. Otherwise set an API key under **Settings → Model service**, or sign in to ChatGPT with the bundled Codex from a terminal:
-  - macOS (Apple silicon): `"/Applications/SuDuo.app/Contents/Resources/codex/aarch64-apple-darwin/bin/codex" login` (Intel: `x86_64-apple-darwin`)
-  - Windows: `& "$env:LOCALAPPDATA\Programs\suduo-desktop\resources\codex\x86_64-pc-windows-msvc\bin\codex.exe" login` in PowerShell
+- **Codex.** The app includes the Codex CLI version SuDuo is tested with and uses your `~/.codex`, so an existing Codex sign-in or model setup works as it is. Otherwise set an API key under **Settings → Model service**, or click **Sign in with ChatGPT** there: you authorize in your browser, and Codex keeps the sign-in itself.
+- **Open at login** and the data and log folders are under **Settings → Desktop app**. Open at login is off by default; when it's on, SuDuo starts in the background without a window. On macOS you may also need to allow SuDuo under **System Settings → General → Login Items**.
 - **Your data** is kept in `~/Library/Application Support/SuDuo Desktop` (macOS) or `%LOCALAPPDATA%\SuDuo Desktop` (Windows). It is separate from a source run, and the app listens on port 8790 instead of 8787, so you can use both. Requirements and rooms are on your team's server either way; sessions you had in a source run stay there.
-- **Updating**: download the new version. On macOS, quit SuDuo from the menu bar first, then replace it in Applications. On Windows, run the new installer. Your data is kept.
+- **Updating**: SuDuo checks for a new version when it starts and once a day (you can turn this off or check now under **Settings → Desktop app**), and shows a bar at the top of the window. It never updates on its own. On Windows, click **Update**: SuDuo downloads the new version, asks first if sessions are in progress, then quits, installs and reopens. On macOS (the unsigned trial can't replace itself), **Download** opens the release page: quit SuDuo from the menu bar, then replace it in Applications. Your data is kept.
 - **Uninstalling**: on macOS, quit SuDuo and move it from Applications to the Trash; the data folder above stays until you delete it. On Windows, use **Settings → Apps → SuDuo → Uninstall**; it asks whether to delete your local data too (kept by default).
 - If SuDuo can't start, its window says why and shows where the log is (`logs` in the data folder), with a button to run diagnostics.
 

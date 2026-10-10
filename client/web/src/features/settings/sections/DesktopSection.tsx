@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DesktopPreferencesDto } from "@suduo/client-contracts";
+import type { DesktopPreferencesDto, DesktopUpdateState } from "@suduo/client-contracts";
 import { ExternalLinkIcon, FolderOpenIcon, InfoIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { desktopBridge } from "../../../desktop/bridge.js";
+import { useDesktopUpdate } from "../../../desktop/update.js";
 import { reportFailure } from "../../../feedback/report.js";
 import { useT } from "../../../i18n/provider.js";
 import { rowDescId, rowLabelId, SaveStatus, SettingsRow, SettingsSection, useSaveIndicator } from "../components/kit.js";
@@ -20,6 +21,8 @@ export function DesktopSection() {
   const bridge = desktopBridge();
   const queryClient = useQueryClient();
   const [saved, track] = useSaveIndicator();
+  const [updateSaved, trackUpdate] = useSaveIndicator();
+  const update = useDesktopUpdate();
   const info = useQuery({ queryKey: DESKTOP_KEYS.info, queryFn: () => bridge!.info(), enabled: bridge !== null, staleTime: Infinity });
   const preferences = useQuery({ queryKey: DESKTOP_KEYS.preferences, queryFn: () => bridge!.getPreferences(), enabled: bridge !== null });
 
@@ -38,6 +41,13 @@ export function DesktopSection() {
     track(() =>
       bridge
         .setPreferences({ openAtLogin })
+        .then((next) => queryClient.setQueryData<DesktopPreferencesDto>(DESKTOP_KEYS.preferences, next))
+        .catch((cause: unknown) => reportFailure(cause, { surface: "action" })),
+    );
+  const setAutoCheck = (autoCheckUpdates: boolean) =>
+    trackUpdate(() =>
+      bridge
+        .setPreferences({ autoCheckUpdates })
         .then((next) => queryClient.setQueryData<DesktopPreferencesDto>(DESKTOP_KEYS.preferences, next))
         .catch((cause: unknown) => reportFailure(cause, { surface: "action" })),
     );
@@ -64,6 +74,26 @@ export function DesktopSection() {
               {text.openAtLogin.unavailable}
             </span>
           ) : null}
+        </div>
+      </SettingsRow>
+
+      <SettingsRow anchor="desktop-updates" title={text.updates.title} description={text.updates.description} status={<SaveStatus state={updateSaved} />}>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <Switch
+              aria-labelledby={rowLabelId("desktop-updates")}
+              aria-describedby={rowDescId("desktop-updates")}
+              checked={preferences.data?.autoCheckUpdates ?? true}
+              disabled={preferences.data === undefined}
+              onCheckedChange={(checked) => setAutoCheck(checked)}
+              data-testid="desktop-auto-update"
+            />
+            <span className="text-small text-muted-foreground">{text.updates.auto}</span>
+            <Button size="sm" variant="secondary" loading={update?.kind === "checking"} onClick={() => void bridge.checkForUpdates()} data-testid="desktop-check-update">
+              {text.updates.check}
+            </Button>
+          </div>
+          {update === null ? null : <UpdateStatus state={update} />}
         </div>
       </SettingsRow>
 
@@ -105,4 +135,30 @@ export function DesktopSection() {
       </SettingsRow>
     </SettingsSection>
   );
+}
+
+/** 手动检查的结果（有新版本时给「更新」/「去下载」）。 */
+function UpdateStatus({ state }: { state: DesktopUpdateState }) {
+  const text = useT().settingsAgent.desktop.updates;
+  const bridge = desktopBridge();
+  switch (state.kind) {
+    case "idle":
+    case "checking":
+      return null;
+    case "upToDate":
+      return <span className="text-caption text-muted-foreground" data-testid="desktop-update-status">{text.upToDate}</span>;
+    case "downloading":
+      return <span className="text-caption text-muted-foreground" data-testid="desktop-update-status">{text.downloading(state.percent)}</span>;
+    case "failed":
+      return <span className="text-caption text-warning" data-testid="desktop-update-status">{state.message}</span>;
+    case "available":
+      return (
+        <span className="flex flex-wrap items-center gap-2 text-caption text-foreground" data-testid="desktop-update-status">
+          {text.available(state.version)}
+          <Button size="sm" variant="primary" onClick={() => void bridge?.installUpdate()}>
+            {state.canInstall ? text.install : text.download}
+          </Button>
+        </span>
+      );
+  }
 }

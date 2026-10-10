@@ -7,6 +7,9 @@ export interface MenuActions {
   /** 帮助：官网、使用说明、报告问题（交给系统浏览器）；打开日志目录。 */
   openHelp(kind: "website" | "guide" | "issues"): void;
   openLogs(): void;
+  /** 有新版本时托盘菜单里的一项（D3）；没有为 null。 */
+  updateLabel(): string | null;
+  installUpdate(): void;
   quit(): void;
   /** 本机服务已就绪（「在浏览器中打开」只在这时可用）。 */
   ready(): boolean;

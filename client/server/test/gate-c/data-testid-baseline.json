@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 447,
+  "total": 453,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -39,6 +39,11 @@
       "run-panel-button",
       "run-panel-count",
       "sessions-attention"
+    ],
+    "web/src/app/shell/UpdateBanner.tsx": [
+      "update-banner",
+      "update-install",
+      "update-later"
     ],
     "web/src/components/ApprovalModeSwitcher.tsx": [
       "approval-mode"
@@ -508,10 +513,13 @@
     ],
     "web/src/features/settings/sections/DesktopSection.tsx": [
       "desktop-address",
+      "desktop-auto-update",
+      "desktop-check-update",
       "desktop-open-at-login",
       "desktop-open-at-login-note",
       "desktop-open-data",
       "desktop-open-logs",
+      "desktop-update-status",
       "desktop-version"
     ],
     "web/src/features/settings/sections/DiagnosticsSection.tsx": [

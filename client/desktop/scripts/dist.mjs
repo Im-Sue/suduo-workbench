@@ -5,7 +5,7 @@
 // (Apple silicon refuses to run unsigned code), Windows installers are not signed.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,7 +65,8 @@ export function builderConfig({ arch, appDir, resources }) {
     },
     dmg: {
       artifactName: "SuDuo-${version}-mac-${arch}.${ext}",
-      writeUpdateInfo: false,
+      // latest-mac.yml 里要有 dmg：未签名的 Mac 版只检查有没有新版本、打开发布页下载（D3，技术设计 §4.3）。
+      writeUpdateInfo: true,
       window: { width: 540, height: 380 },
       contents: [
         { x: 140, y: 190 },
@@ -92,7 +93,9 @@ export function builderConfig({ arch, appDir, resources }) {
       installerLanguages: ["en_US", "zh_CN"],
       multiLanguageInstaller: true,
     },
-    publish: null,
+    // 应用内更新读 GitHub Release 上的 latest.yml / latest-mac.yml（打进安装包的 app-update.yml 指明仓库）。
+    // 这里只生成这些文件，不上传：上传由 desktop.yml 在三台构建机都做完后统一做（两台 Mac 的 latest-mac.yml 要合并）。
+    publish: { provider: "github", owner: "Im-Sue", repo: "suduo-workbench", releaseType: "release" },
   };
 }
 
@@ -113,6 +116,10 @@ async function main() {
     console.log(`${path} (${(statSync(path).size / 1024 / 1024).toFixed(1)} MB)`);
   }
   writeFileSync(join(outputDir, `SHA256SUMS-${platform}-${arch}.txt`), lines.join("\n") + "\n");
+  // 两台 Mac 构建机各写一份 latest-mac.yml：按架构改名，发布时合并（merge-update-info.mjs）。
+  if (platform === "darwin" && existsSync(join(outputDir, "latest-mac.yml"))) {
+    renameSync(join(outputDir, "latest-mac.yml"), join(outputDir, `latest-mac-${arch}.yml`));
+  }
 }
 
 async function sha256(path) {

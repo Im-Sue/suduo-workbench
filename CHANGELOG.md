@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### Added
+
+- Desktop app: in-app updates. SuDuo checks for a new version at startup and once a day (Settings → Desktop app lets you turn this off or check now) and shows a bar at the top of the window; it never updates on its own. On Windows it downloads, asks first if sessions are in progress, then installs and reopens; on macOS the unsigned trial opens the release page.
+- Desktop app: sign in to Codex with your ChatGPT account under Settings → Model service (you authorize in your browser; Codex keeps the sign-in).
+- Desktop app: open at login (off by default; starts in the background without a window), a Help menu on macOS, and a Settings → Desktop app group with the local address and the data and log folders.
+- Desktop app: clicking a system notification brings the SuDuo window back, even when it was closed to the menu bar or notification area.
+- Diagnostics check for Git (checkpoints and change diffs need it); when it's missing you get install steps, and SuDuo still starts.
+
+### Removed
+
+- The unreleased Windows installer under `client/scripts/dist-win` (replaced by the desktop app since 0.9.0).
+
 ### Fixed
 
 - In a requirement's attachment list, the names of PDFs and other files that open in a new tab showed as blue underlined links. They now look like the other file names and are underlined only on hover.

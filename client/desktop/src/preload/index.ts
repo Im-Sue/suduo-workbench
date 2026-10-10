@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { SuDuoDesktopBridge } from "@suduo/client-contracts";
+import type { DesktopUpdateState, SuDuoDesktopBridge } from "@suduo/client-contracts";
 import { IPC, type StartupView, type SuDuoStartupBridge } from "../shared/ipc.js";
 
 /**
@@ -25,6 +25,14 @@ if (window.location.protocol === "file:") {
     setPreferences: (patch) => ipcRenderer.invoke(IPC.setPreferences, patch),
     openDirectory: (kind) => ipcRenderer.invoke(IPC.openDirectory, kind),
     showWindow: () => ipcRenderer.send(IPC.showWindow),
+    getUpdateState: () => ipcRenderer.invoke(IPC.getUpdateState),
+    checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
+    installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
+    onUpdateState: (listener) => {
+      const handler = (_event: unknown, state: DesktopUpdateState) => listener(state);
+      ipcRenderer.on(IPC.updateState, handler);
+      return () => ipcRenderer.removeListener(IPC.updateState, handler);
+    },
   };
   contextBridge.exposeInMainWorld("suDuoDesktop", desktop);
 }

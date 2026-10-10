@@ -219,6 +219,17 @@ export const settingsAgent = {
       requiresApproval: "还要在「系统设置 → 通用 → 登录项」里允许 SuDuo 才会生效。",
       unavailable: "开发版不改系统的登录项，安装版里才生效。",
     },
+    updates: {
+      title: "更新",
+      description: "有新版本时在窗口顶部提示，只提示不强制。Windows 可以在应用里下载安装；Mac 的试用版打开下载页，下载后替换。",
+      auto: "自动检查（启动后和每天一次）",
+      check: "检查更新",
+      upToDate: "已是最新版本。",
+      available: (version: string) => `SuDuo ${version} 可用。`,
+      install: "更新",
+      download: "去下载",
+      downloading: (percent: number) => `正在下载…${String(percent)}%`,
+    },
     address: {
       title: "本机地址",
       description: "本机服务的地址。在浏览器里打开也能用，数据是同一份。",
