@@ -4,6 +4,7 @@ import {
   FolderGit2Icon,
   GlobeIcon,
   InfoIcon,
+  MonitorIcon,
   PaletteIcon,
   PlugIcon,
   PuzzleIcon,
@@ -15,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { LOCALES } from "@suduo/client-contracts";
+import { desktopBridge } from "../../desktop/bridge.js";
 import { currentLocale } from "../../i18n/locale.js";
 import { messagesFor, type Messages } from "../../i18n/messages/index.js";
 
@@ -34,6 +36,7 @@ export const SETTINGS_SECTION_IDS = [
   "skills",
   "mcp",
   "proxy",
+  "desktop",
   "diagnostics",
   "about",
 ] as const;
@@ -62,13 +65,17 @@ const SECTION_LAYOUT: readonly Omit<SettingsSectionMeta, "title">[] = [
   { id: "skills", icon: PuzzleIcon, band: "codex" },
   { id: "mcp", icon: PlugIcon, band: "codex" },
   { id: "proxy", icon: GlobeIcon, band: "codex" },
+  { id: "desktop", icon: MonitorIcon, band: "other" },
   { id: "diagnostics", icon: StethoscopeIcon, band: "other" },
   { id: "about", icon: InfoIcon, band: "other" },
 ];
 
-/** 分组清单；分组名按调用时的界面语言取，组件里可以传入 useT() 拿到的字典。 */
-export function settingsSections(t: Messages = messagesFor(currentLocale())): SettingsSectionMeta[] {
-  return SECTION_LAYOUT.map((section) => ({ ...section, title: t.settings.sections[section.id] }));
+/**
+ * 分组清单；分组名按调用时的界面语言取，组件里可以传入 useT() 拿到的字典。
+ * 「桌面应用」只在安装版里列出（浏览器里打开没有外壳的桥）。
+ */
+export function settingsSections(t: Messages = messagesFor(currentLocale()), desktop = desktopBridge() !== null): SettingsSectionMeta[] {
+  return SECTION_LAYOUT.filter((section) => desktop || section.id !== "desktop").map((section) => ({ ...section, title: t.settings.sections[section.id] }));
 }
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "appearance";

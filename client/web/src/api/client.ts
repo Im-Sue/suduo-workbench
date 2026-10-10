@@ -43,6 +43,9 @@ import type {
   OpenTargetsResponse,
   SettingsDto,
   CodexModelsResponse,
+  CodexAccountDto,
+  CodexLoginStartDto,
+  CodexLoginStatusDto,
   ModelProviderSettingsDto,
   UpdateModelProviderRequest,
   UpdateModelProviderResult,
@@ -812,6 +815,14 @@ export const api = {
     }),
 
   codexModels: () => request<CodexModelsResponse>("/api/v1/codex/models"),
+
+  // ── 用 ChatGPT 账号登录 Codex（桌面应用 D2）：授权在系统浏览器里完成，凭据由 Codex 自己保存。
+  codexAccount: () => request<CodexAccountDto>("/api/v1/codex/account"),
+  startCodexLogin: () => request<CodexLoginStartDto>("/api/v1/codex/account/login", { method: "POST", body: {} }),
+  codexLoginStatus: (loginId: string) => request<CodexLoginStatusDto>(`/api/v1/codex/account/login/${encodeURIComponent(loginId)}`),
+  cancelCodexLogin: (loginId: string) =>
+    request<CodexLoginStatusDto>(`/api/v1/codex/account/login/${encodeURIComponent(loginId)}/cancel`, { method: "POST", body: {} }),
+  codexLogout: () => request<CodexAccountDto>("/api/v1/codex/account/logout", { method: "POST", body: {} }),
 
   // ── 多 Agent（ADR-0014）：本机 Agent 的列表、检测、登录与设置；会话级模型选项按 Agent 取。
   /** 不等检测：没检测完的标 checking，轮询补上。 */

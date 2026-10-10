@@ -67,6 +67,8 @@ export interface DoctorOptions {
   agentsWaitMs?: number;
   /** 本机工具服务的地址（服务里跑诊断时给；命令行没有服务在跑，不查这一项）。 */
   toolServerUrl?: () => string | null;
+  /** 测试注入：Git 检查用到的宿主信息。 */
+  gitHost?: Partial<GitHost>;
 }
 
 /** Linux 沙箱探测依赖的宿主信息（测试可替换）。 */
@@ -124,6 +126,7 @@ export async function runDoctor(
     if (list !== null && list !== undefined) checkAgents(checks, t, list);
   }
   if (options.toolServerUrl !== undefined) checkToolServer(checks, t, options.toolServerUrl());
+  checkGit(checks, t, { ...defaultGitHost(), ...options.gitHost });
   checkDatabaseAddon(checks, t);
   await checkPort(checks, t, options.port, options.allowPortInUse);
   const failed = checks.filter((check) => check.status === "fail");
@@ -606,6 +609,51 @@ const defaultLinuxSandboxHost: LinuxSandboxHost = {
 function lastLine(text: string): string | null {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
   return lines.at(-1) ?? null;
+}
+
+/** Git 检查用到的宿主信息（测试可替换）。 */
+export interface GitHost {
+  platform: NodeJS.Platform;
+  /** 跑一条命令，取退出码与输出；命令不存在时 status 为 null。 */
+  run(command: string, args: string[]): { status: number | null; stdout: string };
+}
+
+function defaultGitHost(): GitHost {
+  return {
+    platform: process.platform,
+    run: (command, args) => {
+      const result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, timeout: 10_000 });
+      return { status: result.error === undefined ? result.status : null, stdout: typeof result.stdout === "string" ? result.stdout : "" };
+    },
+  };
+}
+
+/**
+ * Git（桌面应用 D2，需求 4.6）：检查点等功能要用，所有运行形态都查。没装只提醒、给安装引导，不拦启动。
+ * Mac 上先用 `xcode-select -p` 看装没装命令行工具：没装时 /usr/bin/git 会弹系统的安装对话框，不能在自检里意外触发。
+ */
+export function checkGit(checks: DoctorCheck[], t: ServerMessages, host: GitHost): void {
+  const text = t.doctor.git;
+  const missing = (message: string): void => {
+    checks.push({
+      id: SUDUO_DOCTOR_CHECK_IDS.git,
+      name: "Git",
+      status: "warn",
+      message,
+      remediation: host.platform === "darwin" ? text.installMac : host.platform === "win32" ? text.installWindows : text.installLinux,
+    });
+  };
+  if (host.platform === "darwin" && host.run("xcode-select", ["-p"]).status !== 0) {
+    missing(text.noCommandLineTools);
+    return;
+  }
+  const result = host.run("git", ["--version"]);
+  const version = /git version (\S+)/u.exec(result.stdout)?.[1] ?? null;
+  if (result.status !== 0 || version === null) {
+    missing(text.missing);
+    return;
+  }
+  checks.push({ id: SUDUO_DOCTOR_CHECK_IDS.git, name: "Git", status: "pass", message: text.ok(version), version });
 }
 
 function checkDatabaseAddon(checks: DoctorCheck[], t: ServerMessages): void {

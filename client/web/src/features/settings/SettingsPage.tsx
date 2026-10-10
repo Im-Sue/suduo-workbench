@@ -30,6 +30,7 @@ import {
 import { AboutSection } from "./sections/AboutSection.js";
 import { AccountSection } from "./sections/AccountSection.js";
 import { AgentsSection } from "./sections/AgentsSection.js";
+import { DesktopSection } from "./sections/DesktopSection.js";
 import { AppearanceSection } from "./sections/AppearanceSection.js";
 import { DiagnosticsSection } from "./sections/DiagnosticsSection.js";
 import { ExecutionSection } from "./sections/ExecutionSection.js";
@@ -170,6 +171,8 @@ function SectionView({ section }: { section: SettingsSectionId }) {
       return <McpSection />;
     case "proxy":
       return <ProxySection />;
+    case "desktop":
+      return <DesktopSection />;
     case "diagnostics":
       return <DiagnosticsSection />;
     case "about":

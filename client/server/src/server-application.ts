@@ -29,6 +29,7 @@ import { GitService } from "./application/git-service.js";
 import { closeQueuedAfterRestart, MessageService, stableClientTurnId } from "./application/message-service.js";
 import { SettingsService } from "./application/settings-service.js";
 import { ModelProviderService } from "./application/model-provider-service.js";
+import { CodexAccountService } from "./application/codex-account-service.js";
 import { McpService } from "./application/mcp-service.js";
 import { ProxyConnectivityService } from "./application/proxy-connectivity-service.js";
 import { agentChildEnv } from "./application/agents/agent-exec.js";
@@ -311,6 +312,23 @@ export function createSuDuoApplication(
     );
     await runtime.restartConnection("egress proxy settings changed");
   });
+  // 用 ChatGPT 账号登录 Codex（桌面应用 D2）：每次登录单独起一个 app-server，环境同会话用的那份（含代理设置）。
+  // 登录方式变了：会话用的 Codex 进程重连一次才用得上新的登录。重连会中断进行中的回合，所以等 Codex 的回合都结束。
+  let codexRestartPending = false;
+  const restartCodexWhenIdle = (): void => {
+    if (turnScheduler.snapshot().running.some((item) => item.agentId === "codex")) {
+      codexRestartPending = true;
+      return;
+    }
+    codexRestartPending = false;
+    void runtime.restartConnection("codex account changed").catch(() => undefined);
+  };
+  const codexAccount = new CodexAccountService({
+    transport: options.runtimeTransport ?? new StdioCodexTransport(),
+    codexBin: options.codexBin,
+    env: () => codexEnvironment,
+    onAccountChanged: () => restartCodexWhenIdle(),
+  });
   const modelProviderService = new ModelProviderService({
     controlPlane: runtime,
     codexBin: options.codexBin,
@@ -518,6 +536,7 @@ export function createSuDuoApplication(
     }
     if (event.type === "turn.completed" || event.type === "turn.interrupted") {
       turnScheduler.turnEnded(event.sessionId, event.turnRef.turnId);
+      if (codexRestartPending) restartCodexWhenIdle();
     }
   });
   const schedulerReconcile = setInterval(() => {
@@ -890,6 +909,7 @@ export function createSuDuoApplication(
     reviews: reviewService,
     trials: trialService,
     sharedDrafts: sharedDraftService,
+    codexAccount,
     sessionAiRules: projectRulesService,
     aiActivity,
     aiCollabRemote: requirementsRemote,
@@ -976,6 +996,7 @@ export function createSuDuoApplication(
       if (prewarm !== null) clearTimeout(prewarm);
       clearInterval(schedulerReconcile);
       clearInterval(stallCheck);
+      await codexAccount.dispose();
       releaseOnTurnEnd();
       claudeRuntime.close();
       for (const acpRuntime of acpRuntimes) acpRuntime.close();

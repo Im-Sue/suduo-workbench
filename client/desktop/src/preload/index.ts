@@ -21,6 +21,10 @@ if (window.location.protocol === "file:") {
   const desktop: SuDuoDesktopBridge = {
     info: () => ipcRenderer.invoke(IPC.info),
     setLocale: (locale) => ipcRenderer.send(IPC.setLocale, locale),
+    getPreferences: () => ipcRenderer.invoke(IPC.getPreferences),
+    setPreferences: (patch) => ipcRenderer.invoke(IPC.setPreferences, patch),
+    openDirectory: (kind) => ipcRenderer.invoke(IPC.openDirectory, kind),
+    showWindow: () => ipcRenderer.send(IPC.showWindow),
   };
   contextBridge.exposeInMainWorld("suDuoDesktop", desktop);
 }

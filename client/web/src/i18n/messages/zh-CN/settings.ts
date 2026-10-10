@@ -16,6 +16,7 @@ export const settings = {
     skills: "Skills",
     mcp: "MCP 服务",
     proxy: "网络代理",
+    desktop: "桌面应用",
     diagnostics: "诊断",
     about: "关于",
   },

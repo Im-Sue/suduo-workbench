@@ -18,6 +18,7 @@ export const settings = {
     skills: "Skills",
     mcp: "MCP servers",
     proxy: "Network proxy",
+    desktop: "Desktop app",
     diagnostics: "Diagnostics",
     about: "About",
   },

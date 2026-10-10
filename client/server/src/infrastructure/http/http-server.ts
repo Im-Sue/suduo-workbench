@@ -101,6 +101,7 @@ import { registerDelegationsRoutes, type DelegationsRouteDependencies } from "./
 import { registerReviewsRoutes, type ReviewsRouteDependencies } from "./routes/reviews-routes.js";
 import { registerTrialsRoutes, type TrialsRouteDependencies } from "./routes/trials-routes.js";
 import { registerSharedDraftsRoutes, type SharedDraftsRouteDependencies } from "./routes/shared-drafts-routes.js";
+import { registerCodexAccountRoutes, type CodexAccountRouteDependencies } from "./routes/codex-account-routes.js";
 import { MCP_ENDPOINT_PATH, registerMcpEndpoint, type McpToolHost } from "../mcp/mcp-endpoint.js";
 import type { ToolTokenRegistry } from "../mcp/tool-tokens.js";
 import {
@@ -135,6 +136,7 @@ export interface HttpServerDependencies
     ReviewsRouteDependencies,
     TrialsRouteDependencies,
     SharedDraftsRouteDependencies,
+    CodexAccountRouteDependencies,
     McpRouteDependencies,
     LocalDirectoryRouteDependencies,
     SystemActivityRouteDependencies {
@@ -283,6 +285,7 @@ export function buildHttpServer(
   registerReviewsRoutes(server, dependencies);
   registerTrialsRoutes(server, dependencies);
   registerSharedDraftsRoutes(server, dependencies);
+  registerCodexAccountRoutes(server, dependencies);
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }

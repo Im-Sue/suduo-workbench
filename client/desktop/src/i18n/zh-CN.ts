@@ -39,6 +39,7 @@ export const zhCN = {
     tooltipFailed: "SuDuo 没能启动，打开窗口查看原因",
     open: "打开 SuDuo",
     openInBrowser: "在浏览器中打开",
+    openLogs: "打开日志目录",
     quit: "退出 SuDuo",
   },
   menu: {
@@ -69,6 +70,11 @@ export const zhCN = {
     close: "关闭窗口",
     front: "前置全部窗口",
     openInBrowser: "在浏览器中打开",
+    help: "帮助",
+    website: "SuDuo 官网",
+    guide: "使用说明",
+    reportIssue: "报告问题",
+    openLogs: "打开日志目录",
   },
   quitConfirm: {
     message: (count: number) => `有 ${String(count)} 个会话正在进行`,

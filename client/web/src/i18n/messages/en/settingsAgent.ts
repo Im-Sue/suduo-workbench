@@ -224,8 +224,34 @@ export const settingsAgent = {
       confirm: "Use full access",
     },
   },
+  desktop: {
+    description: "Settings for the SuDuo desktop app itself.",
+    onlyInApp: "These settings are only available in the SuDuo desktop app.",
+    openAtLogin: {
+      title: "Open at login",
+      description: "Run in the background after you sign in to your computer (no window; an icon in the menu bar or notification area), so agents shared into rooms respond right away.",
+      requiresApproval: "To take effect, also allow SuDuo in System Settings > General > Login Items.",
+      unavailable: "The development build doesn't change your system's login items; this works in the installed app.",
+    },
+    address: {
+      title: "Local address",
+      description: "The address of the local service. It also works in a browser, with the same data.",
+      open: "Open in browser",
+    },
+    folders: {
+      title: "Data and logs",
+      description: "Your local sessions, settings and logs are kept here. When troubleshooting, you can send the logs to a teammate or administrator.",
+      data: "Open data folder",
+      logs: "Open logs folder",
+    },
+    version: {
+      title: "Version",
+      value: (version: string, platform: string, arch: string) => `SuDuo ${version} (${platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform} · ${arch})`,
+    },
+  },
   notifications: {
     description: "Only affects this browser on this computer.",
+    descriptionDesktop: "Only affects the SuDuo desktop app on this computer. It uses system notifications, so there's no browser permission to grant (your system may ask once); click a notification to open SuDuo.",
     system: {
       title: "System notifications",
       description:

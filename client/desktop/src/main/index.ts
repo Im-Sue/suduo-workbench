@@ -19,11 +19,13 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions,
 } from "electron";
-import { CODEX_VERSION, SUDUO_DOCTOR_CHECK_IDS, type DoctorResultDto, type SuDuoDesktopInfo } from "@suduo/client-contracts";
+import { CODEX_VERSION, SUDUO_DOCTOR_CHECK_IDS, type DesktopPreferencesDto, type DoctorResultDto, type SuDuoDesktopInfo } from "@suduo/client-contracts";
 import { chooseDesktopLocale, desktopMessages, parseStoredLocale, type DesktopLocale, type DesktopMessages } from "../i18n/index.js";
 import { IPC, STARTUP_ACTIONS, type StartupActionId, type StartupView } from "../shared/ipc.js";
 import { buildServerEnvironment } from "./environment.js";
 import { createLogger } from "./logger.js";
+import { applyLoginItem, loginItemStatus, openedAtLogin, type LoginItemHost } from "./login-item.js";
+import { helpUrl } from "./help.js";
 import { applyApplicationMenu, popupContextMenu, type MenuActions } from "./menus.js";
 import { isAllowedPermission, isAppPageUrl, isAppUrl, isExternalOpenable, isStartupUrl } from "./navigation.js";
 import { resolveDesktopPaths } from "./paths.js";
@@ -86,7 +88,14 @@ type QuitState = "running" | "confirming" | "stopping" | "done";
 
 class DesktopController {
   private readonly log = createLogger(paths.desktopLog, !app.isPackaged);
-  private readonly hiddenStart = process.argv.includes("--hidden");
+  /** 开机自启拉起来的（Windows 带 --hidden，Mac 看 wasOpenedAtLogin）：不弹窗口。start() 里定下。 */
+  private hiddenStart = process.argv.includes("--hidden");
+  private readonly loginHost: LoginItemHost = {
+    platform: process.platform,
+    packaged: app.isPackaged,
+    get: (options) => app.getLoginItemSettings(options),
+    set: (settings) => app.setLoginItemSettings(settings),
+  };
   private readonly startupUrl = pathToFileURL(paths.startupPage).href;
   private prefs: DesktopPreferences = loadPreferences(paths.preferencesFile);
   private announcedLocale: string | null = null;
@@ -119,6 +128,8 @@ class DesktopController {
     openInBrowser: () => {
       if (this.baseUrl !== null) void shell.openExternal(this.baseUrl);
     },
+    openHelp: (kind) => void shell.openExternal(helpUrl(kind, this.locale())),
+    openLogs: () => void shell.openPath(paths.logDir),
     quit: () => app.quit(),
     ready: () => this.baseUrl !== null,
     devTools: !app.isPackaged || process.env["SUDUO_DESKTOP_DEVTOOLS"] === "1",
@@ -126,6 +137,16 @@ class DesktopController {
 
   start(): void {
     this.log(`SuDuo desktop ${this.version()} starting (packaged=${String(app.isPackaged)}, data=${paths.dataDir})`);
+    // 查系统登录项是同步调用（Mac 上经 SMAppService 问系统服务），在 CI 的 Mac 构建机上见过卡住主线程、整个应用
+    // 不动。只有使用者开过开机自启才在启动时查：没开过就不会是开机拉起的，也没有要同步的。
+    if (this.prefs.openAtLogin) {
+      this.hiddenStart = openedAtLogin(process.argv, this.loginHost);
+      // 开机自启以系统的登录项为准（使用者可能在系统设置里关掉了）：不在每次启动时重新登记。
+      const loginStatus = loginItemStatus(this.loginHost);
+      if (loginStatus === "enabled" || loginStatus === "requiresApproval" || loginStatus === "disabled") {
+        this.prefs = { ...this.prefs, openAtLogin: loginStatus !== "disabled" };
+      }
+    }
     this.savePrefs();
     this.installSessionPolicy();
     this.installIpc();
@@ -774,6 +795,32 @@ class DesktopController {
       this.announcedLocale = locale;
       this.refreshChrome();
     });
+    ipcMain.handle(IPC.getPreferences, (event): DesktopPreferencesDto => {
+      if (!fromApp(event)) throw new Error("untrusted sender");
+      return this.preferencesDto();
+    });
+    ipcMain.handle(IPC.setPreferences, (event, patch: unknown): DesktopPreferencesDto => {
+      if (!fromApp(event)) throw new Error("untrusted sender");
+      const openAtLogin = patch !== null && typeof patch === "object" ? (patch as Record<string, unknown>)["openAtLogin"] : undefined;
+      if (typeof openAtLogin === "boolean") {
+        try {
+          applyLoginItem(this.loginHost, openAtLogin);
+        } catch (error) {
+          this.log(`could not change the login item: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        this.prefs = { ...this.prefs, openAtLogin };
+        this.savePrefs();
+      }
+      return this.preferencesDto();
+    });
+    ipcMain.handle(IPC.openDirectory, async (event, kind: unknown): Promise<void> => {
+      if (!fromApp(event) || (kind !== "data" && kind !== "logs")) throw new Error("untrusted sender");
+      const failure = await shell.openPath(kind === "data" ? paths.dataDir : paths.logDir);
+      if (failure !== "") this.log(`could not open ${kind} directory: ${failure}`);
+    });
+    ipcMain.on(IPC.showWindow, (event) => {
+      if (fromApp(event)) this.showWindow();
+    });
     ipcMain.on(IPC.startupReady, (event) => {
       if (fromStartup(event)) event.sender.send(IPC.startupView, this.renderView());
     });
@@ -820,6 +867,10 @@ class DesktopController {
     } catch {
       return app.getVersion();
     }
+  }
+
+  private preferencesDto(): DesktopPreferencesDto {
+    return { openAtLogin: this.prefs.openAtLogin, openAtLoginStatus: loginItemStatus(this.loginHost) };
   }
 
   private savePrefs(): void {
