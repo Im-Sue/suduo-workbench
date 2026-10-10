@@ -70,6 +70,15 @@ export const doctor = {
   sqlite: {
     ok: "原生 addon 可加载，临时库 migration/WAL 写读正常",
   },
+  /** Git（桌面应用 D2）：没装只提醒。 */
+  git: {
+    ok: (version: string) => `版本 ${version}`,
+    missing: "没找到 Git：检查点（回到开始前）、改动对比、并行试做等功能要用它，其余照常",
+    noCommandLineTools: "没装 Xcode 命令行工具（Git 在里面）：检查点（回到开始前）、改动对比、并行试做等功能要用它，其余照常",
+    installMac: "在终端里执行 xcode-select --install，装完重启 SuDuo",
+    installWindows: "安装 Git for Windows（https://git-scm.com/download/win），装完重启 SuDuo",
+    installLinux: "用系统的包管理器安装 git，装完重启 SuDuo",
+  },
   /** address 形如 127.0.0.1:8787。 */
   port: {
     available: (address: string) => `${address} 可用`,

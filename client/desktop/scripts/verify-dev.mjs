@@ -141,6 +141,52 @@ await delay(300);
 const editLabelZh = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.items[1]?.label);
 check("告知 zh-CN 后菜单变中文", editLabelZh === "编辑", String(editLabelZh));
 
+// ---------- D2：帮助菜单、偏好、「桌面应用」设置、唤出窗口、通知、Git 检查、ChatGPT 登录 ----------
+const helpMenu = await app.evaluate(({ Menu }) => {
+  const items = Menu.getApplicationMenu()?.items ?? [];
+  const help = items[items.length - 1];
+  return { label: help?.label, entries: help?.submenu?.items.map((item) => item.label) ?? [] };
+});
+check("Mac 菜单有「帮助」：官网、使用说明、报告问题、日志目录", helpMenu.label === "帮助" && helpMenu.entries.includes("报告问题") && helpMenu.entries.includes("打开日志目录"), JSON.stringify(helpMenu));
+await app.evaluate(({ Menu }) => {
+  const items = Menu.getApplicationMenu()?.items ?? [];
+  items[items.length - 1]?.submenu?.items.find((item) => item.label === "报告问题")?.click();
+});
+await delay(200);
+const openedHelp = await app.evaluate(() => globalThis.__opened);
+check("「报告问题」交给系统浏览器打开 GitHub Issues", openedHelp.includes("https://github.com/Im-Sue/suduo-workbench/issues"), JSON.stringify(openedHelp));
+const prefsBefore = await window.evaluate(() => window.suDuoDesktop.getPreferences());
+check("偏好：开机自启默认关；开发态不改系统登录项", prefsBefore.openAtLogin === false && prefsBefore.openAtLoginStatus === "unavailable", JSON.stringify(prefsBefore));
+const prefsAfter = await window.evaluate(() => window.suDuoDesktop.setPreferences({ openAtLogin: true }));
+check("打开开机自启后记进 desktop.json", prefsAfter.openAtLogin === true && prefs().openAtLogin === true, JSON.stringify(prefsAfter));
+await window.evaluate(() => window.suDuoDesktop.setPreferences({ openAtLogin: false }));
+const permission = await window.evaluate(() => window.Notification.permission);
+check("网页通知不需要另外授权（Notification.permission = granted）", permission === "granted", permission);
+// 「桌面应用」设置分组的界面由前端单测覆盖：这里的空数据目录还没连需求服务，设置页会被带到首启向导。
+await window.goto(`http://127.0.0.1:${port}/setup?step=4`);
+console.log("  (info) 首启向导第 4 步「连接 Agent」要先连上需求服务才能到达，界面由前端单测覆盖");
+const bw = await app.browserWindow(window);
+await bw.evaluate((w) => w.hide());
+await window.evaluate(() => window.suDuoDesktop.showWindow());
+await delay(400);
+check("showWindow() 把隐藏的窗口带到前面（点通知时用）", await bw.evaluate((w) => w.isVisible()));
+const doctorChecks = await window.evaluate(async () => (await (await fetch("/api/v1/doctor")).json()).checks);
+const gitCheck = doctorChecks.find((item) => item.id === "suduo.git");
+check("自检里有 Git 一项", gitCheck !== undefined && (gitCheck.status === "pass" || gitCheck.status === "warn"), JSON.stringify(gitCheck));
+const account = await window.evaluate(async () => (await fetch("/api/v1/codex/account")).json());
+check("Codex 账号：空的 Codex 配置目录下是没登录", account.mode === "none", JSON.stringify(account));
+const login = await window.evaluate(async () => {
+  const response = await fetch("/api/v1/codex/account/login", { method: "POST", headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() }, body: "{}" });
+  return response.json();
+});
+check("用 ChatGPT 账号登录：真实 Codex 给出 https 授权地址", typeof login.loginId === "string" && /^https:\/\//.test(login.authUrl ?? ""), JSON.stringify({ loginId: login.loginId, host: login.authUrl ? new URL(login.authUrl).host : null }));
+const cancelled = await window.evaluate(async (id) => {
+  const response = await fetch(`/api/v1/codex/account/login/${id}/cancel`, { method: "POST", headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() }, body: "{}" });
+  return response.json();
+}, login.loginId);
+check("取消登录", cancelled.status === "cancelled", JSON.stringify(cancelled));
+await window.goto(`http://127.0.0.1:${port}/`);
+
 // ---------- 2. 关窗只隐藏 ----------
 const browserWindow = await app.browserWindow(window);
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());

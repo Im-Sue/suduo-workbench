@@ -14,3 +14,4 @@ export * from "./rooms-local.js";
 export * from "./i18n.js";
 export * from "./doctor.js";
 export * from "./desktop.js";
+export * from "./codex-account.js";

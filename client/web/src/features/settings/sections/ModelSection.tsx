@@ -28,6 +28,7 @@ import { SaveBar, useUnsavedChanges } from "../components/frame.js";
 import { rowDescId, rowLabelId, SectionSkeleton, SettingsRow, SettingsSection, StatusPill } from "../components/kit.js";
 import { formatMs, TestConnection, timed, type TestOutcome } from "../components/TestConnection.js";
 import { networkReason } from "./ProxySection.js";
+import { ChatGptAccountRow } from "./ChatGptAccount.js";
 import { codexModelsQuery, modelProviderQuery, settingsKeys } from "../queries.js";
 import { useQueryFailure } from "../use-query-failure.js";
 import type { ProxyConnectivityDto } from "@suduo/client-contracts";
@@ -524,6 +525,8 @@ function ModelForm({
           </p>
         ) : null}
       </SettingsRow>
+
+      <ChatGptAccountRow />
 
       <SettingsRow
         anchor="model-name"

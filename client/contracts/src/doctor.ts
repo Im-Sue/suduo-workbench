@@ -20,6 +20,8 @@ export const SUDUO_DOCTOR_CHECK_IDS = {
   agent: "suduo.agent",
   /** SuDuo 本机工具服务（ADR-0015）：Codex 以外的 Agent 经它用需求、会话、委派等工具。 */
   toolServer: "suduo.tool-server",
+  /** Git（桌面应用 D2）：检查点等功能要用；没装只提醒，不拦启动。 */
+  git: "suduo.git",
 } as const;
 
 export type SuDuoDoctorCheckId = (typeof SUDUO_DOCTOR_CHECK_IDS)[keyof typeof SUDUO_DOCTOR_CHECK_IDS];

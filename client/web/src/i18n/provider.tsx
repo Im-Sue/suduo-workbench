@@ -1,5 +1,6 @@
 import type { Locale, LocalePreference } from "@suduo/client-contracts";
 import { useQueryClient } from "@tanstack/react-query";
+import { desktopBridge } from "../desktop/bridge.js";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   dropCarried,
@@ -37,6 +38,8 @@ export function LocaleBoundary({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const previous = useRef(locale);
   useEffect(() => registerLocaleBoundary(), []);
+  // 桌面应用里告诉外壳：菜单、托盘、提示框跟着界面语言换（桌面应用技术设计 §4.7）。
+  useEffect(() => desktopBridge()?.setLocale(locale), [locale]);
   useEffect(() => {
     // 重建结束（不再算「正在重建」，丢掉没被读走的快照）。同一次提交里，旧界面的卸载清理先于新界面的挂载 effect，
     // 这个 effect 又排在子组件的挂载 effect 之后；但开发模式下 StrictMode 还会在这之后、同一个任务里把新挂上的

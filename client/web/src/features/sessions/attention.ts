@@ -3,6 +3,7 @@ import { currentLocale } from "../../i18n/locale.js";
 import { messagesFor } from "../../i18n/messages/index.js";
 import { useCarried, useCarrySource } from "../../i18n/provider.js";
 import type { SessionUiStatus } from "../../ui/session-status.js";
+import { desktopBridge } from "../../desktop/bridge.js";
 
 /**
  * 完成提醒（需求 §4.5）：会话在后台（标签页不可见）完成、失败或需要审批时，
@@ -51,10 +52,16 @@ export function useAttentionSignals(status: SessionUiStatus, sessionTitle: strin
     document.title = `${MARK[status]} ${label} · ${baseTitle.current}`;
     if (systemNotifyEnabled() && typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
-        new Notification(`${label} · ${sessionTitle ?? text.fallbackSession}`, {
+        const notification = new Notification(`${label} · ${sessionTitle ?? text.fallbackSession}`, {
           body: text.body[status],
           tag: "suduo-session",
         });
+        // 点通知回到这个会话：桌面应用里窗口可能关到了菜单栏 / 通知区域，请外壳把它带到前面（D2）。
+        notification.onclick = () => {
+          desktopBridge()?.showWindow();
+          window.focus();
+          notification.close();
+        };
       } catch {
         // 某些环境不允许页面直接构造通知，标题前缀已足够。
       }

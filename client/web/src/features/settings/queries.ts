@@ -16,6 +16,7 @@ export const settingsKeys = {
   local: ["settings", "local"] as const,
   model: ["settings", "model"] as const,
   codexModels: ["settings", "model", "list"] as const,
+  codexAccount: ["settings", "model", "account"] as const,
   workspace: ["settings", "workspace"] as const,
   skills: ["settings", "skills"] as const,
   skillCatalog: (localProjectId: string) => ["settings", "skills", "catalog", localProjectId] as const,
@@ -41,6 +42,16 @@ export const modelProviderQuery = queryOptions({
 });
 
 /** Codex 官方模型清单；拿得到即说明当前保存的模型服务可用。 */
+/** Codex 的登录方式（用 ChatGPT 账号登录，桌面应用 D2）。每次起一个临时 Codex 进程读，不频繁刷新。 */
+export const codexAccountQuery = queryOptions({
+  queryKey: settingsKeys.codexAccount,
+  queryFn: () => api.codexAccount(),
+  staleTime: 30_000,
+  retry: false,
+  // 每读一次要起一个 Codex 进程：从浏览器授权回来聚焦窗口时不重取，登录结果由轮询负责。
+  refetchOnWindowFocus: false,
+});
+
 export const codexModelsQuery = queryOptions({
   queryKey: settingsKeys.codexModels,
   queryFn: () => api.codexModels(),

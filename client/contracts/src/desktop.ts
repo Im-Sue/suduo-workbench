@@ -28,11 +28,29 @@ export interface SystemActivityResponse {
   runningSessions: number;
 }
 
-/** preload 暴露给前端的 window.suDuoDesktop；只在桌面应用里存在。后续分片按技术设计 §7.2 扩充。 */
+/** preload 暴露给前端的 window.suDuoDesktop；只在桌面应用里存在。更新相关的方法随 D3 加（技术设计 §7.2）。 */
 export interface SuDuoDesktopBridge {
   info(): Promise<SuDuoDesktopInfo>;
   /** 界面语言变化时告知外壳，菜单、托盘与提示框跟着换。 */
   setLocale(locale: "zh-CN" | "en"): void;
+  /** 「设置 → 桌面应用」的偏好（D2）。 */
+  getPreferences(): Promise<DesktopPreferencesDto>;
+  setPreferences(patch: Partial<Pick<DesktopPreferencesDto, "openAtLogin">>): Promise<DesktopPreferencesDto>;
+  /** 用系统的文件管理器打开数据目录或日志目录。 */
+  openDirectory(kind: "data" | "logs"): Promise<void>;
+  /** 把窗口带到前面（点系统通知时：窗口可能关到了菜单栏 / 通知区域）。 */
+  showWindow(): void;
+}
+
+/** 桌面应用的偏好（存在外壳的 desktop.json）。 */
+export interface DesktopPreferencesDto {
+  /** 开机自启（默认关；开机时不弹窗口，只出菜单栏 / 通知区域图标）。 */
+  openAtLogin: boolean;
+  /**
+   * 系统那边的实际状态：enabled 已生效；requiresApproval 要在「系统设置 → 通用 → 登录项」里允许（Mac）；
+   * unavailable 这个运行方式设不了（开发态不改系统的登录项）；unknown 读不到。
+   */
+  openAtLoginStatus: "enabled" | "disabled" | "requiresApproval" | "unavailable" | "unknown";
 }
 
 export interface SuDuoDesktopInfo {

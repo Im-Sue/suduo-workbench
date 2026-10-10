@@ -3,6 +3,10 @@ export const IPC = {
   /** 前端（本机服务页面）→ 主进程。 */
   info: "suduo-desktop:info",
   setLocale: "suduo-desktop:set-locale",
+  getPreferences: "suduo-desktop:get-preferences",
+  setPreferences: "suduo-desktop:set-preferences",
+  openDirectory: "suduo-desktop:open-directory",
+  showWindow: "suduo-desktop:show-window",
   /** 启动页（file://）↔ 主进程。 */
   startupReady: "suduo-startup:ready",
   startupView: "suduo-startup:view",

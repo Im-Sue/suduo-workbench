@@ -1,7 +1,7 @@
 {
   "scope": "web/src/**/*.tsx",
   "attribute": "data-testid",
-  "total": 435,
+  "total": 447,
   "files": {
     "web/src/app/pages/BootScreens.tsx": [
       "page-failure"
@@ -497,6 +497,22 @@
       "settings-density",
       "settings-locale",
       "settings-theme"
+    ],
+    "web/src/features/settings/sections/ChatGptAccount.tsx": [
+      "model-chatgpt",
+      "model-chatgpt-cancel",
+      "model-chatgpt-sign-in",
+      "model-chatgpt-sign-out",
+      "model-chatgpt-status",
+      "model-chatgpt-waiting"
+    ],
+    "web/src/features/settings/sections/DesktopSection.tsx": [
+      "desktop-address",
+      "desktop-open-at-login",
+      "desktop-open-at-login-note",
+      "desktop-open-data",
+      "desktop-open-logs",
+      "desktop-version"
     ],
     "web/src/features/settings/sections/DiagnosticsSection.tsx": [
       "doctor-check",

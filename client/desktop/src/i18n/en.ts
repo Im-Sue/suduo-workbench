@@ -38,6 +38,7 @@ export const en: DesktopMessages = {
     tooltipFailed: "SuDuo couldn't start. Open the window to see why.",
     open: "Open SuDuo",
     openInBrowser: "Open in browser",
+    openLogs: "Open logs folder",
     quit: "Quit SuDuo",
   },
   menu: {
@@ -68,6 +69,11 @@ export const en: DesktopMessages = {
     close: "Close Window",
     front: "Bring All to Front",
     openInBrowser: "Open in Browser",
+    help: "Help",
+    website: "SuDuo Website",
+    guide: "User Guide",
+    reportIssue: "Report an Issue",
+    openLogs: "Open Logs Folder",
   },
   quitConfirm: {
     message: (count) => (count === 1 ? "1 session is in progress" : `${String(count)} sessions are in progress`),

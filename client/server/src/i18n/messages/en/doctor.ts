@@ -70,6 +70,15 @@ export const doctor = {
   sqlite: {
     ok: "The native addon loads, and migrations and WAL reads and writes work on a temporary database",
   },
+  git: {
+    ok: (version: string) => `Version ${version}`,
+    missing: "Git not found. Checkpoints (restore to before a turn), change diffs and parallel trials need it; everything else works",
+    noCommandLineTools:
+      "The Xcode command line tools (which include Git) aren't installed. Checkpoints (restore to before a turn), change diffs and parallel trials need them; everything else works",
+    installMac: "Run xcode-select --install in a terminal, then restart SuDuo",
+    installWindows: "Install Git for Windows (https://git-scm.com/download/win), then restart SuDuo",
+    installLinux: "Install git with your system's package manager, then restart SuDuo",
+  },
   port: {
     available: (address: string) => `${address} is available`,
     inUseBySuDuo: (address: string) => `${address} is in use (the service is running)`,

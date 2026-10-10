@@ -209,8 +209,36 @@ export const settingsAgent = {
       confirm: "设为完全访问",
     },
   },
+  /** 设置 → 桌面应用（桌面应用 D2）。 */
+  desktop: {
+    description: "SuDuo 桌面应用本身的设置。",
+    onlyInApp: "这些设置只在 SuDuo 桌面应用里有。",
+    openAtLogin: {
+      title: "开机自启",
+      description: "开机后自动在后台运行（不弹窗口，菜单栏或通知区域有图标），房间里共享的 Agent 一开机就能响应。",
+      requiresApproval: "还要在「系统设置 → 通用 → 登录项」里允许 SuDuo 才会生效。",
+      unavailable: "开发版不改系统的登录项，安装版里才生效。",
+    },
+    address: {
+      title: "本机地址",
+      description: "本机服务的地址。在浏览器里打开也能用，数据是同一份。",
+      open: "在浏览器中打开",
+    },
+    folders: {
+      title: "数据与日志",
+      description: "本机的会话、设置与日志放在这里。排查问题时可以把日志发给同事或管理员。",
+      data: "打开数据目录",
+      logs: "打开日志目录",
+    },
+    version: {
+      title: "版本",
+      value: (version: string, platform: string, arch: string) => `SuDuo ${version}（${platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform} · ${arch}）`,
+    },
+  },
   notifications: {
     description: "只影响这台电脑上的这个浏览器。",
+    /** 桌面应用里（D2）：用系统原生通知，不用浏览器授权。 */
+    descriptionDesktop: "只影响这台电脑上的 SuDuo 桌面应用。用系统通知，不用在浏览器里授权（系统第一次可能会问一下）；点通知打开 SuDuo。",
     system: {
       title: "系统通知",
       description: "会话在后台完成、失败或等你确认时，用系统通知提醒你。标签页标题上的提醒始终开启。",

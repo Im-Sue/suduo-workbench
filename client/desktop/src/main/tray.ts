@@ -30,6 +30,8 @@ export class SuDuoTray {
       Menu.buildFromTemplate([
         { label: t.tray.open, click: () => this.actions.showWindow() },
         { label: t.tray.openInBrowser, enabled: this.actions.ready(), click: () => this.actions.openInBrowser() },
+        // Windows 没有菜单栏：日志目录放在这里（Mac 的在「帮助」菜单）。
+        ...(process.platform === "darwin" ? [] : [{ label: t.tray.openLogs, click: () => this.actions.openLogs() }]),
         { type: "separator" },
         { label: t.tray.quit, click: () => this.actions.quit() },
       ]),

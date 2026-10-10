@@ -34,6 +34,7 @@ const RUNTIME_CHECK_IDS: ReadonlySet<string> = new Set([
   SUDUO_DOCTOR_CHECK_IDS.sqlite,
   SUDUO_DOCTOR_CHECK_IDS.port,
   SUDUO_DOCTOR_CHECK_IDS.toolServer,
+  SUDUO_DOCTOR_CHECK_IDS.git,
 ]);
 
 /** 文字按调用时的界面语言取；组件里可以传入 useT() 拿到的字典。 */
@@ -91,7 +92,10 @@ export function summarizeDoctor(checks: readonly DoctorCheck[], t: Messages = me
     );
   }
 
-  const runtimeFailures = checks.filter((check) => RUNTIME_CHECK_IDS.has(check.id) && check.status === "fail");
+  // 缺 Git 只是提醒（不拦启动），但检查点等功能用不了，也要在这里说出来。
+  const runtimeFailures = checks.filter(
+    (check) => RUNTIME_CHECK_IDS.has(check.id) && (check.status === "fail" || (check.id === SUDUO_DOCTOR_CHECK_IDS.git && check.status !== "pass")),
+  );
   items.push(
     runtimeFailures.length === 0
       ? { key: "runtime", title: titles.runtime, status: "ok", detail: text.runtimeReady }

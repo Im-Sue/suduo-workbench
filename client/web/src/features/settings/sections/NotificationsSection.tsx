@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { desktopBridge } from "../../../desktop/bridge.js";
 import { useT } from "../../../i18n/provider.js";
 import { showMessage } from "../../../ui/message.js";
 import { rowDescId, rowLabelId, SaveStatus, SettingsRow, SettingsSection, useSaveIndicator } from "../components/kit.js";
@@ -54,7 +55,7 @@ export function NotificationsSection() {
           : text.status.notGranted;
 
   return (
-    <SettingsSection id="notifications" description={text.description}>
+    <SettingsSection id="notifications" description={desktopBridge() === null ? text.description : text.descriptionDesktop}>
       <SettingsRow
         anchor="system-notify"
         title={text.system.title}
