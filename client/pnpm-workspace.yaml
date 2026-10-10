@@ -4,3 +4,14 @@ packages:
   - "contracts"
   - "codex-protocol"
   - "desktop"
+
+# Claude Agent SDK 自带各平台的 claude 二进制（可选依赖）：SuDuo 只驱动用户本机安装的官方 claude（ADR-0016），不装、不打包。
+ignoredOptionalDependencies:
+  - "@anthropic-ai/claude-agent-sdk-darwin-arm64"
+  - "@anthropic-ai/claude-agent-sdk-darwin-x64"
+  - "@anthropic-ai/claude-agent-sdk-linux-arm64"
+  - "@anthropic-ai/claude-agent-sdk-linux-arm64-musl"
+  - "@anthropic-ai/claude-agent-sdk-linux-x64"
+  - "@anthropic-ai/claude-agent-sdk-linux-x64-musl"
+  - "@anthropic-ai/claude-agent-sdk-win32-arm64"
+  - "@anthropic-ai/claude-agent-sdk-win32-x64"

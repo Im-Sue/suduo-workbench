@@ -38,6 +38,18 @@ export type WorkbenchActionDto =
       lastActivityAt: number | null;
     }
   | {
+      /** 评审交回了意见、还一条都没交回原 Agent 修改（多 Agent S12）。 */
+      kind: "pending_review";
+      reviewId: string;
+      sessionId: string;
+      sessionTitle: string;
+      localProjectId: string;
+      projectName: string | null;
+      agentName: string;
+      findings: number;
+      finishedAt: number;
+    }
+  | {
       kind: "invalid_mapping";
       remoteProjectId: string;
       localProjectId: string | null;

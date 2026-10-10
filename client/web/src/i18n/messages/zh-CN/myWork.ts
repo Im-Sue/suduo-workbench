@@ -30,6 +30,11 @@ export const myWork = {
       count: (count: number) => `${String(count)} 项等你确认`,
       action: "去确认",
     },
+    pendingReview: {
+      title: (session: string) => `评审意见待处理 · ${session}`,
+      detail: (agent: string, count: number) => `${agent} 交回了 ${String(count)} 条意见，还没交给原 Agent 修改`,
+      action: "去看看",
+    },
     failedTurn: {
       title: (session: string) => `上一轮没能完成 · ${session}`,
       action: "查看原因",

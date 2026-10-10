@@ -117,6 +117,20 @@ describe("Agent 登记与心跳", () => {
     expect(list.json<ListAgentsResponse>().items.map((item) => item.id)).toContain(agent.id);
   });
 
+  it("同一台电脑上的每家 Agent 各登记一个（多 Agent S6）：标签带种类名；种类格式不对报 400", async () => {
+    const owner = await createUser(context, "多家");
+    const deviceKey = "device-multi";
+    const codex = await context.server.inject({ method: "POST", url: "/v2/agents", headers: owner.headers, payload: { deviceKey, deviceName: "Mac" } });
+    const claude = await context.server.inject({ method: "POST", url: "/v2/agents", headers: owner.headers, payload: { deviceKey, deviceName: "Mac", kind: "claude-code" } });
+    expect(claude.statusCode).toBe(201);
+    expect(claude.json<AgentDto>().id).not.toBe(codex.json<AgentDto>().id);
+    expect(claude.json<AgentDto>()).toMatchObject({ kind: "claude-code", label: "多家's Claude Code · Mac" });
+    const unknown = await context.server.inject({ method: "POST", url: "/v2/agents", headers: owner.headers, payload: { deviceKey, deviceName: "Mac", kind: "future-agent" } });
+    expect(unknown.json<AgentDto>()).toMatchObject({ kind: "future-agent", label: "多家's future-agent · Mac" });
+    const bad = await context.server.inject({ method: "POST", url: "/v2/agents", headers: owner.headers, payload: { deviceKey, deviceName: "Mac", kind: "Bad Kind" } });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it("心跳：只有所有者（别人 404）；browserActive 让真人在线并推送一次", async () => {
     const owner = await createUser(context, "心跳人");
     const other = await createUser(context, "旁人");

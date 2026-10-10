@@ -196,7 +196,7 @@ export const requirements = {
       start: "Start session",
       elapsed: (seconds: number) => `${String(seconds)}s elapsed`,
       enter: "Open session",
-      slow: "This is taking longer than usual. The first Codex start or large requirement attachments take more time. You can close this, and you'll be notified when it's ready.",
+      slow: "This is taking longer than usual. The first agent start or large requirement attachments take more time. You can close this, and you'll be notified when it's ready.",
       background: "Continue in background",
     },
   },

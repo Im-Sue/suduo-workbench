@@ -48,6 +48,7 @@ export const setup = {
       service: { title: "Connect requirements service", hint: "Where your team's requirements live" },
       login: { title: "Sign in", hint: "Use your team account" },
       environment: { title: "Check local environment", hint: "Codex, model service, network" },
+      agents: { title: "Connect agents", hint: "Codex, Claude Code, and more" },
       project: { title: "Link project code", hint: "Choose a local folder" },
       done: { title: "Done", hint: "Start working" },
     },
@@ -82,6 +83,14 @@ export const setup = {
           other: `${String(count)} items need attention. You can continue and handle them later in Settings.`,
         }),
       recheck: "Check again",
+    },
+    agents: {
+      title: "Connect AI agents",
+      description: "SuDuo works through the AI coding tools already installed and signed in on your computer. Codex comes with SuDuo; install others as you need them and sign in with their own commands in a terminal.",
+      listLabel: "AI agents on this computer",
+      note: "For agents other than Codex, SuDuo never reads or stores their sign-in credentials (Codex's model service is set in Settings > Model service). You can recheck or change the default anytime in Settings > AI Agents.",
+      recheck: "Check again",
+      failed: (message: string) => `Couldn't read the agents on this computer: ${message}`,
     },
     project: {
       title: "Choose a project and link your code",

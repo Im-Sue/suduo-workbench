@@ -31,6 +31,7 @@ import {
   materialsDir,
   replaceUnsafePathCharacters,
   readNotes,
+  resolveNotesDir,
   resolveRequirementDir,
   saveNotes,
   type RequirementDir,
@@ -55,7 +56,13 @@ export interface ToolSessionContext {
   sessionId: string;
   /** 会话的语言（迁移 017）：工具回包按它写。 */
   locale: Locale;
+  /** 会话干活的目录（并行试做的版本是它的 worktree）：材料下载、相对路径都相对它。 */
   projectRoot: string;
+  /**
+   * 结论笔记所在的项目目录（`.suduo` 不进 git，worktree 里没有）：在独立目录里干活的会话读写原项目目录的笔记，
+   * 免得读不到、或写进 worktree 后随清理一起删掉。缺省 = projectRoot。
+   */
+  notesRoot?: string;
   remoteProjectId: string;
   /** 需求会话的需求；项目会话为 null。 */
   requirement: {
@@ -76,6 +83,12 @@ export interface ToolSessionContext {
     agentId: string;
     allowedTools: readonly string[];
   };
+  /** 委派出来的子会话（多 Agent 协作 S8）：不能再委派（深度 1，R2）。 */
+  delegateChild?: boolean;
+  /** 只读评审会话（多 Agent 协作 S9）：只有它能提交评审意见，不能再请别人评审。 */
+  reviewer?: boolean;
+  /** 并行试做的一版（多 Agent 协作 S10）：不能委派、不能请求评审（R2）。 */
+  trial?: boolean;
 }
 
 /** 图片直接交给模型看的上限；更大的存文件。 */
@@ -302,7 +315,7 @@ export class RequirementTools {
     const text = f.t.toolReply;
     return this.guard(f, async () => {
       const requirement = await this.target(ctx, args["number"]);
-      const dir = await resolveRequirementDir(ctx.projectRoot, requirement, { create: false });
+      const dir = await resolveNotesDir(ctx, requirement, { create: false });
       const notes = await readNotes(dir);
       remember(requirement.id, notes.sha256);
       if (notes.content === null || notes.content.trim() === "") {
@@ -327,7 +340,7 @@ export class RequirementTools {
     return this.guard(f, async () => {
       const content = requireString(f, args["content"], "content");
       const requirement = await this.target(ctx, args["number"]);
-      const dir = await resolveRequirementDir(ctx.projectRoot, requirement);
+      const dir = await resolveNotesDir(ctx, requirement);
       const result = await saveNotes(dir, content, lastRead(requirement.id));
       remember(requirement.id, result.sha256);
       const lines = [text.notes.saved(f.requirementLabel(requirement), result.path)];

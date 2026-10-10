@@ -160,8 +160,30 @@ function setup() {
     heartbeatMs: 60_000,
     log: () => undefined,
   });
+  const addedKinds: string[] = [];
+  const removedKinds: string[] = [];
   const context = createMinimalHttpContext(new IdleRuntime(), {
-    rooms: { remote: client, agentState: () => agentState },
+    rooms: {
+      remote: client,
+      agentState: () => agentState,
+      removeAgentKind: (kind) => {
+        removedKinds.push(kind);
+      },
+      addAgentKind: async (kind) => {
+        if (kind === "cursor") throw new ApiError(400, "VALIDATION_ERROR", "Cursor CLI can't run read-only");
+        addedKinds.push(kind);
+        return {
+          id: "agent-" + kind,
+          kind,
+          owner: { id: "user-dev", displayName: "陈思远" },
+          deviceName: "MacBook",
+          label: "陈思远's Claude Code · MacBook",
+          online: true,
+          lastSeenAt: null,
+          activeShareCount: 0,
+        };
+      },
+    },
     remoteEvents: hub,
   });
   closers.push(async () => {
@@ -172,6 +194,8 @@ function setup() {
     context,
     hub,
     requests,
+    addedKinds,
+    removedKinds,
     credentials,
     pushUpstream: (text: string) => upstream?.enqueue(new TextEncoder().encode(text)),
   };
@@ -314,6 +338,28 @@ describe("房间端点一比一转发", () => {
     const response = await context.server.inject({ method: "GET", url: "/api/v2/agents/self" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: "ready", agent: null, message: null, activeRun: null, queuedRuns: 0 });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("POST /api/v2/agents/self/kinds 是本机端点：登记一家本机 Agent 并返回它在云端的 Agent；种类不是字符串 400", async () => {
+    const { context, requests, addedKinds } = setup();
+    const added = await context.server.inject({ method: "POST", url: "/api/v2/agents/self/kinds", headers: WRITE_HEADERS, payload: { kind: "claude-code" } });
+    expect(added.statusCode).toBe(200);
+    expect(added.json()).toMatchObject({ id: "agent-claude-code", kind: "claude-code" });
+    expect(addedKinds).toEqual(["claude-code"]);
+    const unsupported = await context.server.inject({ method: "POST", url: "/api/v2/agents/self/kinds", headers: WRITE_HEADERS, payload: { kind: "cursor" } });
+    expect(unsupported.statusCode).toBe(400);
+    const invalid = await context.server.inject({ method: "POST", url: "/api/v2/agents/self/kinds", headers: WRITE_HEADERS, payload: { kind: 1 } });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.message).toBe("kind 必须是非空字符串");
+    expect(requests).toHaveLength(0);
+  });
+
+  it("DELETE /api/v2/agents/self/kinds/:kind 是本机端点：不再在讨论里提供这一家，204", async () => {
+    const { context, requests, removedKinds } = setup();
+    const removed = await context.server.inject({ method: "DELETE", url: "/api/v2/agents/self/kinds/claude-code", headers: WRITE_HEADERS });
+    expect(removed.statusCode).toBe(204);
+    expect(removedKinds).toEqual(["claude-code"]);
     expect(requests).toHaveLength(0);
   });
 

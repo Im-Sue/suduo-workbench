@@ -5,6 +5,7 @@ export const doctor = {
     codexDoctor: "Codex 官方诊断",
     linuxSandbox: "Codex 沙箱（Linux）",
     port: "监听端口",
+    toolServer: "SuDuo 本机工具服务",
   },
   /** 版本锁定检查（Node.js、pnpm）。actual 为 null 表示命令不可用。 */
   version: {
@@ -74,6 +75,27 @@ export const doctor = {
     available: (address: string) => `${address} 可用`,
     inUseBySuDuo: (address: string) => `${address} 已占用（服务正在运行）`,
     inUseByOther: (address: string) => `${address} 已被其他程序占用`,
+  },
+  /** 各家 Agent（多 Agent S12）：一家一项，几句说明用「；」连起来。 */
+  agent: {
+    separator: "；",
+    ready: (version: string | null) => (version === null ? "可用（版本没读到）" : `可用，版本 ${version}`),
+    installed: (version: string | null) =>
+      `${version === null ? "已安装（版本没读到）" : `已安装，版本 ${version}`}，登录状态第一次用时确认`,
+    checkTimeout: "已安装，读版本超时（首次运行常见），照样能用",
+    authRequired: (version: string | null) => `${version === null ? "" : `版本 ${version}，`}需要登录`,
+    notInstalledDefault: "没找到可执行文件（它是默认的 Agent，开工会选不上）",
+    versionUnsupported: (version: string, minimum: string) => `版本 ${version} 低于最低要求 ${minimum}`,
+    checking: "还在检测，稍后重新检测",
+    error: (detail: string) => `检测出错：${detail}`,
+    unverified: (version: string, verified: string) => `版本 ${version} 不在 SuDuo 验证过的范围（${verified}）里，一般也能用；遇到问题先换到验证过的版本`,
+    path: (path: string) => `位置 ${path}`,
+    loginRemediation: (command: string) => `在终端里执行 ${command} 登录（SuDuo 不读、不存你的凭据）`,
+    installRemediation: (url: string) => `按官方说明安装：${url}；或在设置「AI Agent」里换一个默认 Agent`,
+  },
+  toolServer: {
+    listening: (url: string) => `在 ${url}（Codex 以外的 Agent 经它用需求、会话、委派等工具）`,
+    notListening: "还没开始监听：Codex 以外的 Agent 暂时拿不到 SuDuo 的工具",
   },
   /** /doctor 页面（不开设置页时用浏览器直接看）。 */
   page: {

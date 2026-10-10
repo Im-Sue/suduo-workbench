@@ -1,3 +1,5 @@
+import { AiCollabService } from "./application/ai-collab-service.js";
+import { AiCollabRepository } from "./infrastructure/ai-collab-repository.js";
 import { AuthService } from "./application/auth-service.js";
 import { AttachmentService } from "./application/attachment-service.js";
 import { ArtifactVersionService } from "./application/artifact-version-service.js";
@@ -79,6 +81,7 @@ export async function createApplication(
       events: new RequirementsEventHub(),
       rooms,
       commentFiles,
+      aiCollab: new AiCollabService(new AiCollabRepository(database)),
     });
     // 到期共享、掉线 Agent 的扫描：进程内定时，服务关闭时（onClose）停止。
     rooms.sweeper.start();

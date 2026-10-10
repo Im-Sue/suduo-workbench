@@ -53,7 +53,9 @@ import { registerAgentRunRoutes } from "./routes/agent-runs-routes.js";
 import { registerAgentRoutes } from "./routes/agents-routes.js";
 import { registerRoomRoutes } from "./routes/rooms-routes.js";
 import { registerCommentFileRoutes } from "./routes/comment-files-routes.js";
+import { registerAiCollabRoutes } from "./routes/ai-collab-routes.js";
 import type { CommentFileService } from "../application/comment-file-service.js";
+import type { AiCollabService } from "../application/ai-collab-service.js";
 
 interface AuthTokenClaims {
   sub: string;
@@ -81,6 +83,8 @@ export interface HttpServerDependencies {
   rooms?: RoomsModule;
   /** 评论文件（需求附件评论文件与优先级 4.2）；不给时不注册评论文件路由。 */
   commentFiles?: CommentFileService;
+  /** 多 Agent 协作的团队共享部分（需求共享对象、项目 AI 规范、协作记录）；不给时不注册，也不声明 ai_collab_v1。 */
+  aiCollab?: AiCollabService;
 }
 
 const PUBLIC_ROUTES = new Set([
@@ -103,6 +107,7 @@ export async function buildHttpServer(
     events,
     rooms,
     commentFiles,
+    aiCollab,
   } = dependencies;
   const liveEventResponses = new Set<ServerResponse>();
   const server = Fastify({
@@ -167,6 +172,14 @@ export async function buildHttpServer(
       );
       return;
     }
+    // 请求体超过路由的上限（Fastify 的 FST_ERR_CTP_BODY_TOO_LARGE）：如实说太大，带上限，不当服务器出错。
+    if (isBodyTooLarge(error)) {
+      const limit = request.routeOptions.bodyLimit ?? server.initialConfig.bodyLimit;
+      void reply.code(413).send(
+        errorResponse(new ApplicationError(413, "VALIDATION_ERROR", "The request body is too large", { limit }), request.id),
+      );
+      return;
+    }
     request.log.error(error);
     void reply.code(500).send(
       errorResponse(
@@ -185,8 +198,10 @@ export async function buildHttpServer(
         service: "suduo-requirements-service",
         status: "ok",
         version: config.version ?? "dev",
-        // 评论文件路由只在注入了 commentFiles 时注册：没注册就不声明，客户端据此隐藏入口。
-        features: CLOUD_FEATURES.filter((feature) => feature !== "comment_files" || commentFiles !== undefined),
+        // 评论文件、AI 协作的路由只在注入了对应依赖时注册：没注册就不声明，客户端据此隐藏入口。
+        features: CLOUD_FEATURES.filter(
+          (feature) => (feature !== "comment_files" || commentFiles !== undefined) && (feature !== "ai_collab_v1" || aiCollab !== undefined),
+        ),
         database: { status: "ok", schemaVersion },
         uptimeMs: Math.round(process.uptime() * 1_000),
       };
@@ -645,6 +660,10 @@ export async function buildHttpServer(
     registerCommentFileRoutes(server, commentFiles, events);
   }
 
+  if (aiCollab !== undefined) {
+    registerAiCollabRoutes(server, aiCollab, events);
+  }
+
   if (rooms !== undefined) {
     registerRoomRoutes(server, rooms);
     registerAgentRoutes(server, rooms);
@@ -798,4 +817,8 @@ function authSession(
     expiresAt: expiresAt.toISOString(),
     user,
   };
+}
+
+function isBodyTooLarge(error: unknown): boolean {
+  return error !== null && typeof error === "object" && (error as { code?: unknown }).code === "FST_ERR_CTP_BODY_TOO_LARGE";
 }

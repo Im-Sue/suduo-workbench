@@ -514,7 +514,8 @@ export async function startRequirementsServiceFixture(): Promise<RequirementsSer
       return json(response, 200, {
         service: "suduo-requirements-service",
         status: "ok",
-        features: [...CLOUD_FEATURES],
+        // 假云端没有 AI 协作的路由（共享对象、规范、协作记录）：不声明 ai_collab_v1，界面据此隐藏入口。
+        features: CLOUD_FEATURES.filter((feature) => feature !== "ai_collab_v1"),
         database: { status: "ok", schemaVersion: 0 },
         uptimeMs: 1,
       });

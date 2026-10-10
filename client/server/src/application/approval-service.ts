@@ -1,5 +1,7 @@
+import { SUDUO_MCP_CONNECTION_ID } from "@suduo/client-contracts";
 import type {
   ApprovalDecision,
+  ApprovalOption,
   ApprovalDto,
   DecideApprovalRequest,
   JsonValue,
@@ -88,6 +90,8 @@ export class ApprovalService {
         { status: approval.status },
       );
     }
+    // 卡上声明了可选决策（ADR-0014）：所选决策必须是其中之一，并带上 Agent 原生的选项 id。
+    const option = resolveApprovalOption(approval.requestPayload, input);
     if (!this.approvals.markDeciding(id, approval.version, input.decision)) {
       throw new ApiError(
         409,
@@ -127,6 +131,7 @@ export class ApprovalService {
         threadRef: binding.threadRef,
         approvalRef: deciding.runtimeApprovalRef,
         decision: input.decision,
+        ...(option === null ? {} : { optionId: option.id }),
       });
     } catch (error) {
       this.ledger.failApprovalDelivery({
@@ -178,13 +183,23 @@ export class ApprovalService {
    * 进程内连接断开时（`options.inProcess`）跳过「正在执行」的工具确认卡：用户已点「发出」、
    * 远程写正在进行，由进行中的 decide 照实入账（否则评论已发出却记成作废）。
    * 本机服务重启时没有进行中的 decide，全部作废。
+   * `options.runtimeId`：只作废这个运行时的线程上的审批——多 Agent 时一家 Agent 的连接断开
+   * 不能连带作废别家会话里的确认卡（ADR-0017 故障隔离）。
    */
   orphanPersistedPending(
     reason = "runtime process is no longer available",
-    options: { inProcess?: boolean } = {},
+    options: { inProcess?: boolean; runtimeId?: string } = {},
   ): number {
     let count = 0;
     for (const approval of this.approvals.listPendingOrDeciding()) {
+      // 经 MCP 的确认卡不属于任何运行时连接（ADR-0015）：待确认的留着当待发出草稿；正在执行的，
+      // 本进程还在跑就留着，重启后结果未知，按下面「结果未确认」作废，免得卡在执行中谁也动不了。
+      if (approval.runtimeConnectionId === SUDUO_MCP_CONNECTION_ID && (approval.status === "pending" || options.inProcess === true)) {
+        continue;
+      }
+      if (options.runtimeId !== undefined && this.threads.getById(approval.sessionThreadId)?.threadRef.runtimeId !== options.runtimeId) {
+        continue;
+      }
       const deciding = approval.status === "deciding" && this.toolConfirmations?.isToolConfirmation(approval) === true;
       if (options.inProcess === true && deciding) {
         continue;
@@ -212,6 +227,18 @@ export class ApprovalService {
           reason: "runtime connection closed",
           ...this.approvalRefs(approval),
         });
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /** Agent 撤回了还没决定的审批请求（回合被中断等，如 Claude 的 canUseTool 被取消）：卡片作废。 */
+  orphanWithdrawn(runtimeApprovalRef: string, reason: string): number {
+    let count = 0;
+    for (const approval of this.approvals.listPendingOrDeciding()) {
+      if (approval.runtimeApprovalRef === runtimeApprovalRef && approval.status === "pending") {
+        this.ledger.orphanApproval({ approval, reason, ...this.approvalRefs(approval) });
         count += 1;
       }
     }
@@ -276,4 +303,47 @@ function approvalTurnRef(
     }
   }
   return null;
+}
+
+const LEGACY_DECISIONS: readonly ApprovalDecision[] = ["accept", "acceptForSession", "decline", "cancel"];
+
+/**
+ * 找出这次决定对应的选项。卡上有 options（ADR-0014 中立字段）时，optionId 优先，否则按 decision 找第一个；
+ * 找不到报 400。没有 options 的老卡与 SuDuo 工具确认卡只认原来的四种决策。
+ */
+export function resolveApprovalOption(
+  requestPayload: JsonValue,
+  input: DecideApprovalRequest,
+): ApprovalOption | null {
+  const options = optionsOf(requestPayload);
+  if (options === null) {
+    if (!LEGACY_DECISIONS.includes(input.decision)) {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.approvalOptionInvalid);
+    }
+    return null;
+  }
+  const match = input.optionId !== undefined
+    ? options.find((option) => option.id === input.optionId && option.decision === input.decision)
+    : options.find((option) => option.decision === input.decision);
+  if (!match) {
+    throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.approvalOptionInvalid);
+  }
+  return match;
+}
+
+function optionsOf(payload: JsonValue): ApprovalOption[] | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const raw = payload["options"];
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const options: ApprovalOption[] = [];
+  for (const entry of raw) {
+    if (entry !== null && typeof entry === "object" && !Array.isArray(entry) && typeof entry["id"] === "string" && typeof entry["decision"] === "string") {
+      options.push({ id: entry["id"], decision: entry["decision"] as ApprovalDecision });
+    }
+  }
+  return options;
 }

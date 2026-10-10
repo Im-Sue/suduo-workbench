@@ -201,7 +201,7 @@ export const requirements = {
       start: "启动会话",
       elapsed: (seconds: number) => `已用 ${String(seconds)} 秒`,
       enter: "进入会话",
-      slow: "比平时慢一些：首次启动 Codex 或需求附件较大时会更久。可以先关掉，准备好后会提示你。",
+      slow: "比平时慢一些：首次启动 Agent 或需求附件较大时会更久。可以先关掉，准备好后会提示你。",
       background: "在后台继续",
     },
   },

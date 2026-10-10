@@ -9,7 +9,7 @@
 
 **AI sets the pace. Your team sets the course.**
 
-A self-hosted requirements workspace for teams that build with the Codex CLI.
+A self-hosted requirements workspace for teams that build with AI coding agents: Codex, Claude Code and more.
 
 [![Release](https://img.shields.io/github/v/release/Im-Sue/suduo-workbench?color=3451D1&label=release)](https://github.com/Im-Sue/suduo-workbench/releases)
 [![CI](https://github.com/Im-Sue/suduo-workbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Im-Sue/suduo-workbench/actions/workflows/ci.yml)
@@ -29,11 +29,12 @@ A self-hosted requirements workspace for teams that build with the Codex CLI.
 
 ## What is SuDuo
 
-SuDuo (速舵) is where a development team keeps its requirements and discussions, and where each developer turns a requirement into a Codex session on their own computer.
+SuDuo (速舵) is where a development team keeps its requirements and discussions, and where each developer turns a requirement into an AI coding session on their own computer.
 
 - **Shared requirements, on your own server.** Requirements, attachments and discussion rooms live on a server your team deploys. Everyone works from the same board.
-- **From requirement to Codex in one click.** Start a local Codex session from any requirement. Codex reads the requirement through SuDuo's tools and writes its conclusions back.
-- **Your code stays on your machine.** Repositories, Codex sessions and model credentials stay on each developer's computer. There is no SuDuo service in between.
+- **From requirement to agent in one click.** Start a local session from any requirement with Codex (included) or another agent you have installed and signed in to, such as Claude Code or OpenCode. The agent reads the requirement through SuDuo's tools and writes its conclusions back.
+- **Agents that work together.** An agent can read another session, hand a task to another agent and wait for the result, or ask a second agent for a review. Two agents can also try the same task in separate git worktrees so you keep the better version.
+- **Your code stays on your machine.** Repositories, agent sessions and sign-ins stay on each developer's computer. There is no SuDuo service in between.
 
 ## How it works
 
@@ -42,14 +43,16 @@ SuDuo (速舵) is where a development team keeps its requirements and discussion
 | On the team server | On each developer's computer |
 |---|---|
 | Projects, requirements, comments and attachments | Code repositories |
-| Discussion rooms, messages and room files | Codex sessions, approvals and their history |
-| Accounts and activity history | Codex configuration and model credentials |
+| Discussion rooms, messages and room files | Agent sessions, approvals and their history |
+| Accounts and activity history | Codex configuration and model credentials; other agents' own configuration and sign-in (SuDuo never reads them) |
 | Answers from agents that members share into a room | Which local folder belongs to which project |
+| Handoffs, review reports and session snapshots that members publish to a requirement | Drafts you haven't published, and parallel-trial worktrees |
+| Project AI rules, and collaboration records (metadata only; can be turned off per session) | |
 
 1. **Deploy the server** once per team: one command on a Linux server with Docker.
 2. **Run the client** on each computer and connect it to the server.
 3. **Choose the folder** where each project's code lives.
-4. **Discuss a requirement, then start a session from it.** Codex works in that folder.
+4. **Discuss a requirement, then start a session from it.** The agent you choose works in that folder.
 
 ## Features
 
@@ -66,12 +69,15 @@ SuDuo (速舵) is where a development team keeps its requirements and discussion
 
 - A room for every project, and rooms for individual requirements
 - Threads, @mentions, files and video
-- Shared agents: share your Codex into a room, and teammates can @ it. It runs read-only on your computer and replies in the thread
+- Shared agents: share your agent into a room, and teammates can @ it. It runs read-only on your computer and replies in the thread
 - Floating room windows that stay open while you move around
 
-**Local Codex workbench**
+**Local AI workbench**
 
+- Agents: Codex is included. Claude Code (through Anthropic's Claude Agent SDK) and agents that speak the Agent Client Protocol (OpenCode, Gemini CLI, Qwen Code, GitHub Copilot CLI, Cursor CLI, Kimi Code) run with your own installation and sign-in. Codex, Claude Code and OpenCode have been tested end to end. The others are set up from their official documentation: Gemini CLI, Qwen Code and GitHub Copilot CLI have been tested up to sign-in; Cursor CLI and Kimi Code have not been tested yet
 - Sessions linked to requirements, with tools to read the requirement and record conclusions
+- Working together: reference another session, delegate a task to another agent, ask for a read-only cross review, and run parallel trials in git worktrees. A local scheduler queues turns by per-agent limits
+- Share to the requirement: handoffs, review reports and session snapshots, previewed before publishing with a check for likely secrets. Project AI rules apply to every agent without changing files in your repository
 - Approvals, commands, file changes and diffs in one timeline
 - Git checkpoints: an optional checkpoint before every turn, and one-click restore
 - Skills, `@` file references and a message queue in the composer
@@ -102,7 +108,7 @@ SuDuo (速舵) is where a development team keeps its requirements and discussion
 |---|---|
 | Team server | Ubuntu 22.04 / 24.04 (other Linux: best effort), 2 CPU cores, 4 GB RAM, Docker with Compose, git |
 | Each computer | macOS 13.5+ (Apple silicon or Intel) or Windows 10 / 11 (x64). The desktop app needs nothing else; running from source needs Node.js 24 LTS (24.10+), pnpm 10.25 and git |
-| Model | A ChatGPT sign-in for Codex, or an API key for OpenAI or a compatible service |
+| Agents | Codex is included and needs a ChatGPT sign-in or an API key for OpenAI or a compatible service. Other agents are optional: install them and sign in with their own commands |
 
 **1. Deploy the server** (once per team, on the server):
 
@@ -132,7 +138,7 @@ pnpm start
 
 `pnpm start` checks your environment, builds SuDuo the first time (about 1–2 minutes), starts it on `http://127.0.0.1:8787` and opens your browser. Use the same release as your server.
 
-**3. Connect.** Sign in to Codex with `pnpm exec codex login`, or set your model service in SuDuo under **Settings → Model service**. Then enter the server address under **Settings → Requirements service**, register, choose the folder for your project, open a requirement and start a session.
+**3. Connect.** Sign in to Codex with `pnpm exec codex login`, or set your model service in SuDuo under **Settings → Model service**. Then enter the server address under **Settings → Requirements service**, register, choose the folder for your project, open a requirement and start a session. Other agents you have installed appear under **Settings → AI Agents**, with their sign-in commands.
 
 The [client guide](client/README.md) covers Codex setup in detail, updating, where your data is kept, and troubleshooting.
 
@@ -141,7 +147,7 @@ The [client guide](client/README.md) covers Codex setup in detail, updating, whe
 SuDuo's interface is available in English and Simplified Chinese. It follows your system language by default (as your browser reports it); to change it, go to **Settings → Appearance → Language**. Each person chooses their own language. If you used an earlier version and your browser's language isn't Chinese, the interface switches to English after the upgrade; choose **简体中文** there to switch back.
 
 - **Only SuDuo's own text changes language.** Menus, messages, errors and the records SuDuo adds to activity feeds and rooms appear in each person's own language. What people write (requirements, comments, room messages, file names) and Codex's answers are shown exactly as written, never translated.
-- **Codex.** The instructions and tool descriptions SuDuo gives Codex are in the language the session was started in, and stay that way if you switch the interface later. SuDuo asks Codex to reply in the language you write in, so a question in Chinese normally gets an answer in Chinese even when the interface is in English. SuDuo never translates Codex's answers.
+- **Agents.** The instructions and tool descriptions SuDuo gives an agent are in the language the session was started in, and stay that way if you switch the interface later. SuDuo asks the agent to reply in the language you write in, so a question in Chinese normally gets an answer in Chinese even when the interface is in English. SuDuo never translates agents' answers.
 - **Command line.** `pnpm start`, `pnpm run doctor` and the server script follow the system locale. Set `SUDUO_LOCALE=zh-CN` or `SUDUO_LOCALE=en` to choose. Ubuntu servers often default to `C.UTF-8`, which gives English. See the [client guide](client/README.md#language) and the [deployment guide](cloud/DEPLOYMENT.md#script-language).
 
 ## Status
@@ -160,7 +166,9 @@ See the [changelog](CHANGELOG.md) and [releases](https://github.com/Im-Sue/suduo
 <summary><b>Does my code go to the server?</b></summary>
 <br>
 
-No. Codex runs on your computer, in your folder. The server only receives what you post there yourself: requirements, comments, messages, the files you attach to requirements and comments, and the confirmed versions published with earlier versions of SuDuo (which can include files from your project folder). If you share your agent into a room, its answers and what it did are posted in that room and can include code.
+No. Agents run on your computer, in your folder. The server only receives what you post there yourself: requirements, comments, messages, the files you attach to requirements and comments, and the confirmed versions published with earlier versions of SuDuo (which can include files from your project folder). If you share your agent into a room, its answers and what it did are posted in that room and can include code.
+
+Handoffs, review reports and session snapshots go to the server only when you publish them: you see the full content first, local paths are replaced, and SuDuo flags anything that looks like a secret. Collaboration records (who used which agent on a requirement, for what, its status and branch name; no conversation or code) are sent by default and can be turned off per session; the record that a session was opened is sent when the session starts, before you can turn it off.
 
 </details>
 
@@ -168,7 +176,7 @@ No. Codex runs on your computer, in your folder. The server only receives what y
 <summary><b>Can SuDuo's authors or the team server see my model credentials or requests?</b></summary>
 <br>
 
-No. Codex keeps its own configuration in `~/.codex` and talks to your model provider directly. If you set a model service in SuDuo's settings, SuDuo on your computer passes it to Codex and keeps no copy. This changes `~/.codex`, so a Codex CLI you run yourself uses it too. Nothing is sent to SuDuo's authors, and credentials never go to the team server.
+No. Codex keeps its own configuration in `~/.codex` and talks to your model provider directly. If you set a model service in SuDuo's settings, SuDuo on your computer passes it to Codex and keeps no copy. This changes `~/.codex`, so a Codex CLI you run yourself uses it too. Other agents keep their own configuration and sign-in; SuDuo only runs their official CLIs and never reads their credential files. Nothing is sent to SuDuo's authors, and credentials never go to the team server.
 
 </details>
 
@@ -176,7 +184,7 @@ No. Codex keeps its own configuration in `~/.codex` and talks to your model prov
 <summary><b>Do I need to install Codex separately?</b></summary>
 <br>
 
-No. The desktop app includes the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.10.0), and `pnpm install` installs the same version when you run from source. Either way it uses the same `~/.codex` as a Codex CLI you may already have.
+No. The desktop app includes the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.10.0), and `pnpm install` installs the same version when you run from source. Either way it uses the same `~/.codex` as a Codex CLI you may already have. Other agents are optional and you install them yourself; when you use Claude Code, its use is subject to Anthropic's terms.
 
 </details>
 
@@ -215,7 +223,7 @@ SuDuo is **source-available, not open source**. It is licensed under the [PolyFo
 - **Security issues**: email security@suduo.dev rather than opening a public issue
 - **Commercial registration**: license@suduo.dev
 
-Codex and OpenAI are trademarks of OpenAI. SuDuo is not affiliated with or endorsed by OpenAI. See [TRADEMARKS.md](TRADEMARKS.md).
+Codex and OpenAI are trademarks of OpenAI; Claude and Claude Code are trademarks of Anthropic. Other agent names belong to their owners. SuDuo is not affiliated with or endorsed by OpenAI, Anthropic or any other agent vendor. See [TRADEMARKS.md](TRADEMARKS.md).
 
 <div align="center">
 <br>

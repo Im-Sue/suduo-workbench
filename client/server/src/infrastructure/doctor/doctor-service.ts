@@ -13,6 +13,8 @@ import { delimiter, resolve } from "node:path";
 import {
   CODEX_VERSION,
   SUDUO_DOCTOR_CHECK_IDS,
+  type AgentDto,
+  type AgentListDto,
   type DoctorCheckDto,
   type DoctorResultDto,
   type JsonValue,
@@ -55,6 +57,16 @@ export interface DoctorOptions {
   codexDoctorRunner?: CodexDoctorRunner;
   /** 测试注入：Linux 沙箱探测与宿主信息。 */
   linuxSandbox?: Partial<LinuxSandboxHost>;
+  /** 各家 Agent 的检测结果（多 Agent S12）；不给就不查 Codex 以外的 Agent。 */
+  agents?: () => Promise<AgentListDto>;
+  /**
+   * 不等检测、手上已有的结果（还没测完的是「检测中」）。给了它，诊断最多等 agentsWaitMs（默认 5 秒）就用它：
+   * 冷启动时各家读版本、查登录要几十秒，不能拖住设置页与首启向导的环境检查。命令行不给，等测完。
+   */
+  agentsNow?: () => AgentListDto;
+  agentsWaitMs?: number;
+  /** 本机工具服务的地址（服务里跑诊断时给；命令行没有服务在跑，不查这一项）。 */
+  toolServerUrl?: () => string | null;
 }
 
 /** Linux 沙箱探测依赖的宿主信息（测试可替换）。 */
@@ -87,12 +99,31 @@ export async function runDoctor(
 ): Promise<DoctorResult> {
   const t = messagesFor(locale);
   const checks: DoctorCheck[] = [];
+  // 各家 Agent 的检测先开始，和下面的 Codex 检查一起跑。
+  const agentsPending = options.agents?.().catch(() => null);
   checkNodeVersion(checks, t, process.version.slice(1), "24.10.0");
   if (options.checkPnpm ?? !options.installed) {
     checkCommandVersion(checks, t, SUDUO_DOCTOR_CHECK_IDS.pnpm, "pnpm", ["--version"], "10.25.0");
   }
+  const beforeCodex = checks.length;
   checkCodex(checks, t, options);
   await checkLinuxSandbox(checks, t, options);
+  // Codex 的各项（官方诊断、CLI 版本、Linux 沙箱）归到 Codex 一组。
+  for (const check of checks.slice(beforeCodex)) check.agentId = "codex";
+  if (agentsPending !== undefined) {
+    const now = options.agentsNow;
+    const list =
+      now === undefined
+        ? await agentsPending
+        : await Promise.race([
+            agentsPending,
+            new Promise<AgentListDto | null>((resolve) => {
+              setTimeout(() => resolve(now()), options.agentsWaitMs ?? 5_000).unref();
+            }),
+          ]);
+    if (list !== null && list !== undefined) checkAgents(checks, t, list);
+  }
+  if (options.toolServerUrl !== undefined) checkToolServer(checks, t, options.toolServerUrl());
   checkDatabaseAddon(checks, t);
   await checkPort(checks, t, options.port, options.allowPortInUse);
   const failed = checks.filter((check) => check.status === "fail");
@@ -112,6 +143,14 @@ export async function runDoctor(
 }
 
 export function formatDoctorText(result: DoctorResult): string {
+  const line = (check: DoctorCheck) =>
+    `${check.status.toUpperCase()} ${check.name}: ${check.message}` + (check.remediation ? `\n  remediation: ${check.remediation}` : "");
+  // SuDuo 自己的环境项在前，各家 Agent 的项按 Agent 分组（多 Agent S12）。
+  const groups = new Map<string, DoctorCheck[]>();
+  for (const check of result.checks) {
+    if (check.agentId === undefined) continue;
+    groups.set(check.agentId, [...(groups.get(check.agentId) ?? []), check]);
+  }
   const lines = [
     "SuDuo Doctor",
     `status=${result.status}`,
@@ -122,13 +161,85 @@ export function formatDoctorText(result: DoctorResult): string {
     `dataDir=${result.dataDir}`,
     `port=${String(result.port)}`,
     "",
-    ...result.checks.map(
-      (check) =>
-        `${check.status.toUpperCase()} ${check.name}: ${check.message}` +
-        (check.remediation ? `\n  remediation: ${check.remediation}` : ""),
-    ),
+    ...result.checks.filter((check) => check.agentId === undefined).map(line),
+    ...[...groups].flatMap(([agentId, checks]) => ["", `[${agentId}]`, ...checks.map(line)]),
   ];
   return lines.join("\n") + "\n";
+}
+
+/**
+ * 各家 Agent（多 Agent S12）：可执行文件、版本（在不在验证过的范围）、登录状态，一家一项。只查启用了的、
+ * 装了的（没装的只在它是默认 Agent 时提一句）；Codex 有自己的几项，这里不重复。版本没验证过只提示（ADR-0004）。
+ * 只有版本低于最低要求算失败，别的都是提醒：缺一家 Agent 不影响 SuDuo 启动。
+ */
+export function checkAgents(checks: DoctorCheck[], t: ServerMessages, list: AgentListDto): void {
+  const text = t.doctor.agent;
+  for (const agent of list.agents) {
+    if (agent.bundled || !agent.enabled) continue;
+    if (agent.status === "not_installed" && agent.id !== list.defaultAgentId) continue;
+    const notes: string[] = [];
+    let status: DoctorCheck["status"] = "pass";
+    let remediation: string | null = null;
+    switch (agent.status) {
+      case "ready":
+        notes.push(text.ready(agent.version));
+        break;
+      case "installed":
+        notes.push(agent.reasonCode === "check_timeout" ? text.checkTimeout : text.installed(agent.version));
+        break;
+      case "auth_required":
+        status = "warn";
+        notes.push(text.authRequired(agent.version));
+        remediation = loginRemediation(agent, t);
+        break;
+      case "not_installed":
+        status = "warn";
+        notes.push(text.notInstalledDefault);
+        remediation = text.installRemediation(agent.homepageUrl);
+        break;
+      case "version_unsupported":
+        status = "fail";
+        notes.push(text.versionUnsupported(agent.version ?? "?", agent.minVersion ?? "?"));
+        break;
+      case "checking":
+        status = "warn";
+        notes.push(text.checking);
+        break;
+      case "error":
+        status = "warn";
+        notes.push(text.error(agent.reasonDetail ?? agent.reasonCode ?? "?"));
+        break;
+    }
+    if (agent.versionVerified === false && agent.version !== null) {
+      if (status === "pass") status = "warn";
+      notes.push(text.unverified(agent.version, agent.verifiedVersions.join(", ")));
+    }
+    if (agent.executablePath !== null) notes.push(text.path(agent.executablePath));
+    checks.push({
+      id: SUDUO_DOCTOR_CHECK_IDS.agent,
+      name: agent.displayName,
+      status,
+      message: notes.join(text.separator),
+      remediation,
+      version: agent.version,
+      agentId: agent.id,
+    });
+  }
+}
+
+function loginRemediation(agent: AgentDto, t: ServerMessages): string | null {
+  const login = agent.actions.find((action) => action.kind === "open_terminal_login")?.command;
+  return login === undefined ? null : t.doctor.agent.loginRemediation(login);
+}
+
+/** 本机工具服务（ADR-0015）：Codex 以外的 Agent 经它用 SuDuo 的工具。 */
+function checkToolServer(checks: DoctorCheck[], t: ServerMessages, url: string | null): void {
+  checks.push({
+    id: SUDUO_DOCTOR_CHECK_IDS.toolServer,
+    name: t.doctor.names.toolServer,
+    status: url === null ? "warn" : "pass",
+    message: url === null ? t.doctor.toolServer.notListening : t.doctor.toolServer.listening(url),
+  });
 }
 
 /** actual 为 null：命令不可用。 */

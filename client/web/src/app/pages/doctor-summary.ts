@@ -33,6 +33,7 @@ const RUNTIME_CHECK_IDS: ReadonlySet<string> = new Set([
   SUDUO_DOCTOR_CHECK_IDS.pnpm,
   SUDUO_DOCTOR_CHECK_IDS.sqlite,
   SUDUO_DOCTOR_CHECK_IDS.port,
+  SUDUO_DOCTOR_CHECK_IDS.toolServer,
 ]);
 
 /** 文字按调用时的界面语言取；组件里可以传入 useT() 拿到的字典。 */

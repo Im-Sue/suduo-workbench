@@ -6,6 +6,7 @@ import type { ProjectRecord } from "../src/infrastructure/db/repositories/projec
 import type { RequirementSessionRefRecord } from "../src/infrastructure/db/repositories/requirement-session-ref-repository.js";
 import type { SessionRecord } from "../src/infrastructure/db/repositories/session-repository.js";
 import type { WorkspaceMappingRecord } from "../src/infrastructure/db/repositories/workspace-mapping-repository.js";
+import type { ReviewRecord } from "../src/infrastructure/db/repositories/review-repository.js";
 import type { WorkspaceMappingPathVerification } from "../src/application/workspace-mapping-verifier.js";
 
 describe("MyWorkbenchService", () => {
@@ -95,6 +96,23 @@ describe("MyWorkbenchService", () => {
     expect(result.sessions).toMatchObject({ status: "ready", data: [expect.anything()] });
   });
 
+  it("评审交回了意见、还没交回原 Agent 修改的列进「需要你处理」（S12）；被评会话删了的、两周前的不列", async () => {
+    const project = projectRecord("local-project", "本机项目", "/workspace/local");
+    const day = 24 * 60 * 60_000;
+    const review = (id: string, targetSessionId: string, finishedAt: number) =>
+      ({ id, targetSessionId, agentId: "codex", findings: [{ id: "f1" }, { id: "f2" }], appliedFindingIds: [], finishedAt, updatedAt: finishedAt }) as unknown as ReviewRecord;
+    const service = serviceFixture({
+      projects: [project],
+      sessions: [sessionRecord("s1", project.id, 10), sessionRecord("gone", project.id, 9, "deleted"), sessionRecord("old", project.id, 8)],
+      reviews: [review("rv1", "s1", 19 * day), review("rv2", "gone", 19 * day), review("rv3", "old", 5 * day)],
+    });
+    const result = await service.getWorkbench("zh-CN");
+    if (result.actions.status !== "ready") throw new Error("actions unexpectedly unavailable");
+    expect(result.actions.data).toEqual([
+      expect.objectContaining({ kind: "pending_review", reviewId: "rv1", sessionId: "s1", agentName: "Codex", findings: 2, projectName: "本机项目" }),
+    ]);
+  });
+
   it("待审批会话即使不在 top20 也参与运行态归约，但不扩展展示列表", async () => {
     const project = projectRecord("local-project", "本机项目", "/workspace/local");
     const topSessions = Array.from(
@@ -147,6 +165,7 @@ function serviceFixture(input: {
   listRequirementsByIds?: (ids: readonly string[]) => Promise<RequirementDto[]>;
   verifyMapping?: (path: string) => Promise<WorkspaceMappingPathVerification>;
   listRunStatusEventsForSessions?: (ids: readonly string[]) => SessionRunStatusEvent[];
+  reviews?: ReviewRecord[];
 }): MyWorkbenchService {
   const projects = new Map((input.projects ?? []).map((item) => [item.id, item]));
   const sessions = new Map((input.sessions ?? []).map((item) => [item.id, item]));
@@ -172,6 +191,9 @@ function serviceFixture(input: {
       listRequirementsByIds: input.listRequirementsByIds ?? (async () => []),
     },
     verifyMapping: input.verifyMapping ?? (async () => availableMapping()),
+    reviews: { listAwaitingHandback: (since) => (input.reviews ?? []).filter((review) => (review.finishedAt ?? 0) >= since) },
+    agentName: (agentId) => (agentId === "codex" ? "Codex" : agentId),
+    now: () => 20 * 24 * 60 * 60_000,
   });
 }
 
@@ -205,6 +227,7 @@ function sessionRecord(
     approvalMode: "ask",
     kind: "normal",
     locale: "zh-CN",
+    agentId: "codex",
     model: null,
     reasoningEffort: null,
     createdAt: lastActivityAt,

@@ -6,6 +6,7 @@ export const settings = {
   /** 分组名（导航、分组标题、搜索结果里的所在分组）。 */
   sections: {
     appearance: "外观",
+    agents: "AI Agent",
     notifications: "通知",
     account: "账号",
     service: "需求服务",

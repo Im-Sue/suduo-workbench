@@ -14,6 +14,7 @@ import {
 } from "@suduo/cloud-contracts";
 import type { ArtifactVersionService } from "../src/application/artifact-version-service.js";
 import type { AttachmentService } from "../src/application/attachment-service.js";
+import { AiCollabService } from "../src/application/ai-collab-service.js";
 import { AuthService } from "../src/application/auth-service.js";
 import { CollaborationService } from "../src/application/collaboration-service.js";
 import { RequirementsEventHub } from "../src/application/event-hub.js";
@@ -22,6 +23,7 @@ import { createRoomsModule, type RoomsModule } from "../src/application/rooms/mo
 import type { RequirementsServiceConfig } from "../src/config.js";
 import { buildHttpServer } from "../src/http/server.js";
 import type { AttachmentStorage } from "../src/infrastructure/attachment-storage.js";
+import { AiCollabRepository } from "../src/infrastructure/ai-collab-repository.js";
 import { CollaborationRepository } from "../src/infrastructure/collaboration-repository.js";
 import { Database } from "../src/infrastructure/database.js";
 import { runMigrations } from "../src/infrastructure/migration-runner.js";
@@ -39,6 +41,8 @@ export interface RoomsTestContext {
   server: Awaited<ReturnType<typeof buildHttpServer>>;
   rooms: RoomsModule;
   roomFileRoot: string;
+  /** 需求事件（SSE 推送前的那一步），测试据此断言推了什么。 */
+  events: RequirementsEventHub;
   close(): Promise<void>;
 }
 
@@ -68,6 +72,7 @@ export async function setupRoomsTest(options: {
     ...(options.maxFileBytes === undefined ? {} : { maxFileBytes: options.maxFileBytes }),
     ...(options.allowedFileExtensions === undefined ? {} : { allowedFileExtensions: options.allowedFileExtensions }),
   });
+  const events = new RequirementsEventHub();
   const server = await buildHttpServer({
     config: testConfig(roomFileRoot),
     database,
@@ -76,8 +81,9 @@ export async function setupRoomsTest(options: {
     attachments: { close: async () => undefined } as unknown as AttachmentService,
     artifactVersions: {} as ArtifactVersionService,
     attachmentStorage: {} as AttachmentStorage,
-    events: new RequirementsEventHub(),
+    events,
     rooms,
+    aiCollab: new AiCollabService(new AiCollabRepository(database)),
   });
   return {
     pool,
@@ -85,6 +91,7 @@ export async function setupRoomsTest(options: {
     server,
     rooms,
     roomFileRoot,
+    events,
     async close() {
       await server.close();
       await pool.end();

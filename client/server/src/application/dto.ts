@@ -1,10 +1,13 @@
 import {
   type ApprovalDto,
   type ProjectDto,
+  type SessionAgentDto,
   type SessionDto,
+  type SessionLinkDto,
   type ThreadBindingDto,
 } from "@suduo/client-contracts";
 import type { ApprovalRecord } from "../infrastructure/db/repositories/approval-repository.js";
+import { findAgentDescriptor } from "./agents/catalog.js";
 import type { ProjectRecord } from "../infrastructure/db/repositories/project-repository.js";
 import type { SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
 import type { SessionThreadRecord } from "../infrastructure/db/repositories/session-thread-repository.js";
@@ -49,12 +52,38 @@ export function sessionDto(
     model: session.model,
     reasoningEffort: session.reasoningEffort,
     kind: session.kind,
+    agentId: session.agentId,
+    ...sessionAgent(session.agentId),
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     lastActivityAt: session.lastActivityAt,
     version: session.version,
     threads: bindings.map(threadBindingDto),
+    parentSessionId: session.parentSessionId ?? null,
+    rootSessionId: session.rootSessionId ?? null,
+    relation: session.relation ?? null,
+    ...(session.workspacePath === null || session.workspacePath === undefined ? {} : { workspacePath: session.workspacePath }),
+    ...(session.rulesVersion === null || session.rulesVersion === undefined ? {} : { rulesVersion: session.rulesVersion }),
   };
+}
+
+/** 会话关系另一头的简要信息（多 Agent 协作 S7）。 */
+export function sessionLink(session: SessionRecord): SessionLinkDto {
+  return {
+    id: session.id,
+    title: session.title,
+    agentId: session.agentId,
+    agentName: findAgentDescriptor(session.agentId)?.displayName ?? session.agentId,
+    state: session.state,
+  };
+}
+
+/** 配置表里这家 Agent 的名字与能力；不认识的 Agent（配置表删掉了）不带。 */
+function sessionAgent(agentId: string): { agent?: SessionAgentDto } {
+  const descriptor = findAgentDescriptor(agentId);
+  return descriptor === undefined
+    ? {}
+    : { agent: { displayName: descriptor.displayName, readOnlyCapable: descriptor.readOnlyCapable, capabilities: [...descriptor.capabilities] } };
 }
 
 export function approvalDto(

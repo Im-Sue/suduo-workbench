@@ -5,6 +5,7 @@ export const doctor = {
     codexDoctor: "Codex doctor",
     linuxSandbox: "Codex sandbox (Linux)",
     port: "Listening port",
+    toolServer: "SuDuo local tool server",
   },
   version: {
     pinned: (actual: string) => `${actual} (pinned)`,
@@ -73,6 +74,27 @@ export const doctor = {
     available: (address: string) => `${address} is available`,
     inUseBySuDuo: (address: string) => `${address} is in use (the service is running)`,
     inUseByOther: (address: string) => `${address} is in use by another program`,
+  },
+  agent: {
+    separator: "; ",
+    ready: (version: string | null) => (version === null ? "Ready (version unreadable)" : `Ready, version ${version}`),
+    installed: (version: string | null) =>
+      `${version === null ? "Installed (version unreadable)" : `Installed, version ${version}`}; sign-in is confirmed on first use`,
+    checkTimeout: "Installed; reading the version timed out (common on first run). It still works",
+    authRequired: (version: string | null) => `${version === null ? "" : `Version ${version}; `}needs sign-in`,
+    notInstalledDefault: "Executable not found (it's the default agent, so new sessions can't use it)",
+    versionUnsupported: (version: string, minimum: string) => `Version ${version} is below the minimum ${minimum}`,
+    checking: "Still checking. Check again in a moment",
+    error: (detail: string) => `Check failed: ${detail}`,
+    unverified: (version: string, verified: string) =>
+      `Version ${version} isn't in the range SuDuo has verified (${verified}). It usually works; if you hit problems, try a verified version first`,
+    path: (path: string) => `at ${path}`,
+    loginRemediation: (command: string) => `Run ${command} in a terminal to sign in (SuDuo never reads or stores your credentials)`,
+    installRemediation: (url: string) => `Install it following the official instructions: ${url}, or pick another default agent in Settings > AI Agents`,
+  },
+  toolServer: {
+    listening: (url: string) => `At ${url} (agents other than Codex use it for requirement, session, and delegation tools)`,
+    notListening: "Not listening yet: agents other than Codex can't use SuDuo's tools for now",
   },
   page: {
     title: "SuDuo self-check",

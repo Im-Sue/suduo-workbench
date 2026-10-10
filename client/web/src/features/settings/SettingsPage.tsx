@@ -29,6 +29,7 @@ import {
 } from "./sections.js";
 import { AboutSection } from "./sections/AboutSection.js";
 import { AccountSection } from "./sections/AccountSection.js";
+import { AgentsSection } from "./sections/AgentsSection.js";
 import { AppearanceSection } from "./sections/AppearanceSection.js";
 import { DiagnosticsSection } from "./sections/DiagnosticsSection.js";
 import { ExecutionSection } from "./sections/ExecutionSection.js";
@@ -157,6 +158,8 @@ function SectionView({ section }: { section: SettingsSectionId }) {
       return <ServiceSection />;
     case "workspace":
       return <WorkspaceSection />;
+    case "agents":
+      return <AgentsSection />;
     case "model":
       return <ModelSection />;
     case "execution":

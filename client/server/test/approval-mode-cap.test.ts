@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type {
+  RuntimeApprovalMode,
   RuntimeRegistry,
-  RuntimeSecurityPolicy,
   StartThreadInput,
   StartThreadResult,
 } from "@suduo/client-contracts";
-import { APPROVAL_MODE_POLICIES } from "@suduo/client-contracts";
 import type { EventLedger } from "../src/application/event-ledger.js";
 import { MessageService } from "../src/application/message-service.js";
 import { RuntimeSupervisor } from "../src/application/runtime-supervisor.js";
@@ -46,7 +45,7 @@ describe("审批档部署上限", () => {
         message: "审批模式已被部署上限 SUDUO_MAX_APPROVAL_MODE 锁定",
       });
       expect(context.sessions.getById(created.id)?.approvalMode).toBe("auto");
-      expect(context.startInputs[0]?.security).toEqual(APPROVAL_MODE_POLICIES.auto);
+      expect(context.startInputs[0]?.approvalMode).toEqual("auto");
     } finally {
       context.database.close();
     }
@@ -76,7 +75,7 @@ describe("审批档部署上限", () => {
         session: legacy,
         workspace: sharedWorkspace(project, legacy.id),
       });
-      expect(runtime.inputs[0]?.security).toEqual(APPROVAL_MODE_POLICIES.auto);
+      expect(runtime.inputs[0]?.approvalMode).toEqual("auto");
       expect(sessions.getById(legacy.id)?.approvalMode).toBe("full");
 
       delete environment["SUDUO_MAX_APPROVAL_MODE"];
@@ -85,7 +84,7 @@ describe("审批档部署上限", () => {
         session: legacy,
         workspace: sharedWorkspace(project, legacy.id),
       });
-      expect(runtime.inputs[1]?.security).toEqual(APPROVAL_MODE_POLICIES.full);
+      expect(runtime.inputs[1]?.approvalMode).toEqual("full");
       expect(sessions.getById(legacy.id)?.approvalMode).toBe("full");
     } finally {
       database.close();
@@ -106,10 +105,10 @@ describe("审批档部署上限", () => {
     });
     await runtime.supervisor.ensureReadyOrRebuild({ session, workspace, binding });
     expect(runtime.inputs).toHaveLength(3);
-    expect(runtime.inputs.map((input) => input.security)).toEqual([
-      APPROVAL_MODE_POLICIES.full,
-      APPROVAL_MODE_POLICIES.full,
-      APPROVAL_MODE_POLICIES.full,
+    expect(runtime.inputs.map((input) => input.approvalMode)).toEqual([
+      "full",
+      "full",
+      "full",
     ]);
 
     const message = createMessageContext(environment);
@@ -119,7 +118,7 @@ describe("审批档部署上限", () => {
         { content: [{ type: "text", text: "继续" }] },
         "approval-cap-message",
       );
-      expect(message.security).toEqual(APPROVAL_MODE_POLICIES.full);
+      expect(message.approvalMode).toEqual("full");
     } finally {
       message.database.close();
     }
@@ -158,6 +157,7 @@ function makeSupervisor(
 ) {
   const inputs: StartThreadInput[] = [];
   const registry = {
+    findByAgent: () => ({ runtimeId: "codex-local" }),
     get: () => ({
       startThread: async (input: StartThreadInput): Promise<StartThreadResult> => {
         inputs.push(input);
@@ -189,11 +189,11 @@ function createMessageContext(environment: NodeJS.ProcessEnv) {
     approvalMode: "full",
   });
   threads.attach({ sessionId: session.id, threadRef: primaryBinding(session.id).threadRef });
-  let security: RuntimeSecurityPolicy | null = null;
+  let approvalMode: RuntimeApprovalMode | null = null;
   const runtimes = {
     get: () => ({
-      startTurn: async (input: { security: RuntimeSecurityPolicy }) => {
-        security = input.security;
+      startTurn: async (input: { approvalMode: RuntimeApprovalMode }) => {
+        approvalMode = input.approvalMode;
         return {
           turnRef: { threadId: "thread-primary", turnId: "turn-1" },
           acceptedAt: 1,
@@ -219,8 +219,8 @@ function createMessageContext(environment: NodeJS.ProcessEnv) {
     database,
     session,
     service,
-    get security() {
-      return security;
+    get approvalMode() {
+      return approvalMode;
     },
   };
 }
@@ -250,6 +250,7 @@ function fullSession(): SessionRecord {
     approvalMode: "full",
     kind: "normal",
     locale: "zh-CN",
+    agentId: "codex",
     model: null,
     reasoningEffort: null,
     createdAt: 1,

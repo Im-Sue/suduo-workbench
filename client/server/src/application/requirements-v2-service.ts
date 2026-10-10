@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { access, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, win32 } from "node:path";
 import type {
@@ -6,6 +6,7 @@ import type {
   RequirementDetailItemDto,
   RequirementListItemDto,
   RequirementLocalFields,
+  SessionStartOptions,
 } from "@suduo/client-contracts";
 import type {
   AuthSessionDto,
@@ -23,14 +24,15 @@ import type {
   UpdateRequirementRequest,
 } from "@suduo/cloud-contracts";
 import { REQUIREMENT_COMMENT_MAX_FILES, REQUIREMENT_PRIORITIES } from "@suduo/cloud-contracts";
-import type { Locale } from "@suduo/client-contracts";
+import type { Locale, RuntimeToolSpec } from "@suduo/client-contracts";
 import { ApiError } from "./api-error.js";
 import { pathKey } from "./project-service.js";
 import { messagesFor, type ServerMessages } from "../i18n/messages/index.js";
-import type { SessionService } from "./session-service.js";
+import type { SessionService, SessionThreadSetup } from "./session-service.js";
 import type { DatabasePort } from "../infrastructure/db/database-port.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import type { RequirementSessionRefRepository } from "../infrastructure/db/repositories/requirement-session-ref-repository.js";
+import type { SessionGraphInput, SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
 import type { WorkspaceMappingRecord, WorkspaceMappingRepository } from "../infrastructure/db/repositories/workspace-mapping-repository.js";
 import type { RequirementsCredentialStore } from "../infrastructure/requirements-v2/credential-store.js";
 import type { RequirementsRemoteClient } from "../infrastructure/requirements-v2/remote-client.js";
@@ -419,7 +421,20 @@ export class RequirementsV2Service {
   }
 
   /** `locale`：会话的语言（创建请求的语言），需求卡、规则与工具说明按它写。 */
-  async createRequirementSession(requirementId: string, locale: Locale) {
+  async createRequirementSession(
+    requirementId: string,
+    locale: Locale,
+    start: SessionStartOptions = {},
+    /** 与另一个会话的关系（接着做，多 Agent 协作 S7）。 */
+    graph?: SessionGraphInput,
+    /** 改写开场说明与工具（委派的子会话附角色说明、去掉委派工具，多 Agent 协作 S8）。 */
+    adjustSetup?: (setup: SessionThreadSetup) => SessionThreadSetup,
+    /** 会话标题（委派的子任务、评审会话另起名字）；不给时用需求标题。 */
+    title?: string,
+    /** 会话实际干活的目录（并行试做的 worktree，S10）；不给时在项目目录。 */
+    workspacePath?: string,
+  ) {
+    this.sessions.checkStartOptions(start);
     const sessionContext = this.sessionContext;
     if (!sessionContext) {
       throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.remote.requirementSessionUnavailable);
@@ -430,44 +445,126 @@ export class RequirementsV2Service {
       // 先打水位线再读需求：开工以后的变化以水位线为分界，不会漏掉两次请求之间的改动。
       const auditAnchor = await sessionContext.captureAnchor(located.projectId, located.id);
       const requirement = await this.remote.getRequirement(requirementId);
-      const setup = await sessionContext.requirementSetup({
+      const baseSetup = await sessionContext.requirementSetup({
         locale,
-        projectRoot: localProject.rootPath,
+        projectRoot: workspacePath ?? localProject.rootPath,
+        notesRoot: localProject.rootPath,
         requirement,
       });
+      const setup = adjustSetup === undefined ? baseSetup : adjustSetup(baseSetup);
       const session = await this.sessions.createFromRequirement(localProject.id, {
         locale,
-        title: requirement.title,
+        title: title ?? requirement.title,
         remoteProjectId: requirement.projectId,
         remoteRequirementId: requirement.id,
         requirementVersion: requirement.version,
         auditAnchor,
         requirementNumber: requirementNumberOf(requirement),
         setup,
+        start,
+        ...(graph === undefined ? {} : { graph }),
+        ...(workspacePath === undefined ? {} : { workspacePath }),
       });
       this.onSessionCreated?.(session.id);
       return session;
     });
   }
 
+  /**
+   * 远程需求 / 项目对应的本机项目（并行试做在它的目录上建 worktree，S10）。需求的给出编号与标题。
+   * 没关联目录等问题与开会话时报的一样。
+   */
+  async localProjectFor(target: { remoteRequirementId: string } | { remoteProjectId: string }) {
+    if ("remoteRequirementId" in target) {
+      const requirement = await this.remote.getRequirement(target.remoteRequirementId);
+      const localProject = await this.requireValidatedLocalProject(requirement.projectId);
+      return { localProject, remoteProjectId: requirement.projectId, requirement: { id: requirement.id, number: requirementNumberOf(requirement), title: requirement.title } };
+    }
+    await this.remote.getProject(target.remoteProjectId);
+    const localProject = await this.requireValidatedLocalProject(target.remoteProjectId);
+    return { localProject, remoteProjectId: target.remoteProjectId, requirement: null };
+  }
+
   /** `locale`：会话的语言（创建请求的语言）：没给标题时的默认名、项目卡与工具说明按它写。 */
-  async createProjectSession(remoteProjectId: string, locale: Locale) {
+  async createProjectSession(
+    remoteProjectId: string,
+    locale: Locale,
+    start: SessionStartOptions = {},
+    /** 接着做 / 委派（多 Agent 协作 S7 / S8）：沿用原会话的标题、记下关系、改写开场说明与工具。 */
+    extra: { title?: string; graph?: SessionGraphInput; adjustSetup?: (setup: SessionThreadSetup) => SessionThreadSetup; workspacePath?: string } = {},
+  ) {
+    this.sessions.checkStartOptions(start);
     await this.remote.getProject(remoteProjectId);
     return this.withMappingOperation(remoteProjectId, async () => {
       const localProject = await this.requireValidatedLocalProject(remoteProjectId);
-      const setup =
+      const baseSetup =
         (await this.sessionContext?.projectSetup({
           locale,
-          projectRoot: localProject.rootPath,
+          projectRoot: extra.workspacePath ?? localProject.rootPath,
           remoteProjectId,
         })) ?? {};
-      const session = await this.sessions.create(localProject.id, { purpose: "general" }, setup, {
-        locale,
-        remoteProjectId,
-      });
+      const setup = extra.adjustSetup === undefined ? baseSetup : extra.adjustSetup(baseSetup);
+      const session = await this.sessions.create(
+        localProject.id,
+        { purpose: "general", ...(extra.title === undefined ? {} : { title: extra.title }), ...start },
+        setup,
+        { locale, remoteProjectId, ...(extra.graph === undefined ? {} : { graph: extra.graph }), ...(extra.workspacePath === undefined ? {} : { workspacePath: extra.workspacePath }) },
+      );
       this.onSessionCreated?.(session.id);
       return session;
     });
+  }
+
+  /**
+   * 交给另一个 Agent 接着做（多 Agent 协作 S7，需求 4.2）：在原会话的需求 / 项目 / 本机项目下开一个新会话，
+   * 记下「接续自」关系（根会话沿用原会话的根）。新会话的首条消息由界面预填「接着 @原会话 继续：」，用户确认后发出。
+   */
+  async continueSession(sourceId: string, locale: Locale, start: SessionStartOptions = {}) {
+    const source = this.sessions.record(sourceId);
+    if (source.state === "deleted") {
+      throw new ApiError(404, "NOT_FOUND", (t) => t.session.notFound);
+    }
+    if (source.kind !== "normal") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.roomTaskNotContinuable);
+    }
+    return this.createRelatedSession(source, locale, start, "continue");
+  }
+
+  /**
+   * 在原会话的需求 / 项目 / 本机项目下开一个有关系的新会话（接着做、委派，多 Agent 协作 S7 / S8）：
+   * 根会话沿用原会话的根；委派的子会话在开场说明后附角色说明、不挂委派工具（深度 1，R2）。
+   * 原会话在独立工作目录（并行试做的 worktree，S10）里干活时，新会话也在那里，不回到项目目录。
+   */
+  async createRelatedSession(
+    source: SessionRecord,
+    locale: Locale,
+    start: SessionStartOptions,
+    relation: "continue" | "delegate" | "review",
+    options: { title?: string; role?: string; dropTools?: (name: string) => boolean; addTools?: RuntimeToolSpec[] } = {},
+  ) {
+    const graph: SessionGraphInput = { parentSessionId: source.id, rootSessionId: source.rootSessionId ?? source.id, relation };
+    const adjustSetup = (setup: SessionThreadSetup): SessionThreadSetup => adjustThreadSetup(setup, options);
+    const title = options.title ?? source.title;
+    const workspacePath = source.workspacePath ?? undefined;
+    // 工作目录删了（并行试做清理过）：新会话没有目录可用，开线程会失败，先说清楚。
+    if (workspacePath !== undefined && !existsSync(workspacePath)) throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.workspaceGone);
+    const context = this.sessionContext?.toolContext(source.id) ?? null;
+    if (context?.requirement) {
+      return this.createRequirementSession(context.requirement.remoteRequirementId, locale, start, graph, adjustSetup, options.title, workspacePath);
+    }
+    if (context !== null) {
+      return this.createProjectSession(context.remoteProjectId, locale, start, { title, graph, adjustSetup, ...(workspacePath === undefined ? {} : { workspacePath }) });
+    }
+    // 没关联 SuDuo 项目的本机会话：同一本机项目下开（没有 SuDuo 工具，只带角色说明）。
+    this.sessions.checkStartOptions(start);
+    const session = await this.sessions.create(
+      source.projectId,
+      { title, purpose: source.purpose, ...start },
+      adjustSetup({}),
+      { locale, graph, ...(workspacePath === undefined ? {} : { workspacePath }) },
+    );
+    this.onSessionCreated?.(session.id);
+    return session;
   }
 
   async listProjectSessions(remoteProjectId: string) {
@@ -694,4 +791,23 @@ function requirementNumberOf(requirement: object): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
     ? value
     : null;
+}
+
+/**
+ * 有关系的会话的开场：在开场说明后附角色说明，去掉不给它的工具、加上只给它的工具（委派的子会话 S8、评审会话 S9；
+ * 线程重建时同样套用）。没有 SuDuo 工具的会话（没关联项目）不加工具。
+ */
+export function adjustThreadSetup(
+  setup: SessionThreadSetup,
+  options: { role?: string; dropTools?: (name: string) => boolean; addTools?: RuntimeToolSpec[] },
+): SessionThreadSetup {
+  const kept = setup.dynamicTools === undefined || options.dropTools === undefined ? setup.dynamicTools : setup.dynamicTools.filter((tool) => !options.dropTools!(tool.name));
+  const tools = kept === undefined || options.addTools === undefined ? kept : [...kept, ...options.addTools.filter((tool) => !kept.some((existing) => existing.name === tool.name))];
+  return {
+    ...setup,
+    ...(options.role === undefined
+      ? {}
+      : { developerInstructions: [setup.developerInstructions ?? "", options.role].filter((text) => text !== "").join("\n\n") }),
+    ...(tools === undefined ? {} : { dynamicTools: tools }),
+  };
 }

@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   uploadAttachment: vi.fn(),
   fileIndex: vi.fn(),
+  listAllSessions: vi.fn(),
 }));
 
 vi.mock("../src/api/client.js", () => ({ api: apiMocks }));
@@ -229,5 +230,46 @@ describe("Composer 输入解禁（PR1 · R1）", () => {
       node.querySelector<HTMLButtonElement>("[data-testid='attach-image']")
         ?.disabled,
     ).toBe(false);
+  });
+});
+
+describe("Composer「@」引用会话（多 Agent 协作 S7）", () => {
+  const session = (id: string, title: string, projectId: string, agent: string) =>
+    ({ id, title, agentId: agent, agent: { displayName: agent === "claude-code" ? "Claude Code" : "Codex" }, project: { id: projectId, name: projectId === "p1" ? "商家端" : "别的项目" } }) as never;
+
+  it("「@」面板里会话在前（当前项目优先、不含自己），选中插入会话引用；文件照旧在后面", async () => {
+    apiMocks.fileIndex.mockResolvedValue({ items: ["src/export.ts"], truncated: false });
+    apiMocks.listAllSessions.mockResolvedValue({
+      items: [session("s1", "当前会话", "p1", "codex"), session("other", "导出接口（别处）", "p2", "codex"), session("a1", "导出接口", "p1", "claude-code")],
+      nextCursor: null,
+    });
+    const node = await render(composer({ referencesSessions: true }));
+    await type(node, "@导出");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const items = [...node.querySelectorAll<HTMLElement>("[data-testid='palette-item']")];
+    expect(items.map((item) => item.textContent)).toEqual(["导出接口Claude Code · 商家端", "导出接口（别处）Codex · 别的项目"]);
+    expect(apiMocks.listAllSessions).toHaveBeenCalledWith({ state: "active", limit: 50 });
+    await act(async () => items[0]?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    expect(textareaOf(node).value).toBe("[导出接口](suduo://session/a1) ");
+
+    // 文件照旧：会话没匹配上时只有文件。
+    await type(node, "@export");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect([...node.querySelectorAll<HTMLElement>("[data-testid='palette-item']")].map((item) => item.textContent)).toEqual(["export.tssrc/export.ts"]);
+  });
+
+  it("会话不能引用别的会话（本机会话没有读会话的工具）：「@」只列文件，也不去取会话列表", async () => {
+    apiMocks.fileIndex.mockResolvedValue({ items: ["src/export.ts"], truncated: false });
+    const node = await render(composer());
+    await type(node, "@ex");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect([...node.querySelectorAll<HTMLElement>("[data-testid='palette-item']")].map((item) => item.textContent)).toEqual(["export.tssrc/export.ts"]);
+    expect(apiMocks.listAllSessions).not.toHaveBeenCalled();
   });
 });

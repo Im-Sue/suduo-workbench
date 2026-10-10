@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  M1_RUNTIME_SECURITY_POLICY,
   type AgentRuntime,
   type ApproveResult,
   type CodexTransportFactory,
@@ -245,6 +244,33 @@ describe("CodexRuntime 客户端自定义工具", () => {
   });
 });
 
+describe("CodexRuntime 线程级配置的重新生效（多 Agent S5）", () => {
+  it("续接已加载的线程先 thread/unsubscribe；回合跨了只读就先卸载再带新配置续接", async () => {
+    const connection = new QueueRpcConnection("connection-a");
+    const runtime = createRuntime([connection]);
+    await runtime.startThread(createInput());
+    const threadRef = { runtimeId: "codex-local", runtimeKind: "codex", threadId: "thread-1" };
+    const turn = (approvalMode: "ask" | "readonly") =>
+      runtime
+        .startTurn({ sessionId: "session-1", threadRef, clientTurnId: "c", input: [{ type: "text", text: "hi" }], projectRoot: "/tmp/project", workspaceRoots: ["/tmp/project"], approvalMode })
+        .catch(() => undefined);
+    await turn("ask");
+    const methods = () => connection.requests.map((request) => request.method).filter((method) => method.startsWith("thread/") || method === "turn/start");
+    expect(methods()).toEqual(["thread/start", "turn/start"]);
+    await turn("readonly");
+    expect(methods()).toEqual(["thread/start", "turn/start", "thread/unsubscribe", "thread/resume", "turn/start"]);
+    // 续接带上关掉所有者 MCP 的配置
+    const resume = connection.requests.filter((request) => request.method === "thread/resume")[0];
+    expect(asObject(asObject(resume?.params)["config"])).toMatchObject({ mcp_servers: { mine: { enabled: false } } });
+    // 已经是只读配置：不再重来
+    await turn("readonly");
+    expect(methods().slice(5)).toEqual(["turn/start"]);
+    // 续接一个已加载的线程（令牌重签等）：同样先卸载
+    await runtime.startThread({ ...createInput(), mode: "resume", threadRef });
+    expect(methods().slice(6)).toEqual(["thread/unsubscribe", "thread/resume"]);
+  });
+});
+
 describe("codex-event-normalizer：dynamicToolCall 结果瘦身", () => {
   it("item/completed 的 dynamicToolCall：图片换成占位、长文本截断", () => {
     const longText = "需".repeat(5_000);
@@ -421,6 +447,9 @@ class QueueRpcConnection implements RpcConnection {
     if (method === "thread/start" || method === "thread/resume") {
       return { thread: { id: "thread-1" } };
     }
+    if (method === "config/read") {
+      return { config: { mcp_servers: { mine: { command: "x" } } } };
+    }
     return {};
   }
 
@@ -480,7 +509,7 @@ function createInput() {
     sessionId: "session-1",
     projectRoot: "/tmp/project",
     workspaceRoots: ["/tmp/project"],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask" as const,
   };
 }
 

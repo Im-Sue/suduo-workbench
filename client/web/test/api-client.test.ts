@@ -20,6 +20,8 @@ describe("会话删除 API", () => {
         headers: expect.objectContaining({ "Idempotency-Key": "delete-key" }),
       }),
     );
+    await api.deleteSession("s1", { withChildren: true });
+    expect(fetch.mock.calls.at(-1)?.[0]).toBe("/api/v1/sessions/s1?withChildren=true");
   });
 });
 

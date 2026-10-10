@@ -7,10 +7,11 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import type { SendMessageAccepted, SkillDto } from "@suduo/client-contracts";
+import type { SendMessageAccepted, SessionListItemDto, SkillDto } from "@suduo/client-contracts";
 import { api } from "../api/client.js";
 import { formatBytes, formatDuration, isSubPath, messageOf } from "../ui/format.js";
-import { ArrowUpIcon, FileIcon, ImageIcon, SquareIcon, XIcon, ZapIcon } from "lucide-react";
+import { ArrowUpIcon, FileIcon, ImageIcon, MessagesSquareIcon, SplitIcon, SquareIcon, XIcon, ZapIcon } from "lucide-react";
+import { sessionLinkText } from "../features/sessions/session-links.js";
 import type { SessionUiStatus } from "../ui/session-status.js";
 import type { ContextUsage } from "../event-projection/timeline.js";
 import { Spinner } from "@/components/ui/spinner";
@@ -88,6 +89,10 @@ interface FileIndexCache {
 }
 
 const PALETTE_LIMIT = 8;
+/** 「@」面板里会话最多列几个（其余位置给文件）。 */
+const SESSION_PALETTE_LIMIT = 4;
+/** 输入框里 @ 的 Agent：`@[Claude Code](suduo://agent/claude-code)`（多 Agent 协作 S8）。 */
+const AGENT_HANDLE = /@\[([^\]\n]*)\]\(suduo:\/\/agent\/([a-z0-9-]+)\)/u;
 
 /**
  * 切换语言时带过重建的草稿（i18n/carry.ts）：输入框里的字与已传好的图片。
@@ -127,6 +132,12 @@ export function Composer(props: {
   usage?: ContextUsage | null;
   /** 输入框为空时按 ↑ 取回的上一条消息。 */
   lastUserText?: string | null;
+  /** 「@」面板列不列本机会话（会话有读会话的工具时才列，多 Agent 协作 S7）。 */
+  referencesSessions?: boolean;
+  /** 可以委派的本机 Agent（多 Agent 协作 S8）：「@」面板里列出，选中后这条消息作为任务交给它。不传时不列。 */
+  delegateAgents?: ReadonlyArray<{ id: string; name: string }>;
+  /** 消息里 @ 了 Agent：不发给本会话的 Agent，而是开一个委派。 */
+  onDelegate?(agentId: string, task: string): Promise<void>;
 }) {
   const t = useT();
   const copy = t.workbench.composer;
@@ -153,6 +164,10 @@ export function Composer(props: {
   const sessionRef = useRef(props.sessionId);
   const [palette, setPalette] = useState<PaletteState | null>(null);
   const [fileIndex, setFileIndex] = useState<FileIndexCache | null>(null);
+  /** 「@」面板里可以引用的本机会话（多 Agent 协作 S7）：第一次打开面板时取一次。 */
+  const [referable, setReferable] = useState<SessionListItemDto[] | null>(null);
+  /** 上次取会话列表的时刻：失败或超过半分钟再打开面板时重取（会话随时在变）。 */
+  const referableFetchedAt = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingCaret = useRef<number | null>(null);
@@ -226,6 +241,19 @@ export function Composer(props: {
     return null;
   };
 
+  const ensureReferable = () => {
+    if (props.referencesSessions !== true) return;
+    const fetchedAt = referableFetchedAt.current;
+    if (fetchedAt !== null && Date.now() - fetchedAt < 30_000) return;
+    referableFetchedAt.current = Date.now();
+    api
+      .listAllSessions({ state: "active", limit: 50 })
+      .then((response) => setReferable(response.items))
+      .catch(() => {
+        referableFetchedAt.current = null;
+      });
+  };
+
   const onTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.target.value;
     setText(value);
@@ -234,7 +262,54 @@ export function Composer(props: {
     setPalette(next);
     if (next?.kind === "file") {
       ensureFileIndex();
+      ensureReferable();
     }
+  };
+
+  /** 可以委派的 Agent：名字或 id 包含输入的字（多 Agent 协作 S8）。 */
+  const agentMatches = (): ReadonlyArray<{ id: string; name: string }> => {
+    if (props.delegateAgents === undefined || props.onDelegate === undefined) return [];
+    const query = (palette?.query ?? "").toLowerCase();
+    return props.delegateAgents.filter((agent) => query === "" || agent.name.toLowerCase().includes(query) || agent.id.includes(query)).slice(0, 3);
+  };
+
+  const applyAgent = (agent: { id: string; name: string }) => {
+    if (!palette) {
+      return;
+    }
+    const inserted = `@[${agent.name}](suduo://agent/${agent.id}) `;
+    setText(text.slice(0, palette.tokenStart) + inserted + text.slice(palette.caret));
+    pendingCaret.current = palette.tokenStart + inserted.length;
+    setPalette(null);
+    textareaRef.current?.focus();
+  };
+
+  /** 可以引用的其他会话：标题或 Agent 名包含输入的字，当前项目的在前，最多 4 个（文件在后面）。 */
+  const sessionMatches = (): SessionListItemDto[] => {
+    if (referable === null || props.referencesSessions !== true) return [];
+    const query = (palette?.query ?? "").toLowerCase();
+    return referable
+      .filter(
+        (item) =>
+          item.id !== props.sessionId &&
+          (query === "" ||
+            item.title.toLowerCase().includes(query) ||
+            (item.agent?.displayName ?? item.agentId).toLowerCase().includes(query)),
+      )
+      .toSorted((left, right) => Number(right.project.id === props.projectId) - Number(left.project.id === props.projectId))
+      .slice(0, SESSION_PALETTE_LIMIT);
+  };
+
+  const applySession = (item: SessionListItemDto) => {
+    if (!palette) {
+      return;
+    }
+    const inserted = `${sessionLinkText(item)} `;
+    const nextText = text.slice(0, palette.tokenStart) + inserted + text.slice(palette.caret);
+    setText(nextText);
+    pendingCaret.current = palette.tokenStart + inserted.length;
+    setPalette(null);
+    textareaRef.current?.focus();
   };
 
   const skillMatches = (): SkillDto[] => {
@@ -319,7 +394,32 @@ export function Composer(props: {
             ),
             apply: () => applySkill(skill),
           }))
-        : fileMatches().map((path) => ({
+        : [
+            ...agentMatches().map((agent) => ({
+              key: `agent:${agent.id}`,
+              node: (
+                <>
+                  <SplitIcon size={14} />
+                  <span className="shrink-0 font-medium" data-testid="palette-agent">{agent.name}</span>
+                  <span className="min-w-0 truncate text-caption text-subtle-foreground">{t.collab.palette.agentHint(agent.name)}</span>
+                </>
+              ),
+              apply: () => applyAgent(agent),
+            })),
+            ...sessionMatches().map((item) => ({
+              key: `session:${item.id}`,
+              node: (
+                <>
+                  <MessagesSquareIcon size={14} />
+                  <span className="min-w-0 truncate font-medium" data-testid="palette-session">{item.title}</span>
+                  <span className="shrink-0 text-caption text-subtle-foreground">
+                    {t.sessionLinks.palette.sessionMeta(item.agent?.displayName ?? item.agentId, item.project.name)}
+                  </span>
+                </>
+              ),
+              apply: () => applySession(item),
+            })),
+            ...fileMatches().map((path) => ({
             key: path,
             node: (
               <>
@@ -329,7 +429,8 @@ export function Composer(props: {
               </>
             ),
             apply: () => applyFile(path),
-          }));
+          })),
+          ];
 
   const canSend =
     !props.disabled &&
@@ -338,6 +439,33 @@ export function Composer(props: {
 
   const send = async () => {
     if (!canSend) {
+      return;
+    }
+    // @ 了 Agent（多 Agent 协作 S8，需求 4.3「用户在输入框 @Agent 写任务」）：这条作为任务委派出去。
+    const delegated = AGENT_HANDLE.exec(text);
+    if (delegated !== null && props.onDelegate !== undefined) {
+      // 委派只带文字、一次一家：带了附件 / 技能或 @ 了几家时说明，不悄悄丢掉。
+      if (attachments.length > 0 || props.skillPath !== "") {
+        props.onError(t.collab.delegation.textOnly);
+        return;
+      }
+      if (new Set([...text.matchAll(new RegExp(AGENT_HANDLE.source, "gu"))].map((match) => match[2])).size > 1) {
+        props.onError(t.collab.delegation.oneAgent);
+        return;
+      }
+      const task = text.replaceAll(delegated[0], "").trim();
+      if (task === "") return;
+      const submittedText = text;
+      setSending(true);
+      try {
+        await props.onDelegate(delegated[2]!, task);
+        setText((current) => (current === submittedText ? "" : current));
+        setPalette(null);
+      } catch (cause) {
+        props.onError(messageOf(cause));
+      } finally {
+        setSending(false);
+      }
       return;
     }
     const skill = props.skills.find((item) => item.path === props.skillPath);

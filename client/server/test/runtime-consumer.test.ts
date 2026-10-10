@@ -19,12 +19,14 @@ describe("T10 runtime supervisor", () => {
     let orphaned = 0;
     let unavailable = 0;
     let recovered = 0;
+    const scopes: unknown[] = [];
     const operation = consumeRuntimeUntilAborted({
       runtime,
       ingestor: { ingest: () => undefined } as unknown as RuntimeEventIngestor,
       approvals: {
-        orphanPersistedPending: () => {
+        orphanPersistedPending: (_reason: string, options: unknown) => {
           orphaned += 1;
+          scopes.push(options);
           return 0;
         },
       } as unknown as ApprovalService,
@@ -34,8 +36,9 @@ describe("T10 runtime supervisor", () => {
         },
       } as unknown as RuntimeSupervisor,
       signal: abort.signal,
-      recover: async () => {
+      recover: async (runtimeId) => {
         recovered += 1;
+        scopes.push(runtimeId);
         abort.abort();
       },
       restartMaxMs: 1_000,
@@ -45,6 +48,48 @@ describe("T10 runtime supervisor", () => {
     expect(orphaned).toBe(1);
     expect(unavailable).toBe(1);
     expect(recovered).toBe(1);
+    // 作废与恢复都只针对断开的这个运行时（多 Agent 故障隔离）。
+    expect(scopes).toEqual([{ inProcess: true, runtimeId: "codex-local" }, "codex-local"]);
+  });
+});
+
+describe("审批生命周期事件（多 Agent S3）", () => {
+  it("Agent 撤回审批、会话连接关闭：作废相应的卡，不进账本", async () => {
+    const abort = new AbortController();
+    const calls: string[] = [];
+    const ingested: string[] = [];
+    const event = (type: string, payload: Record<string, string>): RuntimeEventDraft => ({
+      source: "runtime:claude-local",
+      type,
+      payload,
+      threadRef: null,
+      turnRef: null,
+      ts: 1,
+      dedupeKey: type,
+    });
+    const runtime = {
+      runtimeId: "claude-local",
+      runtimeKind: "claude-sdk",
+      async *subscribe() {
+        yield event("approval.withdrawn", { approvalRef: "ref-1", reason: "Claude withdrew this permission request" });
+        yield event("runtime.connection-closed", { connectionId: "conn-1" });
+        yield event("turn.started", {});
+        abort.abort();
+      },
+    } as unknown as AgentRuntime;
+    await consumeRuntimeUntilAborted({
+      runtime,
+      ingestor: { ingest: (e: RuntimeEventDraft) => ingested.push(e.type) } as unknown as RuntimeEventIngestor,
+      approvals: {
+        orphanWithdrawn: (ref: string, reason: string) => calls.push(`withdrawn:${ref}:${reason}`),
+        orphanConnection: (connectionId: string) => calls.push(`connection:${connectionId}`),
+        orphanPersistedPending: () => 0,
+      } as unknown as ApprovalService,
+      supervisor: { markUnavailable: () => undefined } as unknown as RuntimeSupervisor,
+      signal: abort.signal,
+    });
+    expect(calls).toEqual(["withdrawn:ref-1:Claude withdrew this permission request", "connection:conn-1"]);
+    expect(ingested).toEqual(["turn.started"]);
   });
 });
 

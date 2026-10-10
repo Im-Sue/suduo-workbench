@@ -36,10 +36,11 @@ export interface RoomLastMessageDto {
   createdAt: string;
   /**
    * 结构化的作者与预览（中英双语技术设计 §4.3）。老云端没有这些字段，前端缺省时退回上面的兜底文字。
-   * authorKind 为 agent 时 agent 给所有者名与设备名，前端拼成本地化的 Agent 名。
+   * authorKind 为 agent 时 agent 给所有者名、设备名与种类，前端拼成本地化的 Agent 名。
    */
   authorKind?: RoomMessageAuthorKind;
-  agent?: { ownerName: string; deviceName: string } | null;
+  /** kind：Agent 种类（多 Agent S6 起有；老云端没有，按 codex）。 */
+  agent?: { ownerName: string; deviceName: string; kind?: AgentKind } | null;
   /** 正文压成一行、截过的预览；只有附件时为空串。 */
   text?: string;
   /** 第一个附件与附件总数（只有附件时前端据此给预览）。 */
@@ -212,8 +213,30 @@ export type SearchRoomMessagesResponse = ListRoomMessagesResponse;
 
 // ───────────────────────────── Agent 与共享 ─────────────────────────────
 
-export const AGENT_KINDS = ["codex"] as const;
-export type AgentKind = (typeof AGENT_KINDS)[number];
+/**
+ * 可共享的 Agent 种类（多 Agent，ADR-0014）：已知的几家有显示名；新客户端可能带来不认识的种类（格式对就收），
+ * 显示时用原文。`agent_kinds_v2` 之前的云端只认 codex。
+ */
+export const AGENT_KINDS = ["codex", "claude-code", "copilot", "gemini", "cursor", "opencode", "qwen-code", "kimi-code"] as const;
+export type KnownAgentKind = (typeof AGENT_KINDS)[number];
+export type AgentKind = string;
+export const AGENT_KIND_PATTERN = "^[a-z][a-z0-9-]{0,31}$";
+
+const AGENT_KIND_NAMES: Record<KnownAgentKind, string> = {
+  codex: "Codex",
+  "claude-code": "Claude Code",
+  copilot: "GitHub Copilot CLI",
+  gemini: "Gemini CLI",
+  cursor: "Cursor CLI",
+  opencode: "OpenCode",
+  "qwen-code": "Qwen Code",
+  "kimi-code": "Kimi Code",
+};
+
+/** Agent 种类的显示名（产品名，不随语言变）；不认识的种类原样显示。 */
+export function agentKindName(kind: string): string {
+  return (AGENT_KIND_NAMES as Record<string, string>)[kind] ?? kind;
+}
 
 /** 列表、@ 选择框、消息作者等处用的 Agent 摘要。 */
 export interface AgentSummaryDto {
@@ -222,7 +245,7 @@ export interface AgentSummaryDto {
   owner: UserSummaryDto;
   deviceName: string;
   /**
-   * 英文兜底「陈思远's Codex · MacBook Pro」，老客户端直接显示；新前端按所有者名与设备名用自己的语言拼。
+   * 英文兜底「陈思远's Codex · MacBook Pro」（种类换成对应的显示名），老客户端直接显示；新前端按所有者名、种类与设备名用自己的语言拼。
    */
   label: string;
 }

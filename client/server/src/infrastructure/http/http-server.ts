@@ -11,6 +11,7 @@ import Fastify, {
   type FastifyRequest,
 } from "fastify";
 import {
+  APPROVAL_DECISIONS,
   isLocale,
   type HealthzResponse,
   type Locale,
@@ -36,6 +37,7 @@ import type {
   OpenFileRequest,
   RemoveSkillRequest,
   SetSkillEnabledRequest,
+  SessionStartOptions,
   UpdateSessionRequest,
   UpdateSettingsRequest,
 } from "@suduo/client-contracts";
@@ -93,6 +95,14 @@ import {
   registerProxySettingsRoutes,
   type ProxySettingsRouteDependencies,
 } from "./routes/proxy-settings-routes.js";
+import { registerAgentsRoutes, type AgentsRouteDependencies } from "./routes/agents-routes.js";
+import { registerSchedulerRoutes, type SchedulerRouteDependencies } from "./routes/scheduler-routes.js";
+import { registerDelegationsRoutes, type DelegationsRouteDependencies } from "./routes/delegations-routes.js";
+import { registerReviewsRoutes, type ReviewsRouteDependencies } from "./routes/reviews-routes.js";
+import { registerTrialsRoutes, type TrialsRouteDependencies } from "./routes/trials-routes.js";
+import { registerSharedDraftsRoutes, type SharedDraftsRouteDependencies } from "./routes/shared-drafts-routes.js";
+import { MCP_ENDPOINT_PATH, registerMcpEndpoint, type McpToolHost } from "../mcp/mcp-endpoint.js";
+import type { ToolTokenRegistry } from "../mcp/tool-tokens.js";
 import {
   registerMcpRoutes,
   type McpRouteDependencies,
@@ -119,11 +129,19 @@ export interface HttpServerDependencies
   extends CodexStatusRouteDependencies,
     ModelProviderRouteDependencies,
     ProxySettingsRouteDependencies,
+    AgentsRouteDependencies,
+    SchedulerRouteDependencies,
+    DelegationsRouteDependencies,
+    ReviewsRouteDependencies,
+    TrialsRouteDependencies,
+    SharedDraftsRouteDependencies,
     McpRouteDependencies,
     LocalDirectoryRouteDependencies,
     SystemActivityRouteDependencies {
   requestGuard: LoopbackGuard;
   idempotency: IdempotencyService;
+  /** SuDuo 本机 MCP 工具服务（ADR-0015）；不传时不开 /mcp。 */
+  toolMcp?: { tokens: ToolTokenRegistry; host: McpToolHost; serverVersion: string };
   projects: ProjectService;
   sessions: SessionService;
   runStatus: SessionRunStatusService;
@@ -192,9 +210,17 @@ export function buildHttpServer(
   }
 
   server.addHook("onRequest", async (request) => {
+    // SuDuo 本机 MCP 工具服务有自己的守卫（loopback Host + 会话令牌 + 同源 Origin）：Agent 的请求不带 Origin，
+    // 全局守卫会把它的 POST 当成跨源写请求拒掉（ADR-0015）。
+    if (dependencies.toolMcp !== undefined && (request.url === MCP_ENDPOINT_PATH || request.url.startsWith(MCP_ENDPOINT_PATH + "?"))) {
+      return;
+    }
     dependencies.requestGuard.guard(request);
     dependencies.activity?.touch();
   });
+  if (dependencies.toolMcp !== undefined) {
+    registerMcpEndpoint(server, dependencies.toolMcp);
+  }
   registerRequestLocale(server, dependencies.settings);
 
   server.setErrorHandler((error, request, reply) => {
@@ -251,6 +277,12 @@ export function buildHttpServer(
   registerModelProviderRoutes(server, dependencies);
   registerCodexConfigFileRoutes(server, dependencies);
   registerProxySettingsRoutes(server, dependencies);
+  registerAgentsRoutes(server, { ...dependencies, codexModelOptions: () => dependencies.modelProvider.listModelOptions() });
+  registerSchedulerRoutes(server, dependencies);
+  registerDelegationsRoutes(server, dependencies);
+  registerReviewsRoutes(server, dependencies);
+  registerTrialsRoutes(server, dependencies);
+  registerSharedDraftsRoutes(server, dependencies);
   if (dependencies.mcp) {
     registerMcpRoutes(server, { mcp: dependencies.mcp });
   }
@@ -400,6 +432,7 @@ export function buildHttpServer(
       return dependencies.workspace.listDirectory(
         request.params.projectId,
         query["path"] ?? "",
+        query["sessionId"],
       );
     },
   );
@@ -407,11 +440,12 @@ export function buildHttpServer(
   server.get<{ Params: { projectId: string } }>(
     "/api/v1/projects/:projectId/files/content",
     async (request) => {
-      const path = queryObject(request.query)["path"];
+      const query = queryObject(request.query);
+      const path = query["path"];
       if (!path) {
         throw validation((t) => t.http.previewPathRequired);
       }
-      return dependencies.workspace.readContent(request.params.projectId, path);
+      return dependencies.workspace.readContent(request.params.projectId, path, query["sessionId"]);
     },
   );
 
@@ -423,13 +457,15 @@ export function buildHttpServer(
   server.get<{ Params: { projectId: string } }>(
     "/api/v1/projects/:projectId/files/raw",
     async (request, reply) => {
-      const path = queryObject(request.query)["path"];
+      const query = queryObject(request.query);
+      const path = query["path"];
       if (!path) {
         throw validation((t) => t.http.rawPathRequired);
       }
       const file = await dependencies.workspace.resolveRawFile(
         request.params.projectId,
         path,
+        query["sessionId"],
       );
       return reply
         .type(file.mediaType)
@@ -518,6 +554,7 @@ export function buildHttpServer(
         body.path,
         body.mode,
         body.line,
+        typeof body.sessionId === "string" ? body.sessionId : undefined,
       );
       return reply.code(204).send();
     },
@@ -534,7 +571,7 @@ export function buildHttpServer(
       ) {
         throw validation((t) => t.http.existingPathsInvalid(EXISTING_FILES_LIMIT));
       }
-      return dependencies.workspace.existingFiles(request.params.projectId, body.paths);
+      return dependencies.workspace.existingFiles(request.params.projectId, body.paths, typeof body.sessionId === "string" ? body.sessionId : undefined);
     },
   );
 
@@ -673,7 +710,7 @@ export function buildHttpServer(
       ),
   );
 
-  server.delete<{ Params: { sessionId: string } }>(
+  server.delete<{ Params: { sessionId: string }; Querystring: { withChildren?: string } }>(
     "/api/v1/sessions/:sessionId",
     async (request, reply) =>
       idempotent(
@@ -683,7 +720,13 @@ export function buildHttpServer(
         "sessions:delete:" + request.params.sessionId,
         null,
         async () => {
-          dependencies.sessions.remove(request.params.sessionId);
+          // withChildren=true 连带删除往下的会话（需求 R11）；子会话上没做完的委派先取消。
+          const targets = dependencies.sessions.removalTargets(request.params.sessionId, request.query.withChildren === "true");
+          await dependencies.delegations?.beforeSessionsDeleted(targets);
+          await dependencies.reviews?.beforeSessionsDeleted(targets);
+          for (const id of targets) dependencies.sessions.remove(id);
+          dependencies.delegations?.afterSessionsDeleted(targets);
+          dependencies.reviews?.afterSessionsDeleted(targets);
           return { statusCode: 204, body: null };
         },
       ),
@@ -727,10 +770,14 @@ export function buildHttpServer(
     "/api/v1/sessions/:sessionId/approvals",
     async (request) => {
       dependencies.sessions.get(request.params.sessionId);
-      return dependencies.approvals.list(
-        request.params.sessionId,
-        approvalQuery(request.query),
+      const query = approvalQuery(request.query);
+      const page = dependencies.approvals.list(request.params.sessionId, query);
+      // 委派出来的子会话等确认的卡片一并列出、标明来源（多 Agent 协作 S8，R6）。
+      if ((query.status ?? "pending") !== "pending" || dependencies.delegations === undefined) return page;
+      const children = dependencies.delegations.activeChildren(request.params.sessionId).flatMap(({ childSessionId, origin }) =>
+        dependencies.approvals.list(childSessionId, { status: "pending" }).items.map((item) => ({ ...item, origin })),
       );
+      return children.length === 0 ? page : { ...page, items: [...page.items, ...children] };
     },
   );
 
@@ -795,13 +842,11 @@ export function buildHttpServer(
         request.body,
         async () => {
           const body = requireObject<DecideApprovalRequest>(request.body);
-          if (
-            body.decision !== "accept" &&
-            body.decision !== "acceptForSession" &&
-            body.decision !== "decline" &&
-            body.decision !== "cancel"
-          ) {
+          if (!(APPROVAL_DECISIONS as readonly string[]).includes(body.decision)) {
             throw validation((t) => t.http.decisionInvalid);
+          }
+          if (body.optionId !== undefined && typeof body.optionId !== "string") {
+            throw validation((t) => t.http.optionIdInvalid);
           }
           return {
             statusCode: 200,
@@ -1255,10 +1300,19 @@ function registerRequirementsV2Routes(
   server.post<{ Params: { requirementId: string } }>(
     "/api/v2/requirements/:requirementId/sessions",
     async (request, reply) => {
-      requireEmptyObject(request.body);
       return reply
         .code(201)
-        .send(await service.createRequirementSession(request.params.requirementId, request.locale));
+        .send(await service.createRequirementSession(request.params.requirementId, request.locale, sessionStartOptions(request.body)));
+    },
+  );
+
+  // 交给另一个 Agent 接着做（多 Agent 协作 S7，需求 4.2）。
+  server.post<{ Params: { sessionId: string } }>(
+    "/api/v2/sessions/:sessionId/continue",
+    async (request, reply) => {
+      return reply
+        .code(201)
+        .send(await service.continueSession(request.params.sessionId, request.locale, sessionStartOptions(request.body)));
     },
   );
 
@@ -1272,10 +1326,9 @@ function registerRequirementsV2Routes(
   server.post<{ Params: { projectId: string } }>(
     "/api/v2/projects/:projectId/sessions",
     async (request, reply) => {
-      requireEmptyObject(request.body);
       return reply
         .code(201)
-        .send(await service.createProjectSession(request.params.projectId, request.locale));
+        .send(await service.createProjectSession(request.params.projectId, request.locale, sessionStartOptions(request.body)));
     },
   );
 }
@@ -1631,14 +1684,22 @@ function requireObject<T>(value: unknown): T {
   return value as T;
 }
 
-function requireEmptyObject(value: unknown): Record<string, never> {
-  const body = requireObject<Record<string, never>>(
-    value === undefined ? {} : value,
-  );
-  if (Object.keys(body).length > 0) {
-    throw validation((t) => t.http.bodyMustBeEmpty);
+/** 开会话的请求体（多 Agent，ADR-0014）：Agent、审批档、模型、推理强度，都可不传；取值由会话服务校验。 */
+function sessionStartOptions(value: unknown): SessionStartOptions {
+  const body = requireObject<Record<string, unknown>>(value === undefined || value === null ? {} : value);
+  const { agentId, approvalMode, model, reasoningEffort, ...rest } = body;
+  if (Object.keys(rest).length > 0) {
+    throw validation((t) => t.http.sessionStartFieldsOnly);
   }
-  return body;
+  if (agentId !== undefined && typeof agentId !== "string") {
+    throw validation((t) => t.session.agentIdNotString);
+  }
+  return {
+    ...(agentId === undefined ? {} : { agentId }),
+    ...(approvalMode === undefined ? {} : { approvalMode: approvalMode as NonNullable<SessionStartOptions["approvalMode"]> }),
+    ...(model === undefined ? {} : { model: model as NonNullable<SessionStartOptions["model"]> | null }),
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort: reasoningEffort as NonNullable<SessionStartOptions["reasoningEffort"]> | null }),
+  };
 }
 
 function parseIfMatch(value: string | string[] | undefined): number {

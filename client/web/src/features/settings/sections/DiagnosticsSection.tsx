@@ -14,6 +14,7 @@ import { showMessage } from "../../../ui/message.js";
 import { configWarningOf, useCodexStatus } from "../codex-status.js";
 import { ItemList, ItemRow, SettingsRow, SettingsSection } from "../components/kit.js";
 import {
+  agentHealthItems,
   doctorHealth,
   loginHealth,
   mcpHealth,
@@ -81,6 +82,7 @@ export function DiagnosticsSection() {
     serviceHealth(settings, baseUrl === "" ? { pending: false } : probe(service), t),
     loginHealth(settings, t),
     doctorHealth(probe(doctor), "codex", t),
+    ...agentHealthItems(probe(doctor), t),
     modelHealth(probe(provider), probe(models), warning, t),
     networkHealth(probe(network), t),
     mcpHealth(probe(mcp), t),

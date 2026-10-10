@@ -1,3 +1,4 @@
+import type { RuntimeApprovalMode } from "./config.js";
 import type {
   JsonValue,
   RuntimeEventDraft,
@@ -24,14 +25,31 @@ export interface StartThreadBase {
   sessionId: string;
   projectRoot: string;
   workspaceRoots: string[];
-  security: RuntimeSecurityPolicy;
+  /** 会话的审批档；各适配器换算成自己的机制（Codex 见 `RUNTIME_APPROVAL_MODE_POLICIES`）。 */
+  approvalMode: RuntimeApprovalMode;
   /** 附加给模型的系统级指令（如需求会话的需求卡）；runtime 负责与自身指令合并。 */
   developerInstructions?: string;
   /**
    * 挂到线程上的客户端自定义工具（Codex `dynamicTools`，ADR-0008）。只在新建线程时下发；
-   * 续接线程时 Codex 从线程记录里恢复，runtime 忽略此字段。
+   * 续接线程时 Codex 从线程记录里恢复，runtime 忽略此字段。ADR-0015 起只给老线程与不支持
+   * SuDuo 工具服务的运行时用；支持的运行时改用 `toolServer`。
    */
   dynamicTools?: RuntimeToolSpec[];
+  /**
+   * SuDuo 本机 MCP 工具服务（ADR-0015）：地址与这个会话的令牌。新建与续接都要带（令牌每次重签）；
+   * 运行时按自己的通道注入（Codex 线程配置覆盖、Claude mcpServers、ACP session/new）。
+   */
+  toolServer?: RuntimeToolServer;
+}
+
+/** SuDuo 本机 MCP 工具服务的连接信息（ADR-0015）。 */
+export interface RuntimeToolServer {
+  /** 如 http://127.0.0.1:8787/mcp；只听 127.0.0.1。 */
+  url: string;
+  /** 这个会话的令牌（Authorization: Bearer）；只在内存里，每次建线程或续接重签。 */
+  token: string;
+  /** 给 Agent 配的工具超时（秒）：写工具会挂起等用户确认，服务端在它到达前转草稿。 */
+  toolTimeoutSec: number;
 }
 
 /** 客户端自定义工具的声明（对应 Codex `DynamicToolSpec` 的 function 形态）。 */
@@ -91,7 +109,8 @@ export interface StartTurnInput {
   input: RuntimeInput[];
   projectRoot: string;
   workspaceRoots: string[];
-  security: RuntimeSecurityPolicy;
+  /** 每回合显式下发的审批档。 */
+  approvalMode: RuntimeApprovalMode;
   /**
    * 会话级模型。undefined = 调用方不管理（不下发，保持旧行为）；null = 跟随全局默认；
    * 字符串 = 显式指定。Codex 的回合覆盖对「本回合及后续回合」粘性生效，
@@ -111,15 +130,50 @@ export type ApprovalDecision =
   | "accept"
   /** 批准，且本会话同类请求不再询问（codex 会话级审批缓存）。 */
   | "acceptForSession"
+  /** 批准，且以后都不再询问（由 Agent 自己记住，如 ACP 的 allow_always；可能改动 Agent 的持久规则）。 */
+  | "acceptAlways"
   | "decline"
+  /** 拒绝，且以后都直接拒绝（ACP 的 reject_always）。 */
+  | "declineAlways"
   /** 拒绝并立即中断回合。 */
   | "cancel";
+
+/** 审批对象，与 Agent 无关（ADR-0014 第 3 条；界面按它选卡片样式）。 */
+export type ApprovalSubject = "command" | "file" | "permission" | "question" | "tool";
+
+/** 这张审批卡可选的决策；由适配器按 Agent 实际提供的选项给出，界面只显示这些。 */
+export interface ApprovalOption {
+  /** Agent 原生的选项 id（Codex 用决策名本身，ACP 用 optionId）；决定时原样带回。 */
+  id: string;
+  decision: ApprovalDecision;
+  /** Agent 给的原始文字，界面按 decision 统一翻译，这里只作补充。 */
+  label?: string;
+}
+
+/** 给界面看的审批内容，适配器从原生请求里取好；界面不再解析各家的原生字段。 */
+export interface ApprovalDisplay {
+  command?: string;
+  cwd?: string;
+  paths?: string[];
+  reason?: string;
+  toolName?: string;
+  question?: string;
+}
+
+/** 各适配器在 approval.requested 载荷里都要带的中立字段（原生请求另放 request / extensions）。 */
+export interface NeutralApprovalFields {
+  subject: ApprovalSubject;
+  options: ApprovalOption[];
+  display: ApprovalDisplay;
+}
 
 export interface ApproveInput {
   sessionId: string;
   threadRef: ThreadRef;
   approvalRef: string;
   decision: ApprovalDecision;
+  /** 用户选的选项 id（`ApprovalOption.id`）；Codex 不需要，ACP 回包要用。 */
+  optionId?: string;
 }
 
 export interface ApproveResult {
@@ -147,6 +201,10 @@ export interface RuntimeSkill {
 export interface AgentRuntime {
   readonly runtimeId: string;
   readonly runtimeKind: string;
+  /** 驱动的是哪家 Agent（配置表的 id）；不写时 Codex 运行时视为 codex（ADR-0014）。 */
+  readonly agentId?: string;
+  /** 能接 SuDuo 本机 MCP 工具服务（ADR-0015）；不支持的运行时继续用 dynamicTools。 */
+  readonly supportsToolServer?: boolean;
 
   startThread(input: StartThreadInput): Promise<StartThreadResult>;
   startTurn(input: StartTurnInput): Promise<StartTurnResult>;

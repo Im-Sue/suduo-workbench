@@ -48,6 +48,7 @@ export const setup = {
       service: { title: "连接需求服务", hint: "团队共享的需求在这里" },
       login: { title: "登录", hint: "使用团队账号" },
       environment: { title: "检查本机环境", hint: "Codex、模型服务、网络" },
+      agents: { title: "连接 Agent", hint: "Codex、Claude Code 等" },
       project: { title: "关联项目代码", hint: "选择本机代码目录" },
       done: { title: "完成", hint: "开始工作" },
     },
@@ -77,6 +78,14 @@ export const setup = {
       showAll: (count: number) => `查看全部 ${String(count)} 项检查`,
       problems: (count: number) => `有 ${String(count)} 项需要留意，可以先继续，稍后在「设置」里处理。`,
       recheck: "重新检查",
+    },
+    agents: {
+      title: "连接 AI Agent",
+      description: "SuDuo 用你电脑上已经装好、登录好的 AI 编码工具干活。Codex 随 SuDuo 自带；其余的按需安装，在终端里用它自己的命令登录。",
+      listLabel: "本机的 AI Agent",
+      note: "Codex 以外的 Agent，SuDuo 不读、不存它们的登录凭据（Codex 的模型服务在「设置 › 模型服务」里配置）。之后在「设置 › AI Agent」里随时可以重新检测、换默认。",
+      recheck: "重新检测",
+      failed: (message: string) => `没能读到本机的 Agent：${message}`,
     },
     project: {
       title: "选择项目，关联你的代码",

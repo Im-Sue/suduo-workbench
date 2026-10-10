@@ -12,7 +12,7 @@ import type { PresenceTracker } from "./presence-tracker.js";
 
 /**
  * Agent 登记、心跳与在线（模块「Agent」）。
- * Agent = 某人某台电脑上的 Codex；在线 = 90 秒内有心跳。真人在线由心跳里的 browserActive 报告。
+ * Agent = 某人某台电脑上的一家 AI Agent（Codex、Claude Code 等，多 Agent S6）；在线 = 90 秒内有心跳。真人在线由心跳里的 browserActive 报告。
  */
 export class AgentService {
   constructor(

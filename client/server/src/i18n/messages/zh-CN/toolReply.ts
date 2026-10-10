@@ -138,8 +138,14 @@ export const toolReply = {
     roomReadOnly: (tool: string) => `房间里的共享 Agent 只能用只读工具，不能调用 ${tool}。`,
     threadMissing: "找不到会话线程，没有执行。",
     roomToolsUnavailable: "房间工具暂时不可用。",
+    sessionToolsUnavailable: "会话工具暂时不可用。",
+    delegationToolsUnavailable: "委派工具暂时不可用。",
+    reviewToolsUnavailable: "评审工具暂时不可用。",
+    handoffToolsUnavailable: "交接包工具暂时不可用。",
     unknownTool: (tool: string) => `SuDuo 没有工具 ${tool}。`,
     declinedComment: "用户没有同意，评论没有发出。",
+    /** 经 MCP 调用发评论、等用户确认等到快超时（ADR-0015）：卡片留作草稿，不丢。 */
+    commentDraftSaved: "用户还没确认，评论已存为待发出草稿（没有发出）。用户之后可以在 SuDuo 里发出或丢弃；不要再次调用发评论。",
     /** 确认版停用后，旧会话里模型仍调用三个已撤下的工具时。 */
     retired: (tool: string) =>
       `${tool} 已停用：SuDuo 不再有「确认版」，需求的资料都在附件里。用 suduo_requirement_attachments 看附件清单（最新在前），用 suduo_attachment_view 查看内容。`,

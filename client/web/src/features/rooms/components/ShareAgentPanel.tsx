@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AgentDto, AgentShareDuration, RoomDto } from "@suduo/cloud-contracts";
-import { BotIcon, FolderGit2Icon } from "lucide-react";
+import { BotIcon, FolderGit2Icon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +14,8 @@ import { classifyFailure } from "../../../feedback/classify.js";
 import { RegionError } from "../../../feedback/components/index.js";
 import { useT } from "../../../i18n/provider.js";
 import type { Messages } from "../../../i18n/messages/index.js";
+import { isUsable, localAgentsQuery } from "../../agents/queries.js";
+import { useCloudFeature } from "../../requirements/cloud-features.js";
 import { requirementKeys } from "../../requirements/keys.js";
 import { api } from "../../../api/client.js";
 import { findCachedRoom } from "../cache.js";
@@ -26,13 +29,16 @@ import {
   useOpenShare,
   useRequestShare,
   useResolveShareRequest,
+  useRemoveAgentKind,
+  useShareAnotherAgent,
 } from "../queries.js";
 import { readShareDuration, writeShareDuration } from "../share-prefs.js";
 
 /**
  * 「共享 Agent」面板（需求 4.5 / 十一）：
- * - 我的 Agent：本机登记状态（没登记说明原因）、共享到本房间的开关与时长（直到我关闭 / 2 小时 / 今天）、
- *   本机正在为哪个房间执行、还有几个在排队；时长已共享时按共享读回，没共享时用上次选的档；
+ * - 我的 Agent：本机登记状态（没登记说明原因）、每家 Agent 共享到本房间的开关、共享本机其他 Agent（多 Agent S6）、
+ *   时长（直到我关闭 / 2 小时 / 今天）、个人订阅的说明（ADR-0016，只告知）、本机正在为哪个房间执行、还有几个在排队；
+ *   时长已共享时按共享读回，没共享时用上次选的档；
  * - 本房间已共享的 Agent（在线、到期时间）；
  * - 可申请的 Agent（别人的、在这里没共享的 →「申请共享」）；
  * - 我收到的待处理申请（开启 / 忽略）。
@@ -244,31 +250,37 @@ function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) 
   });
   const open = useOpenShare(room.id);
   const close = useCloseShare(room.id);
-  const agent = self.data?.agent ?? null;
-  const myShare = agent === null ? undefined : activeShares(shares.data?.items).find((share) => share.agent.id === agent.id);
+  const shareAnother = useShareAnotherAgent(room.id);
+  const removeKind = useRemoveAgentKind();
+  // 多 Agent S6：本机登记的每一家各一行；老本机服务只给 agent 一个。
+  const mine = self.data === undefined ? [] : (self.data.agents ?? (self.data.agent === null ? [] : [self.data.agent]));
+  const myShares = activeShares(shares.data?.items).filter((share) => mine.some((agent) => agent.id === share.agent.id));
+  const shareOf = (agent: AgentDto) => myShares.find((share) => share.agent.id === agent.id);
   const [preferred, setPreferred] = useState<AgentShareDuration>(readShareDuration);
   // 选中的档：改时长的请求在路上时显示要改成的；已共享按共享读回（面板每次打开都对得上）；没共享用上次选的。
+  const firstShare = myShares[0];
   const duration: AgentShareDuration =
     open.isPending && open.variables !== undefined
       ? open.variables.duration
-      : myShare !== undefined
-        ? shareDurationOf(myShare.expiresAt)
+      : firstShare !== undefined
+        ? shareDurationOf(firstShare.expiresAt)
         : preferred;
   const mapped = mappings.data?.items.some((item) => item.remoteProjectId === room.projectId) ?? true;
   const archived = room.archivedAt !== null;
-  const busy = open.isPending || close.isPending;
+  const busy = open.isPending || close.isPending || shareAnother.isPending || removeKind.isPending;
+  const ready = self.data?.status === "ready" && mine.length > 0;
 
-  const toggle = (next: boolean) => {
-    if (agent === null) return;
+  const toggle = (agent: AgentDto, next: boolean) => {
+    const share = shareOf(agent);
     if (next) open.mutate({ agentId: agent.id, duration });
-    else if (myShare !== undefined) close.mutate(myShare.id);
+    else if (share !== undefined) close.mutate(share.id);
   };
 
   const changeDuration = (next: AgentShareDuration) => {
     setPreferred(next);
     writeShareDuration(next);
-    // 已经共享着：按新时长重开（服务端合并成改时长，不新建）。
-    if (agent !== null && myShare !== undefined) open.mutate({ agentId: agent.id, duration: next });
+    // 已经共享着的都按新时长重开（服务端合并成改时长，不新建）。
+    for (const share of myShares) open.mutate({ agentId: share.agent.id, duration: next });
   };
 
   const activeRun = self.data?.activeRun ?? null;
@@ -286,24 +298,47 @@ function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) 
           onRetry={() => void self.refetch()}
         />
       ) : null}
-      {self.isSuccess && (self.data.status !== "ready" || agent === null) ? (
+      {self.isSuccess && !ready ? (
         <p className="m-0 rounded-md bg-muted px-3 py-2 text-caption text-muted-foreground" data-testid="my-agent-unavailable" data-status={self.data.status}>
           {self.data.status === "unregistered" ? text.unregistered(self.data.message) : text.unavailable(self.data.message)}
         </p>
       ) : null}
-      {agent === null || self.data?.status !== "ready" ? null : (
+      {!ready ? null : (
         <>
-          <div className="flex items-center gap-2 text-small">
-            <OnlineDot online={agent.online} />
-            <span className="min-w-0 flex-1 truncate">{agentLabel(agent, t)}</span>
-            <Switch
-              checked={myShare !== undefined}
-              disabled={busy || archived || meId === null}
-              aria-label={text.switchLabel(agentLabel(agent, t))}
-              data-testid="my-agent-switch"
-              onCheckedChange={toggle}
-            />
-          </div>
+          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+            {mine.map((agent) => (
+              <li key={agent.id} className="flex items-center gap-2 text-small" data-testid="my-agent-row" data-agent-kind={agent.kind}>
+                <OnlineDot online={agent.online} />
+                <span className="min-w-0 flex-1 truncate">{agentLabel(agent, t)}</span>
+                {/* 其他家在哪个房间都没共享着时可以去掉（停止登记）；Codex 是本机默认登记的。 */}
+                {agent.kind !== "codex" && shareOf(agent) === undefined && agent.activeShareCount === 0 ? (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={busy}
+                    aria-label={text.removeLabel(agentLabel(agent, t))}
+                    title={text.removeLabel(agentLabel(agent, t))}
+                    data-testid="my-agent-remove"
+                    onClick={() => removeKind.mutate(agent.kind)}
+                  >
+                    <XIcon />
+                  </Button>
+                ) : null}
+                <Switch
+                  checked={shareOf(agent) !== undefined}
+                  disabled={busy || archived || meId === null}
+                  aria-label={text.switchLabel(agentLabel(agent, t))}
+                  data-testid="my-agent-switch"
+                  onCheckedChange={(next) => toggle(agent, next)}
+                />
+              </li>
+            ))}
+          </ul>
+          <ShareAnotherAgent
+            registeredKinds={mine.map((agent) => agent.kind)}
+            disabled={busy || archived || meId === null}
+            onPick={(kind) => shareAnother.mutate({ kind, duration })}
+          />
           <SegmentedControl
             size="sm"
             aria-label={text.durationLabel}
@@ -313,10 +348,11 @@ function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) 
             options={durationOptions(t).map((option) => ({ ...option, disabled: busy || archived }))}
           />
           <p className="m-0 text-caption text-subtle-foreground" data-testid="my-agent-share-state">
-            {myShare === undefined
+            {firstShare === undefined
               ? text.notShared(t.rooms.share.duration[duration])
-              : text.shared(expiresLabel(myShare.expiresAt, undefined, t))}
+              : text.shared(expiresLabel(firstShare.expiresAt, undefined, t))}
           </p>
+          <p className="m-0 text-caption text-subtle-foreground" data-testid="my-agent-subscription-note">{text.subscriptionNote}</p>
           {mapped ? null : (
             <div className="flex flex-col gap-1.5 rounded-md bg-warning-soft px-3 py-2 text-caption text-foreground" data-testid="my-agent-no-mapping">
               <span>{text.noMapping}</span>
@@ -337,5 +373,56 @@ function MyAgentSection({ room, meId }: { room: RoomDto; meId: string | null }) 
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * 「共享本机的其他 Agent…」（多 Agent S6）：列出本机装了、做得到只读、还没登记的各家；不能用的灰显并写明状态。
+ * 云端不认多种 Agent（没有 agent_kinds_v2）时不显示，只能共享 Codex。
+ */
+function ShareAnotherAgent({
+  registeredKinds,
+  disabled,
+  onPick,
+}: {
+  registeredKinds: readonly string[];
+  disabled: boolean;
+  onPick(kind: string): void;
+}) {
+  const t = useT();
+  const text = t.rooms.share.myAgent;
+  const supported = useCloudFeature("agent_kinds_v2");
+  const local = useQuery({ ...localAgentsQuery, enabled: supported });
+  if (!supported) return null;
+  const candidates = (local.data?.agents ?? []).filter(
+    (agent) => agent.runtimeAvailable && agent.readOnlyCapable && !registeredKinds.includes(agent.id),
+  );
+  if (candidates.length === 0) return null;
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="ghost" className="self-start" disabled={disabled} aria-label={text.shareAnotherLabel} data-testid="share-another-agent">
+          <PlusIcon />
+          {text.shareAnother}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56">
+        {candidates.map((agent) => (
+          <DropdownMenuItem
+            key={agent.id}
+            disabled={!isUsable(agent)}
+            data-testid={`share-another-${agent.id}`}
+            onSelect={() => onPick(agent.id)}
+          >
+            {isUsable(agent)
+              ? agent.displayName
+              : text.anotherNotReady(
+                  agent.displayName,
+                  agent.enabled ? t.agents.section.status[agent.status] : t.agents.section.reason.disabled,
+                )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

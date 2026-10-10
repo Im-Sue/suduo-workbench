@@ -57,6 +57,18 @@ export function currentSuDuoToolName(tool: string): string {
 export const SUDUO_TOOL_NATIVE_METHOD = "item/tool/call";
 
 /**
+ * 经 SuDuo 本机 MCP 工具服务（ADR-0015）发起的确认卡的连接 id：它不属于任何运行时连接，
+ * Agent 断开或超时都不作废（等不到确认时转为待发出草稿，由用户决定发出或丢弃）。
+ */
+export const SUDUO_MCP_CONNECTION_ID = "suduo-mcp";
+
+/** SuDuo 工具服务在各家 Agent 的 MCP 配置里的服务名（Agent 记录的工具调用是 服务 suduo + 工具名）。 */
+export const SUDUO_MCP_SERVER_NAME = "suduo";
+
+/** 给 Agent 配的 SuDuo MCP 工具超时（秒）；写工具在它到达前 30 秒转草稿（S0：Codex 超时既不断开也不取消）。 */
+export const SUDUO_MCP_TOOL_TIMEOUT_SEC = 600;
+
+/**
  * 对外写工具的确认卡内容（`ApprovalDto.request.suDuoTool`）。
  * 界面逐字展示，用户确认后本机服务才执行（ADR-0004「不可逆对外副作用」红线）。
  */

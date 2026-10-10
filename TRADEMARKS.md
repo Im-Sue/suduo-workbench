@@ -20,4 +20,4 @@ Contact: license@suduo.dev
 
 ## Third-party marks
 
-Codex and OpenAI are trademarks of OpenAI. SuDuo works with the Codex CLI that you install and configure on your own machine. SuDuo is not affiliated with or endorsed by OpenAI. Other names belong to their respective owners.
+Codex and OpenAI are trademarks of OpenAI. Claude and Claude Code are trademarks of Anthropic. SuDuo works with the Codex CLI and the other agent CLIs that you install and sign in to on your own machine. SuDuo is not affiliated with or endorsed by OpenAI, Anthropic or any other agent vendor. Other names belong to their respective owners.

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  M1_RUNTIME_SECURITY_POLICY,
   type CodexTransportFactory,
   type JsonRpcId,
   type JsonValue,
@@ -111,7 +110,7 @@ async function startThread(runtime: CodexRuntime, mode: "create" | "resume" = "c
     sessionId: "session-1",
     projectRoot: "/tmp/project",
     workspaceRoots: ["/tmp/project"],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask" as const,
   };
   const started = await runtime.startThread(
     mode === "create"
@@ -133,7 +132,7 @@ async function turn(
     input: [{ type: "text", text: "hi" }],
     projectRoot: "/tmp/project",
     workspaceRoots: ["/tmp/project"],
-    security: M1_RUNTIME_SECURITY_POLICY,
+    approvalMode: "ask" as const,
     ...selection,
   });
 }

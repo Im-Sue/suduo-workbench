@@ -1,4 +1,11 @@
 import type {
+  ListSharedItemsResponse,
+  ProjectAiRulesDto,
+  ProjectAiRulesVersionDetailDto,
+  PublishSharedItemRequest,
+  SharedItemDetailDto,
+} from "@suduo/cloud-contracts";
+import type {
   AttachmentDto,
   AuditEntryDto,
   CommentDto,
@@ -23,7 +30,7 @@ import type { SessionContextRemote } from "../../src/application/session-tools/s
  * - `fail[方法名]` 设了错误时该方法直接抛出（模拟远程失败）；
  * - `calls` 记录每次调用，便于断言「远程有没有被调用」。
  */
-type RemoteMethod = keyof RequirementToolsRemote | keyof SessionContextRemote;
+type RemoteMethod = keyof RequirementToolsRemote | keyof SessionContextRemote | "getSharedItem" | "publishSharedItem" | "getProjectAiRulesVersion";
 
 export const PM: UserSummaryDto = { id: "user-pm", displayName: "李娜" };
 export const DEV: UserSummaryDto = { id: "user-dev", displayName: "陈思远" };
@@ -103,6 +110,12 @@ export class FakeRequirementsRemote implements RequirementToolsRemote, SessionCo
   readonly commentFileContent = new Map<string, Buffer>();
   /** 活动时间线，最新在前（与远程接口一致）。 */
   readonly activity = new Map<string, RequirementActivityEntryDto[]>();
+  /** 需求共享对象（多 Agent 协作 S11），新的在前。 */
+  readonly sharedItems: SharedItemDetailDto[] = [];
+  /** 项目 AI 规范（S11）；null = 从没写过。 */
+  aiRules: { version: number; content: string } | null = null;
+  /** 历史版本的内容（按版本取）；没有的取 aiRules 里同版本的。 */
+  readonly aiRuleVersions = new Map<number, string>();
   audit: AuditEntryDto[] = [];
   project: ProjectDto = {
     id: "proj-1",
@@ -164,6 +177,57 @@ export class FakeRequirementsRemote implements RequirementToolsRemote, SessionCo
   ): Promise<ListCommentsResponse> {
     this.enter("listComments", [requirementId, query]);
     return paginate(this.comments.get(requirementId) ?? [], query);
+  }
+
+  async getProjectAiRules(projectId: string): Promise<ProjectAiRulesDto> {
+    this.enter("getProjectAiRules", [projectId]);
+    return this.aiRules === null
+      ? { projectId, version: 0, content: "", updatedBy: null, updatedAt: null }
+      : { projectId, version: this.aiRules.version, content: this.aiRules.content, updatedBy: PM, updatedAt: "2026-10-09T01:00:00.000Z" };
+  }
+
+  async getProjectAiRulesVersion(projectId: string, version: number): Promise<ProjectAiRulesVersionDetailDto> {
+    this.enter("getProjectAiRulesVersion", [projectId, version]);
+    const content = this.aiRuleVersions.get(version) ?? (this.aiRules?.version === version ? this.aiRules.content : undefined);
+    if (content === undefined) throw new ApiError(404, "NOT_FOUND", (t) => t.sharedDraft.rulesUnavailable);
+    return { version, sizeBytes: Buffer.byteLength(content), updatedBy: PM, updatedAt: "2026-10-09T01:00:00.000Z", content };
+  }
+
+  async listSharedItems(requirementId: string): Promise<ListSharedItemsResponse> {
+    this.enter("listSharedItems", [requirementId]);
+    // 列表不带内容（同云端）。
+    return {
+      items: this.sharedItems
+        .filter((item) => item.requirementId === requirementId)
+        .map((item) => Object.fromEntries(Object.entries(item).filter(([key]) => key !== "content")) as Omit<SharedItemDetailDto, "content">),
+    };
+  }
+
+  async getSharedItem(itemId: string): Promise<SharedItemDetailDto> {
+    this.enter("getSharedItem", [itemId]);
+    const item = this.sharedItems.find((entry) => entry.id === itemId);
+    if (item === undefined) throw new ApiError(404, "NOT_FOUND", "Shared item not found");
+    return item;
+  }
+
+  async publishSharedItem(requirementId: string, input: PublishSharedItemRequest): Promise<SharedItemDetailDto> {
+    this.enter("publishSharedItem", [requirementId, input]);
+    const item: SharedItemDetailDto = {
+      id: `item-${String(this.sharedItems.length + 1)}`,
+      requirementId,
+      kind: input.kind,
+      title: input.title,
+      source: { agentId: input.agentId ?? null, sessionRef: input.sessionRef ?? null },
+      publishedBy: DEV,
+      publishedAt: "2026-10-09T02:00:00.000Z",
+      sizeBytes: JSON.stringify(input.content).length,
+      retractedAt: null,
+      retractedBy: null,
+      readCount: 0,
+      content: input.content,
+    };
+    this.sharedItems.unshift(item);
+    return item;
   }
 
   async listAttachments(requirementId: string): Promise<ListAttachmentsResponse> {

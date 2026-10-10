@@ -36,7 +36,8 @@ export async function pasteTinyPng(page: Page): Promise<void> {
  * 走完 P2 的「开始会话」对话框，返回新会话 id（取自 `/sessions/<id>` 路由）。
  *
  * 对话框按情况分步：检查 →（这条需求已有会话）选「新开一个会话」→（项目还没关联本机
- * 代码目录）手动输入 `projectRoot`，等到「可以读写」再「使用这个目录」→ 准备 → 进入会话。
+ * 代码目录）手动输入 `projectRoot`，等到「可以读写」再「使用这个目录」→（能用的 Agent 不止一家）按默认选项开工
+ * → 准备 → 进入会话。
  * 哪一步出现取决于前序步骤建立的状态，所以这里按页面实际状态推进，而不是写死顺序。
  * 文字按这一轮的界面语言从前端字典取（`context.ui`），中英两种验收共用。
  */
@@ -51,9 +52,11 @@ export async function completeStartSessionDialog(
   const directoryTitle = dialog.getByRole("heading", { name: text.directoryTitle });
   const startNew = dialog.getByRole("button", { name: text.createNew });
   const failed = dialog.getByText(text.failed, { exact: false });
+  const startOptions = dialog.getByTestId("start-options");
   const deadline = Date.now() + timeoutMs;
   let directoryDone = false;
   let choseNew = false;
+  let optionsDone = false;
   while (Date.now() < deadline) {
     const match = /^\/sessions\/([^/]+)$/u.exec(new URL(page.url()).pathname);
     if (match?.[1]) return decodeURIComponent(match[1]);
@@ -78,6 +81,12 @@ export async function completeStartSessionDialog(
     if (!choseNew && (await startNew.isVisible().catch(() => false))) {
       choseNew = true;
       await startNew.click();
+      continue;
+    }
+    // 本机能用的 Agent 不止一家时多一步选 Agent（多 Agent S5）：按默认选项开工。
+    if (!optionsDone && (await startOptions.isVisible().catch(() => false))) {
+      optionsDone = true;
+      await dialog.getByTestId("start-options-confirm").click();
       continue;
     }
     await delay(200);

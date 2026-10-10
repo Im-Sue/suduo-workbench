@@ -15,5 +15,10 @@ import { toolSpec } from "./toolSpec.js";
 import { roomPrompt } from "./roomPrompt.js";
 import { toolReply } from "./toolReply.js";
 import { cli } from "./cli.js";
+import { sessionContext } from "./sessionContext.js";
+import { delegation } from "./delegation.js";
+import { review } from "./review.js";
+import { trial } from "./trial.js";
+import { sharedDraft } from "./sharedDraft.js";
 
-export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply, cli } satisfies ServerMessages;
+export const en = { common, checkpoint, session, activity, remote, workspace, config, doctor, http, room, toolText, prompt, toolSpec, roomPrompt, toolReply, cli, sessionContext, delegation, review, trial, sharedDraft } satisfies ServerMessages;

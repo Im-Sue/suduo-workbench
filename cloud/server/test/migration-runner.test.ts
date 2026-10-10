@@ -25,7 +25,9 @@ const VERSION_012 = "012_i18n_structured_texts.sql";
 const VERSION_013 = "013_agent_run_text_codes.sql";
 const VERSION_014 = "014_requirement_priority.sql";
 const VERSION_015 = "015_requirement_comment_files.sql";
-const LATEST_VERSION = VERSION_015;
+const VERSION_016 = "016_agent_kinds.sql";
+const VERSION_017 = "017_ai_collab.sql";
+const LATEST_VERSION = VERSION_017;
 const LEGACY_MIGRATIONS = [
   "001_initial.sql",
   "002_attachments.sql",
@@ -45,6 +47,8 @@ const ALL_MIGRATIONS = [
   VERSION_013,
   VERSION_014,
   VERSION_015,
+  VERSION_016,
+  VERSION_017,
 ];
 
 describe("迁移 005 审计项目归属", () => {

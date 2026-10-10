@@ -60,6 +60,16 @@ import type {
   RequirementsHealthDto,
   UpdateProjectRequest,
   UpdateRequirementRequest,
+  AiActivityDto,
+  ListAiActivityResponse,
+  ListProjectAiRulesVersionsResponse,
+  ListSharedItemsResponse,
+  ProjectAiRulesDto,
+  ProjectAiRulesVersionDetailDto,
+  PublishSharedItemRequest,
+  RecordAiActivityRequest,
+  SaveProjectAiRulesResponse,
+  SharedItemDetailDto,
 } from "@suduo/cloud-contracts";
 import { REQUIREMENTS_V2_ERROR_CODES, type RequirementsV2ErrorCode } from "@suduo/cloud-contracts";
 import type { Locale } from "@suduo/client-contracts";
@@ -750,6 +760,62 @@ export class RequirementsRemoteClient {
     return this.request<AgentRunDetailDto>(`/v2/agent-runs/${encodeURIComponent(runId)}`, {
       authenticated: true,
     });
+  }
+
+  // ───────────────────── 多 Agent 协作的团队共享部分（ai_collab_v1） ─────────────────────
+
+  publishSharedItem(requirementId: string, input: PublishSharedItemRequest): Promise<SharedItemDetailDto> {
+    return this.request<SharedItemDetailDto>(`/v2/requirements/${encodeURIComponent(requirementId)}/shared-items`, {
+      method: "POST",
+      body: input,
+      authenticated: true,
+    });
+  }
+
+  listSharedItems(requirementId: string): Promise<ListSharedItemsResponse> {
+    return this.request<ListSharedItemsResponse>(`/v2/requirements/${encodeURIComponent(requirementId)}/shared-items`, { authenticated: true });
+  }
+
+  /** 读一个共享对象（带内容）；云端会记下「读过」。 */
+  getSharedItem(itemId: string): Promise<SharedItemDetailDto> {
+    return this.request<SharedItemDetailDto>(`/v2/shared-items/${encodeURIComponent(itemId)}`, { authenticated: true });
+  }
+
+  retractSharedItem(itemId: string): Promise<SharedItemDetailDto> {
+    return this.request<SharedItemDetailDto>(`/v2/shared-items/${encodeURIComponent(itemId)}/retract`, { method: "POST", authenticated: true });
+  }
+
+  getProjectAiRules(projectId: string): Promise<ProjectAiRulesDto> {
+    return this.request<ProjectAiRulesDto>(`/v2/projects/${encodeURIComponent(projectId)}/ai-rules`, { authenticated: true });
+  }
+
+  listProjectAiRulesVersions(projectId: string): Promise<ListProjectAiRulesVersionsResponse> {
+    return this.request<ListProjectAiRulesVersionsResponse>(`/v2/projects/${encodeURIComponent(projectId)}/ai-rules/versions`, { authenticated: true });
+  }
+
+  getProjectAiRulesVersion(projectId: string, version: number): Promise<ProjectAiRulesVersionDetailDto> {
+    return this.request<ProjectAiRulesVersionDetailDto>(`/v2/projects/${encodeURIComponent(projectId)}/ai-rules/versions/${String(version)}`, { authenticated: true });
+  }
+
+  /** baseVersion：编辑时看到的版本，只用来检测（回包列出这期间别人存过的版本），不拒绝。 */
+  saveProjectAiRules(projectId: string, content: string, baseVersion?: number): Promise<SaveProjectAiRulesResponse> {
+    return this.request<SaveProjectAiRulesResponse>(`/v2/projects/${encodeURIComponent(projectId)}/ai-rules`, {
+      method: "PUT",
+      body: { content, ...(baseVersion === undefined ? {} : { baseVersion }) },
+      authenticated: true,
+    });
+  }
+
+  recordAiActivity(requirementId: string, input: RecordAiActivityRequest): Promise<AiActivityDto> {
+    return this.request<AiActivityDto>(`/v2/requirements/${encodeURIComponent(requirementId)}/ai-activity`, {
+      method: "POST",
+      body: input,
+      authenticated: true,
+    });
+  }
+
+  listAiActivity(requirementId: string): Promise<ListAiActivityResponse> {
+    return this.request<ListAiActivityResponse>(`/v2/requirements/${encodeURIComponent(requirementId)}/ai-activity`, { authenticated: true });
   }
 
   /** 只把排队中改成执行中；已不是排队中时返回当前状态与 started=false（调用方跳过）。 */

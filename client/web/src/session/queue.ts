@@ -35,6 +35,8 @@ export type PausedReason =
   | "user_stop"
   | "turn_failed"
   | "turn_interrupted"
+  /** 发出的这一条在本机队列里没发出（取消、重启、会话归档；多 Agent 协作 S8）。 */
+  | "queue_dropped"
   | "send_rejected"
   | "send_uncertain"
   | "attribution_unconfirmed"
@@ -51,6 +53,8 @@ export interface QueueInflight {
   /** 出队时的投影水位：回放的旧终态 seq 不会大于它。 */
   dequeueSeq: number;
   acceptedAt: number | null;
+  /** 服务端回的是「在本机队列里排着」（多 Agent 协作 S8）：轮到之前不算归属超时。 */
+  serverQueued?: boolean;
 }
 
 export interface QueueState {
@@ -159,11 +163,11 @@ export function beginDispatch(state: QueueState, lastSeq: number): QueueState {
   };
 }
 
-export function onSendAccepted(state: QueueState, clientTurnId: string | undefined, now: number): QueueState {
+export function onSendAccepted(state: QueueState, clientTurnId: string | undefined, now: number, serverQueued = false): QueueState {
   if (state.inflight === null) {
     return state;
   }
-  return { ...state, inflight: { ...state.inflight, clientTurnId: clientTurnId ?? null, acceptedAt: now } };
+  return { ...state, inflight: { ...state.inflight, clientTurnId: clientTurnId ?? null, acceptedAt: now, ...(serverQueued ? { serverQueued } : {}) } };
 }
 
 /** 证实未受理（服务端明确拒绝且未入账）：放回队首，暂停等人决定要不要重发。 */
@@ -229,7 +233,14 @@ export function reconcile(state: QueueState, projection: ConversationProjection,
 
   if (next.inflight !== null) {
     const inflight = attributeInflight(next.inflight, projection);
-    if (inflight.awaitingTurnId === null) {
+    const serverQueue = serverQueueState(projection, inflight.clientTurnId);
+    if (inflight.awaitingTurnId === null && (serverQueue === "dropped" || serverQueue === "failed")) {
+      // 在本机队列里被取消 / 重启没发出 / 会话归档，或轮到了却开不起来：这一条没被收下，流里有说明；暂停等人决定。
+      next = pause({ ...next, inflight: null }, serverQueue === "failed" ? "turn_failed" : "queue_dropped");
+    } else if (inflight.awaitingTurnId === null && (serverQueue === "waiting" || (serverQueue === null && inflight.serverQueued === true))) {
+      // 还在本机队列里等名额：不算归属超时，归属期限从轮到时算起。
+      next = { ...next, inflight: { ...inflight, acceptedAt: now } };
+    } else if (inflight.awaitingTurnId === null) {
       if (inflight.acceptedAt !== null && now - inflight.acceptedAt > ATTRIBUTION_DEADLINE_MS) {
         // 这一条去了哪儿还没确认：它在消息流里看得见，留给人处理；不回队、不重发。
         next = pause({ ...next, inflight: null }, "attribution_unconfirmed");
@@ -257,6 +268,15 @@ export function reconcile(state: QueueState, projection: ConversationProjection,
     next = { ...next, seenSeq: projection.lastSeq };
   }
   return next;
+}
+
+/** 这条消息在服务端本机队列里的状态（时间线里的排队项，按 clientTurnId）；没排过队为 null。 */
+function serverQueueState(projection: ConversationProjection, clientTurnId: string | null): "waiting" | "started" | "dropped" | "failed" | null {
+  if (clientTurnId === null) return null;
+  for (const entry of projection.timeline) {
+    if (entry.kind === "queued" && entry.clientTurnId === clientTurnId) return entry.state;
+  }
+  return null;
 }
 
 /** 由 clientTurnId 在投影里找真实回合（reducer 的归属映射）；找不到就原样返回。 */

@@ -267,6 +267,45 @@ export function useJoinRoom() {
   });
 }
 
+/**
+ * 把本机另一家 Agent 共享进房间（多 Agent S6）：先让本机服务登记这一家，再按选的时长开共享。
+ * 登记过的不重复登记（本机服务直接返回）。
+ */
+export function useShareAnotherAgent(roomId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ kind, duration }: { kind: string; duration: AgentShareDuration }) => {
+      const agent = await api.addAgentKind(kind);
+      void queryClient.invalidateQueries({ queryKey: roomKeys.selfAgent });
+      return api.openAgentShare(roomId, {
+        agentId: agent.id,
+        duration,
+        ...(duration === "today" ? { expiresAt: endOfLocalDay() } : {}),
+      });
+    },
+    onSuccess: (share) => upsertShare(queryClient, share),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: roomKeys.selfAgent });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.shares(roomId) });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.agents });
+    },
+    onError: (cause) => reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.openShare }),
+  });
+}
+
+/** 不再在讨论里提供本机的某一家 Agent（多 Agent S6）：本机服务停止登记与心跳，云端随后标成离线。 */
+export function useRemoveAgentKind() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (kind: string) => api.removeAgentKind(kind),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: roomKeys.selfAgent });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.agents });
+    },
+    onError: (cause) => reportFailure(cause, { surface: "action", title: messagesFor(currentLocale()).rooms.failures.removeAgent }),
+  });
+}
+
 /** 开启共享（或改时长）。「今天」由浏览器给出本地当天结束时刻。 */
 export function useOpenShare(roomId: string) {
   const queryClient = useQueryClient();

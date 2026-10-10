@@ -16,7 +16,7 @@ describe("T2 SQLite 存储层", () => {
   it("执行迁移并支持项目、会话与 1:N thread", () => {
     const context = createContext();
     try {
-      expect(context.firstMigration.appliedVersions).toEqual([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(context.firstMigration.appliedVersions).toEqual([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
       const project = context.projects.create({ name: "sample", rootPath: "/tmp/sample", rootPathKey: "/tmp/sample" });
       const session = context.sessions.create({ projectId: project.id, title: "Gate A" });
       const primary = context.threads.attach({ sessionId: session.id, threadRef: codexThread("thread-primary") });
@@ -57,7 +57,7 @@ describe("T2 SQLite 存储层", () => {
           manifestSha256: "a".repeat(64),
         });
 
-      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(runMigrations(database, undefined, () => 2).appliedVersions).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
       expect(
         database
           .prepare(

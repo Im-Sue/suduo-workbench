@@ -79,7 +79,7 @@ export const rooms = {
     loadingMessages: "正在加载消息",
     messagesLoadFailed: (message: string) => `查不到消息：${message}`,
     emptyTitle: "还没有消息",
-    emptyDescription: "发第一条消息开始讨论；同事把 Codex 共享进来后，@ 它就能直接问代码层面的问题。",
+    emptyDescription: "发第一条消息开始讨论；同事把 Agent 共享进来后，@ 它就能直接问代码层面的问题。",
     composerPlaceholder: (room: string) => `在「${room}」里发消息，@ 同事或共享进来的 Agent`,
     resizeSide: "调整话题栏宽度",
   },
@@ -175,8 +175,9 @@ export const rooms = {
      */
     text: {
       everyone: "所有人",
-      /** 「陈思远的Codex」；同一个人有多台设备时带设备名「陈思远的Codex·MacBook Pro」。 */
-      agent: (owner: string, device: string | null) => (device === null ? `${owner}的Codex` : `${owner}的Codex·${device}`),
+      /** 「陈思远的Codex」；同一个人有多台设备时带设备名「陈思远的Codex·MacBook Pro」。agent 是 Agent 的产品名。 */
+      agent: (owner: string, agent: string, device: string | null) =>
+        device === null ? `${owner}的${agent}` : `${owner}的${agent}·${device}`,
     },
   },
   files: {
@@ -190,10 +191,10 @@ export const rooms = {
     downloadOriginal: "下载原图",
   },
   agent: {
-    /** 「陈思远 的 Codex」：Agent 在消息、状态行里的名字。 */
-    name: (owner: string) => `${owner} 的 Codex`,
+    /** 「陈思远 的 Codex」：Agent 在消息、状态行里的名字；agent 是 Agent 的产品名（Codex、Claude Code……）。 */
+    name: (owner: string, agent: string) => `${owner} 的 ${agent}`,
     /** 「陈思远 的 Codex · MacBook Pro」：需要区分设备时（@ 候选、共享面板）的名字。 */
-    withDevice: (owner: string, device: string) => `${owner} 的 Codex · ${device}`,
+    withDevice: (owner: string, agent: string, device: string) => `${owner} 的 ${agent} · ${device}`,
     available: "可用",
     offline: "离线",
   },
@@ -276,7 +277,7 @@ export const rooms = {
     emptyOffline: "没有执行",
     emptyNone: "还没有执行过程",
     offlineDescription: "所有者不在线或没有共享，这次没有执行。",
-    emptyDescription: "开始执行后，这里会显示 Codex 查看了哪些文件、运行了哪些命令和它的回答。",
+    emptyDescription: "开始执行后，这里会显示 Agent 查看了哪些文件、运行了哪些命令和它的回答。",
   },
   share: {
     button: "共享 Agent",
@@ -313,8 +314,18 @@ export const rooms = {
       loadFailed: (message: string) => `查不到本机 Agent：${message}`,
       /** message：本机服务给的原因（原样显示）；没有时用默认说明。 */
       unregistered: (message: string | null) =>
-        `本机的 Codex 还没登记成 Agent${message === null ? "：登录并打开本机 SuDuo 后会自动登记。" : `：${message}`}`,
-      unavailable: (message: string | null) => `本机的 Codex 暂时不可用${message === null ? "，稍后再试。" : `：${message}`}`,
+        `本机 Agent 还没登记${message === null ? "：登录并打开本机 SuDuo 后会自动登记。" : `：${message}`}`,
+      unavailable: (message: string | null) => `本机 Agent 暂时不可用${message === null ? "，稍后再试。" : `：${message}`}`,
+      /** 共享本机其他 Agent 的选择框（多 Agent S6）。 */
+      shareAnother: "共享本机的其他 Agent…",
+      shareAnotherLabel: "选择要共享到这个房间的本机 Agent",
+      /** 不能用的 Agent 在选项里的说明：「Gemini CLI · 未登录」。 */
+      anotherNotReady: (agent: string, status: string) => `${agent} · ${status}`,
+      /** 没有任何房间共享着时，可以不再在讨论里提供它（停止登记，以后可以再添加）。 */
+      removeLabel: (agent: string) => `不再在讨论里提供 ${agent}（以后可以再添加）`,
+      /** ADR-0016 第 7 条：共享开关旁的说明，只告知、不限制。 */
+      subscriptionNote:
+        "个人订阅（如 Claude Pro / Max、ChatGPT Plus / Pro）按个人日常使用设计，团队长期共用建议改用厂商的团队或企业订阅（如 Claude Team / Enterprise、ChatGPT Business）或 API Key。",
       switchLabel: (agent: string) => `把 ${agent} 共享到这个房间`,
       durationLabel: "共享多久",
       notShared: (duration: string) =>
@@ -330,8 +341,8 @@ export const rooms = {
   },
   /** 所有者收到的「申请共享」提醒。 */
   shareRequestToast: {
-    message: (requester: string, room: string | null, device: string) =>
-      `${requester} 想在${room === null ? "一个讨论" : `「${room}」`}里使用你的 Codex（${device}）`,
+    message: (requester: string, room: string | null, agent: string, device: string) =>
+      `${requester} 想在${room === null ? "一个讨论" : `「${room}」`}里使用你的 ${agent}（${device}）`,
     accept: "开启共享",
     accepted: "已共享到今天结束",
   },
@@ -343,6 +354,7 @@ export const rooms = {
     addMembers: "没能添加成员",
     openShare: "没能开启共享",
     closeShare: "没能关闭共享",
+    removeAgent: "没能移除这个 Agent",
     requestShare: "没能申请共享",
     resolveRequest: "没能处理申请",
     stopRun: "没能停止",
@@ -353,7 +365,7 @@ export const rooms = {
     title: "讨论",
     create: "新建讨论",
     loadFailed: (message: string) => `查不到这条需求的讨论：${message}`,
-    empty: "还没有讨论：需要和同事即时商量、请人共享 Codex 一起看代码时开一个",
+    empty: "还没有讨论：需要和同事即时商量、请人共享 Agent 一起看代码时开一个",
     linkLabel: (name: string, archived: boolean, unread: number) =>
       `${name}${archived ? "（已归档）" : ""}${unread > 0 ? `，${String(unread)} 条未读` : ""}`,
     lastMessage: (author: string, preview: string) => `${author}：${preview}`,

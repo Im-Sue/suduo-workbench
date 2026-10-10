@@ -1,9 +1,7 @@
 import {
-  APPROVAL_MODE_POLICIES,
-  ROOM_AGENT_SECURITY_POLICY,
   cliLocale,
   type ApprovalMode,
-  type RuntimeSecurityPolicy,
+  type RuntimeApprovalMode,
 } from "@suduo/client-contracts";
 import { messagesFor } from "../i18n/messages/index.js";
 import type { SessionRecord } from "../infrastructure/db/repositories/session-repository.js";
@@ -30,28 +28,33 @@ export function maxApprovalMode(
   throw new Error(messagesFor(cliLocale(env)).cli.maxApprovalModeInvalid);
 }
 
-/** 会话原始值不落库改写；每次取策略时按当前部署上限实时 clamp。 */
-export function effectiveApprovalMode(
-  session: Pick<SessionRecord, "approvalMode">,
+/** 会话原始值不落库改写；每次取策略时按当前部署上限实时 clamp。只读低于所有档，不受上限影响。 */
+export function effectiveApprovalMode<T extends RuntimeApprovalMode>(
+  session: { approvalMode: T },
   env: NodeJS.ProcessEnv = process.env,
-): ApprovalMode {
+): T | ApprovalMode {
+  const mode = session.approvalMode;
+  if (mode === "readonly") {
+    return mode;
+  }
   const cap = maxApprovalMode(env);
-  if (cap === null || APPROVAL_MODE_RANK[session.approvalMode] <= APPROVAL_MODE_RANK[cap]) {
-    return session.approvalMode;
+  const rank = APPROVAL_MODE_RANK[mode as ApprovalMode];
+  if (cap === null || rank <= APPROVAL_MODE_RANK[cap]) {
+    return mode;
   }
   return cap;
 }
 
 /**
- * 会话实际下发给 Codex 的安全档：房间任务会话固定为「房间 Agent」档（只读 + 联网 + 不审批，
- * ADR-0009）；其余会话按审批模式（受部署上限约束）取 ask / auto / full 三档之一。
+ * 会话实际下发给运行时的审批档：房间任务会话固定为「只读」（ADR-0009；Codex 换算为只读沙箱 + 联网 +
+ * 不审批）；其余会话按审批模式（受部署上限约束）取 ask / auto / full 三档之一。
  */
-export function sessionSecurityPolicy(
+export function sessionRuntimeApprovalMode(
   session: Pick<SessionRecord, "approvalMode"> & { kind?: SessionRecord["kind"] },
   env: NodeJS.ProcessEnv = process.env,
-): RuntimeSecurityPolicy {
+): RuntimeApprovalMode {
   if (session.kind === "room_task") {
-    return ROOM_AGENT_SECURITY_POLICY;
+    return "readonly";
   }
-  return APPROVAL_MODE_POLICIES[effectiveApprovalMode(session, env)];
+  return effectiveApprovalMode(session, env);
 }

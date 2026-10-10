@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { renderAgentState, type LocalAgentState } from "../../../application/agent-presence.js";
+import type { AgentDto } from "@suduo/cloud-contracts";
 import { ApiError, type ErrorText } from "../../../application/api-error.js";
 import { messagesFor } from "../../../i18n/messages/index.js";
 import type { RequirementsRemoteClient } from "../../requirements-v2/remote-client.js";
@@ -16,6 +17,10 @@ export interface RoomsRouteDependencies {
   remote: Pick<RequirementsRemoteClient, "forward" | "uploadRoomFile" | "downloadRoomFile">;
   /** 状态说明（message）还没定语言，返回时按请求语言渲染。 */
   agentState(): LocalAgentState;
+  /** 共享 Codex 以外的一家本机 Agent（多 Agent S6）：登记并返回它在云端的 Agent。 */
+  addAgentKind?(kind: string): Promise<AgentDto>;
+  /** 不再在讨论里提供这一家（停止登记与心跳）。 */
+  removeAgentKind?(kind: string): void;
 }
 
 type Method = "GET" | "POST" | "PATCH";
@@ -84,6 +89,23 @@ export function registerRoomsRoutes(server: FastifyInstance, dependencies: Rooms
   server.get("/api/v2/agents/self", async (request) =>
     renderAgentState(dependencies.agentState(), messagesFor(request.locale)),
   );
+  server.post<{ Body: { kind?: unknown } }>("/api/v2/agents/self/kinds", async (request) => {
+    const kind = request.body?.kind;
+    if (typeof kind !== "string" || kind.trim() === "") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.http.mustBeNonEmptyString("kind"));
+    }
+    if (dependencies.addAgentKind === undefined) {
+      throw new ApiError(404, "NOT_FOUND", (t) => t.http.agentNotFound(kind));
+    }
+    return dependencies.addAgentKind(kind);
+  });
+  server.delete<{ Params: { kind: string } }>("/api/v2/agents/self/kinds/:kind", async (request, reply) => {
+    if (dependencies.removeAgentKind === undefined) {
+      throw new ApiError(404, "NOT_FOUND", (t) => t.http.agentNotFound(request.params.kind));
+    }
+    dependencies.removeAgentKind(request.params.kind);
+    return reply.code(204).send();
+  });
   route("GET", "/api/v2/agents", () => "/v2/agents");
   route("GET", "/api/v2/rooms/:roomId/shares", (p) => `/v2/rooms/${id(p, "roomId")}/shares`);
   route("POST", "/api/v2/rooms/:roomId/shares", (p) => `/v2/rooms/${id(p, "roomId")}/shares`);

@@ -65,7 +65,47 @@ const WORKSPACE_MAPPING_SCOPE_URL = new URL(
   import.meta.url,
 );
 
-const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+const SESSION_AGENT_GRAPH_URL = new URL(
+  "./migrations/019_session_agent_graph.sql",
+  import.meta.url,
+);
+
+const APPROVAL_DECISIONS_URL = new URL(
+  "./migrations/020_approval_decisions.sql",
+  import.meta.url,
+);
+
+const SESSION_READ_ONLY_URL = new URL(
+  "./migrations/021_session_read_only.sql",
+  import.meta.url,
+);
+
+const SESSION_REFERENCES_URL = new URL(
+  "./migrations/022_session_references.sql",
+  import.meta.url,
+);
+
+const DELEGATIONS_URL = new URL(
+  "./migrations/023_delegations.sql",
+  import.meta.url,
+);
+
+const REVIEW_REPORTS_URL = new URL(
+  "./migrations/024_review_reports.sql",
+  import.meta.url,
+);
+
+const TRIALS_URL = new URL(
+  "./migrations/025_trials.sql",
+  import.meta.url,
+);
+
+const SHARED_DRAFTS_URL = new URL(
+  "./migrations/026_shared_drafts.sql",
+  import.meta.url,
+);
+
+const V2_MIGRATION_VERSIONS = new Set([1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
 
 export function loadM1Migrations(): Migration[] {
   return [
@@ -123,6 +163,46 @@ export function loadM1Migrations(): Migration[] {
       version: 18,
       name: "workspace_mapping_scope",
       sql: readFileSync(WORKSPACE_MAPPING_SCOPE_URL, "utf8"),
+    },
+    {
+      version: 19,
+      name: "session_agent_graph",
+      sql: readFileSync(SESSION_AGENT_GRAPH_URL, "utf8"),
+    },
+    {
+      version: 20,
+      name: "approval_decisions",
+      sql: readFileSync(APPROVAL_DECISIONS_URL, "utf8"),
+    },
+    {
+      version: 21,
+      name: "session_read_only",
+      sql: readFileSync(SESSION_READ_ONLY_URL, "utf8"),
+    },
+    {
+      version: 22,
+      name: "session_references",
+      sql: readFileSync(SESSION_REFERENCES_URL, "utf8"),
+    },
+    {
+      version: 23,
+      name: "delegations",
+      sql: readFileSync(DELEGATIONS_URL, "utf8"),
+    },
+    {
+      version: 24,
+      name: "review_reports",
+      sql: readFileSync(REVIEW_REPORTS_URL, "utf8"),
+    },
+    {
+      version: 25,
+      name: "trials",
+      sql: readFileSync(TRIALS_URL, "utf8"),
+    },
+    {
+      version: 26,
+      name: "shared_drafts",
+      sql: readFileSync(SHARED_DRAFTS_URL, "utf8"),
     },
   ];
 }

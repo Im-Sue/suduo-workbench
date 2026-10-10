@@ -5,11 +5,11 @@ const files = (count: number) => plural("en", count, { one: "1 file", other: `${
 
 export const workbench = {
   composer: {
-    messageLabel: "Message to Codex",
+    messageLabel: "Message to the agent",
     placeholder: {
-      default: "Describe the work for Codex. Type / for a Skill, @ to reference a file",
+      default: "Describe the work for the agent. Type / for a Skill, @ to reference a session or file",
       withSkill: (skill: string) => `${skill} selected. Add details, then send…`,
-      running: "Codex is working: Enter adds to this turn, Tab queues for later",
+      running: "The agent is working: Enter adds to this turn, Tab queues for later",
     },
     imagesOnly: "Only images can be dropped or pasted for now. To include other files, reference them with @.",
     maybeSent: "This message was being sent when the language changed and may already have gone through. Check the conversation before sending it again.",
@@ -18,7 +18,7 @@ export const workbench = {
     palette: {
       label: "Suggestions",
       skillTitle: "Choose a Skill",
-      fileTitle: "Reference a project file",
+      fileTitle: "Reference a session or project file",
       keys: "↑↓ to select · Enter to confirm · Esc to close",
       indexing: "Indexing project files…",
       indexFailed: "Couldn't index files. Try again later.",
@@ -45,10 +45,10 @@ export const workbench = {
     context: {
       used: "Context used",
       title: (percent: number, used: string, limit: string) =>
-        `${String(percent)}% of context used (${used} / ${limit}). Codex automatically compacts earlier conversation as it nears the limit.`,
+        `${String(percent)}% of context used (${used} / ${limit}). The agent automatically compacts earlier conversation as it nears the limit.`,
     },
     run: {
-      working: "Codex is working",
+      working: "The agent is working",
       running: "Running",
       waiting: (count: number) =>
         plural("en", count, { one: "Waiting for you · 1 approval", other: `Waiting for you · ${String(count)} approvals` }),
@@ -62,6 +62,7 @@ export const workbench = {
         user_stop: "You stopped the turn",
         turn_failed: "The last turn failed",
         turn_interrupted: "The last turn was interrupted",
+        queue_dropped: "The last message wasn't sent from the local queue",
         send_rejected: "Couldn't send, so it's back at the front of the queue",
         send_uncertain: "Not sure whether this message was sent",
         attribution_unconfirmed: "Not yet confirmed where this message went",
@@ -83,9 +84,10 @@ export const workbench = {
     title: "Approval mode (this session; takes effect from the next turn)",
     menuLabel: "Approval mode · This session · Takes effect from the next turn",
     descriptions: {
+      readonly: "Look, don't touch: reads files, searches, and looks things up online, but never changes files on this computer",
       ask: "You approve every file write and command (safest)",
       auto: "Runs freely inside the project folder and asks only when going out of bounds (recommended)",
-      full: "No limits, no questions. Codex can access any file on this computer and the network",
+      full: "No limits, no questions. The agent can access any file on this computer and the network",
     },
     lockedReason:
       "This deployment caps the approval mode, so full access isn't available. Contact your administrator if you need it.",
@@ -93,7 +95,7 @@ export const workbench = {
     fullConfirm: {
       title: "Switch to full access?",
       description:
-        "This session will stop asking for approval, and Codex can access files on this computer and the network without limits. Takes effect next turn.",
+        "This session will stop asking for approval, and the agent can access files on this computer and the network without limits. Takes effect next turn.",
       confirm: "Switch to full access",
     },
   },
@@ -107,10 +109,12 @@ export const workbench = {
     },
     collapse: "Hide inspector panel",
     collapseTitle: "Hide inspector panel (⌘J)",
+    isolated: (path: string) =>
+      `This session works in its own working directory: ${path}. Checkpoints, restore, and git status belong to the original project directory, so they aren't offered here; adopt or clean up this version on the parallel trial page.`,
   },
   changes: {
     emptyTitle: "No changes yet",
-    emptyDescription: "Files Codex creates, modifies, or deletes will be listed here. Open one to see the diff.",
+    emptyDescription: "Files the agent creates, modifies, or deletes will be listed here. Open one to see the diff.",
     summary: (count: number) => `Since the session started · ${files(count)}`,
     kind: {
       created: "Added",
@@ -156,7 +160,7 @@ export const workbench = {
       restore: "Restore",
       restoreTitle: "Restore this checkpoint",
       restoreRunning:
-        "Can't restore while a turn is running: it would overwrite files Codex is writing, and uncommitted changes could be lost",
+        "Can't restore while a turn is running: it would overwrite files the agent is writing, and uncommitted changes could be lost",
       autoSave: "Auto-save before each turn",
       autoSaveFailed: (error: string) => `Last auto-save failed: ${error}`,
     },

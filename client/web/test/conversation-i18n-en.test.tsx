@@ -235,14 +235,14 @@ describe("会话区英文界面", () => {
     );
     const card = q(node, "approval-card");
     expect(card?.getAttribute("aria-label")).toBe("Waiting for you");
-    expect(card?.textContent).toContain("Codex wants to run a command");
+    expect(card?.textContent).toContain("The agent wants to run a command");
     expect(card?.textContent).toContain("In /code/checkout");
     expect(card?.textContent).toContain("⏎ Approve · Esc Decline");
     expect(q(node, "approval-accept")?.textContent).toBe("Approve");
     expect(q(node, "approval-decline")?.textContent).toBe("Decline");
     expect(q(node, "approval-more")?.getAttribute("aria-label")).toBe("More approval options");
     expect(node.querySelector('[aria-label="1 of 2"]')?.textContent).toBe("1/2");
-    expect(approvalQuestion("command", { request: { kind: "writeStdin" } })).toBe("Codex wants to send input to a running command");
+    expect(approvalQuestion("command", { request: { kind: "writeStdin" } })).toBe("The agent wants to send input to a running command");
   });
 
   it("审批坞：改文件时说几个文件；发评论的确认卡按钮是 Send / Don't send", async () => {
@@ -257,7 +257,7 @@ describe("会话区英文界面", () => {
         onViewPatch={vi.fn()}
       />,
     );
-    expect(q(files, "approval-card")?.textContent).toContain("Codex wants to edit 2 files");
+    expect(q(files, "approval-card")?.textContent).toContain("The agent wants to edit 2 files");
     expect(files.querySelector('[title="View changes to src/a.ts"]')).not.toBeNull();
     await act(async () => root?.unmount());
 

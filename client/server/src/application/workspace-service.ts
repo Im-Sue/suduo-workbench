@@ -167,9 +167,8 @@ export class WorkspaceService {
     this.baselines = new BaselineStore(options.baselineRoot);
   }
 
-  async listDirectory(projectId: string, path = ""): Promise<ListFilesResponse> {
-    const project = this.requireProject(projectId);
-    const guarded = await guardExistingPath(project.rootPath, path);
+  async listDirectory(projectId: string, path = "", sessionId?: string): Promise<ListFilesResponse> {
+    const guarded = await guardExistingPath(this.rootFor(projectId, sessionId), path);
     await requireDirectory(guarded);
     const entries = await readdir(guarded.absolutePath, { withFileTypes: true });
     const mapped = (
@@ -205,9 +204,8 @@ export class WorkspaceService {
     return { path: guarded.relativePath, entries: mapped };
   }
 
-  async readContent(projectId: string, path: string): Promise<FileContentDto> {
-    const project = this.requireProject(projectId);
-    const guarded = await guardExistingPath(project.rootPath, path);
+  async readContent(projectId: string, path: string, sessionId?: string): Promise<FileContentDto> {
+    const guarded = await guardExistingPath(this.rootFor(projectId, sessionId), path);
     await requireFile(guarded);
     const info = await stat(guarded.absolutePath);
     const mediaType = mediaTypeFor(path);
@@ -217,7 +215,7 @@ export class WorkspaceService {
         type: "image",
         path: guarded.relativePath,
         mediaType,
-        url: rawFileUrl(projectId, guarded.relativePath),
+        url: rawFileUrl(projectId, guarded.relativePath, sessionId),
         size: info.size,
       };
     }
@@ -324,9 +322,9 @@ export class WorkspaceService {
   async resolveRawFile(
     projectId: string,
     path: string,
+    sessionId?: string,
   ): Promise<{ absolutePath: string; mediaType: string; size: number }> {
-    const project = this.requireProject(projectId);
-    const guarded = await guardExistingPath(project.rootPath, path);
+    const guarded = await guardExistingPath(this.rootFor(projectId, sessionId), path);
     await requireFile(guarded);
     const info = await stat(guarded.absolutePath);
     const extension = extname(path).toLowerCase();
@@ -360,13 +358,13 @@ export class WorkspaceService {
    * 批量确认项目内的普通文件是否存在（会话回答里的路径要不要变成链接）。只读：不存在、不是文件、
    * 越出项目目录（含符号链接）、路径不合法的一律当作不存在，不报错。
    */
-  async existingFiles(projectId: string, paths: readonly string[]): Promise<ExistingFilesResponse> {
-    const project = this.requireProject(projectId);
+  async existingFiles(projectId: string, paths: readonly string[], sessionId?: string): Promise<ExistingFilesResponse> {
+    const root = this.rootFor(projectId, sessionId);
     const unique = [...new Set(paths)];
     const checks = await Promise.all(
       unique.map(async (path) => {
         try {
-          const guarded = await guardExistingPath(project.rootPath, path);
+          const guarded = await guardExistingPath(root, path);
           return (await stat(guarded.absolutePath)).isFile() ? path : null;
         } catch {
           return null;
@@ -381,9 +379,9 @@ export class WorkspaceService {
     path: string,
     mode: SystemOpenMode,
     line?: number,
+    sessionId?: string,
   ): Promise<void> {
-    const project = this.requireProject(projectId);
-    const guarded = await guardExistingPath(project.rootPath, path);
+    const guarded = await guardExistingPath(this.rootFor(projectId, sessionId), path);
     try {
       await openWithSystemApp(guarded.absolutePath, mode, mode === "vscode" ? line : undefined);
     } catch (cause) {
@@ -455,8 +453,13 @@ export class WorkspaceService {
 
   /** 拍会话基线（建会话时；/changes 发现缺失时也会补拍）。 */
   async captureBaseline(sessionId: string): Promise<void> {
-    const { project } = this.requireSessionProject(sessionId);
-    await this.startCapture(project.rootPath, sessionId);
+    await this.startCapture(this.sessionRoot(sessionId), sessionId);
+  }
+
+  /** 会话实际干活的目录：并行试做的版本是它的 worktree（S10），其余是项目目录。 */
+  private sessionRoot(sessionId: string): string {
+    const { session, project } = this.requireSessionProject(sessionId);
+    return session.workspacePath ?? project.rootPath;
   }
 
   /**
@@ -535,8 +538,7 @@ export class WorkspaceService {
    * 变了才读文件重算；行级增删按「路径 + 前后哈希」记忆，没变就不再读文件、跑 LCS。
    */
   async listChanges(sessionId: string): Promise<WorkspaceChanges> {
-    const { project } = this.requireSessionProject(sessionId);
-    const root = project.rootPath;
+    const root = this.sessionRoot(sessionId);
     const baseline = await this.loadBaseline(root, sessionId);
     const cache = this.scanCacheFor(sessionId, baseline);
     // 本轮新读到、且与基线不同的文本：算行级增删时直接用，不再读第二遍。
@@ -593,12 +595,21 @@ export class WorkspaceService {
     return { items, additions, deletions };
   }
 
+  /**
+   * 这个会话有没有工作区基线（不现拍）：跨会话读取「改动」时先问它（多 Agent S7），
+   * 没有就退回 Agent 报告的改动——现拍的基线是此刻的目录，会把之前的改动都算没了。
+   */
+  async hasBaseline(sessionId: string): Promise<boolean> {
+    if (this.capturesInFlight.has(sessionId)) return true;
+    return (await this.baselines.load(sessionId).catch(() => null)) !== null;
+  }
+
   /** 单文件 diff：只读这一个文件与它的基线副本，不重拍整个项目。 */
   async diff(sessionId: string, path: string): Promise<WorkspaceDiff> {
-    const { project } = this.requireSessionProject(sessionId);
-    const baseline = await this.loadBaseline(project.rootPath, sessionId);
+    const root = this.sessionRoot(sessionId);
+    const baseline = await this.loadBaseline(root, sessionId);
     const before = ownEntry(baseline.files, path);
-    const after = await readCurrentFile(project.rootPath, path);
+    const after = await readCurrentFile(root, path);
     if (!before && !after) {
       throw new ApiError(404, "NOT_FOUND", (t) => t.workspace.files.diffNotFound);
     }
@@ -628,6 +639,17 @@ export class WorkspaceService {
       throw new ApiError(404, "NOT_FOUND", (t) => t.workspace.project.activeNotFound);
     }
     return project;
+  }
+
+  /**
+   * 文件操作的根：会话页带上会话、且会话在独立工作目录（并行试做的 worktree，S10）里干活时是那个目录，
+   * 否则是项目目录（会话不属于这个项目时也按项目目录）。
+   */
+  private rootFor(projectId: string, sessionId?: string): string {
+    const project = this.requireProject(projectId);
+    if (sessionId === undefined || sessionId === "") return project.rootPath;
+    const session = this.sessions.getById(sessionId);
+    return session !== null && session.projectId === project.id ? (session.workspacePath ?? project.rootPath) : project.rootPath;
   }
 
   private requireSessionProject(sessionId: string) {
@@ -1288,8 +1310,9 @@ function mediaTypeFor(path: string): string {
   )[extension] ?? "text/plain";
 }
 
-function rawFileUrl(projectId: string, relativePath: string): string {
-  return `/api/v1/projects/${encodeURIComponent(projectId)}/files/raw?path=${encodeURIComponent(relativePath)}`;
+function rawFileUrl(projectId: string, relativePath: string, sessionId?: string): string {
+  const session = sessionId === undefined || sessionId === "" ? "" : `&sessionId=${encodeURIComponent(sessionId)}`;
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/files/raw?path=${encodeURIComponent(relativePath)}${session}`;
 }
 
 function isTextPath(path: string): boolean {

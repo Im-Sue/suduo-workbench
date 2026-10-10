@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  RuntimeToolServer,
   AgentRuntime,
   ApproveInput,
   ApproveResult,
@@ -22,6 +23,7 @@ import type {
   StartTurnResult,
   ThreadRef,
 } from "@suduo/client-contracts";
+import { RUNTIME_APPROVAL_MODE_POLICIES, SUDUO_MCP_SERVER_NAME } from "@suduo/client-contracts";
 import {
   isApprovalServerRequest,
   mapApprovalDecision,
@@ -34,6 +36,7 @@ import {
   normalizeCodexNotification,
 } from "./codex-event-normalizer.js";
 import { mapRuntimeInputs } from "./codex-input-mapper.js";
+import { withLoopbackNoProxy } from "../../mcp/loopback-no-proxy.js";
 import {
   CodexThreadModelTracker,
   createCodexModelDefaults,
@@ -83,6 +86,8 @@ export interface CodexRuntimeOptions {
 export class CodexRuntime implements AgentRuntime {
   readonly runtimeId: string;
   readonly runtimeKind = "codex";
+  /** 能接 SuDuo 本机 MCP 工具服务（ADR-0015，S0 实测：线程级配置覆盖注入、续接换令牌都成立）。 */
+  readonly supportsToolServer = true;
   private readonly transport: CodexTransportFactory;
   private readonly codexBin: string;
   private readonly env: Record<string, string>;
@@ -90,6 +95,13 @@ export class CodexRuntime implements AgentRuntime {
   private readonly sessionLocale: ((sessionId: string) => Locale | null) | null;
   private readonly platform: NodeJS.Platform;
   private readonly threadSessions = new Map<string, string>();
+  /**
+   * 这条连接上已加载的线程，与它们建线程 / 续接时的参数（多 Agent S5）。Codex 对已加载的线程再 resume
+   * 不会套用新的线程级配置（实测：令牌、关掉 MCP 都不生效），要先 thread/unsubscribe 让它卸载再 resume。
+   */
+  private readonly loadedThreads = new Map<string, { connectionId: string; input: StartThreadInput; readonly: boolean }>();
+  /** 被我们卸载、还没续接成功的线程（续接失败时下个回合再续）：线程 id → 连接 id 与续接参数。 */
+  private readonly unloadedThreads = new Map<string, { connectionId: string; input: StartThreadInput }>();
   private readonly pendingApprovals = new Map<string, PendingNativeApproval>();
   /** 还没回包的客户端自定义工具调用（ADR-0008），按 callRef 索引。 */
   private readonly pendingToolCalls = new Map<string, PendingToolCall>();
@@ -116,8 +128,17 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   async startThread(input: StartThreadInput): Promise<StartThreadResult> {
-    assertM1SecurityPolicy(input.security);
+    const security = RUNTIME_APPROVAL_MODE_POLICIES[input.approvalMode];
+    assertM1SecurityPolicy(security);
     const connection = await this.ensureConnection();
+    if (input.mode === "resume" && this.loadedThreads.get(input.threadRef.threadId)?.connectionId === connection.connectionId) {
+      // 这条连接上已加载：先卸载，新的令牌与 MCP 开关才会生效。
+      await connection.request("thread/unsubscribe", { threadId: input.threadRef.threadId }, { timeoutMs: 10_000 }).catch((error: unknown) => {
+        console.warn(JSON.stringify({ event: "codex.thread_unsubscribe_failed", threadId: input.threadRef.threadId, message: String(error) }));
+      });
+      this.loadedThreads.delete(input.threadRef.threadId);
+      this.unloadedThreads.set(input.threadRef.threadId, { connectionId: connection.connectionId, input });
+    }
     this.pendingSessionId = input.sessionId;
     try {
       // 上层业务指令（如需求包摘要）与本机环境指令（Windows 编码，按会话的语言）合并下发。
@@ -130,14 +151,15 @@ export class CodexRuntime implements AgentRuntime {
       const common = {
         cwd: input.projectRoot,
         runtimeWorkspaceRoots: input.workspaceRoots,
-        approvalPolicy: input.security.approvalPolicy,
-        approvalsReviewer: input.security.approvalsReviewer,
-        sandbox: input.security.sandbox.mode,
+        approvalPolicy: security.approvalPolicy,
+        approvalsReviewer: security.approvalsReviewer,
+        sandbox: security.sandbox.mode,
         ...(developerInstructions === "" ? {} : { developerInstructions }),
-        // 房间 Agent 档：建线程与续接都要带（续接不带的话 MCP 会重新启动）。
-        ...(isRoomAgentPolicy(input.security)
-          ? { config: await this.externalToolsOff(connection, input.projectRoot) }
-          : {}),
+        // 房间 Agent 档（关掉所有者的 MCP）与 SuDuo 工具服务：建线程与续接都要带（续接不带的话 MCP 会重新启动）。
+        ...threadConfig(
+          input.approvalMode === "readonly" ? await this.externalToolsOff(connection, input.projectRoot) : null,
+          input.toolServer ?? null,
+        ),
       };
       const result = await connection.request(
         input.mode === "create" ? "thread/start" : "thread/resume",
@@ -160,6 +182,8 @@ export class CodexRuntime implements AgentRuntime {
       const threadId = requireString(thread["id"], "thread.id");
       const threadRef = this.threadRef(threadId);
       this.threadSessions.set(threadId, input.sessionId);
+      this.loadedThreads.set(threadId, { connectionId: connection.connectionId, input, readonly: input.approvalMode === "readonly" });
+      this.unloadedThreads.delete(threadId);
       // thread/start|resume 回报线程当前生效的模型与推理强度，作为粘性覆盖判断的起点。
       this.threadModels.recordThreadStart({
         connectionId: connection.connectionId,
@@ -183,8 +207,23 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   async startTurn(input: StartTurnInput): Promise<StartTurnResult> {
-    assertM1SecurityPolicy(input.security);
-    const connection = await this.ensureConnection();
+    const security = RUNTIME_APPROVAL_MODE_POLICIES[input.approvalMode];
+    assertM1SecurityPolicy(security);
+    let connection = await this.ensureConnection();
+    const loaded = this.loadedThreads.get(input.threadRef.threadId);
+    const unloaded = this.unloadedThreads.get(input.threadRef.threadId);
+    const reload =
+      loaded !== undefined && loaded.connectionId === connection.connectionId && loaded.readonly !== (input.approvalMode === "readonly")
+        ? loaded.input
+        : unloaded !== undefined && unloaded.connectionId === connection.connectionId
+          ? unloaded.input
+          : null;
+    if (reload !== null) {
+      // 跨了只读：所有者的 MCP 与连接器在只读时要关、回来要开，这是线程级配置，只能卸载后重新续接才生效。
+      // 上次卸载后续接失败的线程也在这里续上。
+      await this.startThread({ ...reload, mode: "resume", threadRef: input.threadRef, approvalMode: input.approvalMode });
+      connection = await this.ensureConnection();
+    }
     this.threadSessions.set(input.threadRef.threadId, input.sessionId);
     const modelPlan = await this.threadModels.plan({
       connectionId: connection.connectionId,
@@ -213,14 +252,14 @@ export class CodexRuntime implements AgentRuntime {
           cwd: input.projectRoot,
           runtimeWorkspaceRoots: input.workspaceRoots,
           // 审批与沙箱每回合都显式下发，粘性覆盖始终等于会话当前审批档。
-          approvalPolicy: input.security.approvalPolicy,
-          approvalsReviewer: input.security.approvalsReviewer,
+          approvalPolicy: security.approvalPolicy,
+          approvalsReviewer: security.approvalsReviewer,
           sandboxPolicy:
-            input.security.sandbox.mode === "danger-full-access"
+            security.sandbox.mode === "danger-full-access"
               ? { type: "dangerFullAccess" }
               : {
-                  type: sandboxPolicyType(input.security.sandbox.mode),
-                  networkAccess: input.security.sandbox.networkAccess,
+                  type: sandboxPolicyType(security.sandbox.mode),
+                  networkAccess: security.sandbox.networkAccess,
                 },
           // 模型 / 推理强度只在需要改变线程现值时下发（见 CodexThreadModelTracker）。
           ...(overrides.model === undefined ? {} : { model: overrides.model }),
@@ -820,7 +859,7 @@ export class CodexRuntime implements AgentRuntime {
   private async createConnection(): Promise<RpcConnection> {
     const connection = await this.transport.connect({
       codexBin: this.codexBin,
-      env: this.env,
+      env: withLoopbackNoProxy(this.env),
       signal: this.connectionAbort.signal,
     });
     try {
@@ -1091,14 +1130,6 @@ function objectOrEmpty(value: JsonValue | undefined): Record<string, JsonValue> 
   return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function isRoomAgentPolicy(policy: RuntimeSecurityPolicy): boolean {
-  return (
-    policy.approvalPolicy === "never" &&
-    policy.sandbox.mode === "read-only" &&
-    policy.sandbox.networkAccess === true
-  );
-}
-
 function sandboxPolicyType(
   mode: RuntimeSecurityPolicy["sandbox"]["mode"],
 ): "readOnly" | "workspaceWrite" | "dangerFullAccess" {
@@ -1229,4 +1260,34 @@ function dynamicToolsParam(
       inputSchema: tool.inputSchema,
     })),
   };
+}
+
+/**
+ * 线程级配置覆盖（Codex 深合并）：房间档关掉所有者的 MCP 与连接器；SuDuo 工具服务按 S0 实测的配置注入——
+ * 带令牌的请求头、长工具超时（写工具会等用户确认）、工具直接放行（不配时 never 档会拒绝调用；
+ * 写操作的确认由 SuDuo 自己的确认卡负责）。两者都没有时不下发 config。
+ */
+export function threadConfig(
+  roomOff: Record<string, JsonValue> | null,
+  toolServer: RuntimeToolServer | null,
+): { config?: Record<string, JsonValue> } {
+  if (roomOff === null && toolServer === null) {
+    return {};
+  }
+  const config: Record<string, JsonValue> = { ...(roomOff ?? {}) };
+  if (toolServer !== null) {
+    const servers = config["mcp_servers"];
+    config["mcp_servers"] = {
+      ...(servers !== null && typeof servers === "object" && !Array.isArray(servers) ? servers : {}),
+      [SUDUO_MCP_SERVER_NAME]: {
+        enabled: true,
+        url: toolServer.url,
+        http_headers: { Authorization: `Bearer ${toolServer.token}` },
+        tool_timeout_sec: toolServer.toolTimeoutSec,
+        startup_timeout_sec: 20,
+        default_tools_approval_mode: "approve",
+      },
+    };
+  }
+  return { config };
 }

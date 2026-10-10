@@ -11,6 +11,7 @@ import { useSessionLauncher } from "../../app/shell/SessionLauncher.js";
 import type { LinkedRequirement } from "../../components/RequirementMaterials.js";
 import { classifyFailure } from "../../feedback/classify.js";
 import { ConfirmDialog, RegionError } from "../../feedback/components/index.js";
+import { Checkbox } from "@/components/ui/checkbox";
 import { reportFailure } from "../../feedback/report.js";
 import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
@@ -55,6 +56,15 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
   const [keyword, setKeyword] = useState(carriedKeyword ?? "");
   useCarrySource("session-list-keyword", () => keyword);
   const [pendingDelete, setPendingDelete] = useState<SessionListItemDto | null>(null);
+  // 要删的会话往下还有会话时（委派、接着做），问是否连带删除（需求 R11），默认连带。
+  const [deleteChildren, setDeleteChildren] = useState(true);
+  const deleteTarget = useQuery({
+    queryKey: ["session-delete-target", pendingDelete?.id],
+    queryFn: () => api.getSession(pendingDelete?.id ?? ""),
+    enabled: pendingDelete !== null,
+    staleTime: 0,
+  });
+  const descendantCount = pendingDelete === null ? 0 : (deleteTarget.data?.links?.descendantCount ?? 0);
   const activeId = session?.id ?? null;
 
   // 当前项目跟到打开的会话所属项目：按会话建时记下的所属项目（会话上下文），不按目录反查——
@@ -190,7 +200,7 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
     setPendingDelete(null);
     if (target === null) return;
     try {
-      await api.deleteSession(target.id);
+      await api.deleteSession(target.id, { withChildren: descendantCount > 0 && deleteChildren });
       if (target.id === activeId) void navigate({ to: "/sessions" });
       refresh();
       showMessage(text.deleted(target.title || t.conversation.untitled), "success");
@@ -240,7 +250,10 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
               }}
               onRename={(item, title) => void rename(item, title)}
               onArchive={(item) => void archive(item)}
-              onDelete={setPendingDelete}
+              onDelete={(item) => {
+                setDeleteChildren(true);
+                setPendingDelete(item);
+              }}
               countItems={normalItems}
               onOpenRoom={(item) => {
                 const task = item.roomTask;
@@ -285,7 +298,24 @@ export function SessionsPage({ session }: { session: SessionDto | null }) {
         description={text.deleteConfirm.description}
         confirmLabel={text.deleteConfirm.confirm}
         onConfirm={() => void confirmDelete()}
-      />
+        // 往下有没有会话还没查到时先别删（不然会只删它自己、也没问连带）；查不到就当没有。
+        confirmDisabled={pendingDelete !== null && deleteTarget.isPending}
+      >
+        {descendantCount > 0 ? (
+          <div className="flex items-start gap-2 text-small">
+            <Checkbox
+              id="delete-with-children"
+              className="mt-0.5"
+              checked={deleteChildren}
+              onCheckedChange={(value) => setDeleteChildren(value === true)}
+              data-testid="delete-with-children"
+            />
+            <label htmlFor="delete-with-children" className="cursor-pointer text-foreground">
+              {text.deleteConfirm.withChildren(descendantCount)}
+            </label>
+          </div>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }

@@ -164,6 +164,11 @@ export const timeline = {
       suduo_comment_submit: "发评论",
       suduo_artifact_publish: "发布确认版",
     } satisfies Record<SuDuoToolName, string>,
+    /** 跨会话读取（多 Agent 协作 S7）的动作名；读取步骤另按会话信息显示（sessionLinks.read）。 */
+    sessionLabels: {
+      suduo_session_list: "列出可读的会话",
+      suduo_session_read: "读取会话",
+    },
     /** 房间共享 Agent 的房间工具（只读）的动作名。 */
     roomLabels: {
       suduo_room_history: "翻看房间消息",

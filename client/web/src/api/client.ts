@@ -3,6 +3,28 @@ import { currentLocale, withLocaleParam } from "../i18n/locale.js";
 import { messagesFor } from "../i18n/messages/index.js";
 import { markRequestNetworkFailure, markRequestReachedServer } from "./connectivity.js";
 import type {
+  AgentDto,
+  AgentListDto,
+  AgentLoginResultDto,
+  AgentSettingsDto,
+  ApprovalDecision,
+  SessionStartOptions,
+  SchedulerSnapshotDto,
+  DelegationDto,
+  ReviewDto,
+  StartDelegationRequest,
+  StartReviewRequest,
+  AdoptTrialRequest,
+  StartTrialRequest,
+  TrialDto,
+  TrialPrecheckDto,
+  TrialRepoStateDto,
+  SharedDraftDto,
+  SessionAiRulesDto,
+  SessionRoundSummaryDto,
+  UpdateSharedDraftRequest,
+  TrialTarget,
+  UpdateAgentSettingsRequest,
   McpServerDto,
   ApprovalDto,
   AttachmentDto,
@@ -86,6 +108,7 @@ import type {
   UpdateProjectRequest as RequirementsUpdateProjectRequest,
   UpdateRequirementRequest,
   AddRoomMembersRequest,
+  AgentDto as RoomAgentDto,
   AgentRunDetailDto,
   AgentRunSummaryDto,
   AgentShareDto,
@@ -106,6 +129,13 @@ import type {
   RoomViewerStateDto,
   SendRoomMessageRequest,
   UpdateRoomRequest,
+  ListAiActivityResponse,
+  ListProjectAiRulesVersionsResponse,
+  ListSharedItemsResponse,
+  ProjectAiRulesDto,
+  ProjectAiRulesVersionDetailDto,
+  SaveProjectAiRulesResponse,
+  SharedItemDetailDto,
 } from "@suduo/cloud-contracts";
 import { ROOM_FILE_MAX_BYTES } from "@suduo/cloud-contracts";
 
@@ -218,6 +248,11 @@ export interface WorkspaceDiff {
   before: string;
   after: string;
   truncated: boolean;
+}
+
+/** 文件接口的会话参数（会话在独立工作目录里干活时按那个目录找文件）。 */
+function sessionParam(sessionId: string | undefined): string {
+  return sessionId === undefined ? "" : `&sessionId=${encodeURIComponent(sessionId)}`;
 }
 
 export const api = {
@@ -476,16 +511,16 @@ export const api = {
       { method: "DELETE", expectedStatus: 204 },
     ),
 
-  createRequirementsSession: (requirementId: string) =>
+  createRequirementsSession: (requirementId: string, start: SessionStartOptions = {}) =>
     request<SessionDto>(
       `/api/v2/requirements/${encodeURIComponent(requirementId)}/sessions`,
-      { method: "POST", body: {} },
+      { method: "POST", body: { ...start } },
     ),
 
-  createRequirementsProjectSession: (projectId: string) =>
+  createRequirementsProjectSession: (projectId: string, start: SessionStartOptions = {}) =>
     request<SessionDto>(
       `/api/v2/projects/${encodeURIComponent(projectId)}/sessions`,
-      { method: "POST", body: {} },
+      { method: "POST", body: { ...start } },
     ),
 
   listRequirementsSessions: (projectId: string) =>
@@ -556,6 +591,90 @@ export const api = {
   getSession: (sessionId: string) =>
     request<SessionDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}`),
 
+  /** 本机运行面板（多 Agent 协作 S8）。 */
+  schedulerSnapshot: (options: { signal?: AbortSignal } = {}) =>
+    request<SchedulerSnapshotDto>("/api/v1/scheduler", options.signal === undefined ? {} : { signal: options.signal }),
+  promoteSchedulerItem: (itemId: string) =>
+    request<SchedulerSnapshotDto>(`/api/v1/scheduler/${encodeURIComponent(itemId)}/promote`, { method: "POST", body: {} }),
+  cancelSchedulerItem: (itemId: string) =>
+    request<SchedulerSnapshotDto>(`/api/v1/scheduler/${encodeURIComponent(itemId)}/cancel`, { method: "POST", body: {} }),
+
+  /** 委派（多 Agent 协作 S8）。 */
+  listDelegations: (sessionId: string) =>
+    request<{ items: DelegationDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations`),
+  startDelegation: (sessionId: string, body: StartDelegationRequest) =>
+    request<DelegationDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations`, { method: "POST", body }),
+  cancelDelegation: (delegationId: string) =>
+    request<DelegationDto>(`/api/v1/delegations/${encodeURIComponent(delegationId)}/cancel`, { method: "POST", body: {} }),
+  cancelAllDelegations: (sessionId: string) =>
+    request<{ items: DelegationDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/delegations/cancel-all`, { method: "POST", body: {} }),
+
+  /** 并行试做（多 Agent 协作 S10）。 */
+  trialPrecheck: (target: TrialTarget) =>
+    request<TrialPrecheckDto>(
+      `/api/v1/trials/precheck?${"remoteRequirementId" in target ? `remoteRequirementId=${encodeURIComponent(target.remoteRequirementId)}` : `remoteProjectId=${encodeURIComponent(target.remoteProjectId)}`}`,
+    ),
+  startTrial: (body: StartTrialRequest) => request<TrialDto>("/api/v1/trials", { method: "POST", body }),
+  getTrial: (trialId: string, options: { signal?: AbortSignal } = {}) =>
+    request<TrialDto>(`/api/v1/trials/${encodeURIComponent(trialId)}`, options.signal === undefined ? {} : { signal: options.signal }),
+  trialOfSession: (sessionId: string) => request<{ trialId: string | null }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/trial`),
+  adoptTrial: (trialId: string, body: AdoptTrialRequest) => request<TrialDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/adopt`, { method: "POST", body }),
+  /** forceBranches：确认对话框写明「没合并的提交会丢」且勾上的版本（只有它们的分支用 -D 删）。 */
+  cleanupTrial: (trialId: string, entryIds: string[], forceBranches: string[] = []) =>
+    request<TrialDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/cleanup`, { method: "POST", body: { entryIds, forceBranches } }),
+  trialRepo: (trialId: string) => request<TrialRepoStateDto>(`/api/v1/trials/${encodeURIComponent(trialId)}/repo`),
+
+  /** 共享对象草稿与团队共享（多 Agent 协作 S11）。 */
+  getSessionAiRules: (sessionId: string) => request<SessionAiRulesDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-rules`),
+  applySessionAiRules: (sessionId: string, version: number) =>
+    request<SessionAiRulesDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-rules/apply`, { method: "POST", body: { version } }),
+  getAiActivityReporting: (sessionId: string) => request<{ enabled: boolean }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-activity-reporting`),
+  setAiActivityReporting: (sessionId: string, enabled: boolean) =>
+    request<{ enabled: boolean }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/ai-activity-reporting`, { method: "PUT", body: { enabled } }),
+  listSessionRounds: (sessionId: string) => request<{ items: SessionRoundSummaryDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/rounds`),
+  listSharedDrafts: (sessionId: string) => request<{ items: SharedDraftDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/shared-drafts`),
+  createSnapshotDraft: (sessionId: string, rounds: number[]) =>
+    request<SharedDraftDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/snapshot`, { method: "POST", body: { rounds }, expectedStatus: 201 }),
+  createReviewDraft: (reviewId: string) => request<SharedDraftDto>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/draft`, { method: "POST", body: {}, expectedStatus: 201 }),
+  getSharedDraft: (draftId: string) => request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}`),
+  updateSharedDraft: (draftId: string, body: UpdateSharedDraftRequest) =>
+    request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}`, { method: "PUT", body }),
+  /** expectedUpdatedAt：预览时的版本；之后变了服务端回 409 不发（发布不可逆）。 */
+  publishSharedDraft: (draftId: string, expectedUpdatedAt?: number) =>
+    request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}/publish`, { method: "POST", body: expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt } }),
+  createManualHandoff: (sessionId: string) => request<SharedDraftDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/handoff`, { method: "POST", body: {}, expectedStatus: 201 }),
+  discardSharedDraft: (draftId: string) => request<SharedDraftDto>(`/api/v1/shared-drafts/${encodeURIComponent(draftId)}/discard`, { method: "POST", body: {} }),
+  listSharedItems: (requirementId: string) => request<ListSharedItemsResponse>(`/api/v2/requirements/${encodeURIComponent(requirementId)}/shared-items`),
+  getSharedItem: (itemId: string) => request<SharedItemDetailDto>(`/api/v2/shared-items/${encodeURIComponent(itemId)}`),
+  retractSharedItem: (itemId: string) => request<SharedItemDetailDto>(`/api/v2/shared-items/${encodeURIComponent(itemId)}/retract`, { method: "POST", body: {} }),
+  listAiActivity: (requirementId: string) => request<ListAiActivityResponse>(`/api/v2/requirements/${encodeURIComponent(requirementId)}/ai-activity`),
+  getProjectAiRules: (projectId: string) => request<ProjectAiRulesDto>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules`),
+  listProjectAiRulesVersions: (projectId: string) => request<ListProjectAiRulesVersionsResponse>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules/versions`),
+  getProjectAiRulesVersion: (projectId: string, version: number) =>
+    request<ProjectAiRulesVersionDetailDto>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules/versions/${String(version)}`),
+  /** baseVersion：开始编辑时看到的版本，只用来检测（回包列出这期间别人存过的版本），不拒绝。 */
+  saveProjectAiRules: (projectId: string, content: string, baseVersion?: number) =>
+    request<SaveProjectAiRulesResponse>(`/api/v2/projects/${encodeURIComponent(projectId)}/ai-rules`, {
+      method: "PUT",
+      body: { content, ...(baseVersion === undefined ? {} : { baseVersion }) },
+    }),
+
+  /** 交叉评审（多 Agent 协作 S9）。 */
+  listReviews: (sessionId: string) =>
+    request<{ items: ReviewDto[] }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/reviews`),
+  startReview: (sessionId: string, body: StartReviewRequest) =>
+    request<ReviewDto>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/reviews`, { method: "POST", body }),
+  applyReview: (reviewId: string, findingIds: string[]) =>
+    request<ReviewDto>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/apply`, { method: "POST", body: { findingIds } }),
+  cancelReview: (reviewId: string) =>
+    request<ReviewDto>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/cancel`, { method: "POST", body: {} }),
+  handbackDelegation: (delegationId: string) =>
+    request<DelegationDto>(`/api/v1/delegations/${encodeURIComponent(delegationId)}/handback`, { method: "POST", body: {} }),
+
+  /** 交给另一个 Agent 接着做（多 Agent 协作 S7）：同一需求 / 项目下开新会话并记下接续关系。 */
+  continueSession: (sessionId: string, body: SessionStartOptions) =>
+    request<SessionDto>(`/api/v2/sessions/${encodeURIComponent(sessionId)}/continue`, { method: "POST", body }),
+
   backfillSessionEvents: (
     sessionId: string,
     input: { after: number; until: number; limit: number },
@@ -575,8 +694,9 @@ export const api = {
       body,
     }),
 
-  deleteSession: (sessionId: string) =>
-    request<void>(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
+  /** withChildren：连带删除往下的会话（委派、接着做；需求 R11）。 */
+  deleteSession: (sessionId: string, options: { withChildren?: boolean } = {}) =>
+    request<void>(`/api/v1/sessions/${encodeURIComponent(sessionId)}${options.withChildren === true ? "?withChildren=true" : ""}`, {
       method: "DELETE",
       expectedStatus: 204,
     }),
@@ -605,18 +725,17 @@ export const api = {
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/approvals?status=${status}`,
     ),
 
-  decideApproval: (
-    approvalId: string,
-    decision: "accept" | "acceptForSession" | "decline" | "cancel",
-  ) =>
+  /** optionId：卡上带选项（ADR-0014 中立字段）时，用户点的那个选项。 */
+  decideApproval: (approvalId: string, decision: ApprovalDecision, optionId?: string) =>
     request<ApprovalDto>(
       `/api/v1/approvals/${encodeURIComponent(approvalId)}/decision`,
-      { method: "POST", body: { decision } },
+      { method: "POST", body: { decision, ...(optionId === undefined ? {} : { optionId }) } },
     ),
 
-  listFiles: (projectId: string, path = "") =>
+  /** sessionId：会话页带上，会话在独立工作目录（并行试做的 worktree）里干活时按那个目录列（下同）。 */
+  listFiles: (projectId: string, path = "", sessionId?: string) =>
     request<ListFilesResponse>(
-      `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`,
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}${sessionParam(sessionId)}`,
     ),
 
   fileIndex: (projectId: string) =>
@@ -625,18 +744,18 @@ export const api = {
     ),
 
   /** line 只对 vscode 生效：打开后跳到这一行。 */
-  openFile: (projectId: string, path: string, mode: SystemOpenTarget, line?: number | null) =>
+  openFile: (projectId: string, path: string, mode: SystemOpenTarget, line?: number | null, sessionId?: string) =>
     request(`/api/v1/projects/${encodeURIComponent(projectId)}/files/open`, {
       method: "POST",
-      body: { path, mode, ...(line === undefined || line === null ? {} : { line }) },
+      body: { path, mode, ...(line === undefined || line === null ? {} : { line }), ...(sessionId === undefined ? {} : { sessionId }) },
       expectedStatus: 204,
     }),
 
   /** 批量确认项目内文件是否存在（会话回答里的路径要不要变成链接）；一次最多 200 条。 */
-  existingFiles: (projectId: string, paths: readonly string[]) =>
+  existingFiles: (projectId: string, paths: readonly string[], sessionId?: string) =>
     request<ExistingFilesResponse>(`/api/v1/projects/${encodeURIComponent(projectId)}/files/exists`, {
       method: "POST",
-      body: { paths },
+      body: { paths, ...(sessionId === undefined ? {} : { sessionId }) },
       // 只读查询：不带幂等键。
       idempotent: false,
     }),
@@ -693,6 +812,20 @@ export const api = {
     }),
 
   codexModels: () => request<CodexModelsResponse>("/api/v1/codex/models"),
+
+  // ── 多 Agent（ADR-0014）：本机 Agent 的列表、检测、登录与设置；会话级模型选项按 Agent 取。
+  /** 不等检测：没检测完的标 checking，轮询补上。 */
+  listLocalAgents: () => request<AgentListDto>("/api/v1/agents?wait=false"),
+  /** 等各家检测完再回（开工对话框要据此决定问不问选哪家）。 */
+  listLocalAgentsDetected: () => request<AgentListDto>("/api/v1/agents"),
+  recheckAgent: (agentId: string) =>
+    request<AgentDto>(`/api/v1/agents/${encodeURIComponent(agentId)}/recheck`, { method: "POST", body: {} }),
+  loginAgent: (agentId: string) =>
+    request<AgentLoginResultDto>(`/api/v1/agents/${encodeURIComponent(agentId)}/login`, { method: "POST", body: {} }),
+  agentSettings: () => request<AgentSettingsDto>("/api/v1/settings/agents"),
+  updateAgentSettings: (body: UpdateAgentSettingsRequest) =>
+    request<AgentSettingsDto>("/api/v1/settings/agents", { method: "PUT", body }),
+  agentModels: (agentId: string) => request<CodexModelsResponse>(`/api/v1/agents/${encodeURIComponent(agentId)}/models`),
 
   /** pr3 建的全局状态投影 SSE；pr10 的顶部状态条订阅它。EventSource 带不了请求头，界面语言放在地址上。 */
   codexStatusUrl: () => withLocaleParam("/api/v1/codex/status"),
@@ -787,9 +920,9 @@ export const api = {
       expectedStatus: 204,
     }),
 
-  readFile: (projectId: string, path: string) =>
+  readFile: (projectId: string, path: string, sessionId?: string) =>
     request<FileContentDto>(
-      `/api/v1/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(path)}`,
+      `/api/v1/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(path)}${sessionParam(sessionId)}`,
     ),
 
   uploadAttachment: (
@@ -941,6 +1074,14 @@ export const api = {
       "/api/v2/agents/self",
       options.signal === undefined ? {} : { signal: options.signal },
     ),
+
+  /** 共享 Codex 以外的一家本机 Agent（多 Agent S6）：本机服务登记它并返回它在云端的 Agent。 */
+  addAgentKind: (kind: string) =>
+    request<RoomAgentDto>("/api/v2/agents/self/kinds", { method: "POST", body: { kind } }),
+
+  /** 不再在讨论里提供这一家本机 Agent（本机服务停止登记与心跳）。 */
+  removeAgentKind: (kind: string) =>
+    request<void>(`/api/v2/agents/self/kinds/${encodeURIComponent(kind)}`, { method: "DELETE" }),
 
   listRoomShares: (roomId: string, options: { signal?: AbortSignal } = {}) =>
     request<ListAgentSharesResponse>(

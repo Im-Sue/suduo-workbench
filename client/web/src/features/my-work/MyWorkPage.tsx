@@ -2,19 +2,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { formatRequirementNumber } from "@suduo/cloud-contracts";
 import type { SessionListItemDto, WorkbenchActionDto } from "@suduo/client-contracts";
-import {
-  AlertTriangleIcon,
-  ArrowRightIcon,
-  CheckCircle2Icon,
-  FolderXIcon,
-  HandIcon,
-  HourglassIcon,
-  MessageSquareTextIcon,
-  ListChecksIcon,
-  RefreshCwIcon,
-  SparklesIcon,
-  XIcon,
-} from "lucide-react";
+import { AlertTriangleIcon, ArrowRightIcon, CheckCircle2Icon, FolderXIcon, HandIcon, HourglassIcon, ListChecksIcon, MessageSquareTextIcon, RefreshCwIcon, ScanSearchIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../api/client.js";
 import { invalidateMappingCaches } from "../../app/mapping-cache.js";
@@ -353,6 +341,15 @@ function AttentionRow({
         onClick: () => onOpenSession(item.action.sessionId),
         testId: `workbench-action-failed_turn-${item.action.sessionId}`,
       });
+    case "pending_review":
+      return row({
+        icon: <ScanSearchIcon className="size-4 shrink-0 text-primary-text" aria-hidden="true" />,
+        title: text.pendingReview.title(item.action.sessionTitle),
+        detail: `${item.action.projectName ?? fallback.localProject} · ${text.pendingReview.detail(item.action.agentName, item.action.findings)} · ${formatRelativeTime(item.action.finishedAt)}`,
+        action: text.pendingReview.action,
+        onClick: () => onOpenSession(item.action.sessionId),
+        testId: `workbench-action-pending_review-${item.action.reviewId}`,
+      });
     case "drift":
       return row({
         icon: <SparklesIcon className="size-4 shrink-0 text-primary-text" aria-hidden="true" />,
@@ -555,7 +552,7 @@ function SetupChecklist({ mappingCount, onNavigate }: { mappingCount: number | n
               <span className="font-medium text-foreground">{item.title}</span>
               <span className="text-muted-foreground"> · {item.detail}</span>
             </span>
-            <Button size="sm" variant="ghost" onClick={() => onNavigate(item.key === "mapping" ? 4 : 3)}>
+            <Button size="sm" variant="ghost" onClick={() => onNavigate(item.key === "mapping" ? 5 : 3)}>
               {item.key === "mapping" ? text.link : text.recheck}
             </Button>
           </li>

@@ -1,10 +1,12 @@
 import type { SessionDto } from "@suduo/client-contracts";
-import { FileTextIcon, FolderGit2Icon, InfoIcon, PanelRightIcon, PencilIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { FileTextIcon, FolderGit2Icon, ForwardIcon, GitForkIcon, InfoIcon, PanelRightIcon, PencilIcon, ScanSearchIcon, Share2Icon } from "lucide-react";
 import { useState } from "react";
 import type { StreamNotice } from "../../event-projection/reducer.js";
 import { useLossCheck, useT } from "../../i18n/provider.js";
 import { sessionStatusLabel, type SessionUiStatus } from "../../ui/session-status.js";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -25,6 +27,10 @@ export function SessionHeader({
   onRename,
   onOpenRequirement,
   onToggleInspector,
+  onContinue,
+  onReview,
+  onShare,
+  trialId,
 }: {
   session: SessionDto;
   status: SessionUiStatus;
@@ -35,6 +41,16 @@ export function SessionHeader({
   onRename(title: string): void;
   onOpenRequirement(): void;
   onToggleInspector(): void;
+  /** 交给另一个 Agent 接着做（多 Agent 协作 S7）；不传时不显示（房间任务、已删除的会话）。 */
+  onContinue?(): void;
+  /** 请另一个 Agent 评审（多 Agent 协作 S9）；不传时不显示（房间任务、评审会话、已删除的会话）。 */
+  onReview?(): void;
+  /**
+   * 共享到需求（多 Agent 协作 S11）：只有需求会话有。让 Agent 起草交接包（只给能交的主会话）、手写交接包、发布会话快照。
+   */
+  onShare?: { handoff?: () => void; writeHandoff(): void; snapshot(): void; reporting?: { enabled: boolean; toggle(): void } };
+  /** 并行试做的一版：比较视图的链接（多 Agent 协作 S10）。 */
+  trialId?: string;
 }) {
   const t = useT();
   const text = t.conversation.header;
@@ -82,6 +98,8 @@ export function SessionHeader({
           <h1 className="m-0 truncate text-body font-semibold text-foreground" data-testid="session-title" title={session.title}>
             {session.title}
           </h1>
+          {/* 用哪家 Agent 开工（多 Agent S5）；Codex 是默认，不标。 */}
+          {session.agentId === "codex" ? null : <AgentChip name={session.agent?.displayName ?? session.agentId} />}
           <button
             type="button"
             className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-subtle-foreground opacity-0 outline-none group-hover/title:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
@@ -137,6 +155,65 @@ export function SessionHeader({
           </PopoverContent>
         </Popover>
       )}
+      {trialId === undefined ? null : (
+        <Button asChild size="sm" variant="ghost">
+          <Link to="/trials/$trialId" params={{ trialId }} data-testid="open-trial">
+            <GitForkIcon />
+            {t.collab.trial.pageTitle}
+          </Link>
+        </Button>
+      )}
+      {onShare === undefined ? null : (
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon-sm" variant="ghost" aria-label={t.collab.share.menu} title={t.collab.share.menu} data-testid="share-session">
+              <Share2Icon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {onShare.handoff === undefined ? null : (
+              <DropdownMenuItem onSelect={onShare.handoff} data-testid="share-handoff">
+                {t.collab.share.makeHandoff}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={onShare.writeHandoff} data-testid="share-write-handoff">
+              {t.collab.share.writeHandoff}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onShare.snapshot} data-testid="share-snapshot">
+              {t.collab.share.makeSnapshot}
+            </DropdownMenuItem>
+            {onShare.reporting === undefined ? null : (
+              <DropdownMenuItem onSelect={onShare.reporting.toggle} title={t.collab.share.reportingHint} data-testid="share-reporting">
+                {t.collab.share.reporting(onShare.reporting.enabled)}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {onReview === undefined ? null : (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t.collab.review.button}
+          title={t.collab.review.button}
+          data-testid="review-session"
+          onClick={onReview}
+        >
+          <ScanSearchIcon />
+        </Button>
+      )}
+      {onContinue === undefined ? null : (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t.sessionLinks.continue.button}
+          title={t.sessionLinks.continue.button}
+          data-testid="continue-session"
+          onClick={onContinue}
+        >
+          <ForwardIcon />
+        </Button>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -155,5 +232,14 @@ export function SessionHeader({
         </TooltipContent>
       </Tooltip>
     </header>
+  );
+}
+
+export function AgentChip({ name }: { name: string }) {
+  const t = useT();
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-sm bg-muted px-1.5 py-0.5 text-caption text-muted-foreground" title={t.agents.badge(name)} data-testid="session-agent">
+      {name}
+    </span>
   );
 }

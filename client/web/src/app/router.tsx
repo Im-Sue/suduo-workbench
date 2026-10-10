@@ -21,6 +21,7 @@ import { MyWorkPage, validateMyWorkSearch } from "../features/my-work/MyWorkPage
 import { OverviewPage, validateOverviewSearch } from "../features/overview/OverviewPage.js";
 import { RoomsPage, validateRoomsSearch, type RoomsSearch } from "../features/rooms/RoomsPage.js";
 import { SessionsPage } from "../features/sessions/SessionsPage.js";
+import { TrialPage } from "../features/trials/TrialPage.js";
 import { SettingsPage } from "../features/settings/SettingsPage.js";
 import {
   DEFAULT_SETTINGS_SECTION,
@@ -30,7 +31,7 @@ import {
 } from "../features/settings/sections.js";
 import { BootFailure, BootSplash, RouteLoading } from "./pages/BootScreens.js";
 import { LoginPage } from "./pages/LoginPage.js";
-import { SetupPage } from "./pages/SetupPage.js";
+import { SetupPage, validateSetupSearch } from "./pages/SetupPage.js";
 import { pickProject, readLastProjectId, rememberProjectId, useProjects } from "./project-context.js";
 import { queryKeys, settingsQuery } from "./queries.js";
 import { AppShell } from "./shell/AppShell.js";
@@ -111,10 +112,7 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/setup",
-  validateSearch: (search: Record<string, unknown>): { step?: number } => {
-    const step = Number(search["step"]);
-    return Number.isInteger(step) && step >= 1 && step <= 5 ? { step } : {};
-  },
+  validateSearch: validateSetupSearch,
   component: SetupPage,
 });
 
@@ -383,6 +381,15 @@ const sessionDetailRoute = createRoute({
   component: SessionsRoute,
 });
 
+// ---------- 并行试做（多 Agent 协作 S10） ----------
+
+function TrialRoute() {
+  const { trialId } = useParams({ strict: false }) as { trialId: string };
+  return <TrialPage trialId={trialId} />;
+}
+
+const trialRoute = createRoute({ getParentRoute: () => shellRoute, path: "/trials/$trialId", component: TrialRoute });
+
 // ---------- 设置 ----------
 
 /** `/settings` 与旧版 `/settings#组`：落到对应分组（没有锚点时回到上次看的分组）。 */
@@ -424,6 +431,7 @@ const routeTree = rootRoute.addChildren([
     legacyOverviewRoute,
     sessionsRoute,
     sessionDetailRoute,
+    trialRoute,
     settingsRoute,
     settingsSectionRoute,
   ]),

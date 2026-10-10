@@ -75,6 +75,8 @@ export const conversation = {
       title: (title: string) => `Delete session “${title}”?`,
       description: "The conversation history can't be recovered. Project files and checkpoints aren't affected.",
       confirm: "Delete",
+      /** Asked when sessions hang off this one (delegations, continuations). */
+      withChildren: (count: number) => `Also delete the ${String(count)} ${count === 1 ? "session" : "sessions"} that follow from it (delegations, continuations)`,
     },
   },
   header: {
@@ -105,13 +107,13 @@ export const conversation = {
   approval: {
     label: "Waiting for you",
     question: {
-      command: "Codex wants to run a command",
-      fileChange: "Codex wants to edit files",
-      permissions: "Codex wants to change permissions",
-      other: "Codex needs your approval to continue",
-      stdin: "Codex wants to send input to a running command",
+      command: (agent: string | null) => `${agent ?? "The agent"} wants to run a command`,
+      fileChange: (agent: string | null) => `${agent ?? "The agent"} wants to edit files`,
+      permissions: (agent: string | null) => `${agent ?? "The agent"} wants to change permissions`,
+      other: (agent: string | null) => `${agent ?? "The agent"} needs your approval to continue`,
+      stdin: (agent: string | null) => `${agent ?? "The agent"} wants to send input to a running command`,
     },
-    editFiles: (count: number) => `Codex wants to edit ${files(count)}`,
+    editFiles: (count: number, agent: string | null) => `${agent ?? "The agent"} wants to edit ${files(count)}`,
     position: (total: number) => `1 of ${String(total)}`,
     cwd: (cwd: string) => `In ${cwd}`,
     viewPatch: (path: string) => `View changes to ${path}`,
@@ -125,7 +127,7 @@ export const conversation = {
     },
     cancel: {
       title: "Decline and stop",
-      description: "Stop Codex's current turn",
+      description: "Stop the agent's current turn",
     },
     tool: {
       sending: "Sending…",
@@ -235,7 +237,7 @@ export const conversation = {
     fallbackSession: "Session",
     body: {
       completed: "This turn is done.",
-      approval: "Codex is waiting for your approval to continue.",
+      approval: "The agent is waiting for your approval to continue.",
       error: "This turn didn't finish. Go back to the session to see why.",
     },
   },
@@ -283,11 +285,11 @@ export const conversation = {
     empty: {
       title: "Ready",
       description: (keys: { skill: ReactNode; file: ReactNode }): ReactNode[] => [
-        "Describe the work for Codex. Type ",
+        "Describe the work for the agent. Type ",
         keys.skill,
         " to pick a Skill, or ",
         keys.file,
-        " to reference a project file.",
+        " to reference another session or a project file.",
       ],
     },
   },

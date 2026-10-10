@@ -11,6 +11,7 @@ import type {
   RoomFileDto,
   UserSummaryDto,
 } from "@suduo/cloud-contracts";
+import { agentKindName } from "@suduo/cloud-contracts";
 import { PRESENCE_WINDOW_SECONDS } from "../../application/rooms/constants.js";
 import { roomFileKind } from "../../application/rooms/file-types.js";
 
@@ -65,11 +66,11 @@ export interface AgentJson {
 }
 
 /**
- * Agent 标签（英文兜底）：“Sam's Codex · MacBook Pro”。新前端用所有者名与设备名按看的人的语言自己拼，
- * 只在找不到 Agent 时由它推导；老客户端直接显示，消息里 @ 的高亮也由它推导。
+ * Agent 标签（英文兜底）：“Sam's Codex · MacBook Pro”（种类换成对应的显示名）。新前端用所有者名、种类与设备名
+ * 按看的人的语言自己拼，只在找不到 Agent 时由它推导；老客户端直接显示，消息里 @ 的高亮也由它推导。
  */
-export function agentLabel(ownerName: string, deviceName: string): string {
-  return `${ownerName}'s Codex · ${deviceName}`;
+export function agentLabel(ownerName: string, deviceName: string, kind: string = "codex"): string {
+  return `${ownerName}'s ${agentKindName(kind)} · ${deviceName}`;
 }
 
 export function mapAgent(json: AgentJson): AgentDto {
@@ -78,7 +79,7 @@ export function mapAgent(json: AgentJson): AgentDto {
     kind: json.kind,
     owner: json.owner,
     deviceName: json.deviceName,
-    label: agentLabel(json.owner.displayName, json.deviceName),
+    label: agentLabel(json.owner.displayName, json.deviceName, json.kind),
     online: json.online,
     lastSeenAt: json.lastSeenAt,
     activeShareCount: json.activeShareCount,

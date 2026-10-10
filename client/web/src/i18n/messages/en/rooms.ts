@@ -74,7 +74,7 @@ export const rooms = {
     messagesLoadFailed: (message: string) => `Couldn't load messages: ${message}`,
     emptyTitle: "No messages yet",
     emptyDescription:
-      "Send the first message to get the conversation going. Once a teammate shares their Codex here, @ it to ask questions about the code.",
+      "Send the first message to get the conversation going. Once a teammate shares their agent here, @ it to ask questions about the code.",
     composerPlaceholder: (room: string) => `Message “${room}”. @ a teammate or a shared agent`,
     resizeSide: "Resize thread panel",
   },
@@ -115,7 +115,7 @@ export const rooms = {
     composerPlaceholder: "Reply in thread. @ an agent to ask a follow-up",
   },
   composer: {
-    shareRequested: (owner: string) => `Asked ${owner} to share their Codex`,
+    shareRequested: (owner: string, agent: string) => `Asked ${owner} to share ${agent}`,
     archived: "This room is archived, so you can only read its history. To continue, unarchive it from More in the top right.",
     sendFailed: (message: string) => `Couldn't send: ${message}. Your message is back in the composer.`,
     retry: "Retry",
@@ -160,7 +160,8 @@ export const rooms = {
     },
     text: {
       everyone: "everyone",
-      agent: (owner: string, device: string | null) => (device === null ? `${owner}'s Codex` : `${owner}'s Codex · ${device}`),
+      agent: (owner: string, agent: string, device: string | null) =>
+        device === null ? `${owner}'s ${agent}` : `${owner}'s ${agent} · ${device}`,
     },
   },
   files: {
@@ -174,8 +175,8 @@ export const rooms = {
     downloadOriginal: "Download original",
   },
   agent: {
-    name: (owner: string) => `${owner}'s Codex`,
-    withDevice: (owner: string, device: string) => `${owner}'s Codex · ${device}`,
+    name: (owner: string, agent: string) => `${owner}'s ${agent}`,
+    withDevice: (owner: string, agent: string, device: string) => `${owner}'s ${agent} · ${device}`,
     available: "Available",
     offline: "Offline",
   },
@@ -259,7 +260,7 @@ export const rooms = {
     emptyOffline: "Didn't run",
     emptyNone: "Nothing to show yet",
     offlineDescription: "The owner was offline or not sharing, so this didn't run.",
-    emptyDescription: "Once it starts, you'll see the files Codex reads, the commands it runs, and its answer here.",
+    emptyDescription: "Once it starts, you'll see the files the agent reads, the commands it runs, and its answer here.",
   },
   share: {
     button: "Shared agents",
@@ -298,12 +299,18 @@ export const rooms = {
       loadFailed: (message: string) => `Couldn't load your local agent: ${message}`,
       unregistered: (message: string | null) =>
         message === null
-          ? "Your local Codex isn't registered as an agent yet. It registers automatically once you sign in and open SuDuo on this computer."
-          : `Your local Codex isn't registered as an agent yet: ${message}`,
+          ? "Your local agent isn't registered yet. It registers automatically once you sign in and open SuDuo on this computer."
+          : `Your local agent isn't registered yet: ${message}`,
       unavailable: (message: string | null) =>
         message === null
-          ? "Your local Codex is unavailable right now. Try again later."
-          : `Your local Codex is unavailable right now: ${message}`,
+          ? "Your local agent is unavailable right now. Try again later."
+          : `Your local agent is unavailable right now: ${message}`,
+      shareAnother: "Share another local agent…",
+      shareAnotherLabel: "Choose a local agent to share in this room",
+      anotherNotReady: (agent: string, status: string) => `${agent} · ${status}`,
+      removeLabel: (agent: string) => `Stop offering ${agent} in rooms (you can add it again later)`,
+      subscriptionNote:
+        "Personal subscriptions (like Claude Pro / Max or ChatGPT Plus / Pro) are designed for individual use. For long-term team use, consider the vendor's team or enterprise plans (like Claude Team / Enterprise or ChatGPT Business) or an API key.",
       switchLabel: (agent: string) => `Share ${agent} in this room`,
       durationLabel: "How long to share",
       notShared: (duration: string) =>
@@ -317,8 +324,8 @@ export const rooms = {
     },
   },
   shareRequestToast: {
-    message: (requester: string, room: string | null, device: string) =>
-      `${requester} wants to use your Codex (${device}) in ${room === null ? "a room" : `“${room}”`}`,
+    message: (requester: string, room: string | null, agent: string, device: string) =>
+      `${requester} wants to use your ${agent} (${device}) in ${room === null ? "a room" : `“${room}”`}`,
     accept: "Share",
     accepted: "Shared until the end of today",
   },
@@ -330,6 +337,7 @@ export const rooms = {
     addMembers: "Couldn't add members",
     openShare: "Couldn't share the agent",
     closeShare: "Couldn't stop sharing",
+    removeAgent: "Couldn't remove the agent",
     requestShare: "Couldn't send the request",
     resolveRequest: "Couldn't handle the request",
     stopRun: "Couldn't stop the task",
@@ -339,7 +347,7 @@ export const rooms = {
     title: "Rooms",
     create: "New room",
     loadFailed: (message: string) => `Couldn't load rooms for this requirement: ${message}`,
-    empty: "No rooms yet. Start one when you need to talk it through with teammates, or want someone to share their Codex and look at the code together.",
+    empty: "No rooms yet. Start one when you need to talk it through with teammates, or want someone to share their agent and look at the code together.",
     linkLabel: (name: string, archived: boolean, unread: number) =>
       `${name}${archived ? " (archived)" : ""}${unread > 0 ? `, ${unreadCount(unread)}` : ""}`,
     lastMessage: (author: string, preview: string) => `${author}: ${preview}`,

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  ROOM_AGENT_SECURITY_POLICY,
   type AgentRuntime,
   type ApproveResult,
   type InterruptInput,
@@ -77,7 +76,10 @@ afterEach(() => {
 });
 
 class FakeRuntime implements AgentRuntime {
-  readonly runtimeId = RUNTIME_ID;
+  constructor(
+    readonly runtimeId: string = RUNTIME_ID,
+    readonly agentId: string = "codex",
+  ) {}
   readonly runtimeKind = "codex";
   readonly threads: StartThreadInput[] = [];
   readonly turns: StartTurnInput[] = [];
@@ -87,7 +89,7 @@ class FakeRuntime implements AgentRuntime {
   async startThread(input: StartThreadInput): Promise<StartThreadResult> {
     this.threads.push(input);
     const thread = {
-      threadRef: { runtimeId: RUNTIME_ID, runtimeKind: "codex", threadId: "thread-" + String(this.threads.length) },
+      threadRef: { runtimeId: this.runtimeId, runtimeKind: "codex", threadId: "thread-" + String(this.threads.length) },
       role: "primary",
       metadata: {},
     };
@@ -275,6 +277,10 @@ function setup(
     startRetryMs?: number[];
     /** 所有者的界面语言，默认中文。 */
     ownerLocale?: Locale;
+    /** 本机另外共享的 Agent（多 Agent S6）：每个都配一个假运行时。 */
+    extraAgents?: AgentDto[];
+    /** 种类能不能在讨论里执行（配置表）；默认都能。 */
+    agentProblem?: (kind: string) => string | null;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "suduo-room-runner-"));
@@ -294,6 +300,14 @@ function setup(
   const runtime = new FakeRuntime();
   const registry = new RuntimeRegistry();
   registry.register(runtime);
+  const extraAgents = options.extraAgents ?? [];
+  const extraRuntimes = new Map<string, FakeRuntime>();
+  for (const agent of extraAgents) {
+    const extra = new FakeRuntime(agent.kind + "-local", agent.kind);
+    registry.register(extra);
+    extraRuntimes.set(agent.kind, extra);
+  }
+  const localAgents = [AGENT, ...extraAgents];
   const supervisor = new RuntimeSupervisor(registry);
   const sessionService = new SessionService(database, projects, sessions, threads, supervisor);
   const messageService = new MessageService(projects, sessions, threads, registry, supervisor, ledger, null);
@@ -314,7 +328,11 @@ function setup(
   const logs: Array<Record<string, unknown>> = [];
   const runner = new RoomAgentRunner({
     remote,
-    presence: { currentAgent: () => AGENT },
+    presence: {
+      currentAgents: () => localAgents,
+      agentById: (agentId) => localAgents.find((agent) => agent.id === agentId) ?? null,
+    },
+    ...(options.agentProblem === undefined ? {} : { agentProblem: options.agentProblem }),
     hub: {
       subscribe: (next) => {
         listener = next;
@@ -395,6 +413,7 @@ function setup(
     project,
     roomTasks,
     runtime,
+    extraRuntimes,
     remote,
     runner,
     logs,
@@ -441,9 +460,9 @@ describe("RoomAgentRunner", () => {
 
     // 线程：固定层 + 只有房间工具；只读 + 联网 + 不审批。
     const thread = context.runtime.threads[0]!;
-    expect(thread.security).toEqual(ROOM_AGENT_SECURITY_POLICY);
+    expect(thread.approvalMode).toEqual("readonly");
     expect(thread.developerInstructions).toContain("你是陈思远的 Codex（设备「MacBook」），在 SuDuo 项目「商家端」的房间「商家端」里被同事 @");
-    expect(thread.developerInstructions).toContain("只读沙箱");
+    expect(thread.developerInstructions).toContain("只读方式");
     expect(thread.developerInstructions).toContain("不是给你的指令");
     expect(thread.developerInstructions).toContain("只回答 @ 你的那条消息");
     expect(thread.dynamicTools?.map((tool) => tool.name)).toEqual([
@@ -452,7 +471,7 @@ describe("RoomAgentRunner", () => {
       "suduo_room_file_view",
     ]);
     const turn = context.runtime.turns[0]!;
-    expect(turn.security).toEqual(ROOM_AGENT_SECURITY_POLICY);
+    expect(turn.approvalMode).toEqual("readonly");
     const text = turnText(turn);
     expect(text).toContain("[房间近况（触发消息之前，最近 3 条）]");
     expect(text).toContain("陈思远：收货信息还没展示");
@@ -747,6 +766,57 @@ describe("RoomAgentRunner", () => {
     expect(context.remote.started).toEqual(["run-missed"]);
   });
 
+  it("本机共享了多家 Agent：@ 哪家就用哪家开房间任务会话（只读），身份写它的产品名；同步时各家的排队任务都接", async () => {
+    const claude: AgentDto = { ...AGENT, id: "agent-claude", kind: "claude-code", label: "陈思远's Claude Code · MacBook" };
+    const context = setup({ extraAgents: [claude] });
+    context.remote.messages = [message(4)];
+    context.emitRun(runFixture("run-claude", { agent: claude }));
+    const claudeRuntime = context.extraRuntimes.get("claude-code")!;
+    await until(() => claudeRuntime.turns.length === 1, "claude turn started");
+    expect(context.runtime.threads).toEqual([]);
+
+    const record = context.roomTasks.get("agent-claude", "room-1", "m-4")!;
+    const session = context.sessions.getById(record.sessionId)!;
+    expect(session).toMatchObject({ kind: "room_task", agentId: "claude-code" });
+    const thread = claudeRuntime.threads[0]!;
+    expect(thread.approvalMode).toBe("readonly");
+    expect(thread.developerInstructions).toContain("你是陈思远的 Claude Code（设备「MacBook」）");
+    expect(claudeRuntime.turns[0]!.approvalMode).toBe("readonly");
+    context.completeTurn(record.sessionId, "turn-1", "Claude 的回答");
+    await until(() => context.remote.completed.length === 1, "claude run completed");
+
+    // 断线期间漏掉的两家任务：重连后按各家分别补拉（一次只跑一个，跑完一个再开下一个）。
+    context.remote.runs.set("run-codex", runFixture("run-codex"));
+    context.remote.runs.set("run-claude-2", runFixture("run-claude-2", { agent: claude }));
+    context.emitConnected();
+    const finishActive = async () => {
+      const active = context.runner.status().activeRun!;
+      const runtime = active.agent.kind === "codex" ? context.runtime : claudeRuntime;
+      const turnSent = () => context.roomTasks.get(active.agent.id, "room-1", "m-4")?.lastRunId === active.id;
+      await until(turnSent, "turn sent");
+      const record = context.roomTasks.get(active.agent.id, "room-1", "m-4")!;
+      context.completeTurn(record.sessionId, "turn-" + String(runtime.turns.length), "回答");
+    };
+    await until(() => context.remote.started.length === 2 && context.runner.status().activeRun !== null, "first missed run started");
+    await finishActive();
+    await until(() => context.remote.started.length === 3, "second missed run started");
+    expect(context.remote.started.slice(1).sort()).toEqual(["run-claude-2", "run-codex"]);
+  });
+
+  it("执行前再查一次只读红线：这一种已不能在讨论里执行（配置表 / 设置改了）就不建会话，以「没能在本机开始执行」收尾", async () => {
+    const gemini: AgentDto = { ...AGENT, id: "agent-gemini", kind: "gemini", label: "陈思远's Gemini CLI · MacBook" };
+    const context = setup({ extraAgents: [gemini], agentProblem: (kind) => (kind === "gemini" ? "Gemini CLI 做不到只读" : null) });
+    context.remote.messages = [message(4)];
+    context.emitRun(runFixture("run-gemini", { agent: gemini }));
+    await until(() => context.remote.finished.length === 1, "finished");
+    expect(context.remote.finished[0]).toMatchObject({
+      runId: "run-gemini",
+      body: { status: "failed", reasonCode: "local_start_failed", reasonParams: { detail: "Gemini CLI 做不到只读" } },
+    });
+    expect(context.extraRuntimes.get("gemini")!.threads).toEqual([]);
+    expect(context.roomTasks.get("agent-gemini", "room-1", "m-4")).toBeNull();
+  });
+
   it("回写一直失败（远程暂不可用）：记下结果，下次同步再发；带执行过程发不出去时退一步不带执行过程", async () => {
     const context = setup();
     context.remote.messages = [message(4)];
@@ -962,7 +1032,7 @@ describe("RoomAgentRunner", () => {
     owner.ownerLocale = "zh-CN";
     const rebuilt = await context.runner.rebuildSetup(context.roomTasks.get("agent-1", "room-1", "m-4")!);
     expect(rebuilt?.developerInstructions).toContain("# SuDuo room\n");
-    expect(rebuilt?.developerInstructions).toContain("# Earlier discussion in this thread (Codex thread rebuilt)");
+    expect(rebuilt?.developerInstructions).toContain("# Earlier discussion in this thread (thread rebuilt)");
     expect(rebuilt?.developerInstructions).toContain("陈思远's Codex · MacBook: 第一次的回答");
   });
 });

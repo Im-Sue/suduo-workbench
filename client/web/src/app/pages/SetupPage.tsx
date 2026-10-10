@@ -28,12 +28,20 @@ import { summarizeDoctor, type SummaryStatus } from "./doctor-summary.js";
 import { recordEnvironmentPending, recordMappingPending } from "./setup-pending.js";
 import { LoginForm } from "./LoginForm.js";
 import { useCarried, useCarrySource, useT } from "../../i18n/provider.js";
+import { isUsable } from "../../features/agents/queries.js";
+import { AgentRow, useAgentControls } from "../../features/settings/sections/AgentsSection.js";
+import { ItemList } from "../../features/settings/components/kit.js";
 
 /**
- * 首启向导（需求 §4.2）：连接服务 → 登录 → 环境检查 → 关联项目代码 → 完成。
+ * 首启向导（需求 §4.2）：连接服务 → 登录 → 环境检查 → 连接 Agent（多 Agent S12）→ 关联项目代码 → 完成。
  * 当前步骤写在 URL（?step=），刷新后回到同一步；已完成的前置步骤会自动跳过。
  */
-const STEPS = ["service", "login", "environment", "project", "done"] as const;
+const STEPS = ["service", "login", "environment", "agents", "project", "done"] as const;
+/** 路由的 ?step= 校验（加减步骤时只改上面这一处；测试与路由共用）。 */
+export function validateSetupSearch(search: Record<string, unknown>): { step?: number } {
+  const step = Number(search["step"]);
+  return Number.isInteger(step) && step >= 1 && step <= STEPS.length ? { step } : {};
+}
 
 export function SetupPage() {
   const t = useT();
@@ -43,7 +51,7 @@ export function SetupPage() {
   const settings = useQuery(settingsQuery).data;
   const requested = search.step ?? 1;
   // 前置条件不满足时不允许跳步：未配置只能在第 1 步，未登录最多到第 2 步。
-  const maxStep = settings?.configured !== true ? 1 : settings.session === null ? 2 : 5;
+  const maxStep = settings?.configured !== true ? 1 : settings.session === null ? 2 : STEPS.length;
   const step = Math.min(requested, maxStep);
   const go = (next: number) => void navigate({ to: "/setup", search: { step: next } });
 
@@ -103,8 +111,9 @@ export function SetupPage() {
           {step === 1 ? <ServiceStep initial={settings?.baseUrl ?? ""} onDone={(loggedIn) => go(loggedIn ? 3 : 2)} /> : null}
           {step === 2 ? <LoginStep onBack={() => go(1)} onDone={() => go(3)} /> : null}
           {step === 3 ? <EnvironmentStep onBack={() => go(2)} onDone={() => go(4)} /> : null}
-          {step === 4 ? <ProjectStep onBack={() => go(3)} onDone={() => go(5)} /> : null}
-          {step === 5 ? <DoneStep /> : null}
+          {step === 4 ? <AgentsStep onBack={() => go(3)} onDone={() => go(5)} /> : null}
+          {step === 5 ? <ProjectStep onBack={() => go(4)} onDone={() => go(6)} /> : null}
+          {step === 6 ? <DoneStep /> : null}
         </div>
       </main>
     </div>
@@ -313,6 +322,61 @@ function EnvironmentStep({ onBack, onDone }: { onBack(): void; onDone(): void })
               onDone();
             }}
           >
+            {t.setup.wizard.next}
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * 连接 Agent（多 Agent S12）：本机检测到的各家 Agent 与安装、登录入口（用户自己在终端里登录，SuDuo 不读凭据，
+ * ADR-0016），选新会话默认用哪家。可以直接下一步：Codex 随 SuDuo 自带，之后在设置「AI Agent」里也能改。
+ */
+function AgentsStep({ onBack, onDone }: { onBack(): void; onDone(): void }) {
+  const t = useT();
+  const text = t.setup.wizard.agents;
+  const { agents, rechecking, recheck, setDefault } = useAgentControls();
+  const list = agents.data?.agents ?? [];
+  const usable = list.filter(isUsable);
+  return (
+    <>
+      <StepHeading title={text.title} description={text.description} />
+      {agents.isPending ? (
+        <div className="flex flex-col gap-2" aria-busy="true">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+        </div>
+      ) : agents.isError ? (
+        <div className="text-small text-danger">{text.failed(classifyFailure(agents.error).message)}</div>
+      ) : (
+        <ItemList label={text.listLabel} data-testid="setup-agents">
+          {list.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              isDefault={agent.id === agents.data?.defaultAgentId}
+              canBeDefault={usable.includes(agent)}
+              rechecking={rechecking.has(agent.id)}
+              onRecheck={() => void recheck([agent.id])}
+              onSetDefault={() => setDefault(agent.id)}
+              stacked
+            />
+          ))}
+        </ItemList>
+      )}
+      <p className="m-0 text-caption text-subtle-foreground">{text.note}</p>
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="lg" onClick={onBack}>
+          {t.setup.wizard.back}
+        </Button>
+        <div className="flex gap-2">
+          <Button size="lg" loading={rechecking.size > 1} onClick={() => void recheck(list.map((agent) => agent.id))}>
+            <RotateCwIcon />
+            {text.recheck}
+          </Button>
+          <Button size="lg" variant="primary" onClick={onDone} data-testid="setup-agents-next">
             {t.setup.wizard.next}
           </Button>
         </div>

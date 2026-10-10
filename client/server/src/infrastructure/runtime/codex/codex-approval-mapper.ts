@@ -1,6 +1,9 @@
 import type {
   ApprovalDecision,
+  ApprovalDisplay,
   ApprovalKind,
+  ApprovalOption,
+  ApprovalSubject,
   JsonRpcId,
   JsonValue,
   RpcInbound,
@@ -54,6 +57,7 @@ export function normalizeApprovalRequest(input: {
   approvalRef: string;
   connectionId: string;
 }): NormalizedApprovalRequest {
+  const params = isRecord(input.message.params ?? null) ? (input.message.params as Record<string, JsonValue>) : {};
   return {
     kind: approvalKind(input.message.method),
     payload: {
@@ -63,6 +67,10 @@ export function normalizeApprovalRequest(input: {
       requestId: String(input.message.id),
       nativeMethod: input.message.method,
       request: input.message.params ?? null,
+      // 与 Agent 无关的字段（ADR-0014）：界面按它们渲染，不再解析 Codex 原生字段。
+      subject: approvalSubject(input.message.method),
+      options: CODEX_APPROVAL_OPTIONS as unknown as JsonValue,
+      display: approvalDisplay(input.message.method, params) as unknown as JsonValue,
       extensions: {
         codex: {
           nativeType: input.message.method,
@@ -72,11 +80,52 @@ export function normalizeApprovalRequest(input: {
   };
 }
 
+/** Codex 的审批都支持这四种决策（批准、本会话都允许、拒绝、拒绝并中断）。 */
+const CODEX_APPROVAL_OPTIONS: readonly ApprovalOption[] = [
+  { id: "accept", decision: "accept" },
+  { id: "acceptForSession", decision: "acceptForSession" },
+  { id: "decline", decision: "decline" },
+  { id: "cancel", decision: "cancel" },
+];
+
+function approvalSubject(method: string): ApprovalSubject {
+  const kind = approvalKind(method);
+  return kind === "command" ? "command" : kind === "file-change" ? "file" : kind === "permissions" ? "permission" : "tool";
+}
+
+/** 从 Codex 原生请求里取界面要显示的内容（v2 与旧版两套字段都认）。 */
+export function approvalDisplay(method: string, params: Record<string, JsonValue>): ApprovalDisplay {
+  const display: ApprovalDisplay = {};
+  const command = params["command"];
+  if (typeof command === "string" && command !== "") {
+    display.command = command;
+  } else if (Array.isArray(command) && command.every((part) => typeof part === "string")) {
+    display.command = (command as string[]).join(" ");
+  }
+  if (typeof params["cwd"] === "string" && params["cwd"] !== "") {
+    display.cwd = params["cwd"];
+  }
+  if (typeof params["reason"] === "string" && params["reason"] !== "") {
+    display.reason = params["reason"];
+  }
+  // 旧版补丁审批带改动文件表；v2 文件审批只带 itemId，文件列表由界面从同一条目的改动卡取。
+  if (method === "applyPatchApproval" && isRecord(params["fileChanges"] ?? null)) {
+    display.paths = Object.keys(params["fileChanges"] as Record<string, JsonValue>);
+  }
+  return display;
+}
+
 export function mapApprovalDecision(
   nativeMethod: string,
   decision: ApprovalDecision,
   requestedPermissions: JsonValue = {},
 ): JsonValue {
+  // acceptAlways / declineAlways 是 ACP 的选项，Codex 的卡不会给出；万一传来，按最接近的语义换算。
+  if (decision === "acceptAlways") {
+    decision = "acceptForSession";
+  } else if (decision === "declineAlways") {
+    decision = "decline";
+  }
   if (
     nativeMethod === "item/commandExecution/requestApproval" ||
     nativeMethod === "item/fileChange/requestApproval"

@@ -185,6 +185,14 @@ export class ApprovalRepository {
     );
   }
 
+  /** 会话里最早一个还在等确认的操作的时间（卡住提醒，S12）；没有为 null。 */
+  oldestPendingAt(sessionId: string): number | null {
+    const row = this.database
+      .prepare("SELECT MIN(requested_at) AS at FROM approvals WHERE session_id = @sessionId AND status IN ('pending', 'deciding')")
+      .get<{ at: number | null }>({ sessionId });
+    return row?.at ?? null;
+  }
+
   countPendingBySession(sessionId: string): number {
     const row = this.database
       .prepare(

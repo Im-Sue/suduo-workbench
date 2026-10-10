@@ -18,7 +18,10 @@ import {
   type AgentDto,
   type AgentShareDto,
   type RoomDto,
+  type SharedItemDetailDto,
 } from "@suduo/cloud-contracts";
+import { AiCollabService } from "../src/application/ai-collab-service.js";
+import { AiCollabRepository } from "../src/infrastructure/ai-collab-repository.js";
 import { AttachmentService } from "../src/application/attachment-service.js";
 import { ArtifactVersionService } from "../src/application/artifact-version-service.js";
 import type { AuthService } from "../src/application/auth-service.js";
@@ -89,6 +92,7 @@ beforeAll(async () => {
     attachmentStorage: new AttachmentStorage(storageRoot, 1_024, new Set([".txt"])),
     events: new RequirementsEventHub(),
     rooms: createRoomsModule({ database, blobStore: roomBlobStore }),
+    aiCollab: new AiCollabService(new AiCollabRepository(database)),
   });
 });
 
@@ -134,6 +138,7 @@ describe("审计项目归属与写入完备性", () => {
     let attachment: AttachmentMutationResponse["attachment"] | undefined;
     let room: RoomDto | undefined;
     let share: AgentShareDto | undefined;
+    let sharedItem: SharedItemDetailDto | undefined;
 
     const cases: Record<RecordedAuditAction, AuditCase> = {
       "project.created": {
@@ -482,6 +487,49 @@ describe("审计项目归属与写入完备性", () => {
           return [{
             action: "agent_share.closed", projectId: currentRoom.projectId, resourceType: "agent_share", resourceId: currentShare.id,
             before: audit, after: { ...audit, closedReason: "closed" },
+          }];
+        },
+      },
+      "shared_item.published": {
+        invoke: async () => {
+          const currentRequirement = required(requirement, "需求");
+          const response = await server.inject({
+            method: "POST", url: `/v2/requirements/${currentRequirement.id}/shared-items`, headers: authorization(actorId),
+            payload: { kind: "handoff", title: "审计交接包", content: { summary: "做到一半", decisions: [], todo: ["补测试"], risks: [], branch: null, files: [] }, agentId: "codex" },
+          });
+          expect(response.statusCode).toBe(201);
+          sharedItem = response.json<SharedItemDetailDto>();
+          return [{
+            action: "shared_item.published", projectId: currentRequirement.projectId, resourceType: "shared_item", resourceId: sharedItem.id,
+            before: null, after: { kind: "handoff", agentId: "codex", sizeBytes: sharedItem.sizeBytes },
+          }];
+        },
+      },
+      "shared_item.retracted": {
+        invoke: async () => {
+          const currentRequirement = required(requirement, "需求");
+          const currentItem = required(sharedItem, "共享对象");
+          const response = await server.inject({
+            method: "POST", url: `/v2/shared-items/${currentItem.id}/retract`, headers: authorization(actorId),
+          });
+          expect(response.statusCode).toBe(200);
+          return [{
+            action: "shared_item.retracted", projectId: currentRequirement.projectId, resourceType: "shared_item", resourceId: currentItem.id,
+            before: null, after: null,
+          }];
+        },
+      },
+      "ai_rules.updated": {
+        invoke: async () => {
+          const currentProject = required(project, "项目");
+          const response = await server.inject({
+            method: "PUT", url: `/v2/projects/${currentProject.id}/ai-rules`, headers: authorization(actorId),
+            payload: { content: "# 规范\n- 先写测试" },
+          });
+          expect(response.statusCode).toBe(200);
+          return [{
+            action: "ai_rules.updated", projectId: currentProject.id, resourceType: "ai_rules", resourceId: currentProject.id,
+            before: null, after: { version: 1, sizeBytes: Buffer.byteLength("# 规范\n- 先写测试", "utf8") },
           }];
         },
       },

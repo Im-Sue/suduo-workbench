@@ -1,3 +1,9 @@
+import { AI_COLLAB_FEATURE, AiActivityReporter, activityStatusOf } from "./application/collab/ai-activity-reporter.js";
+import { AiActivitySettingRepository } from "./infrastructure/db/repositories/ai-activity-setting-repository.js";
+import { ProjectRulesService } from "./application/collab/project-rules-service.js";
+import { HandoffTools } from "./application/collab/handoff-tools.js";
+import { SharedDraftService } from "./application/collab/shared-draft-service.js";
+import { SharedDraftRepository } from "./infrastructure/db/repositories/shared-draft-repository.js";
 import type { FastifyInstance } from "fastify";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -7,6 +13,8 @@ import {
   DEFAULT_CODEX_RUNTIME_ID,
   SUDUO_DEFAULTS,
   type CodexTransportFactory,
+  type Locale,
+  type SessionStartOptions,
   type SuDuoRunMode,
 } from "@suduo/client-contracts";
 import { ApprovalService } from "./application/approval-service.js";
@@ -18,11 +26,28 @@ import { SessionEventStream } from "./application/event-stream.js";
 import { IdempotencyService } from "./application/idempotency-service.js";
 import { InterruptService } from "./application/interrupt-service.js";
 import { GitService } from "./application/git-service.js";
-import { MessageService } from "./application/message-service.js";
+import { closeQueuedAfterRestart, MessageService, stableClientTurnId } from "./application/message-service.js";
 import { SettingsService } from "./application/settings-service.js";
 import { ModelProviderService } from "./application/model-provider-service.js";
 import { McpService } from "./application/mcp-service.js";
 import { ProxyConnectivityService } from "./application/proxy-connectivity-service.js";
+import { agentChildEnv } from "./application/agents/agent-exec.js";
+import { AGENT_CATALOG } from "./application/agents/catalog.js";
+import { SessionReaderService } from "./application/context/session-reader.js";
+import { SchedulerService } from "./application/scheduler/scheduler-service.js";
+import { DelegationService, oneLine } from "./application/collab/delegation-service.js";
+import { DelegationTools } from "./application/collab/delegation-tools.js";
+import { messagesFor } from "./i18n/messages/index.js";
+import { delegateChildDropsTool, reviewerDropsTool, reviewSubmitSpec, trialDropsTool } from "./application/session-tools/catalog.js";
+import { TrialService } from "./application/collab/trial-service.js";
+import { WorktreeManager } from "./application/collab/worktree-manager.js";
+import { TrialRepository } from "./infrastructure/db/repositories/trial-repository.js";
+import { ReviewService } from "./application/collab/review-service.js";
+import { ReviewTools } from "./application/collab/review-tools.js";
+import { ReviewRepository } from "./infrastructure/db/repositories/review-repository.js";
+import { formatRequirementNumber } from "@suduo/cloud-contracts";
+import { DelegationRepository } from "./infrastructure/db/repositories/delegation-repository.js";
+import { TurnScheduler } from "./application/scheduler/turn-scheduler.js";
 import { applyProxySettings } from "./application/proxy-settings.js";
 import { SkillAdminService } from "./application/skill-admin-service.js";
 import type { SkillRootsProvider } from "./application/skill-roots.js";
@@ -30,11 +55,11 @@ import { ProjectService } from "./application/project-service.js";
 import { consumeRuntimeUntilAborted } from "./application/runtime-consumer.js";
 import { RuntimeEventIngestor } from "./application/runtime-event-ingestor.js";
 import { RuntimeSupervisor } from "./application/runtime-supervisor.js";
-import { SessionService } from "./application/session-service.js";
+import { SessionService, type SessionThreadSetup } from "./application/session-service.js";
 import { SessionRunStatusService } from "./application/session-run-status-service.js";
 import { SessionListService } from "./application/session-list-service.js";
 import { SessionListRepository } from "./infrastructure/db/repositories/session-list-repository.js";
-import { sharedWorkspace } from "./application/workspace-context.js";
+import { WorkspaceContextResolver } from "./application/workspace-context.js";
 import { WorkspaceService } from "./application/workspace-service.js";
 import { openBetterSqlite3Database } from "./infrastructure/db/better-sqlite3-database.js";
 import type { DatabasePort } from "./infrastructure/db/database-port.js";
@@ -47,13 +72,20 @@ import { ProjectRepository } from "./infrastructure/db/repositories/project-repo
 import { SessionRepository } from "./infrastructure/db/repositories/session-repository.js";
 import { SessionThreadRepository } from "./infrastructure/db/repositories/session-thread-repository.js";
 import { buildHttpServer } from "./infrastructure/http/http-server.js";
+import { AgentCatalogService } from "./application/agents/agent-catalog-service.js";
+import { AgentSettingsStore, agentSettingsPathFor } from "./application/agents/agent-settings-store.js";
+import { terminalOpener } from "./application/agents/terminal-login.js";
+import { MCP_ENDPOINT_PATH } from "./infrastructure/mcp/mcp-endpoint.js";
+import { ToolTokenRegistry } from "./infrastructure/mcp/tool-tokens.js";
 import { LoopbackGuard } from "./infrastructure/http/loopback-guard.js";
+import { AcpRuntime } from "./infrastructure/runtime/acp/acp-runtime.js";
+import { ClaudeRuntime, CLAUDE_AGENT_ID } from "./infrastructure/runtime/claude/claude-runtime.js";
 import { CodexRuntime } from "./infrastructure/runtime/codex/codex-runtime.js";
 import { RuntimeRegistry } from "./infrastructure/runtime/runtime-registry.js";
 import { StdioCodexTransport } from "./infrastructure/transport/stdio-codex-transport.js";
 import { WorkspaceWatcher } from "./infrastructure/workspace/workspace-watcher.js";
 import { runDoctor } from "./infrastructure/doctor/doctor-service.js";
-import { RequirementsV2Service } from "./application/requirements-v2-service.js";
+import { adjustThreadSetup, RequirementsV2Service } from "./application/requirements-v2-service.js";
 import { retireLegacySessionContext } from "./application/session-tools/legacy-cleanup.js";
 import { RequirementTools } from "./application/session-tools/requirement-tools.js";
 import { SessionContextService } from "./application/session-tools/session-context.js";
@@ -65,6 +97,7 @@ import {
   mappedWorkspaceRoots,
 } from "./application/local-directory-service.js";
 import { RequirementSessionRefRepository } from "./infrastructure/db/repositories/requirement-session-ref-repository.js";
+import { SessionReferenceRepository } from "./infrastructure/db/repositories/session-reference-repository.js";
 import { WorkspaceMappingRepository } from "./infrastructure/db/repositories/workspace-mapping-repository.js";
 import { ProjectSessionRefRepository } from "./infrastructure/db/repositories/project-session-ref-repository.js";
 import { RequirementsCredentialStore } from "./infrastructure/requirements-v2/credential-store.js";
@@ -95,6 +128,8 @@ export interface SuDuoApplicationOptions {
   sseHeartbeatMs?: number;
   sseReplayPageSize?: number;
   runtimeRestartMaxMs?: number;
+  /** 启动后在后台检测各家 Agent（默认开；测试关掉，免得真去跑本机的 CLI）。 */
+  prewarmAgents?: boolean;
   fsWatchDebounceMs?: number;
   fsPollIntervalMs?: number;
   fsForcePolling?: boolean;
@@ -170,14 +205,49 @@ export function createSuDuoApplication(
     requirementsCredentials,
   );
   const broker = new EventBroker();
+  // 协作记录上报（多 Agent 协作 S11，P2-D1）：只含元数据，默认开，可按会话关（接着做、委派、评审跟着发起的会话）。
+  const aiActivity = new AiActivityReporter({
+    requirementOf: (sessionId) => requirementSessionRefs.getBySessionId(sessionId)?.remoteRequirementId ?? null,
+    settings: new AiActivitySettingRepository(database),
+    parentOf: (sessionId) => sessions.getById(sessionId)?.parentSessionId ?? null,
+    remote: { recordAiActivity: (requirementId, input) => requirementsRemote.recordAiActivity(requirementId, input) },
+    supportsActivity: async () => {
+      const baseUrl = requirementsSettings.getBaseUrl();
+      if (baseUrl === null) return null;
+      const health = await requirementsRemote.testConnection(baseUrl, "en").catch(() => null);
+      return health === null ? null : health.features.includes(AI_COLLAB_FEATURE);
+    },
+  });
+  // 委派、评审的状态变化（卡片事件）顺带报成协作记录。
+  broker.subscribeAll((event) => {
+    if (event.type !== "delegation.updated" && event.type !== "review.updated") return;
+    const payload = event.payload as Record<string, unknown>;
+    const sessionId = event.type === "delegation.updated" ? payload["parentSessionId"] : payload["targetSessionId"];
+    if (typeof sessionId !== "string" || typeof payload["id"] !== "string" || typeof payload["agentId"] !== "string" || typeof payload["status"] !== "string") return;
+    aiActivity.report({
+      sessionId,
+      localRef: payload["id"],
+      kind: event.type === "delegation.updated" ? "delegate" : "review",
+      status: activityStatusOf(payload["status"]),
+      agentId: payload["agentId"],
+    });
+  });
   const ledger = new EventLedger(database, events, approvals, broker);
   const codexGlobalState = new CodexGlobalState();
   const ingestor = new RuntimeEventIngestor(threads, ledger, codexGlobalState);
 
   const codexHome = prepareCodexHome(options.codexHome ?? process.env["CODEX_HOME"]).path;
-  const settingsService = new SettingsService(
-    options.settingsFile ?? resolve(homedir(), ".suduo-settings.json"),
-  );
+  const settingsFile = options.settingsFile ?? resolve(homedir(), ".suduo-settings.json");
+  const settingsService = new SettingsService(settingsFile);
+  // 多 Agent（ADR-0014）：本机 Agent 的检测与设置；只用各家 CLI 自己的命令，不读凭据（ADR-0016）。
+  const agentCatalog = new AgentCatalogService({
+    store: new AgentSettingsStore(agentSettingsPathFor(settingsFile)),
+    codexBin: options.codexBin,
+  });
+  // 启动后在后台检测一遍各家 Agent：开工对话框与 AI Agent 设置打开时就有结果（不阻塞启动）。
+  const prewarm =
+    options.prewarmAgents === false ? null : setTimeout(() => void agentCatalog.list().catch(() => undefined), 2_000);
+  prewarm?.unref();
   const inheritedCodexEnvironment = runtimeEnvironment(codexHome);
   const codexEnvironment = { ...inheritedCodexEnvironment };
   applyProxySettings(
@@ -195,8 +265,45 @@ export function createSuDuoApplication(
   });
   const registry = new RuntimeRegistry();
   registry.register(runtime);
-  const supervisor = new RuntimeSupervisor(registry);
+  // Claude Code（ADR-0014）：经官方 Agent SDK 驱动用户本机的 claude；环境同 Codex（不带 CODEX_HOME），代理设置同步生效。
+  const inheritedAgentEnvironment = runtimeEnvironment(undefined);
+  const agentEnvironment = { ...inheritedAgentEnvironment };
+  applyProxySettings(agentEnvironment, inheritedAgentEnvironment, settingsService.proxySettings());
+  const claudeRuntime = new ClaudeRuntime({
+    resolveExecutable: () => agentCatalog.executablePath(CLAUDE_AGENT_ID),
+    env: () => agentChildEnv(agentEnvironment) as Record<string, string>,
+    onAuthRequired: () => agentCatalog.markAuthRequired(CLAUDE_AGENT_ID),
+  });
+  registry.register(claudeRuntime);
+  // 标准 ACP 的各家 Agent（ADR-0014）：每家一个运行时实例，每个会话一个 Agent 进程。
+  const acpRuntimes = AGENT_CATALOG.filter((agent) => agent.channel === "acp" && agent.runtimeAvailable).map((agent) => {
+    const acpRuntime = new AcpRuntime({
+      agentId: agent.id,
+      agentName: agent.displayName,
+      launch: () => {
+        const file = agentCatalog.executablePath(agent.id);
+        return file === null ? null : { file, args: agent.launchArgs };
+      },
+      env: () => agentChildEnv(agentEnvironment) as Record<string, string>,
+      onAuthRequired: () => agentCatalog.markAuthRequired(agent.id),
+      onReady: () => agentCatalog.markAuthOk(agent.id),
+    });
+    registry.register(acpRuntime);
+    return acpRuntime;
+  });
+  // SuDuo 本机 MCP 工具服务（ADR-0015）：令牌只在内存；地址取本机服务实际监听的端口（还没监听时为 null，退回 dynamicTools）。
+  const toolTokens = new ToolTokenRegistry();
+  let httpServer: FastifyInstance | null = null;
+  const toolServerUrl = (): string | null => {
+    const address = httpServer?.server.address();
+    return address !== null && address !== undefined && typeof address === "object"
+      ? `http://127.0.0.1:${String(address.port)}${MCP_ENDPOINT_PATH}`
+      : null;
+  };
+  const supervisor = new RuntimeSupervisor(registry, process.env, { tokens: toolTokens, url: toolServerUrl });
   settingsService.setProxySettingsChangedHandler(async () => {
+    // Claude 下次启动查询时生效（已在跑的查询不重启）。
+    applyProxySettings(agentEnvironment, inheritedAgentEnvironment, settingsService.proxySettings());
     applyProxySettings(
       codexEnvironment,
       inheritedCodexEnvironment,
@@ -239,6 +346,10 @@ export function createSuDuoApplication(
     remote: requirementsRemote,
     roomTasks,
   });
+  // 本机调度在下方组装；会话状态变化的回调运行时它已就绪。
+  let cancelQueuedTurns: ((sessionId: string, reason?: string) => void) | null = null;
+  // 会话在哪个目录干活：记了工作目录的（并行试做的 worktree，多 Agent 协作 S10）用它，其余在项目目录。
+  const workspaces = new WorkspaceContextResolver((sessionId) => sessions.getById(sessionId)?.workspacePath ?? null);
   const sessionService = new SessionService(
     database,
     projects,
@@ -246,7 +357,7 @@ export function createSuDuoApplication(
     threads,
     supervisor,
     () => settingsService.defaultApprovalMode(),
-    undefined,
+    workspaces,
     requirementSessionRefs,
     undefined,
     {
@@ -255,10 +366,36 @@ export function createSuDuoApplication(
         if (session.state === "deleted") {
           void workspace.forgetSessionBaseline(session.id);
         }
+        // 删除或归档的会话不再开回合：撤掉它在本机队列里排着的（多 Agent 协作 S8）。
+        if (session.state === "deleted" || session.state === "archived") {
+          cancelQueuedTurns?.(session.id, session.state);
+        }
       },
     },
     projectSessionRefs,
   );
+  // 跨会话读取（多 Agent 协作 S7）：从账本分层读另一个会话；改动用它的工作区基线（WorkspaceService 在下方组装）。
+  const sessionReader = new SessionReaderService({
+    sessions,
+    events,
+    references: new SessionReferenceRepository(database),
+    requirementRefs: requirementSessionRefs,
+    workspace: {
+      hasBaseline: (sessionId) => workspace.hasBaseline(sessionId),
+      listChanges: (sessionId) => workspace.listChanges(sessionId),
+      diff: (sessionId, path) => workspace.diff(sessionId, path),
+    },
+    agentName: (agentId) => AGENT_CATALOG.find((agent) => agent.id === agentId)?.displayName ?? agentId,
+    // 关联的远程项目在别的需求服务上（另一个账号 / 团队）：不列、不读。没关联远程项目的本机会话都算同一个。
+    otherAccount: (sessionId) => {
+      const remoteProjectId =
+        requirementSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? projectSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? null;
+      if (remoteProjectId === null) return false;
+      const mapping = workspaceMappings.getByRemoteProjectId(remoteProjectId);
+      const current = currentServerOrigin();
+      return mapping !== null && mapping.serverOrigin !== null && current !== null && mapping.serverOrigin !== current;
+    },
+  });
   const sessionTools = new SessionToolService({
     runtimes: registry,
     threads,
@@ -267,6 +404,7 @@ export function createSuDuoApplication(
     context: sessionContext,
     tools: new RequirementTools(requirementsRemote),
     roomTools: new RoomTools(requirementsRemote),
+    sessionReader,
     sessions,
   });
   // 登录 / 退出 / 改服务地址后：上游推送重连、本机 Agent 重新登记、续期重新排期（下方组装后绑定）。
@@ -282,7 +420,14 @@ export function createSuDuoApplication(
     database,
     sessionContext,
     () => remoteConnectionChanged(),
-    (sessionId) => void workspace.captureBaselineInBackground(sessionId),
+    (sessionId) => {
+      void workspace.captureBaselineInBackground(sessionId);
+      // 协作记录（S11，P2-D1）：需求会话开工。委派、评审、试做的会话由各自的记录报，不重复。
+      const created = sessions.getById(sessionId);
+      if (created !== null && (created.relation === null || created.relation === undefined || created.relation === "continue")) {
+        aiActivity.report({ sessionId, localRef: sessionId, kind: "session", status: "opened", agentId: created.agentId });
+      }
+    },
   );
   const myWorkbench = new MyWorkbenchService({
     refs: requirementSessionRefs,
@@ -292,6 +437,9 @@ export function createSuDuoApplication(
     projects,
     mappings: currentServerMappings,
     remote: requirementsRemote,
+    // 待处理的评审意见（S12）：评审仓库在后面才建，用到时再取。
+    reviews: { listAwaitingHandback: (since) => reviewRepository.listAwaitingHandback(since) },
+    agentName: (agentId) => agentDisplayName(agentId),
   });
   const approvalService = new ApprovalService(
     approvals,
@@ -342,6 +490,7 @@ export function createSuDuoApplication(
     skillRoots,
     gitService,
     syncSkillRoots,
+    workspaces,
   );
   const interruptService = new InterruptService(
     projects,
@@ -351,6 +500,214 @@ export function createSuDuoApplication(
     registry,
     supervisor,
     ledger,
+    workspaces,
+  );
+  // 本机回合调度（多 Agent 协作 S8，需求 4.11）：每家与合计的上限取 AI Agent 设置；回合终态还名额，另有定时对账。
+  const turnScheduler = new TurnScheduler({
+    limits: () => ({ global: agentCatalog.globalConcurrency(), perAgent: (agentId) => agentCatalog.concurrency(agentId) }),
+  });
+  messageService.setScheduler(turnScheduler);
+  cancelQueuedTurns = (sessionId, reason) => turnScheduler.cancelSession(sessionId, reason);
+  agentCatalog.onSettingsChanged(() => turnScheduler.refresh());
+  const releaseOnTurnEnd = broker.subscribeAll((event) => {
+    if (event.turnRef === null) return;
+    if (event.type === "turn.started") {
+      // 运行时自己接着开的回合（Claude、ACP 会话内排队）也占名额。
+      const session = sessions.getById(event.sessionId);
+      turnScheduler.turnStarted({ sessionId: event.sessionId, agentId: session?.agentId ?? "codex", turnId: event.turnRef.turnId, label: session?.title ?? "" });
+    }
+    if (event.type === "turn.completed" || event.type === "turn.interrupted") {
+      turnScheduler.turnEnded(event.sessionId, event.turnRef.turnId);
+    }
+  });
+  const schedulerReconcile = setInterval(() => {
+    try {
+      turnScheduler.reconcile((sessionId) => events.listRunningTurnRefs(sessionId).map((ref) => ref.turnId), 60_000);
+    } catch (error) {
+      console.error(JSON.stringify({ event: "suduo.scheduler_reconcile.failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+  }, 30_000);
+  schedulerReconcile.unref();
+  const schedulerService = new SchedulerService({
+    scheduler: turnScheduler,
+    sessions,
+    agentName: (agentId) => AGENT_CATALOG.find((agent) => agent.id === agentId)?.displayName ?? agentId,
+    agentIds: () => AGENT_CATALOG.filter((agent) => agent.runtimeAvailable).map((agent) => agent.id),
+    interrupt: (sessionId, turnId) => interruptService.interrupt(sessionId, { turnId }),
+  });
+  // 委派（多 Agent 协作 S8，需求 4.3）：子会话与发起会话同一需求 / 项目、同一目录，带子任务的角色说明、不挂委派工具。
+  const agentDisplayName = (agentId: string) => AGENT_CATALOG.find((agent) => agent.id === agentId)?.displayName ?? agentId;
+  // 子会话不挂委派、请求评审（深度 1，R2）与对外写工具（技术设计 2.9：评论由发起会话去发），见 delegateChildDropsTool。
+  const delegateDropsTool = delegateChildDropsTool;
+  const delegateRole = (child: { locale: Locale; parentSessionId?: string | null }) => {
+    const parent = child.parentSessionId ? sessions.getById(child.parentSessionId) : null;
+    return messagesFor(child.locale).delegation.role(agentDisplayName(parent?.agentId ?? "codex"), child.parentSessionId ?? "");
+  };
+  // 线程续接失败要重建时，委派的子会话照样带角色说明、不挂这些工具（否则重建后又能看到委派工具）。
+  // 评审会话（S9）：只读，只有只读工具与提交评审意见（技术设计 2.9）；结论笔记、对外写、委派、请求评审都不给。
+  const reviewerRole = (reviewer: { locale: Locale; parentSessionId?: string | null }) => {
+    const target = reviewer.parentSessionId ? sessions.getById(reviewer.parentSessionId) : null;
+    return messagesFor(reviewer.locale).review.role(agentDisplayName(target?.agentId ?? "codex"), reviewer.parentSessionId ?? "");
+  };
+  // 线程续接失败要重建时，委派的子会话、评审会话、试做的版本照样带角色说明与各自的工具（否则重建后又能看到委派工具）。
+  sessionContext.setRebuildAdjust((sessionId, setup) => {
+    const session = sessions.getById(sessionId);
+    const relation = session?.relation;
+    if (session === null || session === undefined || (relation !== "delegate" && relation !== "review" && relation !== "trial")) return setup;
+    const base = setup ?? { developerInstructions: "", dynamicTools: [] };
+    const adjusted =
+      relation === "delegate"
+        ? adjustThreadSetup(base, { role: delegateRole(session), dropTools: delegateDropsTool })
+        : relation === "trial"
+          ? adjustThreadSetup(base, { role: messagesFor(session.locale).trial.role([]), dropTools: trialDropsTool })
+          : adjustThreadSetup(base, {
+              role: reviewerRole(session),
+              dropTools: reviewerDropsTool,
+              ...(setup === null ? {} : { addTools: [reviewSubmitSpec(session.locale)] }),
+            });
+    return { developerInstructions: adjusted.developerInstructions ?? "", dynamicTools: adjusted.dynamicTools ?? [] };
+  });
+  const delegationService = new DelegationService({
+    delegations: new DelegationRepository(database),
+    sessions,
+    threads,
+    approvals,
+    ledger,
+    broker,
+    messages: messageService,
+    clientTurnId: stableClientTurnId,
+    // Codex 把回合进行中再发的消息并入那一轮；Claude、ACP 排在会话内。
+    mergesIntoRunningTurn: (sessionId) => sessions.getById(sessionId)?.agentId === "codex",
+    interrupt: (sessionId, turnId) => interruptService.interrupt(sessionId, { turnId }),
+    scheduler: {
+      sessionRunning: (sessionId) => turnScheduler.sessionRunning(sessionId),
+      cancel: (itemId) => turnScheduler.cancel(itemId),
+      queuePosition: (sessionId) => turnScheduler.sessionPosition(sessionId),
+      lend: (sessionId) => turnScheduler.lend(sessionId),
+    },
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    createChild: ({ parent, agentId, approvalMode, locale, task }) =>
+      requirementsV2.createRelatedSession(parent, locale, { agentId, approvalMode }, "delegate", {
+        title: oneLine(task, 60),
+        role: delegateRole({ locale, parentSessionId: parent.id }),
+        dropTools: delegateDropsTool,
+      }),
+    agentProblem: (agentId) => agentCatalog.delegationProblem(agentId),
+    agentName: agentDisplayName,
+  });
+  // 重启前还在排队的消息：队列只在内存里，记为「重启没发出」；排队中的委派的那几条随后重新排队（开始监听之后再发）。
+  delegationService.recoverAfterRestart(
+    closeQueuedAfterRestart(events, ledger, (message) => message.source === "delegate" && delegationService.willRequeue(message.sessionId)),
+  );
+  // 交叉评审（多 Agent 协作 S9，需求 4.4）：评审会话与被评会话同一需求 / 项目、同一目录，固定只读。
+  const reviewRepository = new ReviewRepository(database);
+  const reviewService = new ReviewService({
+    reviews: reviewRepository,
+    approvals,
+    sessions,
+    threads,
+    ledger,
+    broker,
+    messages: messageService,
+    clientTurnId: stableClientTurnId,
+    interrupt: (sessionId, turnId) => interruptService.interrupt(sessionId, { turnId }),
+    scheduler: { cancel: (itemId) => turnScheduler.cancel(itemId) },
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    createReviewer: ({ target, agentId, locale }) =>
+      requirementsV2.createRelatedSession(target, locale, { agentId, approvalMode: "readonly" }, "review", {
+        title: messagesFor(locale).review.title(target.title),
+        role: reviewerRole({ locale, parentSessionId: target.id }),
+        dropTools: reviewerDropsTool,
+        addTools: [reviewSubmitSpec(locale)],
+      }),
+    agentProblem: (agentId) => agentCatalog.reviewProblem(agentId),
+    agentName: agentDisplayName,
+    requirementOf: (sessionId) => {
+      const ref = requirementSessionRefs.getBySessionId(sessionId);
+      if (ref === null) return null;
+      return [ref.requirementNumber === null ? null : formatRequirementNumber(ref.requirementNumber), ref.requirementTitle].filter((part) => part !== null && part !== "").join(" ") || null;
+    },
+  });
+  reviewService.recoverAfterRestart();
+  // 委派、评审的卡住提醒（S12）：每分钟看一遍，等确认太久或很久没动静时刷新卡片（只提醒）。
+  const stallCheck = setInterval(() => {
+    try {
+      delegationService.checkStalls();
+      reviewService.checkStalls();
+    } catch (error) {
+      // 定时器里抛出会成为未捕获异常、打崩本机服务：只记日志，下一分钟再试。
+      console.error(JSON.stringify({ event: "suduo.stall_check.failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+  }, 60_000);
+  stallCheck.unref();
+  // 并行试做（多 Agent 协作 S10，需求 4.5）：各版在 SuDuo 数据目录下的 git worktree 里，会话按 workspace_path 干活。
+  const trialService = new TrialService({
+    trials: new TrialRepository(database),
+    worktrees: new WorktreeManager(),
+    worktreeRoot: resolve(dirname(options.databasePath), "worktrees"),
+    resolveTarget: (target) => requirementsV2.localProjectFor(target),
+    localProject: (projectId) => projects.getById(projectId),
+    createSession: ({ target, agentId, start, locale, workspacePath, title, role }) => {
+      const graph = { parentSessionId: null, rootSessionId: null, relation: "trial" as const };
+      const adjustSetup = (setup: SessionThreadSetup) => adjustThreadSetup(setup, { role, dropTools: trialDropsTool });
+      const options = { agentId, ...start } as SessionStartOptions;
+      return "remoteRequirementId" in target
+        ? requirementsV2.createRequirementSession(target.remoteRequirementId, locale, options, graph, adjustSetup, title, workspacePath)
+        : requirementsV2.createProjectSession(target.remoteProjectId, locale, options, { title, graph, adjustSetup, workspacePath });
+    },
+    messages: messageService,
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    sessionActivity: (sessionId) =>
+      turnScheduler.sessionRunning(sessionId) || events.listRunningTurnRefs(sessionId).length > 0 ? "running" : turnScheduler.sessionQueued(sessionId) ? "queued" : "idle",
+    turnSpan: (sessionId) => events.turnSpan(sessionId),
+    pendingApprovals: (sessionId) => approvals.countPendingBySession(sessionId),
+    sessionsInWorkspace: (path) => sessions.listActiveIdsByWorkspacePath(path),
+    archiveSession: async (sessionId) => {
+      await sessionService.update(sessionId, null, { state: "archived" });
+    },
+    agentProblem: (agentId) => agentCatalog.delegationProblem(agentId),
+    agentName: agentDisplayName,
+    activity: (event) => aiActivity.report(event),
+  });
+  trialService.recoverAfterRestart();
+  sessionTools.setReviewTools(new ReviewTools({ service: reviewService }));
+  // 共享对象草稿与交接包（多 Agent 协作 S11，需求 4.7 / 4.13）：本机起草、编辑，本人确认后发布到需求。
+  const sharedDraftService = new SharedDraftService({
+    drafts: new SharedDraftRepository(database),
+    sessions,
+    requirementOf: (sessionId) => requirementSessionRefs.getBySessionId(sessionId)?.remoteRequirementId ?? null,
+    sessionRoot: (sessionId) => {
+      const session = sessions.getById(sessionId);
+      return session === null ? null : (session.workspacePath ?? projects.getById(session.projectId)?.rootPath ?? null);
+    },
+    reviews: reviewRepository,
+    rounds: (sessionId) => sessionReader.rounds(sessionId),
+    remote: requirementsRemote,
+    ledger,
+    threads,
+    activity: (event) => aiActivity.report(event),
+  });
+  sessionTools.setHandoffTools(new HandoffTools({ drafts: sharedDraftService, remote: requirementsRemote, agentName: agentDisplayName }));
+  // 项目 AI 规范的新版本提示与一键应用（S11，需求 4.8）。
+  const projectRulesService = new ProjectRulesService({
+    sessions,
+    remoteProjectOf: (sessionId) => requirementSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? projectSessionRefs.getBySessionId(sessionId)?.remoteProjectId ?? null,
+    remote: requirementsRemote,
+    messages: messageService,
+  });
+  sessionTools.setDelegationTools(
+    new DelegationTools({
+      service: delegationService,
+      agents: () => agentCatalog.listNow().agents,
+      usage: (agentId) => {
+        const snapshot = turnScheduler.snapshot();
+        return {
+          running: snapshot.running.filter((item) => item.agentId === agentId).length,
+          queued: snapshot.queued.filter((item) => item.agentId === agentId).length,
+          limit: agentCatalog.concurrency(agentId),
+        };
+      },
+    }),
   );
   const eventStream = new SessionEventStream(
     events,
@@ -426,11 +783,14 @@ export function createSuDuoApplication(
     activity: idleMonitor,
     runs: () => roomRunner?.status() ?? { activeRun: null, queuedRuns: 0 },
     onRegistered: () => void roomRunner?.sync(),
+    serverKey: () => currentServerOrigin(),
+    kindProblem: (kind) => agentCatalog.roomAgentProblem(kind),
   });
   const presence = agentPresence;
   roomRunner = new RoomAgentRunner({
     remote: requirementsRemote,
     presence,
+    agentProblem: (kind) => agentCatalog.roomAgentProblem(kind),
     hub: remoteEvents,
     mappings: workspaceMappings,
     projects,
@@ -439,6 +799,7 @@ export function createSuDuoApplication(
     sessions: sessionService,
     messages: messageService,
     interrupts: interruptService,
+    cancelQueued: (sessionId) => cancelQueuedTurns?.(sessionId),
     events,
     broker,
     context: sessionContext,
@@ -461,19 +822,22 @@ export function createSuDuoApplication(
   };
 
   const consumerAbort = new AbortController();
-  const restore = () =>
+  const restore = (runtimeId?: string) =>
     restoreAttachedThreads({
       projects,
       sessions,
       threads,
       supervisor,
+      workspaces,
       signal: consumerAbort.signal,
+      ...(runtimeId === undefined ? {} : { runtimeId }),
       ...(options.onBackgroundError === undefined
         ? {}
         : { onError: options.onBackgroundError }),
     });
-  const consumer = consumeRuntimeUntilAborted({
-    runtime,
+  // 每个已注册的运行时一条消费循环（多 Agent，ADR-0014）；断开与恢复按运行时隔离（ADR-0017）。
+  const consumers = registry.list().map((registered) => consumeRuntimeUntilAborted({
+    runtime: registered,
     ingestor,
     approvals: approvalService,
     supervisor,
@@ -486,8 +850,9 @@ export function createSuDuoApplication(
     ...(options.onBackgroundError === undefined
       ? {}
       : { onError: options.onBackgroundError }),
-  });
-  const restoration = restore();
+  }));
+  // 启动时恢复线程要等本机服务开始监听：用 MCP 工具服务的线程续接时要注入它的地址（ADR-0015）。
+  let restoration: Promise<void> = Promise.resolve();
   // 新版需求会话（ADR-0008）启动时的一次性清理与基线回收；尽力而为，不阻塞启动。
   void retireLegacySessionContext({
     v2DataDirectory,
@@ -503,6 +868,7 @@ export function createSuDuoApplication(
   void workspace.collectBaselineGarbage();
   const server = buildHttpServer({
     requestGuard: new LoopbackGuard(),
+    toolMcp: { tokens: toolTokens, host: sessionTools, serverVersion: process.env["npm_package_version"] ?? "0" },
     idempotency: new IdempotencyService(idempotencyRecords),
     projects: projectService,
     sessions: sessionService,
@@ -518,6 +884,16 @@ export function createSuDuoApplication(
     workspaceWatcher,
     git: gitService,
     settings: settingsService,
+    agents: agentCatalog,
+    scheduler: schedulerService,
+    delegations: delegationService,
+    reviews: reviewService,
+    trials: trialService,
+    sharedDrafts: sharedDraftService,
+    sessionAiRules: projectRulesService,
+    aiActivity,
+    aiCollabRemote: requirementsRemote,
+    openTerminal: terminalOpener(),
     modelProvider: modelProviderService,
     mcp: mcpService,
     proxyConnectivity,
@@ -526,6 +902,10 @@ export function createSuDuoApplication(
     rooms: {
       remote: requirementsRemote,
       agentState: () => presence.state(),
+      // 共享到讨论的 Agent 固定只读（ADR-0009 / 需求 R6）：只收接上了、做得到只读的。
+      // 只读红线（ADR-0009）由 AgentPresence 按配置表把关（kindProblem）。
+      addAgentKind: (kind) => presence.addKind(kind),
+      removeAgentKind: (kind) => presence.removeKind(kind),
     },
     remoteEvents,
     systemActivity: { runningSessions: () => events.countRunningSessionsAfter(startupSeq) },
@@ -546,6 +926,9 @@ export function createSuDuoApplication(
         codexHome,
         codexBin: options.codexBin,
         checkPnpm: !(options.installed ?? false),
+        agents: () => agentCatalog.list(),
+        agentsNow: () => agentCatalog.listNow(),
+        toolServerUrl,
       }, locale),
     webRoot:
       options.webRoot ??
@@ -557,6 +940,16 @@ export function createSuDuoApplication(
     ...(options.onExitRequested === undefined
       ? {}
       : { requestShutdown: options.onExitRequested }),
+  });
+  httpServer = server;
+  server.addHook("onListen", (done) => {
+    restoration = restore();
+    // 重启前排着的委派消息：等已挂线程续接完再发（MCP 通道的续接在监听之后才有地址）。
+    void restoration
+      .catch(() => undefined)
+      .then(() => delegationService.requeueAfterRestart())
+      .catch((error: unknown) => options.onBackgroundError?.(error));
+    done();
   });
   idleMonitor.start();
   runner.start();
@@ -580,9 +973,15 @@ export function createSuDuoApplication(
       consumerAbort.abort();
       workspaceWatcher.close();
       await Promise.allSettled([server.close()]);
+      if (prewarm !== null) clearTimeout(prewarm);
+      clearInterval(schedulerReconcile);
+      clearInterval(stallCheck);
+      releaseOnTurnEnd();
+      claudeRuntime.close();
+      for (const acpRuntime of acpRuntimes) acpRuntime.close();
       await Promise.allSettled([
         runtime.close(),
-        consumer,
+        ...consumers,
         restoration,
       ]);
       database.close();
@@ -620,12 +1019,18 @@ async function restoreAttachedThreads(input: {
   sessions: SessionRepository;
   threads: SessionThreadRepository;
   supervisor: RuntimeSupervisor;
+  workspaces: WorkspaceContextResolver;
   signal: AbortSignal;
   onError?: (error: unknown) => void;
+  /** 只恢复这个运行时的线程；不传为全部（启动时）。 */
+  runtimeId?: string;
 }): Promise<void> {
   for (const binding of input.threads.listAttached()) {
     if (input.signal.aborted) {
       return;
+    }
+    if (input.runtimeId !== undefined && binding.threadRef.runtimeId !== input.runtimeId) {
+      continue;
     }
     const session = input.sessions.getById(binding.sessionId);
     if (!session || session.state !== "active") {
@@ -638,7 +1043,7 @@ async function restoreAttachedThreads(input: {
     try {
       await input.supervisor.ensureReady({
         session,
-        workspace: sharedWorkspace(project, session.id),
+        workspace: input.workspaces.forSession(project, session.id),
         binding,
       });
     } catch (error) {

@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { ROOM_RESYNC_SSE_EVENT_NAME } from "@suduo/client-contracts";
 import {
+  agentKindName,
   ROOM_EVENT_TYPES,
   ROOM_SSE_EVENT_NAME,
   type RoomEventDto,
@@ -137,7 +138,7 @@ function notifyShareRequest(queryClient: QueryClient, request: NonNullable<RoomE
   notified.add(request.id);
   const room = findCachedRoom(queryClient, request.roomId);
   const text = messagesFor(currentLocale()).rooms;
-  showMessage(text.shareRequestToast.message(request.requester.displayName, room?.name ?? null, request.agent.deviceName), "info", {
+  showMessage(text.shareRequestToast.message(request.requester.displayName, room?.name ?? null, agentKindName(request.agent.kind), request.agent.deviceName), "info", {
     id: `share-request-${request.id}`,
     action: {
       label: text.shareRequestToast.accept,

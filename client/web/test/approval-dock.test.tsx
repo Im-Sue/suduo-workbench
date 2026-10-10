@@ -75,7 +75,7 @@ describe("审批坞键盘", () => {
     await press(textarea, "Enter");
     await press(textarea, "Escape");
     expect(onDecide).not.toHaveBeenCalled();
-    expect(node.textContent).toContain("Codex 想运行命令");
+    expect(node.textContent).toContain("Agent 想运行命令");
   });
 
   it("文件改动审批：从同一 item 的改动卡取文件，点开看还没写入的改动", async () => {
@@ -88,7 +88,7 @@ describe("审批坞键盘", () => {
       onViewPatch,
       displayPath: (path) => displayProjectPath(path, "/code/order"),
     });
-    expect(node.textContent).toContain("Codex 想修改 1 个文件");
+    expect(node.textContent).toContain("Agent 想修改 1 个文件");
     expect(node.textContent).toContain("src/a.ts");
     const file = [...node.querySelectorAll("button")].find((button) => button.textContent?.includes("src/a.ts"));
     await act(async () => file?.click());
@@ -109,11 +109,13 @@ describe("项目内路径", () => {
 describe("审批卡标题", () => {
   it("向正在运行的命令输入内容（writeStdin）与运行新命令分开说", () => {
     expect(approvalQuestion("command", { request: { kind: "writeStdin", command: "npm run dev" } })).toBe(
-      "Codex 想向正在运行的命令输入内容",
+      "Agent 想向正在运行的命令输入内容",
     );
-    expect(approvalQuestion("command", { request: { kind: "command", command: "npm test" } })).toBe("Codex 想运行命令");
-    expect(approvalQuestion("command", { request: { command: "npm test" } })).toBe("Codex 想运行命令");
-    expect(approvalQuestion("permissions", { request: {} })).toBe("Codex 想变更权限");
+    expect(approvalQuestion("command", { request: { kind: "command", command: "npm test" } })).toBe("Agent 想运行命令");
+    expect(approvalQuestion("command", { request: { command: "npm test" } })).toBe("Agent 想运行命令");
+    expect(approvalQuestion("permissions", { request: {} })).toBe("Agent 想变更权限");
+    // 多 Agent S12：写 Agent 的名字。
+    expect(approvalQuestion("command", { request: { command: "npm test" } }, undefined, "Claude Code")).toBe("Claude Code 想运行命令");
   });
 });
 
@@ -230,7 +232,7 @@ describe("SuDuo 工具确认卡（需求 4.3）", () => {
     document.body.innerHTML = "";
     const plain = await renderToolDock({ approvals: [approval("other", { reason: "继续吗" })], onDecide: vi.fn() });
     expect(plain.querySelector('[data-testid="approval-card"]')?.getAttribute("data-variant")).toBeNull();
-    expect(plain.textContent).toContain("Codex 请你确认后继续");
+    expect(plain.textContent).toContain("Agent 请你确认后继续");
     expect(buttonText(plain)).toContain("批准");
   });
 

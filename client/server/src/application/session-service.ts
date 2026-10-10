@@ -1,18 +1,24 @@
 import {
+  DEFAULT_AGENT_ID,
   REASONING_EFFORTS,
   isReasoningEffort,
   type CreateSessionRequest,
   type ListSessionsQuery,
   type Locale,
   type ReasoningEffort,
+  type RuntimeApprovalMode,
   type RuntimeToolSpec,
   type SessionDto,
+  type SessionLinksDto,
+  type SessionStartOptions,
   type SessionPurpose,
   type UpdateSessionRequest,
 } from "@suduo/client-contracts";
 import type { DatabasePort } from "../infrastructure/db/database-port.js";
 import type { ProjectRepository } from "../infrastructure/db/repositories/project-repository.js";
 import type {
+  CreateSessionInput,
+  SessionGraphInput,
   SessionKind,
   SessionRecord,
   SessionRepository,
@@ -31,8 +37,9 @@ import {
   type ErrorText,
 } from "./api-error.js";
 import { messagesFor } from "../i18n/messages/index.js";
-import { sessionDto } from "./dto.js";
+import { sessionDto, sessionLink } from "./dto.js";
 import { paginate } from "./pagination.js";
+import { findAgentDescriptor } from "./agents/catalog.js";
 import { effectiveApprovalMode } from "./approval-mode-cap.js";
 import type { RuntimeSupervisor } from "./runtime-supervisor.js";
 import { WorkspaceContextResolver } from "./workspace-context.js";
@@ -54,6 +61,8 @@ export interface SessionStateObserver {
 export interface SessionThreadSetup {
   developerInstructions?: string;
   dynamicTools?: RuntimeToolSpec[];
+  /** 开场说明里注入的项目 AI 规范版本（会话记下它，界面据此提示新版本）。 */
+  rulesVersion?: number;
 }
 
 export class SessionService {
@@ -82,7 +91,15 @@ export class SessionService {
      * locale：没给标题时默认名用的语言（创建请求的语言）。
      * remoteProjectId：项目会话的所属项目，与会话行同一事务写入，之后不随目录关联变化。
      */
-    options: { kind?: SessionKind; locale: Locale; remoteProjectId?: string },
+    options: {
+      kind?: SessionKind;
+      locale: Locale;
+      remoteProjectId?: string;
+      /** 与另一个会话的关系（接着做等，多 Agent 协作 S7）。 */
+      graph?: SessionGraphInput;
+      /** 会话实际干活的目录（并行试做的 worktree，S10）。 */
+      workspacePath?: string;
+    },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
     if (!project || project.state !== "active") {
@@ -94,15 +111,20 @@ export class SessionService {
     if (input.runtimeId !== undefined && typeof input.runtimeId !== "string") {
       throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.runtimeIdNotString);
     }
+    if (input.agentId !== undefined && typeof input.agentId !== "string") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentIdNotString);
+    }
     const purpose = validatePurpose(input.purpose ?? "general");
-    const runtimeId = input.runtimeId ?? "codex-local";
-    if (runtimeId !== "codex-local") {
+    if (input.runtimeId !== undefined && input.runtimeId !== "codex-local") {
       throw new ApiError(
         400,
         "VALIDATION_ERROR",
         (t) => t.session.runtimeUnsupported,
       );
     }
+    const agentId = input.agentId ?? DEFAULT_AGENT_ID;
+    const runtimeId = this.supervisor.runtimeIdForAgent(agentId);
+    const start = this.startOptions(agentId, input);
     const projectSessionRefs = this.projectSessionRefs;
     const remoteProjectId = options.remoteProjectId;
     if (remoteProjectId !== undefined && projectSessionRefs === null) {
@@ -114,16 +136,18 @@ export class SessionService {
         projectId,
         title: normalizeTitle(input.title ?? messagesFor(options.locale).session.defaultTitle),
         purpose,
-        approvalMode: effectiveApprovalMode(
-          { approvalMode: this.defaultApprovalMode() },
-          this.approvalModeEnvironment,
-        ),
+        ...start,
         ...(options.kind === undefined ? {} : { kind: options.kind }),
         locale: options.locale,
+        agentId,
+        ...(options.graph === undefined ? {} : { graph: options.graph }),
+        ...(options.workspacePath === undefined ? {} : { workspacePath: options.workspacePath }),
       });
       if (remoteProjectId !== undefined) {
         projectSessionRefs?.create({ sessionId: created.id, remoteProjectId });
       }
+      // 开场说明里注入了哪一版项目 AI 规范（S11）：界面据此提示有新版本。
+      if (setup.rulesVersion !== undefined) this.sessions.setRulesVersion(created.id, setup.rulesVersion);
       return created;
     })();
     let started;
@@ -135,7 +159,8 @@ export class SessionService {
         ...setup,
       });
     } catch (error) {
-      this.transitionState(session, "error", {
+      // Agent 没装或没登录：会话根本没开始，不留一条出错的会话（用户修好后重开即可）。
+      this.transitionState(session, isAgentNotReady(error) ? "deleted" : "error", {
         error: asJsonError(error),
       });
       throw error;
@@ -189,6 +214,12 @@ export class SessionService {
       requirementNumber?: number | null;
       /** 需求卡与工具。 */
       setup: SessionThreadSetup;
+      /** 开会话时的选择（Agent、审批档、模型、推理强度）。 */
+      start?: SessionStartOptions;
+      /** 与另一个会话的关系（接着做等，多 Agent 协作 S7）。 */
+      graph?: SessionGraphInput;
+      /** 会话实际干活的目录（并行试做的 worktree，S10）。 */
+      workspacePath?: string;
     },
   ): Promise<SessionDto> {
     const project = this.projects.getById(projectId);
@@ -199,16 +230,23 @@ export class SessionService {
     if (!requirementSessionRefs) {
       throw new ApiError(503, "DEPENDENCY_UNAVAILABLE", (t) => t.session.requirementRefStoreUnavailable);
     }
+    if (input.start?.agentId !== undefined && typeof input.start.agentId !== "string") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentIdNotString);
+    }
+    const agentId = input.start?.agentId ?? DEFAULT_AGENT_ID;
+    const runtimeId = this.supervisor.runtimeIdForAgent(agentId);
+    const start = this.startOptions(agentId, input.start ?? {});
     const session = this.sessions.create({
       projectId,
       title: normalizeTitle(input.title),
       locale: input.locale,
+      agentId,
       purpose: "general",
-      approvalMode: effectiveApprovalMode(
-        { approvalMode: this.defaultApprovalMode() },
-        this.approvalModeEnvironment,
-      ),
+      ...start,
+      ...(input.graph === undefined ? {} : { graph: input.graph }),
+      ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
     });
+    if (input.setup.rulesVersion !== undefined) this.sessions.setRulesVersion(session.id, input.setup.rulesVersion);
     const reference = {
       sessionId: session.id,
       remoteProjectId: input.remoteProjectId,
@@ -220,13 +258,14 @@ export class SessionService {
     let started;
     try {
       started = await this.supervisor.createPrimaryThread({
-        runtimeId: "codex-local",
+        runtimeId,
         session,
         workspace: this.workspaces.forSession(project, session.id),
         ...input.setup,
       });
     } catch (error) {
-      this.transitionState(session, "error", {
+      // Agent 没装或没登录：会话根本没开始，不留一条出错的会话（用户修好后重开即可）。
+      this.transitionState(session, isAgentNotReady(error) ? "deleted" : "error", {
         error: asJsonError(error),
       });
       throw error;
@@ -299,7 +338,28 @@ export class SessionService {
 
   get(id: string): SessionDto {
     const session = this.requireSession(id);
-    return sessionDto(session, this.threads.listBySession(id));
+    return { ...sessionDto(session, this.threads.listBySession(id)), links: this.links(session) };
+  }
+
+  /** 会话记录（不转 DTO）；不存在报 404。 */
+  record(id: string): SessionRecord {
+    return this.requireSession(id);
+  }
+
+  /** 接续自哪个会话、被哪些会话接着做（需求 4.2）。 */
+  private links(session: SessionRecord): SessionLinksDto {
+    const parent =
+      session.relation === "continue" && session.parentSessionId
+        ? this.sessions.getById(session.parentSessionId)
+        : null;
+    return {
+      continuedFrom: parent === null ? null : sessionLink(parent),
+      continuedBy: this.sessions
+        .listChildren(session.id)
+        .filter((child) => child.relation === "continue")
+        .map(sessionLink),
+      descendantCount: this.sessions.listDescendantIds(session.id).length,
+    };
   }
 
   /**
@@ -331,17 +391,8 @@ export class SessionService {
         (t) => t.session.stateInvalid,
       );
     }
-    if (
-      input.approvalMode !== undefined &&
-      input.approvalMode !== "ask" &&
-      input.approvalMode !== "auto" &&
-      input.approvalMode !== "full"
-    ) {
-      throw new ApiError(
-        400,
-        "VALIDATION_ERROR",
-        (t) => t.session.approvalModeInvalid,
-      );
+    if (input.approvalMode !== undefined) {
+      this.validateApprovalMode(session.agentId, input.approvalMode);
     }
     if (input.purpose !== undefined) {
       validatePurpose(input.purpose);
@@ -412,6 +463,12 @@ export class SessionService {
     return this.get(id);
   }
 
+  /** 要删的会话：它自己，连带时再加上往下的全部会话（多 Agent 协作 S8，需求 R11：会话是软删除，询问只为方便）。 */
+  removalTargets(id: string, withChildren: boolean): string[] {
+    this.requireSession(id);
+    return withChildren ? [id, ...this.sessions.listDescendantIds(id)] : [id];
+  }
+
   remove(id: string): void {
     const session = this.requireSession(id);
     if (session.state === "deleted") {
@@ -450,6 +507,50 @@ export class SessionService {
       );
     }
     return primaries[0] as (typeof primaries)[number];
+  }
+
+  /** 开会话前先校验选择（Agent 能用、审批档、模型、推理强度），免得做完远程准备才报错。没有副作用。 */
+  checkStartOptions(start: SessionStartOptions): void {
+    if (start.agentId !== undefined && typeof start.agentId !== "string") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentIdNotString);
+    }
+    const agentId = start.agentId ?? DEFAULT_AGENT_ID;
+    this.supervisor.runtimeIdForAgent(agentId);
+    this.startOptions(agentId, start);
+  }
+
+  /**
+   * 开会话时的审批档、模型、推理强度（需求 4.2）。不传的审批档用设置里的默认档；
+   * 只读要这家 Agent 做得到；受部署上限约束（超了报 409，同改档）。
+   */
+  private startOptions(agentId: string, input: SessionStartOptions): Pick<CreateSessionInput, "approvalMode" | "model" | "reasoningEffort"> {
+    const requested = input.approvalMode;
+    if (requested !== undefined) {
+      this.validateApprovalMode(agentId, requested);
+      if (effectiveApprovalMode({ approvalMode: requested }, this.approvalModeEnvironment) !== requested) {
+        throw new ApiError(409, "VERSION_CONFLICT", (t) => t.session.approvalModeLocked);
+      }
+    }
+    const model = input.model === undefined ? null : normalizeSessionModel(input.model);
+    const reasoningEffort = input.reasoningEffort === undefined ? null : normalizeSessionReasoningEffort(input.reasoningEffort);
+    return {
+      approvalMode: requested ?? effectiveApprovalMode({ approvalMode: this.defaultApprovalMode() }, this.approvalModeEnvironment),
+      ...(model === null ? {} : { model }),
+      ...(reasoningEffort === null ? {} : { reasoningEffort }),
+    };
+  }
+
+  /** 审批档的取值；只读要这家 Agent 做得到（配置表 readOnlyCapable，需求 4.3 / R8）。 */
+  private validateApprovalMode(agentId: string, mode: unknown): asserts mode is RuntimeApprovalMode {
+    if (mode !== "readonly" && mode !== "ask" && mode !== "auto" && mode !== "full") {
+      throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.approvalModeInvalid);
+    }
+    if (mode === "readonly") {
+      const agent = findAgentDescriptor(agentId);
+      if (agent !== undefined && !agent.readOnlyCapable) {
+        throw new ApiError(400, "VALIDATION_ERROR", (t) => t.session.agentReadOnlyUnsupported(agent.displayName), { agentId });
+      }
+    }
   }
 
   private transitionState(
@@ -556,4 +657,8 @@ function requireRecord<T>(record: T | null, message: ErrorText): T {
     throw new ApiError(404, "NOT_FOUND", message);
   }
   return record;
+}
+
+function isAgentNotReady(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "AGENT_NOT_READY";
 }

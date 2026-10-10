@@ -16,6 +16,10 @@ export const SUDUO_DOCTOR_CHECK_IDS = {
   linuxSandbox: "suduo.linux-sandbox",
   sqlite: "suduo.sqlite",
   port: "suduo.port",
+  /** 一家 Agent（多 Agent S12）：可执行文件、版本（在不在验证过的范围）、登录状态；按 agentId 分组。 */
+  agent: "suduo.agent",
+  /** SuDuo 本机工具服务（ADR-0015）：Codex 以外的 Agent 经它用需求、会话、委派等工具。 */
+  toolServer: "suduo.tool-server",
 } as const;
 
 export type SuDuoDoctorCheckId = (typeof SUDUO_DOCTOR_CHECK_IDS)[keyof typeof SUDUO_DOCTOR_CHECK_IDS];
@@ -33,8 +37,10 @@ export interface DoctorCheckDto {
   remediation?: string | null;
   /** 保留官方状态（ok / warning / fail），不把 warning 伪装为 pass。 */
   officialStatus?: string;
-  /** 只有 Codex CLI 一项有：官方诊断报的 Codex 版本，没报为 null。 */
+  /** Codex CLI 与各家 Agent 的项有：读到的版本，没读到为 null。 */
   version?: string | null;
+  /** 属于哪家 Agent（Codex 的各项是 codex）；SuDuo 自己的环境项没有。诊断页与命令行按它分组。 */
+  agentId?: string;
 }
 
 export interface DoctorResultDto {

@@ -7,6 +7,7 @@ import { classifyFailure } from "../../feedback/classify.js";
 import { ConfirmDialog, InlineError } from "../../feedback/components/index.js";
 import type { Failure } from "../../feedback/types.js";
 import { DirectoryPicker } from "../../features/requirements/components/DirectoryPicker.js";
+import { ProjectAiRulesSetting } from "../../features/collab/ProjectAiRules.js";
 import { requirementKeys } from "../../features/requirements/keys.js";
 import { useT } from "../../i18n/provider.js";
 import { showMessage } from "../../ui/message.js";
@@ -107,6 +108,7 @@ export function ProjectSettingsDialog({
           {failure === null ? null : <InlineError kind={failure.kind}>{failure.message}</InlineError>}
           <Separator />
           <LocalDirectorySetting projectId={project.id} />
+          <ProjectAiRulesSetting projectId={project.id} />
           <Separator />
           <section className="flex items-start gap-3">
             <div className="flex flex-1 flex-col gap-0.5">

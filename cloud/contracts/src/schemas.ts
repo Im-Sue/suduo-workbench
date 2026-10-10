@@ -12,6 +12,8 @@ import {
   REQUIREMENT_PRIORITY_FILTER_NONE,
   REQUIREMENT_SORTS,
 } from "./priority.js";
+import { AI_ACTIVITY_VALUE_PATTERN, PROJECT_AI_RULES_MAX_BYTES, SHARED_ITEM_KINDS, SHARED_ITEM_TITLE_MAX } from "./ai-collab.js";
+import { AGENT_KIND_PATTERN } from "./rooms.js";
 import { PROJECT_STATS_WINDOWS } from "./stats.js";
 import { REQUIREMENT_STATUSES } from "./status.js";
 
@@ -227,6 +229,44 @@ export const REQUIREMENTS_V2_SCHEMAS = {
     required: ["id"],
     properties: {
       id: { type: "string", format: "uuid" },
+    },
+  },
+  /** 发布需求共享对象：内容的结构与大小由服务端按种类再查。 */
+  publishSharedItem: {
+    type: "object",
+    additionalProperties: false,
+    required: ["kind", "title", "content"],
+    properties: {
+      kind: { type: "string", enum: SHARED_ITEM_KINDS },
+      // 标题超长由服务端截断，这里只挡明显不对的（大于上限很多）。
+      title: { type: "string", minLength: 1, maxLength: SHARED_ITEM_TITLE_MAX * 4 },
+      content: { type: "object" },
+      agentId: { type: ["string", "null"], pattern: AGENT_KIND_PATTERN },
+      sessionRef: { type: ["string", "null"], minLength: 1, maxLength: 128 },
+    },
+  },
+  /** 保存项目 AI 规范：大小（UTF-8 字节）由服务端查。 */
+  saveProjectAiRules: {
+    type: "object",
+    additionalProperties: false,
+    required: ["content"],
+    properties: {
+      content: { type: "string", maxLength: PROJECT_AI_RULES_MAX_BYTES },
+      baseVersion: { type: "integer", minimum: 0 },
+    },
+  },
+  /** 上报一条协作记录（只含元数据）。 */
+  recordAiActivity: {
+    type: "object",
+    additionalProperties: false,
+    required: ["localRef", "agentId", "kind", "status"],
+    properties: {
+      localRef: { type: "string", minLength: 1, maxLength: 128 },
+      agentId: { type: "string", pattern: AGENT_KIND_PATTERN },
+      kind: { type: "string", pattern: AI_ACTIVITY_VALUE_PATTERN },
+      status: { type: "string", pattern: AI_ACTIVITY_VALUE_PATTERN },
+      branch: { type: ["string", "null"], maxLength: 255 },
+      occurredAt: { type: "string", format: "date-time" },
     },
   },
 } as const;

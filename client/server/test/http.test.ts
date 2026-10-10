@@ -1266,6 +1266,33 @@ describe("Gate B HTTP", () => {
     }
   });
 
+  it("创建需求会话可指定 Agent（多 Agent S3）：没接上的 Agent 报 400，其他字段与非字符串报 400", async () => {
+    const context = createContext();
+    try {
+      configureRequirementsRemote(context);
+      const mappingRoot = join(context.projectRoot, "requirement-session-mapping-agent");
+      mkdirSync(mappingRoot);
+      addWorkspaceMapping(context, SESSION_PROJECT_ID, mappingRoot);
+      const post = (payload: unknown) =>
+        context.server.inject({
+          method: "POST",
+          url: `/api/v2/requirements/${SESSION_REQUIREMENT_ID}/sessions`,
+          headers: { host: context.host, origin: `http://${context.host}` },
+          payload: payload as Record<string, unknown>,
+        });
+      const created = await post({ agentId: "codex" });
+      expect(created.statusCode).toBe(201);
+      expect(created.json<{ agentId: string }>().agentId).toBe("codex");
+      // 测试上下文只注册了 Codex 运行时
+      expect((await post({ agentId: "claude-code" })).statusCode).toBe(400);
+      expect((await post({ agentId: 1 })).statusCode).toBe(400);
+      expect((await post({ title: "x" })).statusCode).toBe(400);
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
   it("创建需求会话：线程带需求卡与 suduo 工具，登记开工版本，不再生成快照与现状文件", async () => {
     const context = createContext();
     try {
@@ -1311,6 +1338,63 @@ describe("Gate B HTTP", () => {
         contextMode: "tools",
         requirement: { remoteRequirementId: SESSION_REQUIREMENT_ID, startVersion: 7 },
       });
+    } finally {
+      await context.server.close();
+      context.database.close();
+    }
+  });
+
+  it("交给另一个 Agent 接着做（多 Agent 协作 S7）：同一需求 / 项目下开新会话，记下接续关系，两边互相显示；房间任务不行", async () => {
+    const context = createContext();
+    try {
+      configureRequirementsRemote(context);
+      const mappingRoot = join(context.projectRoot, "continue-mapping");
+      mkdirSync(mappingRoot);
+      addWorkspaceMapping(context, SESSION_PROJECT_ID, mappingRoot);
+      const headers = { host: context.host, origin: `http://${context.host}` };
+      const post = (url: string) => context.server.inject({ method: "POST", url, headers, payload: {} });
+      const get = (url: string) => context.server.inject({ method: "GET", url, headers: { host: context.host } });
+
+      const source = (await post(`/api/v2/requirements/${SESSION_REQUIREMENT_ID}/sessions`)).json<{ id: string; title: string }>();
+      const continued = await post(`/api/v2/sessions/${source.id}/continue`);
+      expect(continued.statusCode).toBe(201);
+      const next = continued.json<{ id: string; parentSessionId: string; rootSessionId: string; relation: string; title: string }>();
+      expect(next).toMatchObject({ parentSessionId: source.id, rootSessionId: source.id, relation: "continue", title: source.title });
+      // 同一条需求：新会话也是需求会话。
+      expect(context.requirementSessionRefs.getBySessionId(next.id)?.remoteRequirementId).toBe(SESSION_REQUIREMENT_ID);
+      expect((await get(`/api/v1/sessions/${source.id}`)).json<{ links: unknown }>().links).toEqual({
+        continuedFrom: null,
+        continuedBy: [{ id: next.id, title: source.title, agentId: "codex", agentName: "Codex", state: "active" }],
+        descendantCount: 1,
+      });
+      expect((await get(`/api/v1/sessions/${next.id}`)).json<{ links: { continuedFrom: { id: string } } }>().links.continuedFrom.id).toBe(source.id);
+      // 再接着做一次：根会话仍是最早那个。
+      const third = (await post(`/api/v2/sessions/${next.id}/continue`)).json<{ parentSessionId: string; rootSessionId: string }>();
+      expect(third).toMatchObject({ parentSessionId: next.id, rootSessionId: source.id });
+
+      // 项目会话：沿用原会话的标题，所属项目不变。
+      const project = (await post(`/api/v2/projects/${SESSION_PROJECT_ID}/sessions`)).json<{ id: string; title: string }>();
+      const projectNext = (await post(`/api/v2/sessions/${project.id}/continue`)).json<{ id: string; title: string }>();
+      expect(projectNext.title).toBe(project.title);
+      expect(context.projectSessionRefs.getBySessionId(projectNext.id)?.remoteProjectId).toBe(SESSION_PROJECT_ID);
+
+      // 在独立工作目录（并行试做的 worktree，S10）里干活的会话：接着做的新会话也在那里，不回到项目目录。
+      const worktreePath = join(context.projectRoot, "trial-worktree");
+      mkdirSync(worktreePath);
+      context.database.prepare("UPDATE sessions SET workspace_path = @path WHERE id = @id").run({ path: worktreePath, id: project.id });
+      const isolatedNext = (await post(`/api/v2/sessions/${project.id}/continue`)).json<{ id: string; workspacePath?: string }>();
+      expect(isolatedNext.workspacePath).toBe(worktreePath);
+      expect(context.sessions.getById(isolatedNext.id)?.workspacePath).toBe(worktreePath);
+      expect((await get(`/api/v1/sessions/${source.id}`)).json<{ workspacePath?: string }>().workspacePath).toBeUndefined();
+      // 工作目录删了（试做清理过）：说明没法从它开新会话。
+      rmSync(worktreePath, { recursive: true, force: true });
+      const gone = await post(`/api/v2/sessions/${project.id}/continue`);
+      expect(gone.statusCode).toBe(400);
+      expect(gone.json<{ error: { message: string } }>().error.message).toContain("工作目录已经删了");
+
+      const roomTask = context.sessions.create({ projectId: context.sessions.getById(source.id)!.projectId, title: "房间任务", kind: "room_task", state: "active" });
+      expect((await post(`/api/v2/sessions/${roomTask.id}/continue`)).statusCode).toBe(400);
+      expect((await post(`/api/v2/sessions/nope/continue`)).statusCode).toBe(404);
     } finally {
       await context.server.close();
       context.database.close();

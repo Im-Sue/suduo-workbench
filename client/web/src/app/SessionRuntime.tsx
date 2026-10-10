@@ -1,3 +1,7 @@
+import { RulesNotice } from "../features/collab/RulesNotice.js";
+import { ShareContext } from "../features/collab/share-context.js";
+import { SharedDraftDialog } from "../features/collab/SharedDraftDialog.js";
+import { SnapshotDialog } from "../features/collab/SnapshotDialog.js";
 import {
   useCallback,
   useEffect,
@@ -10,6 +14,7 @@ import {
 } from "react";
 import { BACKFILL_OMITTED_EVENT_TYPES } from "@suduo/client-contracts";
 import type {
+  SessionAiRulesDto,
   GitCheckpointDto,
   ApprovalMode,
   ApprovalDto,
@@ -98,12 +103,16 @@ import {
   type QueueState,
 } from "../session/queue.js";
 import { SessionModelSwitcher } from "../features/sessions/SessionModelSwitcher.js";
+import { ContinueSessionDialog, SessionLinksBar, takePendingDraft } from "../features/sessions/session-links.js";
+import { CascadeStopDialog } from "../features/sessions/CascadeStopDialog.js";
+import { ReviewDialog } from "../features/sessions/ReviewDialog.js";
 import { ChangesPanel } from "../components/ChangesPanel.js";
 import { usePersistentState } from "../ui/use-persistent-state.js";
 import { INSPECTOR_SIDE_BY_SIDE_QUERY, useMediaQuery } from "../ui/use-breakpoint.js";
 import { Drawer, type DrawerState } from "../components/Drawer.js";
 import { ConfirmDialog, RegionError } from "../feedback/components/index.js";
 import { showMessage } from "../ui/message.js";
+import { isUsable } from "../features/agents/queries.js";
 import { classifyFailure } from "../feedback/classify.js";
 import { reportFailure } from "../feedback/report.js";
 import { routeFeedback } from "../feedback/routes.js";
@@ -136,6 +145,13 @@ const EVENT_TYPES = [
   "usage.updated",
   "thread.settings-updated",
   "model.rerouted",
+  // 多 Agent 协作 S8：本机队列与委派卡片。
+  "turn.queued",
+  "turn.dequeued",
+  "delegation.updated",
+  "review.updated",
+  // 多 Agent 协作 S11：共享对象草稿卡。
+  "shared_draft.updated",
   ...BACKFILL_OMITTED_EVENT_TYPES,
 ] as const;
 
@@ -215,6 +231,23 @@ export function SessionRuntime(props: {
   /** 读回快照时的会话：只有同一个会话才沿用快照，不在挂载时清掉（见下面加载会话的 effect）。 */
   const carriedSessionId = useRef(carried === undefined ? null : props.sessionId);
   const [session, setSession] = useState<SessionDto | null>(carried?.session ?? null);
+  /** 交给另一个 Agent 接着做的对话框（多 Agent 协作 S7）。 */
+  const [continueOpen, setContinueOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  /** 共享到需求（多 Agent 协作 S11）：正在预览的草稿、选回合的快照对话框。 */
+  const [openDraftId, setOpenDraftId] = useState<string | null>(null);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
+  // 并行试做的一版（S10）：会话头给「并行试做」比较视图的链接。
+  const [trialId, setTrialId] = useState<string | null>(null);
+  /** 接着做开出的新会话：输入框预填「接着 @原会话 继续：」（只预填，不自动发出）。 */
+  const [prefill, setPrefill] = useState<{ sessionId: string; text: string } | null>(null);
+  useEffect(() => {
+    // 开发模式（StrictMode）下 effect 会跑两遍：第二遍取不到时保留第一遍取到的，换了会话才清。
+    const text = takePendingDraft(props.sessionId);
+    setPrefill((current) =>
+      text !== null ? { sessionId: props.sessionId, text } : current?.sessionId === props.sessionId ? current : null,
+    );
+  }, [props.sessionId]);
   const [events, setEvents] = useState<EventEnvelope<string, JsonValue>[]>(() => carried?.events ?? []);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalDto[]>(carried?.approvals ?? []);
@@ -343,6 +376,12 @@ export function SessionRuntime(props: {
   }, [setPersistentError]);
 
   const projection = useMemo(() => projectEvents(events), [events]);
+  /** 这个会话发起、还没做完的委派（停止时询问是否一并停止）。 */
+  const activeDelegations = useMemo(
+    () => projection.timeline.filter((entry) => entry.kind === "delegation" && (entry.delegation.status === "queued" || entry.delegation.status === "running")).length,
+    [projection.timeline],
+  );
+  const [cascadeTurn, setCascadeTurn] = useState<string | null>(null);
   const projectionRef = useRef(projection);
   projectionRef.current = projection;
   // 出队与发送正告一段落之前、停止请求还没回来时，重建会让结果落空或发两次：别的标签页切语言时等这些过去再切。
@@ -424,7 +463,7 @@ export function SessionRuntime(props: {
     try {
       const accepted = await api.sendMessage(props.sessionId, { content });
       // 立刻用当前投影对账：SSE 先于 HTTP 响应时，归属可能已经在投影里了。
-      setQueue((current) => reconcileQueue(onSendAccepted(current, accepted.clientTurnId, Date.now()), projectionRef.current, Date.now()));
+      setQueue((current) => reconcileQueue(onSendAccepted(current, accepted.clientTurnId, Date.now(), accepted.queued !== undefined), projectionRef.current, Date.now()));
     } catch (cause) {
       setQueue((current) => (classifySendFailure(cause) === "rejected" ? onSendRejected(current) : onSendUncertain(current)));
       reportError(cause, "action");
@@ -572,13 +611,162 @@ export function SessionRuntime(props: {
     };
   }, [props.sessionId, contextAttempt]);
   const retryContext = useCallback(() => setContextAttempt((attempt) => attempt + 1), []);
+  /**
+   * 会话能不能引用 / 交给别的会话（多 Agent 协作 S7）：关联了 SuDuo 需求或项目的会话才有读会话的工具；
+   * 本机会话没有，引用了 Agent 也读不了，就不给入口。
+   */
+  const referencesSessions = context.status === "ready" && context.value.kind !== "none" && context.value.contextMode !== "legacy";
+  /** 能不能在输入框 @ Agent 委派（多 Agent 协作 S8）：主会话才行（子会话、评审会话、试做会话不能委派，R2）。 */
+  const canDelegate =
+    referencesSessions && session !== null && session.kind === "normal" && session.relation !== "delegate" && session.relation !== "review" && session.relation !== "trial";
+  /**
+   * 共享到需求（多 Agent 协作 S11）：需求会话才能发布交接包、评审报告、会话快照（挂在需求上）；房间任务会话不给。
+   * 团队服务器还不支持时发布会报错说明（会话页不包 QueryClientProvider，不在这里查服务器能力）。
+   */
+  const canShare = context.status === "ready" && context.value.kind === "requirement" && session !== null && session.kind === "normal" && session.state !== "deleted";
+  /**
+   * 让 Agent 起草交接包：只给有 handoff_submit 的主会话（子会话、评审、试做没有这个工具；旧版上下文的会话也没有）。
+   * 在 S11 之前建的线程里也没有：消息里写明没有工具就直接在回复里写，另有「手写交接包」兜底（R13）。
+   */
+  const canAgentHandoff =
+    canShare && context.status === "ready" && context.value.contextMode !== "legacy" && session.relation !== "delegate" && session.relation !== "review" && session.relation !== "trial";
+  const shareActions = useMemo(() => ({ canPublish: canShare, openDraft: (draftId: string) => setOpenDraftId(draftId) }), [canShare]);
+  /** 替用户发一条请 Agent 调 handoff_submit 的消息：只入队（经调度，时间线可见），不顺带恢复暂停中的队列。 */
+  const requestHandoff = () => {
+    setQueue((current) => enqueueItem(current, { id: crypto.randomUUID(), text: t.collab.share.makeHandoffMessage, attachmentIds: [] }));
+    if (queue.status === "paused") showMessage(t.collab.share.handoffQueuedPaused, "info");
+  };
+  /**
+   * 项目 AI 规范（S11）：会话用的版本与项目当前版本，有新版本时提示、一键应用；协作记录上报的开关。
+   * 不用 useQuery（会话页的部分外壳不包 QueryClientProvider），进会话时取一次。
+   */
+  const linkedProject = context.status === "ready" && context.value.kind !== "none";
+  /** 提示只给主会话（委派的子会话、评审、试做、已删除的不提示：它们跟着发起的会话走）。 */
+  const rulesNoticeFor =
+    linkedProject && session !== null && session.kind === "normal" && session.state !== "deleted" && session.relation !== "delegate" && session.relation !== "review" && session.relation !== "trial";
+  const [rulesStatus, setRulesStatus] = useState<SessionAiRulesDto | null>(null);
+  const [reporting, setReporting] = useState<boolean | null>(null);
+  /** 每次取规范状态（与应用）的序号：晚到的旧结果不盖掉新的（比如应用的回包之后才回来的重取）。 */
+  const rulesRequest = useRef(0);
+  /**
+   * 进会话时取一次；项目成员随时可能存新版本，回到这个窗口时再取（会话页不接云端事件）。重取不先清空，
+   * 免得提示条闪一下、打开着的查看对话框被卸掉；focus 与 visibilitychange 一起来时只取一次。
+   */
+  useEffect(() => {
+    setRulesStatus(null);
+    if (!rulesNoticeFor) return;
+    const load = () => {
+      const request = ++rulesRequest.current;
+      void Promise.resolve()
+        .then(() => api.getSessionAiRules(props.sessionId))
+        .then((status) => {
+          if (rulesRequest.current === request) setRulesStatus(status);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    let last = Date.now();
+    const refresh = () => {
+      if (document.visibilityState !== "visible" || Date.now() - last < 2000) return;
+      last = Date.now();
+      load();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      rulesRequest.current += 1;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [rulesNoticeFor, props.sessionId]);
+  useEffect(() => {
+    setReporting(null);
+    let cancelled = false;
+    if (canShare) {
+      void Promise.resolve()
+        .then(() => api.getAiActivityReporting(props.sessionId))
+        .then((state) => {
+          if (!cancelled) setReporting(state.enabled);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [canShare, props.sessionId]);
+  const applyRules = async (version: number) => {
+    try {
+      rulesRequest.current += 1;
+      const next = await api.applySessionAiRules(props.sessionId, version);
+      rulesRequest.current += 1;
+      setRulesStatus(next);
+      if (next.used !== null) showMessage(t.collab.share.rulesNotice.applied(next.used), "success");
+    } catch (cause) {
+      reportFailure(cause, { surface: "action", title: t.collab.share.rulesNotice.failed });
+    }
+  };
+  const toggleReporting = () => {
+    if (reporting === null) return;
+    void api
+      .setAiActivityReporting(props.sessionId, !reporting)
+      .then((state) => setReporting(state.enabled))
+      .catch((cause: unknown) => reportError(cause, "action"));
+  };
+  /** 手写交接包：新起一份空的草稿，直接打开发布对话框。 */
+  const writeHandoff = () => {
+    void api
+      .createManualHandoff(props.sessionId)
+      .then((draft) => setOpenDraftId(draft.id))
+      .catch((cause: unknown) => reportError(cause, "action"));
+  };
+  /** 会话在独立工作目录（并行试做的 worktree，S10）里干活：检查点是原目录的，不给「回到开始前」。 */
+  const isolated = session?.workspacePath !== undefined;
+  /** 文件树、预览、用编辑器打开、回答里的路径链接按会话的工作目录找文件（只在独立目录里的会话带上会话）。 */
+  const fileScope = isolated ? props.sessionId : undefined;
+
+  const isTrial = session?.relation === "trial";
+  useEffect(() => {
+    if (!isTrial) return;
+    let cancelled = false;
+    // 不用 useQuery（同上）；取不到就不显示链接。
+    void Promise.resolve()
+      .then(() => api.trialOfSession(props.sessionId))
+      .then((found) => {
+        if (!cancelled) setTrialId(found.trialId);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isTrial, props.sessionId]);
+  // 不用 useQuery：会话页的测试与部分外壳不包 QueryClientProvider（S5 的教训）。能委派时取一次本机 Agent。
+  const [delegateAgents, setDelegateAgents] = useState<ReadonlyArray<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    if (!canDelegate) return;
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => api.listLocalAgents())
+      .then((list) => {
+        if (!cancelled) setDelegateAgents(list.agents.filter((agent) => isUsable(agent)).map((agent) => ({ id: agent.id, name: agent.displayName })));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [canDelegate]);
+  const delegate = useCallback(
+    async (agentId: string, task: string) => {
+      await api.startDelegation(props.sessionId, { agentId, task });
+      showMessage(t.collab.delegation.started(delegateAgents.find((agent) => agent.id === agentId)?.name ?? agentId), "success");
+    },
+    [delegateAgents, props.sessionId, t],
+  );
 
 
   useEffect(() => {
     let cancelled = false;
     const refreshFiles = () => {
-      void api
-        .listFiles(props.projectId)
+      void (fileScope === undefined ? api.listFiles(props.projectId) : api.listFiles(props.projectId, "", fileScope))
         .then((response) => {
           if (!cancelled) {
             setFiles((current) => ({ ...current, "": response.entries }));
@@ -603,7 +791,7 @@ export function SessionRuntime(props: {
       cancelled = true;
       watcher.close();
     };
-  }, [props.projectId, props.sessionId]);
+  }, [props.projectId, props.sessionId, fileScope]);
 
   useEffect(() => {
     if (carriedSessionId.current !== props.sessionId) setApprovals([]);
@@ -636,7 +824,8 @@ export function SessionRuntime(props: {
       setEvents((current) => mergeSessionEvents(current, [event]));
       // 只有经这条实时入口、且已过回放边界收到的 turn.started 才建本地计时锚点。
       setTiming((current) => onLiveEvent(current, event, Date.now()));
-      if (event.type.startsWith("approval.")) {
+      // 委派出来的子会话的审批也列在这里（多 Agent 协作 S8），它们的变化经 delegation.updated 告知。
+      if (event.type.startsWith("approval.") || event.type === "delegation.updated") {
         void refreshApprovals(props.sessionId, setApprovals);
       }
       if (
@@ -724,7 +913,7 @@ export function SessionRuntime(props: {
     setExpanded(next);
     if (!files[path]) {
       try {
-        const response = await api.listFiles(props.projectId, path);
+        const response = fileScope === undefined ? await api.listFiles(props.projectId, path) : await api.listFiles(props.projectId, path, fileScope);
         setFiles((current) => ({ ...current, [path]: response.entries }));
       } catch (cause) {
         reportError(cause, "region");
@@ -737,7 +926,7 @@ export function SessionRuntime(props: {
     try {
       setDrawer({
         mode: "preview",
-        content: await api.readFile(props.projectId, path),
+        content: fileScope === undefined ? await api.readFile(props.projectId, path) : await api.readFile(props.projectId, path, fileScope),
         line,
       });
     } catch (cause) {
@@ -762,16 +951,19 @@ export function SessionRuntime(props: {
   };
 
   const systemOpen = (path: string, mode: SystemOpenTarget) => {
-    void api.openFile(props.projectId, path, mode).catch((cause) => reportError(cause, "action"));
+    void (fileScope === undefined ? api.openFile(props.projectId, path, mode) : api.openFile(props.projectId, path, mode, null, fileScope)).catch((cause: unknown) =>
+      reportError(cause, "action"),
+    );
   };
 
   const decideApproval = async (
     approval: ApprovalDto,
     decision: ApprovalDecisionInput,
+    optionId?: string,
   ) => {
     try {
       // 审批记录由事件（approval.resolved）进时间线，这里只刷新待处理列表。
-      await api.decideApproval(approval.id, decision);
+      await (optionId === undefined ? api.decideApproval(approval.id, decision) : api.decideApproval(approval.id, decision, optionId));
       await refreshApprovals(props.sessionId, setApprovals);
     } catch (cause) {
       reportError(cause, "action");
@@ -812,16 +1004,17 @@ export function SessionRuntime(props: {
     }
   };
 
-  /** Codex 报回的是绝对路径：换成项目内相对路径再查改动；不在项目里的说清楚。 */
+  /** Codex 报回的是绝对路径：换成会话工作目录（独立目录里的会话是它的 worktree）内的相对路径再查改动；不在里面的说清楚。 */
+  const workRoot = session?.workspacePath ?? projectRoot;
   const openChange = (path: string) => {
-    const relative = toProjectPath(path, projectRoot);
+    const relative = toProjectPath(path, workRoot);
     if (relative === null) {
       setPersistentError(text.outsideProject(path), "stale_state");
       return;
     }
     void openDiff(relative);
   };
-  const displayPath = (path: string) => displayProjectPath(path, projectRoot);
+  const displayPath = (path: string) => displayProjectPath(path, workRoot);
   /**
    * 回答里的项目文件链接（需求 4.6；会话回答里的文件路径可点击）：单击在右侧文件面板打开并定位到行；
    * ⌘ / Ctrl 单击用本机编辑器打开（有 VS Code 时跳到行，没有就用系统默认应用）。
@@ -832,23 +1025,28 @@ export function SessionRuntime(props: {
   const openTargetsRef = useRef(openTargets);
   openTargetsRef.current = openTargets;
   const fileExistence = useMemo(
-    () => new FileExistenceStore(async (paths) => (await api.existingFiles(props.projectId, paths)).files),
-    [props.projectId],
+    () =>
+      new FileExistenceStore(async (paths) =>
+        (fileScope === undefined ? await api.existingFiles(props.projectId, paths) : await api.existingFiles(props.projectId, paths, fileScope)).files,
+      ),
+    [props.projectId, fileScope],
   );
   const markdownLinks = useMemo<MarkdownLinkHandlers>(
     () => ({
-      projectRoot,
+      projectRoot: workRoot,
       files: fileExistence,
       onOpenPath: (path, line, options) => {
         if (options?.external === true) {
           const mode = openTargetsRef.current.includes("vscode") ? "vscode" : "open";
-          void api.openFile(props.projectId, path, mode, line).catch((cause: unknown) => reportError(cause, "action"));
+          void (fileScope === undefined ? api.openFile(props.projectId, path, mode, line) : api.openFile(props.projectId, path, mode, line, fileScope)).catch(
+            (cause: unknown) => reportError(cause, "action"),
+          );
           return;
         }
         void openPreviewRef.current(path, line);
       },
     }),
-    [projectRoot, fileExistence, props.projectId],
+    [workRoot, fileExistence, props.projectId, fileScope],
   );
   /** 文件改动审批要改的文件：v2 审批只带 itemId，从时间线里同一 item 的改动卡取。 */
   const changesForApproval = (approval: ApprovalDto): FileChangeEntry[] => {
@@ -949,6 +1147,7 @@ export function SessionRuntime(props: {
         deletions={changeStats.deletions}
         projectId={props.projectId}
         projectRoot={projectRoot}
+        {...(session?.workspacePath === undefined ? {} : { isolatedPath: session.workspacePath })}
         running={running > 0}
         openTargets={openTargets}
         onOpen={(path) => void openDiff(path)}
@@ -987,7 +1186,7 @@ export function SessionRuntime(props: {
             session={session}
             status={headStatus}
             requirement={linkedRequirement === null ? null : { title: linkedRequirement.title }}
-            projectRoot={projectRoot}
+            projectRoot={session.workspacePath ?? projectRoot}
             notices={infoNotices}
             inspectorOpen={inspectorVisible}
             onRename={(title) => void renameSession(title)}
@@ -997,35 +1196,80 @@ export function SessionRuntime(props: {
               setSideTab("requirement");
             }}
             onToggleInspector={toggleInspector}
+            {...(session.kind === "normal" && session.state !== "deleted" && referencesSessions ? { onContinue: () => setContinueOpen(true) } : {})}
+            {...(session.kind === "normal" && session.state !== "deleted" && session.relation !== "review" && referencesSessions ? { onReview: () => setReviewOpen(true) } : {})}
+            {...(trialId === null ? {} : { trialId })}
+            {...(canShare
+              ? {
+                  onShare: {
+                    ...(canAgentHandoff ? { handoff: requestHandoff } : {}),
+                    writeHandoff,
+                    snapshot: () => setSnapshotOpen(true),
+                    ...(reporting === null ? {} : { reporting: { enabled: reporting, toggle: toggleReporting } }),
+                  },
+                }
+              : {})}
           />
         ) : null}
+        {session ? <SessionLinksBar links={session.links} /> : null}
+        <RulesNotice status={rulesStatus} onApply={applyRules} />
+        {session ? <ContinueSessionDialog session={session} open={continueOpen} onOpenChange={setContinueOpen} /> : null}
+        {session ? <ReviewDialog session={session} open={reviewOpen} onOpenChange={setReviewOpen} /> : null}
+        <CascadeStopDialog
+          open={cascadeTurn !== null}
+          count={activeDelegations}
+          onOpenChange={(open) => {
+            if (!open) setCascadeTurn(null);
+          }}
+          onStopThis={() => {
+            if (cascadeTurn !== null) stopTurn(cascadeTurn);
+          }}
+          onStopAll={() => {
+            if (cascadeTurn !== null) stopTurn(cascadeTurn);
+            void api.cancelAllDelegations(props.sessionId).catch((cause: unknown) => reportError(cause, "action"));
+          }}
+        />
         <PanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
           <Panel id="conversation" minSize={420}>
             <section className="flex h-full min-w-0 flex-col" aria-label={text.conversationLabel}>
               {/* 回答里的项目文件链接点开在右侧文件面板（需求 4.6）。 */}
               <MarkdownLinkContext.Provider value={markdownLinks}>
-                <ConversationStream
-                  key={props.sessionId}
-                  scrollCarryKey={`conversation-scroll:session:${props.sessionId}`}
-                  timeline={streamTimeline}
-                  historyLoading={historyLoading}
-                  now={now}
-                  actions={{
-                    onOpenChange: openChange,
-                    displayPath,
-                    onViewChanges: () => {
-                      setDrawer(null);
-                      setSideOpen(true);
-                      setSideTab("changes");
-                    },
-                    // 房间任务会话只读：在这里重试等于私下追问，回答回不到房间；重试在房间消息上做。
-                    ...(roomTaskSession ? {} : { onRetry: retryTurn }),
-                    // ADR-0004 红线：还原会覆盖 Codex 正在写的文件，有回合在跑时不提供（与环境页的还原一致）。
-                    ...(running > 0 ? {} : { onRestoreBefore: (turn: TurnTimeline) => void restoreBefore(turn) }),
-                  }}
-                  empty={<EmptyConversation />}
-                />
+                <ShareContext.Provider value={shareActions}>
+                  <ConversationStream
+                    key={props.sessionId}
+                    scrollCarryKey={`conversation-scroll:session:${props.sessionId}`}
+                    timeline={streamTimeline}
+                    historyLoading={historyLoading}
+                    now={now}
+                    actions={{
+                      onOpenChange: openChange,
+                      displayPath,
+                      onViewChanges: () => {
+                        setDrawer(null);
+                        setSideOpen(true);
+                        setSideTab("changes");
+                      },
+                      // 房间任务会话只读：在这里重试等于私下追问，回答回不到房间；重试在房间消息上做。
+                      ...(roomTaskSession ? {} : { onRetry: retryTurn }),
+                      // ADR-0004 红线：还原会覆盖 Codex 正在写的文件，有回合在跑时不提供（与环境页的还原一致）；
+                      // 在独立工作目录里干活的会话也不提供（检查点是原目录的，还原会改到原目录）。
+                      ...(running > 0 || isolated ? {} : { onRestoreBefore: (turn: TurnTimeline) => void restoreBefore(turn) }),
+                    }}
+                    empty={<EmptyConversation />}
+                  />
+                </ShareContext.Provider>
               </MarkdownLinkContext.Provider>
+              {openDraftId === null ? null : <SharedDraftDialog draftId={openDraftId} onClose={() => setOpenDraftId(null)} />}
+              {snapshotOpen ? (
+                <SnapshotDialog
+                  sessionId={props.sessionId}
+                  onClose={() => setSnapshotOpen(false)}
+                  onCreated={(draftId) => {
+                    setSnapshotOpen(false);
+                    setOpenDraftId(draftId);
+                  }}
+                />
+              ) : null}
               <ConfirmDialog
                 open={restoreTarget !== null}
                 onOpenChange={(open) => !open && setRestoreTarget(null)}
@@ -1045,6 +1289,7 @@ export function SessionRuntime(props: {
               <div className="shrink-0 px-6 pb-4">
                 <ApprovalDock
                   approvals={approvals}
+                  agentName={session === null ? null : (session.agent?.displayName ?? (session.agentId === "codex" ? "Codex" : session.agentId))}
                   onDecide={decideApproval}
                   changesFor={changesForApproval}
                   displayPath={displayPath}
@@ -1093,6 +1338,9 @@ export function SessionRuntime(props: {
                     skillPath={skillPath}
                     usage={projection.usage}
                     lastUserText={lastUserText}
+                    referencesSessions={referencesSessions}
+                    {...(canDelegate ? { delegateAgents, onDelegate: delegate } : {})}
+                    {...(prefill === null || prefill.sessionId !== props.sessionId ? {} : { initialDraft: prefill.text, draftKey: prefill.sessionId })}
                     runState={{
                       status: headStatus,
                       stepText: stepText(activeMeta?.currentStep ?? null, t),
@@ -1100,7 +1348,10 @@ export function SessionRuntime(props: {
                       pendingApprovals: approvals.length,
                       stopping: stopping !== null && activeTurnId === stopping.turnId,
                       onStop: () => {
-                        if (activeTurnId !== null) stopTurn(activeTurnId);
+                        if (activeTurnId === null) return;
+                        // 还有没做完的委派：问一句是否一并停止（需求 4.11 停止级联）。
+                        if (activeDelegations > 0) setCascadeTurn(activeTurnId);
+                        else stopTurn(activeTurnId);
                       },
                       onJumpToApproval: () => {
                         document.querySelector('[data-testid="approval-card"]')?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1134,6 +1385,7 @@ export function SessionRuntime(props: {
                         <ApprovalModeSwitcher
                           approvalModeLocked={approvalLock.locked}
                           {...(approvalLock.max === undefined ? {} : { maxApprovalMode: approvalLock.max })}
+                          {...(session.relation === "review" ? { fixedReason: t.collab.review.fixedReadOnly } : {})}
                           session={session}
                           onChange={async (approvalMode) => {
                             try {
@@ -1146,7 +1398,8 @@ export function SessionRuntime(props: {
                       ) : null
                     }
                     modelSlot={
-                      session ? (
+                      // 不支持切换模型的 Agent 不出现模型选择（需求 4.3 / R8）。
+                      session && session.agent?.capabilities.includes("model_switch") !== false ? (
                         <SessionModelSwitcher
                           session={session}
                           provider={modelProvider}

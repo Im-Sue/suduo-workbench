@@ -425,7 +425,7 @@ describe("共享 Agent 面板：英文", () => {
   it("本机 Agent 没登记：默认说明是英文", async () => {
     const node = await render(<ShareAgentPanel room={defaultRoom} meId={ME.id} />);
     expect(q(node, "my-agent-unavailable")?.textContent).toBe(
-      "Your local Codex isn't registered as an agent yet. It registers automatically once you sign in and open SuDuo on this computer.",
+      "Your local agent isn't registered yet. It registers automatically once you sign in and open SuDuo on this computer.",
     );
   });
 });

@@ -72,7 +72,7 @@ describe("Composer 运行态状态行与停止控件（PR3）", () => {
     const node = await render(composer(runState({ onStop })));
     const line = q(node, "run-status-line");
     expect(line?.getAttribute("data-status")).toBe("running");
-    expect(line?.textContent).toContain("Codex 正在工作");
+    expect(line?.textContent).toContain("Agent 正在工作");
     expect(q(node, "run-status-step")?.textContent).toBe("正在执行 pnpm test");
     expect(q(node, "run-status-elapsed")?.textContent).toBe("12 秒");
     const stop = q(node, "interrupt-turn") as HTMLButtonElement | null;

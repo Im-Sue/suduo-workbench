@@ -59,4 +59,20 @@ export const toolSpec = {
       "Don't print data:image URLs with text().",
     fileId: "File ID (the value after “file ID” in the message).",
   },
+
+  /**
+   * Descriptions when served through the SuDuo local MCP tool service (ADR-0015): no code-mode instructions;
+   * results come back as MCP text / image content. Other tools reuse the Codex wording without the return-format
+   * sentence, with the suduo_ prefix dropped from tool names.
+   */
+  mcp: {
+    attachmentView:
+      "View the content of a requirement attachment. Images are handed to you to view directly; text files return their content directly; other types (PDF, archives, video, etc.) are saved to the project's .suduo/ folder and their path is returned.",
+    roomFileView:
+      "Read-only: view a file in the room (messages give the file ID). Images are handed to you to view directly; text files return their content directly; other types (video, PDF, archives, etc.) are saved to the project's .suduo/rooms/<room>/files/ and their path is returned, so you can read them directly afterward.",
+    commentSubmit:
+      "Post a comment on the current requirement (visible to the whole team; it can't be withdrawn once posted). Call it only when the user explicitly asks. Don't suggest posting a comment on your own. " +
+      "After the call, it waits until the user confirms in the SuDuo interface, which can take from tens of seconds to a few minutes. Don't output progress messages while waiting. " +
+      "Returns: posted (with the comment details), declined by the user, saved as a draft to send (the wait took too long; the user can still send it from SuDuo later), or not posted, with the reason.",
+  },
 } satisfies ServerMessages["toolSpec"];

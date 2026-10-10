@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { shortenPath } from "../src/features/settings/format.js";
 import {
+  agentHealthItems,
   doctorHealth,
   loginHealth,
   mcpHealth,
@@ -42,6 +43,7 @@ describe("设置分组与搜索", () => {
       "账号",
       "需求服务",
       "代码目录",
+      "AI Agent",
       "模型服务",
       "执行与安全",
       "Skills",
@@ -146,6 +148,19 @@ describe("诊断结论", () => {
   it("登录：未登录给去登录", () => {
     expect(loginHealth({ ...signedIn, session: null })).toMatchObject({ status: "fail", fix: { login: true } });
     expect(loginHealth(signedIn).detail).toContain("Sue");
+  });
+
+  it("各家 Agent（S12）：自检里每家一项，结论与说明照服务端；没通过的给 AI Agent 设置入口；自检没出来时不占位", () => {
+    const checks = [
+      { id: "suduo.codex-cli", name: "Codex CLI", status: "pass" as const, message: "ok", agentId: "codex" },
+      { id: "suduo.agent", name: "OpenCode", status: "pass" as const, message: "已安装", agentId: "opencode" },
+      { id: "suduo.agent", name: "Claude Code", status: "warn" as const, message: "需要登录", agentId: "claude-code" },
+    ];
+    expect(agentHealthItems({ pending: false, data: { checks } })).toEqual([
+      { key: "agent:opencode", title: "OpenCode", status: "ok", detail: "已安装" },
+      { key: "agent:claude-code", title: "Claude Code", status: "warn", detail: "需要登录", fix: { label: "查看", section: "agents" } },
+    ]);
+    expect(agentHealthItems({ pending: true })).toEqual([]);
   });
 
   it("查不到时如实写「没能完成检查」，不当成正常", () => {

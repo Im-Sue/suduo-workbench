@@ -1,22 +1,27 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { LocalAgentStateDto } from "@suduo/client-contracts";
+import type { AgentDto as LocalAgentDto, LocalAgentStateDto } from "@suduo/client-contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agent, ME, room, share, shareRequest, WANG, ZHANG } from "./fixtures/rooms.js";
 
 const apiMocks = vi.hoisted(() => ({
+  addAgentKind: vi.fn(),
+  removeAgentKind: vi.fn(),
   closeAgentShare: vi.fn(),
   getSelfAgent: vi.fn(),
   listAgents: vi.fn(),
+  listLocalAgents: vi.fn(),
   listRequirementsMappings: vi.fn(),
   listRoomShares: vi.fn(),
   listShareRequests: vi.fn(),
   openAgentShare: vi.fn(),
   requestAgentShare: vi.fn(),
+  requirementsSettings: vi.fn(),
   resolveShareRequest: vi.fn(),
+  testRequirementsSettings: vi.fn(),
 }));
 vi.mock("../src/api/client.js", () => ({ api: apiMocks, ApiClientError: class ApiClientError extends Error {} }));
 
@@ -64,8 +69,48 @@ async function render() {
   return container;
 }
 
+/** 本机 Agent 配置表里的一家（`GET /api/v1/agents`）。 */
+const localAgent = (id: string, displayName: string, patch: Partial<LocalAgentDto> = {}): LocalAgentDto => ({
+  id,
+  displayName,
+  vendor: "v",
+  channel: "acp",
+  bundled: false,
+  runtimeAvailable: true,
+  enabled: true,
+  status: "ready",
+  reasonCode: null,
+  reasonDetail: null,
+  version: null,
+  minVersion: null,
+  verifiedVersions: [],
+  versionVerified: null,
+  executablePath: null,
+  actions: [],
+  capabilities: [],
+  readOnlyCapable: true,
+  homepageUrl: "https://x.test",
+  termsUrl: null,
+  checkedAt: null,
+  ...patch,
+});
+
+/** 云端声明支持多种 Agent（`agent_kinds_v2`）。 */
+function cloudSupportsAgentKinds(): void {
+  apiMocks.requirementsSettings.mockResolvedValue({ configured: true, baseUrl: "http://cloud.test", session: { user: ME } });
+  apiMocks.testRequirementsSettings.mockResolvedValue({ baseUrl: "http://cloud.test", reachable: true, message: "", version: "0.11.0", features: ["agent_kinds_v2"] });
+}
+
 const q = (node: ParentNode, id: string) => node.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 const button = (node: ParentNode, text: string) => [...node.querySelectorAll("button")].find((item) => item.textContent?.trim() === text);
+async function openMenu(trigger: Element | null): Promise<void> {
+  if (trigger === null) throw new Error("menu trigger not found");
+  await act(async () => {
+    (trigger as HTMLElement).focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  await settle(2);
+}
 /** 时长分段里选中的那一档。 */
 const selectedDuration = (node: ParentNode) => q(node, "share-duration")?.querySelector('[data-state="on"]')?.textContent?.trim();
 
@@ -87,6 +132,17 @@ beforeEach(() => {
   apiMocks.closeAgentShare.mockResolvedValue({});
   apiMocks.requestAgentShare.mockResolvedValue(shareRequest());
   apiMocks.resolveShareRequest.mockResolvedValue({});
+  apiMocks.requirementsSettings.mockResolvedValue({ configured: false });
+  apiMocks.listLocalAgents.mockResolvedValue({
+    defaultAgentId: "codex",
+    agents: [
+      localAgent("codex", "Codex", { channel: "codex" }),
+      localAgent("claude-code", "Claude Code", { channel: "claude" }),
+      localAgent("gemini", "Gemini CLI", { status: "auth_required" }),
+      localAgent("opencode", "OpenCode", { enabled: false }),
+      localAgent("cursor", "Cursor CLI", { readOnlyCapable: false }),
+    ],
+  });
 });
 
 afterEach(async () => {
@@ -206,5 +262,74 @@ describe("共享 Agent 面板", () => {
     const node = await render();
     expect(q(node, "my-agent-no-mapping")?.textContent).toContain("关联代码目录");
     expect(node.textContent).toContain("还有 2 个在排队");
+  });
+});
+
+describe("共享 Agent 面板：多 Agent（S6）", () => {
+  const claude = agent({ id: "agent-me-claude", kind: "claude-code", owner: ME, deviceName: "MacBook Air", label: "李娜's Claude Code · MacBook Air" });
+
+  it("本机登记的每家各一行开关，名字带产品名；只共享了 Claude Code 时只有它是开着的；共享开关旁有个人订阅的说明", async () => {
+    apiMocks.getSelfAgent.mockResolvedValue(ready({ agents: [myAgent, claude] }));
+    apiMocks.listRoomShares.mockResolvedValue({ items: [share({ id: "share-claude", agent: claude, expiresAt: null })] });
+    const node = await render();
+    const rows = [...node.querySelectorAll<HTMLElement>('[data-testid="my-agent-row"]')];
+    expect(rows.map((row) => row.getAttribute("data-agent-kind"))).toEqual(["codex", "claude-code"]);
+    expect(rows.map((row) => row.textContent)).toEqual(["李娜 的 Codex · MacBook Air", "李娜 的 Claude Code · MacBook Air"]);
+    const switchOf = (kind: string) => node.querySelector<HTMLElement>(`[data-agent-kind="${kind}"] [data-testid="my-agent-switch"]`);
+    expect(switchOf("codex")?.getAttribute("aria-checked")).toBe("false");
+    expect(switchOf("claude-code")?.getAttribute("aria-checked")).toBe("true");
+    expect(q(node, "my-agent-share-state")?.textContent).toContain("已共享 · 直到关闭");
+    expect(q(node, "my-agent-subscription-note")?.textContent).toContain("个人订阅（如 Claude Pro / Max、ChatGPT Plus / Pro）");
+
+    await act(async () => switchOf("claude-code")?.click());
+    await settle(2);
+    expect(apiMocks.closeAgentShare).toHaveBeenCalledWith("share-claude");
+    await act(async () => switchOf("codex")?.click());
+    await settle(2);
+    expect(apiMocks.openAgentShare).toHaveBeenCalledWith("room-1", expect.objectContaining({ agentId: "agent-me" }));
+  });
+
+  it("云端支持多种 Agent：「共享本机的其他 Agent」列出做得到只读、还没登记的各家，不能用的灰显；选中后登记并按时长共享", async () => {
+    cloudSupportsAgentKinds();
+    apiMocks.addAgentKind.mockResolvedValue(claude);
+    apiMocks.openAgentShare.mockResolvedValue(share({ id: "share-claude", agent: claude }));
+    const node = await render();
+    await settle(3);
+    await openMenu(q(node, "share-another-agent"));
+    const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    // Codex 已登记、Cursor 做不到只读：都不列；Gemini 需要登录、OpenCode 在设置里停用了：灰显并写明原因。
+    expect(items.map((item) => item.textContent)).toEqual(["Claude Code", "Gemini CLI · 需要登录", "OpenCode · 已停用"]);
+    expect(items[1]?.getAttribute("aria-disabled")).toBe("true");
+    expect(items[2]?.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => items[0]?.click());
+    await settle(3);
+    expect(apiMocks.addAgentKind).toHaveBeenCalledWith("claude-code");
+    expect(apiMocks.openAgentShare).toHaveBeenCalledWith("room-1", expect.objectContaining({ agentId: "agent-me-claude", duration: "today" }));
+  });
+
+  it("其他家在哪个房间都没共享着时可以去掉（Codex 不能去掉）；还共享着就不给去掉", async () => {
+    apiMocks.removeAgentKind.mockResolvedValue(null);
+    apiMocks.getSelfAgent.mockResolvedValue(ready({ agents: [myAgent, { ...claude, activeShareCount: 0 }] }));
+    apiMocks.listRoomShares.mockResolvedValue({ items: [] });
+    let node = await render();
+    const removes = [...node.querySelectorAll<HTMLElement>('[data-testid="my-agent-remove"]')];
+    expect(removes).toHaveLength(1);
+    expect(removes[0]?.closest('[data-testid="my-agent-row"]')?.getAttribute("data-agent-kind")).toBe("claude-code");
+    expect(removes[0]?.getAttribute("aria-label")).toBe("不再在讨论里提供 李娜 的 Claude Code · MacBook Air（以后可以再添加）");
+    await act(async () => removes[0]?.click());
+    await settle(2);
+    expect(apiMocks.removeAgentKind).toHaveBeenCalledWith("claude-code");
+
+    apiMocks.getSelfAgent.mockResolvedValue(ready({ agents: [myAgent, { ...claude, activeShareCount: 1 }] }));
+    client.clear();
+    node = await rerender();
+    expect(q(node, "my-agent-remove")).toBeNull();
+  });
+
+  it("云端不认多种 Agent（老云端）：不显示「共享本机的其他 Agent」，只能共享 Codex", async () => {
+    const node = await render();
+    await settle(3);
+    expect(q(node, "share-another-agent")).toBeNull();
+    expect(apiMocks.listLocalAgents).not.toHaveBeenCalled();
   });
 });

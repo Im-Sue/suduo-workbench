@@ -1,5 +1,7 @@
 import {
+  AGENT_KINDS,
   AGENT_RUN_ACTIVITY_KINDS,
+  agentKindName,
   formatRequirementNumber,
   LOCALES,
   readAgentRunProgress,
@@ -198,7 +200,10 @@ export function lastMessageOf(message: RoomMessageDto, t: Messages = messagesFor
     preview: messagePreview(message, t),
     createdAt: message.createdAt,
     authorKind: message.authorKind,
-    agent: message.agent === null ? null : { ownerName: message.agent.owner.displayName, deviceName: message.agent.deviceName },
+    agent:
+      message.agent === null
+        ? null
+        : { ownerName: message.agent.owner.displayName, deviceName: message.agent.deviceName, kind: message.agent.kind },
     text: summaryPreview(message.body, 80),
     firstFile: first === undefined ? null : { fileName: first.fileName, kind: first.kind },
     fileCount: message.files.length,
@@ -210,7 +215,7 @@ export function lastMessageOf(message: RoomMessageDto, t: Messages = messagesFor
  * 老云端没有结构化字段时显示兜底文字。
  */
 export function lastMessageAuthor(last: RoomLastMessageDto, t: Messages = messagesFor(currentLocale())): string {
-  if (last.authorKind === "agent" && last.agent != null) return t.rooms.agent.name(last.agent.ownerName);
+  if (last.authorKind === "agent" && last.agent != null) return t.rooms.agent.name(last.agent.ownerName, agentKindName(last.agent.kind ?? "codex"));
   if (last.authorKind === "system") return t.rooms.message.systemAuthor;
   return last.authorName;
 }
@@ -318,14 +323,17 @@ export function roomRequirementCode(room: Pick<RoomDto, "requirement">): string 
 
 // ───────────────────────────── Agent 与任务 ─────────────────────────────
 
-/** 「陈思远 的 Codex」：Agent 在消息、状态行里的名字（设备名只在需要区分时显示）。 */
-export function agentName(agent: Pick<AgentSummaryDto, "owner">, t: Messages = messagesFor(currentLocale())): string {
-  return t.rooms.agent.name(agent.owner.displayName);
+/** 「陈思远 的 Codex」「陈思远 的 Claude Code」：Agent 在消息、状态行里的名字（设备名只在需要区分时显示）。 */
+export function agentName(agent: Pick<AgentSummaryDto, "owner" | "kind">, t: Messages = messagesFor(currentLocale())): string {
+  return t.rooms.agent.name(agent.owner.displayName, agentKindName(agent.kind));
 }
 
 /** 「陈思远 的 Codex · MacBook Pro」：需要区分设备时（@ 候选、共享面板）的名字，按界面语言（不用云端的标签）。 */
-export function agentLabel(agent: Pick<AgentSummaryDto, "owner" | "deviceName">, t: Messages = messagesFor(currentLocale())): string {
-  return t.rooms.agent.withDevice(agent.owner.displayName, agent.deviceName);
+export function agentLabel(
+  agent: Pick<AgentSummaryDto, "owner" | "deviceName" | "kind">,
+  t: Messages = messagesFor(currentLocale()),
+): string {
+  return t.rooms.agent.withDevice(agent.owner.displayName, agentKindName(agent.kind), agent.deviceName);
 }
 
 /** 任务状态名（取代云端契约的 AGENT_RUN_STATUS_LABELS，按界面语言）。 */
@@ -489,8 +497,9 @@ export function mentionAllText(t: Messages = messagesFor(currentLocale())): stri
  * 同一个人有多台设备时带设备名。高亮不靠它与云端标签对上：按 Agent 的所有者名与设备名把各语言的写法都认（mentionHighlights）。
  */
 export function agentMentionText(agent: AgentDto, all: readonly AgentDto[], t: Messages = messagesFor(currentLocale())): string {
-  const sameOwner = all.filter((item) => item.owner.id === agent.owner.id).length > 1;
-  return t.rooms.mention.text.agent(agent.owner.displayName, sameOwner ? agent.deviceName : null);
+  // 同一个人同一家 Agent 有多台设备时才带设备名（一台电脑上的 Codex 与 Claude Code 靠产品名就能分开）。
+  const sameOwner = all.filter((item) => item.owner.id === agent.owner.id && item.kind === agent.kind).length > 1;
+  return t.rooms.mention.text.agent(agent.owner.displayName, agentKindName(agent.kind), sameOwner ? agent.deviceName : null);
 }
 
 export function agentAvailability(agent: AgentDto, shares: readonly AgentShareDto[]): AgentAvailability {
@@ -543,7 +552,8 @@ export function buildMentionCandidates(
         ...dictionaries.map((messages) => agentLabel(candidate.agent, messages)),
         candidate.agent.label,
         candidate.agent.owner.displayName,
-        "codex",
+        candidate.agent.kind,
+        agentKindName(candidate.agent.kind),
       ),
     )
     .toSorted((left, right) => rank[left.availability] - rank[right.availability]);
@@ -567,17 +577,23 @@ export function agentAvailabilityNote(
  * 新云端是英文 “Sam's Codex · MacBook Pro”，老云端（与旧消息里存下的）是中文「陈思远 的 Codex · MacBook Pro」，
  * 所以由字典反推出各语言的形状来认，不另写一份。
  */
-function parseAgentLabel(label: string): { owner: string; device: string } | null {
-  for (const locale of LOCALES) {
-    const sample = messagesFor(locale).rooms.agent.withDevice("\u0001", "\u0002");
-    const pattern = sample
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-      .replace("\u0001", "(?<owner>.+?)")
-      .replace("\u0002", "(?<device>.+)");
-    const groups = new RegExp(`^${pattern}$`, "u").exec(label)?.groups;
-    const owner = groups?.["owner"];
-    const device = groups?.["device"];
-    if (owner !== undefined && device !== undefined) return { owner, device };
+function parseAgentLabel(label: string): { owner: string; agent: string; device: string } | null {
+  // 先只认已知的产品名（所有者名里带「's」时也拆得对，如 “Sam's Team's Codex”），认不出再放宽到任意产品名。
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const known = AGENT_KINDS.map((kind) => escape(agentKindName(kind))).join("|");
+  for (const agentPattern of [`(?<agent>${known})`, "(?<agent>.+?)"]) {
+    for (const locale of LOCALES) {
+      const sample = messagesFor(locale).rooms.agent.withDevice("\u0001", "\u0003", "\u0002");
+      const pattern = escape(sample)
+        .replace("\u0001", "(?<owner>.+?)")
+        .replace("\u0003", agentPattern)
+        .replace("\u0002", "(?<device>.+)");
+      const groups = new RegExp(`^${pattern}$`, "u").exec(label)?.groups;
+      const owner = groups?.["owner"];
+      const agent = groups?.["agent"];
+      const device = groups?.["device"];
+      if (owner !== undefined && agent !== undefined && device !== undefined) return { owner, agent, device };
+    }
   }
   return null;
 }
@@ -591,17 +607,17 @@ function parseAgentLabel(label: string): { owner: string; device: string } | nul
  */
 export function mentionHighlights(
   mentions: readonly RoomMentionDto[],
-  agents: readonly Pick<AgentSummaryDto, "id" | "owner" | "deviceName">[] = [],
+  agents: readonly Pick<AgentSummaryDto, "id" | "owner" | "deviceName" | "kind">[] = [],
 ): string[] {
   const set = new Set<string>();
   const add = (text: string) => {
     if (text.trim() !== "") set.add(text);
   };
   const dictionaries = LOCALES.map(messagesFor);
-  const addAgentTexts = (owner: string, device: string) => {
+  const addAgentTexts = (owner: string, agent: string, device: string) => {
     for (const messages of dictionaries) {
-      add(messages.rooms.mention.text.agent(owner, null));
-      add(messages.rooms.mention.text.agent(owner, device));
+      add(messages.rooms.mention.text.agent(owner, agent, null));
+      add(messages.rooms.mention.text.agent(owner, agent, device));
     }
   };
   for (const mention of mentions) {
@@ -609,9 +625,9 @@ export function mentionHighlights(
     const label = mention.label.trim();
     if (mention.kind === "agent") {
       const agent = agents.find((item) => item.id === mention.id);
-      if (agent !== undefined) addAgentTexts(agent.owner.displayName, agent.deviceName);
+      if (agent !== undefined) addAgentTexts(agent.owner.displayName, agentKindName(agent.kind), agent.deviceName);
       const parsed = parseAgentLabel(label);
-      if (parsed !== null) addAgentTexts(parsed.owner, parsed.device);
+      if (parsed !== null) addAgentTexts(parsed.owner, parsed.agent, parsed.device);
     }
     if (label === "") continue;
     const head = label.split(" · ")[0] ?? label;

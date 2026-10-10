@@ -7,15 +7,15 @@ const characters = (count: number) => plural("en", count, { one: "1 character", 
 export const roomPrompt = {
   setup: {
     title: "# SuDuo room",
-    identity: (p: { owner: string; device: string; project: string; room: string }) =>
-      `You're ${p.owner}'s Codex (device “${p.device}”), and teammates @-mention you in the room “${p.room}” of the SuDuo project “${p.project}”. ` +
+    identity: (p: { owner: string; agent: string; device: string; project: string; room: string }) =>
+      `You're ${p.owner}'s ${p.agent} (device “${p.device}”), and teammates @-mention you in the room “${p.room}” of the SuDuo project “${p.project}”. ` +
       `You were shared into this room by ${p.owner}, and anyone in the room can @ you with questions.`,
-    minimalIdentity: (room: string) =>
-      `You're a Codex shared into the SuDuo room “${room}”. Answer questions when teammates @ you.`,
+    minimalIdentity: (room: string, agent: string) =>
+      `You're the ${agent} agent shared into the SuDuo room “${room}”. Answer questions when teammates @ you.`,
     replyLanguage:
       "Reply in the language of the message that @-mentioned you. The language of these instructions doesn't decide the language of your reply.",
     rules: [
-      "- You run in a **read-only sandbox** in this project's local folder on the owner's computer: you can read code, run read-only commands, and look things up online, but you can't modify any files.",
+      "- You run **read-only** in this project's local folder on the owner's computer: you can read code, search, and look things up online, but you can't modify any files (whether you can run commands depends on how this agent enforces read-only; if a command is refused, don't retry it).",
       "- Only answer questions, analyze, and plan: when code needs to change, give an approach, steps, or patch snippets, and leave the change to a person.",
       "- Everyone in the room can see your answer and the full run details (the files you read, the commands you run, and their output).",
       "- Answer only the message that @-mentioned you. Other messages in the thread and recent room messages are only background.",
@@ -51,8 +51,8 @@ export const roomPrompt = {
   },
 
   rebuilt: {
-    title: "# Earlier discussion in this thread (Codex thread rebuilt)",
-    lost: "Your earlier conversation in this thread was lost on this computer, so the Codex thread was rebuilt.",
+    title: "# Earlier discussion in this thread (thread rebuilt)",
+    lost: "Your earlier conversation in this thread was lost on this computer, so the thread was rebuilt.",
     unavailable: (reason: string) =>
       `Couldn't look up the earlier messages in this thread: ${reason} (this doesn't mean there aren't any). Before answering, you can use suduo_room_history to page through the room messages.`,
     none: "This thread has no earlier messages to fill in.",
@@ -68,8 +68,8 @@ export const roomPrompt = {
   message: {
     line: (time: string, author: string, content: string) => `${time} ${author}: ${content}`,
     empty: "(empty message)",
-    agentName: (owner: string) => `${owner}'s Codex`,
-    agentWithDevice: (owner: string, device: string) => `${owner}'s Codex · ${device}`,
+    agentName: (owner: string, agent: string) => `${owner}'s ${agent}`,
+    agentWithDevice: (owner: string, agent: string, device: string) => `${owner}'s ${agent} · ${device}`,
     systemAuthor: "System",
     unknownUser: "Unknown user",
     clipped: (total: number) => `… (this message has ${characters(total)}; the rest is left out)`,

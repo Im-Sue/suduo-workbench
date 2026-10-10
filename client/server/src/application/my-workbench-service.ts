@@ -31,6 +31,7 @@ import type {
   SessionRepository,
 } from "../infrastructure/db/repositories/session-repository.js";
 import type { WorkspaceMappingRecord } from "../infrastructure/db/repositories/workspace-mapping-repository.js";
+import type { ReviewRecord } from "../infrastructure/db/repositories/review-repository.js";
 import type { RequirementsRemoteClient } from "../infrastructure/requirements-v2/remote-client.js";
 
 const WORKBENCH_SESSION_LIMIT = 20;
@@ -82,7 +83,14 @@ export interface MyWorkbenchServiceDependencies {
   >;
   /** t：结论说明用的字典（请求的语言）。 */
   verifyMapping?(rootPath: string, t: ServerMessages): Promise<WorkspaceMappingPathVerification>;
+  /** 交回了意见、还没交回原 Agent 修改的评审（S12）；不给就不列。 */
+  reviews?: { listAwaitingHandback(since: number): ReviewRecord[] };
+  agentName?(agentId: string): string;
+  now?(): number;
 }
+
+/** 「待处理的评审意见」只看最近两周的（更早的多半已经不用管了）。 */
+const PENDING_REVIEW_WINDOW_MS = 14 * 24 * 60 * 60_000;
 
 /**
  * 只读地把本机会话投影、会话材料和远程需求对齐。三块 envelope 独立降级，
@@ -243,6 +251,24 @@ export class MyWorkbenchService {
         localProjectId: session.projectId,
         projectName: project?.name ?? null,
         lastActivityAt: session.lastActivityAt,
+      });
+    }
+
+    const since = (this.dependencies.now?.() ?? Date.now()) - PENDING_REVIEW_WINDOW_MS;
+    for (const review of this.dependencies.reviews?.listAwaitingHandback(since) ?? []) {
+      const session = this.dependencies.sessions.getById(review.targetSessionId);
+      if (session === null || session.state === "deleted" || session.state === "archived") continue;
+      const project = local.projectFor(session.projectId);
+      actions.push({
+        kind: "pending_review",
+        reviewId: review.id,
+        sessionId: session.id,
+        sessionTitle: session.title,
+        localProjectId: session.projectId,
+        projectName: project?.name ?? null,
+        agentName: this.dependencies.agentName?.(review.agentId) ?? review.agentId,
+        findings: (review.findings ?? []).length,
+        finishedAt: review.finishedAt ?? review.updatedAt,
       });
     }
 

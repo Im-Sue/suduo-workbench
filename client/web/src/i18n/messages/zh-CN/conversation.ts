@@ -78,6 +78,8 @@ export const conversation = {
       title: (title: string) => `删除会话「${title}」？`,
       description: "删除后对话记录不能恢复；项目文件和检查点不受影响。",
       confirm: "删除",
+      /** 这个会话往下还有会话（委派、接着做）时多问一句。 */
+      withChildren: (count: number) => `同时删除它往下的 ${String(count)} 个会话（委派、接着做）`,
     },
   },
   /** 会话头。 */
@@ -109,15 +111,16 @@ export const conversation = {
   /** 审批坞：普通审批与 SuDuo 写工具的确认卡。 */
   approval: {
     label: "等你确认",
+    /** 标题写 Agent 的名字（多 Agent S12：「Claude Code 想运行命令」）；不知道是哪家时写「Agent」。 */
     question: {
-      command: "Codex 想运行命令",
-      fileChange: "Codex 想修改文件",
-      permissions: "Codex 想变更权限",
-      other: "Codex 请你确认后继续",
+      command: (agent: string | null) => `${agent ?? "Agent"} 想运行命令`,
+      fileChange: (agent: string | null) => `${agent ?? "Agent"} 想修改文件`,
+      permissions: (agent: string | null) => `${agent ?? "Agent"} 想变更权限`,
+      other: (agent: string | null) => `${agent ?? "Agent"} 请你确认后继续`,
       /** 命令审批里向已在运行的命令（终端）输入内容。 */
-      stdin: "Codex 想向正在运行的命令输入内容",
+      stdin: (agent: string | null) => `${agent ?? "Agent"} 想向正在运行的命令输入内容`,
     },
-    editFiles: (count: number) => `Codex 想修改 ${String(count)} 个文件`,
+    editFiles: (count: number, agent: string | null) => `${agent ?? "Agent"} 想修改 ${String(count)} 个文件`,
     /** 多个待确认时：眼下处理的总是第 1 个。 */
     position: (total: number) => `第 1 个，共 ${String(total)} 个`,
     cwd: (cwd: string) => `在 ${cwd}`,
@@ -133,7 +136,7 @@ export const conversation = {
     },
     cancel: {
       title: "拒绝并中断",
-      description: "停止 Codex 当前这一轮",
+      description: "停止 Agent 当前这一轮",
     },
     /** 发评论、发布确认版的确认卡：对外且不能撤回，只能点按钮确认。 */
     tool: {
@@ -257,7 +260,7 @@ export const conversation = {
     fallbackSession: "会话",
     body: {
       completed: "这一轮已经完成。",
-      approval: "Codex 在等你确认后继续。",
+      approval: "Agent 在等你确认后继续。",
       error: "这一轮没能完成，回到会话看看原因。",
     },
   },
@@ -306,11 +309,11 @@ export const conversation = {
       title: "准备好了",
       /** 两个按键（/ 与 @）是渲染好的组件。 */
       description: (keys: { skill: ReactNode; file: ReactNode }): ReactNode[] => [
-        "直接描述要交给 Codex 的工作；输入 ",
+        "直接描述要交给 Agent 的工作；输入 ",
         keys.skill,
         " 选择 skill，",
         keys.file,
-        " 引用项目文件。",
+        " 引用别的会话或项目文件。",
       ],
     },
   },

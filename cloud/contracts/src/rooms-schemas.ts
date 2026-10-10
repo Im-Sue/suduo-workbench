@@ -1,5 +1,5 @@
 import {
-  AGENT_KINDS,
+  AGENT_KIND_PATTERN,
   AGENT_RUN_STATUSES,
   AGENT_SHARE_DURATIONS,
 } from "./rooms.js";
@@ -125,7 +125,7 @@ export const REQUIREMENTS_V2_ROOM_SCHEMAS = {
     properties: {
       deviceKey: { type: "string", minLength: 1, maxLength: 120 },
       deviceName: { type: "string", minLength: 1, maxLength: 120 },
-      kind: { type: "string", enum: AGENT_KINDS },
+      kind: { type: "string", pattern: AGENT_KIND_PATTERN },
     },
   },
   agentHeartbeat: {

@@ -7,6 +7,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { TurnView, type TurnViewActions } from "./TurnView.js";
 import { UserBubble } from "./UserBubble.js";
+import { DelegationCard, QueuedRow } from "./DelegationCard.js";
+import { ReviewCard } from "./ReviewCard.js";
+import { SharedDraftCard } from "./SharedDraftCard.js";
 
 /**
  * 会话消息流（需求 §4.5）：按时间线渲染，内容最宽 760px 居中。
@@ -116,6 +119,14 @@ export function ConversationStream({
         );
       case "notice":
         return <NoticeRow notice={entry.notice} />;
+      case "delegation":
+        return <DelegationCard delegation={entry.delegation} />;
+      case "review":
+        return <ReviewCard review={entry.review} />;
+      case "sharedDraft":
+        return <SharedDraftCard draft={entry.draft} />;
+      case "queued":
+        return entry.state === "waiting" ? <QueuedRow itemId={entry.itemId} /> : null;
     }
   };
 
@@ -205,6 +216,10 @@ function NoticeRow({ notice }: { notice: TimelineNotice }) {
 function timelineFingerprint(timeline: readonly TimelineEntry[]): string {
   const last = timeline.at(-1);
   if (last === undefined) return "0";
+  // 委派卡片的状态会变，最后一项是它时把状态算进去（滚到底部的判断跟着变化）。
+  if (last.kind === "delegation") return `${timeline.length}:${last.id}:${last.delegation.status}:${last.delegation.updatedAt}`;
+  if (last.kind === "review") return `${timeline.length}:${last.id}:${last.review.status}:${last.review.updatedAt}`;
+  if (last.kind === "sharedDraft") return `${timeline.length}:${last.id}:${last.draft.status}:${String(last.draft.updatedAt)}`;
   if (last.kind !== "turn") return `${timeline.length}:${last.id}`;
   let size = 0;
   for (const block of last.turn.blocks) {

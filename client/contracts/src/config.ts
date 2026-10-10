@@ -44,6 +44,18 @@ export const ROOM_AGENT_SECURITY_POLICY = {
 } as const satisfies RuntimeSecurityPolicy;
 
 /**
+ * 运行时接口上的审批档（ADR-0014）：用户可选的三档之外多一个「只读」，给房间任务等只读会话用。
+ * 各 Agent 的适配器把它换算成自己的机制；Codex 的换算见 `RUNTIME_APPROVAL_MODE_POLICIES`。
+ */
+export type RuntimeApprovalMode = ApprovalMode | "readonly";
+
+/** Codex 适配器用：运行时审批档 → Codex 的审批策略与沙箱组合；只读即房间 Agent 档。 */
+export const RUNTIME_APPROVAL_MODE_POLICIES: Record<RuntimeApprovalMode, RuntimeSecurityPolicy> = {
+  ...APPROVAL_MODE_POLICIES,
+  readonly: ROOM_AGENT_SECURITY_POLICY,
+};
+
+/**
  * Codex 内置认识的推理强度（界面文案与排序用）。协议里 `ReasoningEffort` 是「模型声明的非空字符串」，
  * 某个模型支持哪几档以 model/list 的 `supportedReasoningEfforts` 为准；模型新声明的档位只要格式合法也接受，
  * 不因这里没列而拒绝。

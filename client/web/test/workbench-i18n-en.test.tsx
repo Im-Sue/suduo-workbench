@@ -131,22 +131,22 @@ describe("英文界面：会话输入框", () => {
   it("空闲时：占位、发送、图片按钮与上下文用量", async () => {
     const node = await render(composer());
     const textarea = q(node, "message-input") as HTMLTextAreaElement;
-    expect(textarea.placeholder).toBe("Describe the work for Codex. Type / for a Skill, @ to reference a file");
-    expect(node.querySelector("label.sr-only")?.textContent).toBe("Message to Codex");
+    expect(textarea.placeholder).toBe("Describe the work for the agent. Type / for a Skill, @ to reference a session or file");
+    expect(node.querySelector("label.sr-only")?.textContent).toBe("Message to the agent");
     expect(q(node, "send-message")?.getAttribute("aria-label")).toBe("Send");
     expect(q(node, "send-message")?.title).toBe("Send (Enter)");
     expect(q(node, "attach-image")?.textContent).toBe("Image");
     expect(q(node, "context-ring")?.title).toBe(
-      "25% of context used (50k / 200k). Codex automatically compacts earlier conversation as it nears the limit.",
+      "25% of context used (50k / 200k). The agent automatically compacts earlier conversation as it nears the limit.",
     );
   });
 
   it("运行中：状态行、停止与排队；等你确认时按条数说", async () => {
     const node = await render(composer({ runState: runState(), queue: queueView() }));
     expect((q(node, "message-input") as HTMLTextAreaElement).placeholder).toBe(
-      "Codex is working: Enter adds to this turn, Tab queues for later",
+      "The agent is working: Enter adds to this turn, Tab queues for later",
     );
-    expect(q(node, "run-status-line")?.textContent).toContain("Codex is working");
+    expect(q(node, "run-status-line")?.textContent).toContain("The agent is working");
     expect(q(node, "run-status-step")?.textContent).toBe("Running");
     expect(q(node, "queue-message")?.textContent).toBe("Queue");
     expect(q(node, "interrupt-turn")?.textContent).toBe("Stop");
@@ -315,6 +315,29 @@ describe("英文界面：检查面板", () => {
       />,
     );
     expect(node.textContent).toContain("No changes yet");
+  });
+
+  it("在独立工作目录里干活的会话（并行试做，S10）：环境标签只说明，不给原目录的检查点与还原", async () => {
+    const node = await render(
+      <ChangesPanel
+        tab="env"
+        changes={[]}
+        additions={0}
+        deletions={0}
+        projectId="p1"
+        projectRoot="/repo"
+        isolatedPath="/data/worktrees/p1/g1/codex"
+        running={false}
+        openTargets={[]}
+        onOpen={() => undefined}
+        onCollapse={() => undefined}
+        onSystemOpen={() => undefined}
+        onError={() => undefined}
+      />,
+    );
+    expect(q(node, "env-isolated")?.textContent).toContain("/data/worktrees/p1/g1/codex");
+    expect(q(node, "env-isolated")?.textContent).toContain("aren't offered here");
+    expect(api.gitStatus).not.toHaveBeenCalled();
   });
 });
 

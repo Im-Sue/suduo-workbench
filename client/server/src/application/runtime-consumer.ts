@@ -17,7 +17,8 @@ export async function consumeRuntimeUntilAborted(input: {
   signal: AbortSignal;
   onError?(error: unknown): void;
   onActivity?(): void;
-  recover?(): Promise<void>;
+  /** 连接断开后恢复：只恢复这个运行时的线程（参数是运行时 id）。 */
+  recover?(runtimeId: string): Promise<void>;
   restartMaxMs?: number;
 }): Promise<void> {
   let restartDelayMs = 250;
@@ -42,6 +43,15 @@ export async function consumeRuntimeUntilAborted(input: {
           }
           continue;
         }
+        if (event.type === "runtime.connection-closed" || event.type === "approval.withdrawn") {
+          // 一个会话的 Agent 连接关了 / Agent 撤回了审批请求：只作废相应的卡（ADR-0017 故障隔离），不进账本。
+          try {
+            routeApprovalLifecycle(input.approvals, event);
+          } catch (error) {
+            input.onError?.(error);
+          }
+          continue;
+        }
         try {
           input.ingestor.ingest(event);
         } catch (error) {
@@ -57,7 +67,11 @@ export async function consumeRuntimeUntilAborted(input: {
       return;
     }
     try {
-      input.approvals.orphanPersistedPending("runtime connection closed", { inProcess: true });
+      // 只作废这个运行时的确认卡：多 Agent 时别家 Agent 的会话不受影响（ADR-0017 故障隔离）。
+      input.approvals.orphanPersistedPending("runtime connection closed", {
+        inProcess: true,
+        runtimeId: input.runtime.runtimeId,
+      });
     } catch (error) {
       input.onError?.(error);
     }
@@ -69,7 +83,7 @@ export async function consumeRuntimeUntilAborted(input: {
       return;
     }
     try {
-      await input.recover?.();
+      await input.recover?.(input.runtime.runtimeId);
       restartDelayMs = 250;
     } catch (error) {
       input.onError?.(error);
@@ -101,4 +115,14 @@ async function declineToolCall(runtime: AgentRuntime, event: RuntimeEventDraft):
       contentItems: [{ type: "inputText", text: "The SuDuo tool service is unavailable, so this call wasn't run." }],
     })
     .catch(() => undefined);
+}
+
+function routeApprovalLifecycle(approvals: ApprovalService, event: RuntimeEventDraft): void {
+  const payload = event.payload !== null && typeof event.payload === "object" && !Array.isArray(event.payload) ? event.payload : {};
+  if (event.type === "runtime.connection-closed" && typeof payload["connectionId"] === "string") {
+    approvals.orphanConnection(payload["connectionId"]);
+  }
+  if (event.type === "approval.withdrawn" && typeof payload["approvalRef"] === "string") {
+    approvals.orphanWithdrawn(payload["approvalRef"], typeof payload["reason"] === "string" ? payload["reason"] : "withdrawn by the agent");
+  }
 }

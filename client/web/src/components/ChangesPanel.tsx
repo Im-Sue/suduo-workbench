@@ -29,6 +29,8 @@ export function ChangesPanel(props: {
   deletions: number;
   projectId: string;
   projectRoot: string;
+  /** 会话在独立工作目录里干活时的目录：「环境」标签只说明，不给原目录的检查点与还原。 */
+  isolatedPath?: string;
   running: boolean;
   openTargets: SystemOpenTarget[];
   onOpen(path: string): void;
@@ -86,6 +88,10 @@ export function ChangesPanel(props: {
             <div className="p-4">{props.requirementPanel}</div>
           ) : tab === "files" && props.fileTree !== undefined ? (
             <div className="p-1.5" data-testid="side-file-tree">{props.fileTree}</div>
+          ) : tab === "env" && props.isolatedPath !== undefined ? (
+            <p className="m-0 p-4 text-small break-all text-muted-foreground" data-testid="env-isolated">
+              {t.workbench.inspector.isolated(props.isolatedPath)}
+            </p>
           ) : tab === "env" ? (
             <div className="p-4">
               <EnvPanel

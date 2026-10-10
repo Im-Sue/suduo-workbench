@@ -57,6 +57,7 @@ interface RoomRow {
   last_message_author_kind: "user" | "agent" | "system" | null;
   last_message_author_name: string | null;
   last_message_agent_device_name: string | null;
+  last_message_agent_kind: string | null;
   /** 第一个附件（按位置）：文件名与内容类型（种类由内容类型定）。 */
   last_message_first_file_json: { fileName: string; contentType: string } | null;
   last_message_file_count: number | null;
@@ -94,6 +95,7 @@ function roomSelect(tail: string): string {
       last_message.author_kind AS last_message_author_kind,
       last_message.author_name AS last_message_author_name,
       last_message.agent_device_name AS last_message_agent_device_name,
+      last_message.agent_kind AS last_message_agent_kind,
       last_message.first_file_json AS last_message_first_file_json,
       last_message.file_count AS last_message_file_count
     FROM rooms r
@@ -124,6 +126,7 @@ function roomSelect(tail: string): string {
         lm.author_kind,
         lu.display_name AS author_name,
         la.device_name AS agent_device_name,
+        la.kind AS agent_kind,
         (
           SELECT json_build_object('fileName', lf.file_name, 'contentType', lf.content_type)
           FROM room_message_files lmf
@@ -419,14 +422,17 @@ function mapRoom(row: RoomRow): RoomDto {
 function mapLastMessage(row: RoomRow, seq: number, createdAt: Date): RoomLastMessageDto {
   const authorKind = row.last_message_author_kind ?? "system";
   const authorName = row.last_message_author_name ?? "";
-  const agent = authorKind === "agent" ? { ownerName: authorName, deviceName: row.last_message_agent_device_name ?? "" } : null;
+  const agent =
+    authorKind === "agent"
+      ? { ownerName: authorName, deviceName: row.last_message_agent_device_name ?? "", kind: row.last_message_agent_kind ?? "codex" }
+      : null;
   const text = previewText(row.last_message_body ?? "");
   const file = row.last_message_first_file_json;
   const firstFile = file === null ? null : { fileName: file.fileName, kind: roomFileKind(file.contentType) };
   const fileCount = row.last_message_file_count ?? 0;
   return {
     seq,
-    authorName: agent !== null ? agentLabel(agent.ownerName, agent.deviceName) : authorKind === "user" ? authorName : "System",
+    authorName: agent !== null ? agentLabel(agent.ownerName, agent.deviceName, agent.kind) : authorKind === "user" ? authorName : "System",
     preview: fallbackPreview(text, firstFile, fileCount),
     createdAt: createdAt.toISOString(),
     authorKind,

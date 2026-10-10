@@ -136,6 +136,18 @@ describe("审批后续事件带上与 approval.requested 对齐的标识", () =>
     }
   });
 
+  it("orphanPersistedPending 可按运行时限定：别家 Agent 断开不作废这里的确认卡（ADR-0017）", () => {
+    const context = createContext();
+    try {
+      context.request({ turnId: "turn-5" });
+      expect(context.service.orphanPersistedPending("runtime connection closed", { runtimeId: "claude-code" })).toBe(0);
+      expect(context.published.some((event) => event.type === "approval.orphaned")).toBe(false);
+      expect(context.service.orphanPersistedPending("runtime connection closed", { runtimeId: "codex-local" })).toBe(1);
+    } finally {
+      context.database.close();
+    }
+  });
+
   it("approval.delivery-failed 带 approvalId / approvalRef / error 与回合归属", async () => {
     const context = createContext();
     try {

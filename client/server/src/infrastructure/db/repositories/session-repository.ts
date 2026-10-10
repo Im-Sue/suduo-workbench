@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { isReasoningEffort, type JsonValue, type Locale, type ReasoningEffort } from "@suduo/client-contracts";
+import { isReasoningEffort, type JsonValue, type Locale, type ReasoningEffort, type RuntimeApprovalMode } from "@suduo/client-contracts";
 import type { DatabasePort } from "../database-port.js";
 import { parseJson, serializeJson } from "./repository-json.js";
 
@@ -10,7 +10,10 @@ export type SessionState =
   | "archived"
   | "deleted";
 
-export type SessionApprovalMode = "ask" | "auto" | "full";
+/** 会话的审批档（含用户可选的只读，迁移 021 以独立的 read_only 列存）。 */
+export type SessionApprovalMode = RuntimeApprovalMode;
+/** approval_mode 列能存的档（只读另存 read_only）。 */
+type StoredApprovalMode = "ask" | "auto" | "full";
 /** normal = 普通会话；room_task = 房间共享 Agent 的隐藏任务会话（迁移 016）。 */
 export type SessionKind = "normal" | "room_task";
 export type SessionPurpose =
@@ -32,6 +35,8 @@ export interface SessionRecord {
   kind: SessionKind;
   /** 建会话时定下的语言：交给 Codex 的说明、工具定义与工具回包按它写（迁移 017，存量会话为 zh-CN）。 */
   locale: Locale;
+  /** 会话用的 Agent（迁移 019，存量会话为 codex；ADR-0014）。 */
+  agentId: string;
   /** 会话级模型；null = 跟随全局默认。 */
   model: string | null;
   /** 会话级推理强度；null = 跟随全局默认。 */
@@ -44,7 +49,21 @@ export interface SessionRecord {
   deletedAt: number | null;
   error: JsonValue | null;
   version: number;
+  /**
+   * 会话图（迁移 019；多 Agent 协作 S7 起写入，ADR-0017）：父会话、根会话（NULL = 自己就是根）与和父会话的关系。
+   * 可选只为兼容测试里手写的记录；从库里读出的一定有（没有关系时为 null）。
+   */
+  parentSessionId?: string | null;
+  rootSessionId?: string | null;
+  relation?: SessionRelation | null;
+  /** 会话实际干活的目录（并行试做的 git worktree，多 Agent 协作 S10）；null = 项目目录。 */
+  workspacePath?: string | null;
+  /** 开场说明里注入的项目 AI 规范版本（多 Agent 协作 S11）；没注入为 null。 */
+  rulesVersion?: number | null;
 }
+
+/** 与父会话的关系：委派、接着做、评审、试做（迁移 019 的 CHECK）。 */
+export type SessionRelation = "delegate" | "continue" | "review" | "trial";
 
 export interface CreateSessionInput {
   id?: string;
@@ -56,6 +75,22 @@ export interface CreateSessionInput {
   kind?: SessionKind;
   locale?: Locale;
   now?: number;
+  /** 会话用的 Agent；不传为 codex。 */
+  agentId?: string;
+  /** 开会话时选的模型与推理强度；不传为跟随默认。 */
+  model?: string;
+  reasoningEffort?: ReasoningEffort;
+  /** 与另一个会话的关系（接着做等）；根会话取父会话的根。 */
+  graph?: SessionGraphInput;
+  /** 会话实际干活的目录（并行试做的 worktree，S10）；不传 = 项目目录。 */
+  workspacePath?: string;
+}
+
+export interface SessionGraphInput {
+  /** 父会话；并行试做的各版没有父会话（S10）为 null。 */
+  parentSessionId: string | null;
+  rootSessionId: string | null;
+  relation: SessionRelation;
 }
 
 export interface SessionRow {
@@ -64,11 +99,21 @@ export interface SessionRow {
   title: string;
   state: SessionState;
   purpose: SessionPurpose;
-  approval_mode: SessionApprovalMode;
+  approval_mode: StoredApprovalMode;
+  /** 迁移 021 之前的库没有这一列。 */
+  read_only?: number;
   /** 迁移 016 之前的库没有这一列。 */
   kind?: SessionKind;
   /** 迁移 017 之前的库没有这一列。 */
   locale?: string;
+  /** 迁移 019 之前的库没有这些列。 */
+  agent_id?: string;
+  parent_session_id?: string | null;
+  root_session_id?: string | null;
+  relation?: string | null;
+  /** 迁移 019 之前的库没有这一列。 */
+  workspace_path?: string | null;
+  rules_version?: number | null;
   model: string | null;
   reasoning_effort: string | null;
   created_at: number;
@@ -88,15 +133,22 @@ export class SessionRepository {
     const id = input.id ?? randomUUID();
     const now = input.now ?? Date.now();
     const state = input.state ?? "starting";
-    // 普通会话不写 kind 列、中文会话不写 locale 列（走默认值）：迁移 016 / 017 之前的库（升级测试）仍能建会话。
+    // 普通会话不写 kind 列、中文会话不写 locale 列、Codex 会话不写 agent_id 列（走默认值）：
+    // 迁移 016 / 017 / 019 之前的库（升级测试）仍能建会话。
     const roomTask = input.kind === "room_task";
     const english = input.locale === "en";
+    const agentId = input.agentId !== undefined && input.agentId !== "codex" ? input.agentId : null;
+    // 只读会话才写 read_only 列（迁移 021 之前的库仍能建普通会话）。
+    const readOnly = input.approvalMode === "readonly";
+    const chosen = input.model !== undefined || input.reasoningEffort !== undefined;
+    const graph = input.graph;
+    const workspacePath = input.workspacePath;
     this.database
       .prepare(
         [
           "INSERT INTO sessions",
-          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""})`,
-          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""})`,
+          `(id, project_id, title, state, purpose, approval_mode, created_at, updated_at, last_activity_at, version${roomTask ? ", kind" : ""}${english ? ", locale" : ""}${agentId === null ? "" : ", agent_id"}${readOnly ? ", read_only" : ""}${chosen ? ", model, reasoning_effort" : ""}${graph === undefined ? "" : ", parent_session_id, root_session_id, relation"}${workspacePath === undefined ? "" : ", workspace_path"})`,
+          `VALUES (@id, @projectId, @title, @state, @purpose, @approvalMode, @now, @now, @now, 1${roomTask ? ", 'room_task'" : ""}${english ? ", 'en'" : ""}${agentId === null ? "" : ", @agentId"}${readOnly ? ", 1" : ""}${chosen ? ", @model, @reasoningEffort" : ""}${graph === undefined ? "" : ", @parentSessionId, @rootSessionId, @relation"}${workspacePath === undefined ? "" : ", @workspacePath"})`,
         ].join(" "),
       )
       .run({
@@ -105,8 +157,12 @@ export class SessionRepository {
         title: input.title,
         state,
         purpose: input.purpose ?? "general",
-        approvalMode: input.approvalMode ?? "ask",
+        approvalMode: storedMode(input.approvalMode ?? "ask", "ask"),
         now,
+        ...(agentId === null ? {} : { agentId }),
+        ...(chosen ? { model: input.model ?? null, reasoningEffort: input.reasoningEffort ?? null } : {}),
+        ...(graph === undefined ? {} : graph),
+        ...(workspacePath === undefined ? {} : { workspacePath }),
       });
     return requireSession(this.getById(id), id);
   }
@@ -116,6 +172,37 @@ export class SessionRepository {
       .prepare("SELECT * FROM sessions WHERE id = @id")
       .get<SessionRow>({ id });
     return row ? mapSession(row) : null;
+  }
+
+  /** 以某个会话为父会话的会话（接着做、委派等；不含已删除），按创建先后。 */
+  listChildren(parentSessionId: string): SessionRecord[] {
+    return this.database
+      .prepare("SELECT * FROM sessions WHERE parent_session_id = @parentSessionId AND state != 'deleted' ORDER BY created_at ASC")
+      .all<SessionRow>({ parentSessionId })
+      .map(mapSession);
+  }
+
+  /** 某个会话往下的全部会话 ID（子、孙……；不含已删除与它自己），删除根会话时连带用。 */
+  listDescendantIds(sessionId: string): string[] {
+    return this.database
+      .prepare(
+        [
+          "WITH RECURSIVE tree(id) AS (",
+          "  SELECT id FROM sessions WHERE parent_session_id = @sessionId AND state != 'deleted'",
+          "  UNION SELECT s.id FROM sessions s JOIN tree ON s.parent_session_id = tree.id WHERE s.state != 'deleted'",
+          ") SELECT id FROM tree",
+        ].join(" "),
+      )
+      .all<{ id: string }>({ sessionId })
+      .map((row) => row.id);
+  }
+
+  /** 在某个独立工作目录里干活、还没归档或删除的会话 ID（并行试做清理时一并归档，多 Agent 协作 S10）。 */
+  listActiveIdsByWorkspacePath(workspacePath: string): string[] {
+    return this.database
+      .prepare("SELECT id FROM sessions WHERE workspace_path = @workspacePath AND state = 'active'")
+      .all<{ id: string }>({ workspacePath })
+      .map((row) => row.id);
   }
 
   /** 全部会话 ID（含已删除；启动清理旧版现状文件目录用）。 */
@@ -153,6 +240,21 @@ export class SessionRepository {
         ].join(" "),
       )
       .all<SessionRow>({ remoteProjectId })
+      .map(mapSession);
+  }
+
+  /** 可以被别的会话读取的普通会话（跨会话读取的 scope=all，多 Agent 协作 S7）：不含房间任务与已删除，含已归档。 */
+  listReadable(limit: number): SessionRecord[] {
+    return this.database
+      .prepare(
+        [
+          "SELECT * FROM sessions",
+          "WHERE kind = 'normal' AND state != 'deleted'",
+          "ORDER BY last_activity_at DESC, updated_at DESC, id ASC",
+          "LIMIT @limit",
+        ].join(" "),
+      )
+      .all<SessionRow>({ limit })
       .map(mapSession);
   }
 
@@ -211,7 +313,9 @@ export class SessionRepository {
     const now = options.now ?? Date.now();
     const title = input.title ?? current.title;
     const state = input.state ?? current.state;
-    const approvalMode = input.approvalMode ?? current.approvalMode;
+    // 切到只读时 approval_mode 留着原来的档（只写 read_only）；切到其他档时两列都写。
+    const approvalMode = input.approvalMode === undefined || input.approvalMode === "readonly" ? null : input.approvalMode;
+    const readOnly = input.approvalMode === undefined ? null : input.approvalMode === "readonly" ? 1 : 0;
     const purpose = input.purpose ?? current.purpose;
     const model = input.model === undefined ? current.model : input.model;
     const reasoningEffort =
@@ -225,7 +329,7 @@ export class SessionRepository {
         .prepare(
           [
             "UPDATE sessions SET",
-            "title = @title, state = @state, purpose = @purpose, approval_mode = @approvalMode,",
+            `title = @title, state = @state, purpose = @purpose,${approvalMode === null ? "" : " approval_mode = @approvalMode,"}${readOnly === null ? "" : " read_only = @readOnly,"}`,
             "model = @model, reasoning_effort = @reasoningEffort, updated_at = @now,",
             "last_activity_at = @now, archived_at = @archivedAt,",
             "deleted_at = NULL, error_json = @errorJson, version = version + 1",
@@ -238,7 +342,8 @@ export class SessionRepository {
           expectedVersion,
           title,
           state,
-          approvalMode,
+          ...(approvalMode === null ? {} : { approvalMode }),
+          ...(readOnly === null ? {} : { readOnly }),
           purpose,
           model,
           reasoningEffort,
@@ -247,6 +352,11 @@ export class SessionRepository {
           errorJson: error === null ? null : serializeJson(error),
         }).changes === 1
     );
+  }
+
+  /** 记下开场说明里注入的项目 AI 规范版本（建线程、重建线程、用户应用新版本时）。不改会话版本号与活动时间。 */
+  setRulesVersion(sessionId: string, rulesVersion: number | null): void {
+    this.database.prepare("UPDATE sessions SET rules_version = @rulesVersion WHERE id = @sessionId").run({ sessionId, rulesVersion });
   }
 
   updateState(
@@ -326,6 +436,10 @@ function archivedAtForState(
   return current.state === "archived" ? current.archivedAt : now;
 }
 
+function storedMode(mode: SessionApprovalMode, fallback: StoredApprovalMode): StoredApprovalMode {
+  return mode === "readonly" ? fallback : mode;
+}
+
 export function mapSession(row: SessionRow): SessionRecord {
   return {
     id: row.id,
@@ -333,9 +447,10 @@ export function mapSession(row: SessionRow): SessionRecord {
     title: row.title,
     state: row.state,
     purpose: row.purpose,
-    approvalMode: row.approval_mode,
+    approvalMode: row.read_only === 1 ? "readonly" : row.approval_mode,
     kind: row.kind === "room_task" ? "room_task" : "normal",
     locale: row.locale === "en" ? "en" : "zh-CN",
+    agentId: row.agent_id ?? "codex",
     model: row.model,
     reasoningEffort: isReasoningEffort(row.reasoning_effort)
       ? row.reasoning_effort
@@ -348,7 +463,16 @@ export function mapSession(row: SessionRow): SessionRecord {
     deletedAt: row.deleted_at,
     error: row.error_json ? parseJson(row.error_json) : null,
     version: row.version,
+    parentSessionId: row.parent_session_id ?? null,
+    rootSessionId: row.root_session_id ?? null,
+    relation: isRelation(row.relation) ? row.relation : null,
+    workspacePath: row.workspace_path ?? null,
+    rulesVersion: row.rules_version ?? null,
   };
+}
+
+function isRelation(value: string | null | undefined): value is SessionRelation {
+  return value === "delegate" || value === "continue" || value === "review" || value === "trial";
 }
 
 function requireSession(

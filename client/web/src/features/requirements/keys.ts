@@ -28,6 +28,11 @@ export const requirementKeys = {
   artifacts: (requirementId: string) => ["req", "item", requirementId, "artifacts"] as const,
   activity: (requirementId: string) => ["req", "item", requirementId, "activity"] as const,
   comments: (requirementId: string) => ["req", "item", requirementId, "comments"] as const,
+  /** AI 协作（多 Agent 协作 S11）：需求上的共享对象与协作记录。 */
+  sharedItems: (requirementId: string) => ["req", "item", requirementId, "shared-items"] as const,
+  aiActivity: (requirementId: string) => ["req", "item", requirementId, "ai-activity"] as const,
+  /** 项目 AI 规范（当前版本与历史）。 */
+  aiRules: (projectId: string) => ["req", "project", projectId, "ai-rules"] as const,
   sessions: (projectId: string) => ["req", "project", projectId, "local-sessions"] as const,
   /** 概览：统计（状态分布 / 流转 / 停滞）与项目动态。挂在项目键下，需求变化时随列表一起失效。 */
   overview: (projectId: string) => ["req", "project", projectId, "overview"] as const,

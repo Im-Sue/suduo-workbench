@@ -1,11 +1,13 @@
+import type { ApprovalDecision } from "./runtime.js";
 import type {
   EventEnvelope,
   JsonValue,
   ThreadRef,
   TurnRef,
 } from "./events.js";
-import type { ApprovalMode, ReasoningEffort } from "./config.js";
+import type { ApprovalMode, ReasoningEffort, RuntimeApprovalMode } from "./config.js";
 import type { CheckpointKind, Locale } from "./i18n.js";
+import type { AgentCapability } from "./agents.js";
 
 export type ErrorCode =
   | "VALIDATION_ERROR"
@@ -23,6 +25,8 @@ export type ErrorCode =
   | "APPROVAL_ALREADY_DECIDED"
   | "RUNTIME_UNAVAILABLE"
   | "RUNTIME_REQUEST_FAILED"
+  /** 这家 Agent 没装或没登录（多 Agent，ADR-0014 / ADR-0016）；details 带 agentId 与 reason。 */
+  | "AGENT_NOT_READY"
   | "SHUTDOWN_UNAVAILABLE";
 
 export interface ErrorResponse {
@@ -87,8 +91,8 @@ export interface SessionDto {
   state: "starting" | "active" | "error" | "archived" | "deleted";
   /** 会话用途只用于展示和快捷入口，不形成业务任务或独立状态。 */
   purpose: SessionPurpose;
-  /** 会话级审批模式，切换后下个回合生效。 */
-  approvalMode: ApprovalMode;
+  /** 会话级审批模式（含只读，多 Agent S5），切换后下个回合生效。 */
+  approvalMode: RuntimeApprovalMode;
   /**
    * 会话级模型，切换后下个回合生效；null = 跟随全局默认
    * （Codex config.toml 的 model，未配置时为 model/list 的默认模型）。
@@ -104,11 +108,56 @@ export interface SessionDto {
    * 由房间触发、回答发回房间，会话页只读。
    */
   kind: SessionKind;
+  /** 会话用的 Agent（ADR-0014）；老会话为 codex。 */
+  agentId: string;
+  /** 这家 Agent 的名字与能力（配置表里的静态信息，界面据此显示名字、隐藏做不到的入口）；旧服务端不返回。 */
+  agent?: SessionAgentDto;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number | null;
   version: number;
   threads: ThreadBindingDto[];
+  /**
+   * 会话图（多 Agent 协作 S7，ADR-0017）：父会话、根会话（null = 自己就是根）与和父会话的关系；
+   * 没有关系时都为 null。旧服务端不返回。
+   */
+  parentSessionId?: string | null;
+  rootSessionId?: string | null;
+  relation?: SessionRelation | null;
+  /**
+   * 会话在独立工作目录里干活（并行试做的 worktree，多 Agent 协作 S10）时的目录；在项目目录里干活时不带。
+   * 界面据此不给「回到开始前」（检查点是原目录的）。
+   */
+  workspacePath?: string;
+  /** 开场说明里注入的项目 AI 规范版本（多 Agent 协作 S11）；没注入不带。界面据此提示有新版本。 */
+  rulesVersion?: number;
+  /** 只有单个会话的详情带：接续自哪个会话、被哪些会话接着做（需求 4.2「两个会话互相显示」）。 */
+  links?: SessionLinksDto;
+}
+
+/** 与父会话的关系：委派、接着做、评审、试做。 */
+export type SessionRelation = "delegate" | "continue" | "review" | "trial";
+
+/** 关系另一头的会话（标题、Agent 名、状态，界面显示「接续自 Claude Code · 导出接口」）。 */
+export interface SessionLinkDto {
+  id: string;
+  title: string;
+  agentId: string;
+  agentName: string;
+  state: SessionDto["state"];
+}
+
+export interface SessionLinksDto {
+  continuedFrom: SessionLinkDto | null;
+  continuedBy: SessionLinkDto[];
+  /** 往下的会话（委派、接着做……含孙辈，不含已删除）有几个；删除时据此询问是否连带。旧服务端不返回。 */
+  descendantCount?: number;
+}
+
+export interface SessionAgentDto {
+  displayName: string;
+  readOnlyCapable: boolean;
+  capabilities: AgentCapability[];
 }
 
 export type SessionPurpose =
@@ -119,8 +168,23 @@ export type SessionPurpose =
   | "fe_connect"
   | "test";
 
-export interface CreateSessionRequest {
+/**
+ * 开会话时的选择（需求 4.2）：用哪家 Agent、审批档、模型与推理强度。都可不传：Agent 为 codex，
+ * 审批档为设置里的默认档，模型与推理强度跟随默认。也是 POST /api/v2/requirements/:id/sessions、
+ * /api/v2/projects/:id/sessions 的请求体。
+ */
+export interface SessionStartOptions {
+  /** 用哪家 Agent 开工（ADR-0014）；不传为 codex。 */
+  agentId?: string;
+  /** 只读要这家 Agent 做得到（配置表 readOnlyCapable）；受部署上限约束。 */
+  approvalMode?: RuntimeApprovalMode;
+  model?: string | null;
+  reasoningEffort?: ReasoningEffort | null;
+}
+
+export interface CreateSessionRequest extends SessionStartOptions {
   title?: string;
+  /** 旧字段：只接受 codex-local；新调用方用 agentId。 */
   runtimeId?: string;
   purpose?: SessionPurpose;
 }
@@ -137,7 +201,8 @@ export type ListSessionsResponse = CursorPage<SessionDto>;
 export interface UpdateSessionRequest {
   title?: string;
   state?: "active" | "archived";
-  approvalMode?: ApprovalMode;
+  /** 含只读（这家 Agent 做得到时）。 */
+  approvalMode?: RuntimeApprovalMode;
   purpose?: SessionPurpose;
   /** 显式模型（1–128 位，字母数字与 . _ : / -）；null = 恢复跟随全局默认。 */
   model?: string | null;
@@ -259,9 +324,14 @@ export interface SendMessageAccepted {
   sessionId: string;
   messageEventSeq: number;
   threadRef: ThreadRef;
-  /** 运行中发送时这里可能是一个永不出现在事件流里的幽灵 id，仅供诊断，不参与任何归属判定。 */
-  turnRef: TurnRef;
+  /**
+   * 运行中发送时这里可能是一个永不出现在事件流里的幽灵 id，仅供诊断，不参与任何归属判定。
+   * 本机名额满了、消息在排队（多 Agent 协作 S8）时为 null，回合轮到时才开。
+   */
+  turnRef: TurnRef | null;
   acceptedAt: number;
+  /** 排队中（本机同时运行的回合到上限，需求 4.11「排队不拒绝」）：在本机队列里的项与位置。 */
+  queued?: { itemId: string; position: number };
   /**
    * 发送时生成的关联键（与 message.submitted.payload.clientTurnId 相同）。
    * Codex 会在 userMessage item 里把它连同真正收下这条消息的回合一起报回来，
@@ -283,11 +353,8 @@ export type ApprovalStatus =
   | "orphaned"
   | "delivery_failed";
 
-export type ApprovalRecordDecision =
-  | "accept"
-  | "acceptForSession"
-  | "decline"
-  | "cancel";
+/** 审批记录上的决策；与运行时决策同一组取值（多 Agent 后多了 acceptAlways / declineAlways）。 */
+export type ApprovalRecordDecision = ApprovalDecision;
 
 export interface ApprovalDto {
   id: string;
@@ -301,6 +368,19 @@ export interface ApprovalDto {
   requestedAt: number;
   decidedAt: number | null;
   version: number;
+  /**
+   * 来自委派出来的子会话（多 Agent 协作 S8，R6「审批不越过人、标明来源」）：发起会话的审批坞里
+   * 一并列出子会话等确认的卡片，并写明是哪个委派。自己会话的卡片没有这一项。
+   */
+  origin?: ApprovalOriginDto;
+}
+
+export interface ApprovalOriginDto {
+  sessionId: string;
+  sessionTitle: string;
+  agentName: string;
+  delegationId: string;
+  task: string;
 }
 
 export interface ListApprovalsQuery extends CursorQuery {
@@ -310,8 +390,20 @@ export interface ListApprovalsQuery extends CursorQuery {
 export type ListApprovalsResponse = CursorPage<ApprovalDto>;
 
 export interface DecideApprovalRequest {
-  decision: "accept" | "acceptForSession" | "decline" | "cancel";
+  decision: ApprovalDecision;
+  /** 选项 id（审批载荷里 options[].id）；不传时按 decision 找第一个匹配的选项。 */
+  optionId?: string;
 }
+
+/** 接口接受的全部决策值。 */
+export const APPROVAL_DECISIONS = [
+  "accept",
+  "acceptForSession",
+  "acceptAlways",
+  "decline",
+  "declineAlways",
+  "cancel",
+] as const satisfies readonly ApprovalDecision[];
 
 export interface InterruptRequest {
   threadRef?: ThreadRef;
@@ -409,12 +501,16 @@ export interface OpenFileRequest {
   mode: SystemOpenTarget;
   /** 只对 vscode 生效：打开后跳到这一行（从 1 开始）。 */
   line?: number;
+  /** 会话页带上：会话在独立工作目录（并行试做的 worktree）里干活时按那个目录找文件。 */
+  sessionId?: string;
 }
 
 /** 批量确认项目内文件是否存在（会话回答里的路径要不要变成链接）。最多 200 条。 */
 export interface ExistingFilesRequest {
   /** 项目内相对路径。 */
   paths: string[];
+  /** 同 OpenFileRequest.sessionId。 */
+  sessionId?: string;
 }
 
 export interface ExistingFilesResponse {
