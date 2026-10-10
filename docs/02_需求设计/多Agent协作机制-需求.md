@@ -2,7 +2,7 @@
 id: suduo-requirement-multi-agent-collab-001
 title: 多 Agent 协作机制
 doc_type: requirement
-status: delivering
+status: delivered
 created: 2026-10-08
 ---
 

@@ -2,7 +2,7 @@
 id: suduo-requirement-multi-agent-001
 title: 多 Agent 接入与本机工具服务
 doc_type: requirement
-status: delivering
+status: delivered
 created: 2026-10-08
 ---
 

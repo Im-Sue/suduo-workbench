@@ -171,7 +171,7 @@ sudo SUDUO_LOCALE=zh-CN ./scripts/suduo-cloud.sh backup
 
 ```bash
 git fetch --tags
-git checkout v0.10.0           # 要升级到的版本
+git checkout v0.11.0           # 要升级到的版本
 sudo ./scripts/suduo-cloud.sh upgrade
 ```
 

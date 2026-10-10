@@ -102,7 +102,7 @@ $env:SUDUO_LOCALE = "zh-CN"; pnpm start      # Windows PowerShell（对当前窗
 
 ```bash
 git fetch --tags
-git checkout v0.10.0    # 团队使用的版本
+git checkout v0.11.0    # 团队使用的版本
 pnpm install
 pnpm start              # 会自动重新构建
 ```

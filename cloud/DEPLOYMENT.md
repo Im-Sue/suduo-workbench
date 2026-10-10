@@ -165,7 +165,7 @@ Setting it before `sudo` (`SUDUO_LOCALE=en sudo …`) or with `export` has no ef
 
 ```bash
 git fetch --tags
-git checkout v0.10.0           # the release you want
+git checkout v0.11.0           # the release you want
 sudo ./scripts/suduo-cloud.sh upgrade
 ```
 
