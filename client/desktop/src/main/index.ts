@@ -137,11 +137,15 @@ class DesktopController {
 
   start(): void {
     this.log(`SuDuo desktop ${this.version()} starting (packaged=${String(app.isPackaged)}, data=${paths.dataDir})`);
-    this.hiddenStart = openedAtLogin(process.argv, this.loginHost);
-    // 开机自启以系统的登录项为准（使用者可能在系统设置里关掉了）：不在每次启动时重新登记。
-    const loginStatus = loginItemStatus(this.loginHost);
-    if (loginStatus === "enabled" || loginStatus === "requiresApproval" || loginStatus === "disabled") {
-      this.prefs = { ...this.prefs, openAtLogin: loginStatus !== "disabled" };
+    // 查系统登录项是同步调用（Mac 上经 SMAppService 问系统服务），在 CI 的 Mac 构建机上见过卡住主线程、整个应用
+    // 不动。只有使用者开过开机自启才在启动时查：没开过就不会是开机拉起的，也没有要同步的。
+    if (this.prefs.openAtLogin) {
+      this.hiddenStart = openedAtLogin(process.argv, this.loginHost);
+      // 开机自启以系统的登录项为准（使用者可能在系统设置里关掉了）：不在每次启动时重新登记。
+      const loginStatus = loginItemStatus(this.loginHost);
+      if (loginStatus === "enabled" || loginStatus === "requiresApproval" || loginStatus === "disabled") {
+        this.prefs = { ...this.prefs, openAtLogin: loginStatus !== "disabled" };
+      }
     }
     this.savePrefs();
     this.installSessionPolicy();
