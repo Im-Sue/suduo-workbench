@@ -2,15 +2,31 @@
 
 [中文](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## 0.11.0 — 2026-10-09
+
+Works with more AI coding agents than Codex and lets them work together on a requirement. The desktop app learns to tell you about updates (and install them on Windows), sign in to ChatGPT, and open at login.
 
 ### Added
 
-- Desktop app: in-app updates. SuDuo checks for a new version at startup and once a day (Settings → Desktop app lets you turn this off or check now) and shows a bar at the top of the window; it never updates on its own. On Windows it downloads, asks first if sessions are in progress, then installs and reopens; on macOS the unsigned trial opens the release page.
+- More agents: alongside Codex (included), SuDuo runs Claude Code (through Anthropic's Claude Agent SDK) and agents that speak the Agent Client Protocol: OpenCode, Gemini CLI, Qwen Code, GitHub Copilot CLI, Cursor CLI and Kimi Code. They use your own installation and sign-in; SuDuo only runs their official CLIs and never reads their credentials. Settings → AI Agents shows each agent's status and version, how to install it and the command to sign in; pick the agent when you start a session. Codex, Claude Code and OpenCode have been tested end to end; Gemini CLI, Qwen Code and GitHub Copilot CLI have been tested up to sign-in; Cursor CLI and Kimi Code haven't been tested yet.
+- Agents working together:
+  - Reference a session with `@`: the agent reads its summary, recent rounds or changes, and the session shows what was read.
+  - Continue a session with another agent.
+  - Delegate: an agent (or you, with `@Agent` in the composer) hands a task to another agent and waits for the result. A local scheduler queues turns by per-agent limits; the run panel shows what's running and queued, and approvals from delegated work are labeled with where they came from.
+  - Cross review: ask another agent for a read-only review, then hand the findings you pick back to the original agent.
+  - Parallel trials: two or more agents try the same task in separate git worktrees; compare answers, changes and tests, adopt one (merge or keep its branch), and clean up after you confirm.
+- Share to the requirement (needs a 0.11.0 server): handoffs, review reports and session snapshots. You preview the full content first; local paths are replaced and anything that looks like a secret is flagged. Members can retract what was shared. Project AI rules: versioned team rules every agent follows, without changing files in your repository. Collaboration records: who used which agent on a requirement and for what (status and branch name; no conversation or code), on by default and can be turned off per session.
+- Discussion rooms can share agents of any kind, not only Codex (read-only; needs a 0.11.0 server).
+- Reminders on delegation and review cards when they wait for your approval over 10 minutes or show no activity for 15 minutes; My work lists review findings you haven't handed back yet.
+- Approval cards name the agent that's asking ("Claude Code wants to run a command"), and the setup wizard has a "Connect agents" step.
+- Diagnostics are grouped by agent and say when an agent's version is outside what SuDuo has verified; a Git check gives install steps when Git is missing (SuDuo still starts).
+- Desktop app: in-app updates. SuDuo checks at startup and once a day (Settings → Desktop app lets you turn this off or check now) and shows a bar at the top of the window; it never updates on its own. On Windows it downloads, asks first if sessions are in progress, then installs and reopens; the unsigned macOS trial opens the release page.
 - Desktop app: sign in to Codex with your ChatGPT account under Settings → Model service (you authorize in your browser; Codex keeps the sign-in).
-- Desktop app: open at login (off by default; starts in the background without a window), a Help menu on macOS, and a Settings → Desktop app group with the local address and the data and log folders.
-- Desktop app: clicking a system notification brings the SuDuo window back, even when it was closed to the menu bar or notification area.
-- Diagnostics check for Git (checkpoints and change diffs need it); when it's missing you get install steps, and SuDuo still starts.
+- Desktop app: open at login (off by default; starts in the background without a window), a Help menu on macOS, and a Settings → Desktop app group with the local address and the data and log folders. Clicking a system notification brings the window back, even when it was closed to the menu bar or notification area.
+
+### Changed
+
+- Agents call SuDuo's requirement and session tools through a local MCP service on 127.0.0.1 with a token for each session; new Codex sessions use it too.
 
 ### Removed
 
@@ -19,6 +35,22 @@
 ### Fixed
 
 - In a requirement's attachment list, the names of PDFs and other files that open in a new tab showed as blue underlined links. They now look like the other file names and are underlined only on hover.
+
+### Upgrading
+
+- Upgrade the server first, then each client. A 0.11.0 client hides sharing to the requirement, project AI rules, collaboration records and room sharing of non-Codex agents until the server supports them.
+- Cloud: `git fetch --tags && git checkout v0.11.0`, then `sudo ./scripts/suduo-cloud.sh upgrade`. It backs up first; database migrations 016 (agent kinds in rooms) and 017 (shared items, AI rules, collaboration records) run when the service starts. See [cloud/DEPLOYMENT.md](cloud/DEPLOYMENT.md).
+- Client from source: `git fetch --tags && git checkout v0.11.0`, `pnpm install`, then `pnpm start`. Local database migrations 019–026 run when the local service starts.
+- Desktop app: install the 0.11.0 installer from this release over the old version once (on macOS, quit SuDuo from the menu bar first and replace it in Applications). Your data is kept. From the next version on, SuDuo tells you when an update is out.
+- Other agents are optional: install them and sign in with their own commands, then check Settings → AI Agents. When you use Claude Code, its use is subject to Anthropic's terms.
+
+### Known limitations
+
+- The desktop app is a trial: it isn't signed yet (see the [client guide](client/README.md#desktop-app-trial) for opening it the first time). The Intel Mac and Windows packages, and installing an update in the app on Windows, haven't been tested on real hardware yet. Claude Code hasn't been tested inside the desktop app yet.
+- ACP agents can't switch models from SuDuo yet, and their tool timeouts differ from agent to agent.
+- The collaboration record that a session was opened is sent when the session starts, before you can turn records off for it.
+- Codex can't post comments with files yet.
+- The cloud has no administrator or invitation system: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
 
 ## 0.10.0 — 2026-10-07
 

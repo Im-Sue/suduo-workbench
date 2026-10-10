@@ -152,9 +152,9 @@ SuDuo's interface is available in English and Simplified Chinese. It follows you
 
 ## Status
 
-SuDuo is in early access. The latest release is 0.10.0, which adds requirement priorities and files in comments. The desktop app for macOS and Windows (from 0.9.0) is a trial.
+SuDuo is in early access. The latest release is 0.11.0, which adds more AI agents working together (Claude Code, OpenCode and other agents alongside Codex) and in-app updates for the desktop app. The desktop app for macOS and Windows (from 0.9.0) is a trial.
 
-- The desktop app isn't signed yet and doesn't update itself; download each new version from the releases page. Running from source still works.
+- The desktop app isn't signed yet. From 0.11.0 it tells you when a new version is out: on Windows it installs the update in the app; on macOS you download it from the releases page. Running from source still works.
 - The server has no administrator or invitation system yet: anyone who can reach it can register. Keep it on a private network or VPN, or behind a reverse proxy with access control.
 - Tested on macOS (Apple silicon) and on Ubuntu 22.04 / 24.04 servers. Windows and Intel Macs are supported but have had less testing.
 
@@ -184,7 +184,7 @@ No. Codex keeps its own configuration in `~/.codex` and talks to your model prov
 <summary><b>Do I need to install Codex separately?</b></summary>
 <br>
 
-No. The desktop app includes the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.10.0), and `pnpm install` installs the same version when you run from source. Either way it uses the same `~/.codex` as a Codex CLI you may already have. Other agents are optional and you install them yourself; when you use Claude Code, its use is subject to Anthropic's terms.
+No. The desktop app includes the Codex CLI version that this SuDuo release is tested with (0.159.2 for SuDuo 0.11.0), and `pnpm install` installs the same version when you run from source. Either way it uses the same `~/.codex` as a Codex CLI you may already have. Other agents are optional and you install them yourself; when you use Claude Code, its use is subject to Anthropic's terms.
 
 </details>
 

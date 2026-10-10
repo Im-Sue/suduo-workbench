@@ -150,9 +150,9 @@ Codex 配置细节、更新、数据位置和常见问题见[客户端指南](cl
 
 ## 当前状态
 
-速舵处于早期版本，最新版本是 0.10.0，新增了需求优先级和评论文件。macOS 与 Windows 桌面应用（0.9.0 起）为试用版。
+速舵处于早期版本，最新版本是 0.11.0，新增了多个 AI Agent 协作（Codex 之外还有 Claude Code、OpenCode 等）和桌面应用的应用内更新。macOS 与 Windows 桌面应用（0.9.0 起）为试用版。
 
-- 桌面应用还没有签名，也不会自动更新，新版本需要到 Releases 页面下载。从源码运行照常可用。
+- 桌面应用还没有签名。0.11.0 起会提示新版本：Windows 上可以在应用里安装更新；macOS 需要到 Releases 页面下载。从源码运行照常可用。
 - 服务器暂时没有管理员和邀请机制：能访问到它的人都能注册。请只在内网或 VPN 内开放，或放在带访问控制的反向代理后面。
 - 在 macOS（Apple 芯片）和 Ubuntu 22.04 / 24.04 服务器上测试过；Windows 和 Intel Mac 也支持，但测试得少一些。
 
@@ -182,7 +182,7 @@ Codex 配置细节、更新、数据位置和常见问题见[客户端指南](cl
 <summary><b>需要另外安装 Codex 吗？</b></summary>
 <br>
 
-不需要。桌面应用自带这个 SuDuo 版本测试过的 Codex CLI（SuDuo 0.10.0 对应 0.159.2），从源码运行时 `pnpm install` 也会装同一个版本。两种方式都和你可能已经装好的 Codex CLI 共用 `~/.codex`。其他 Agent 可选，需要你自己安装；用 Claude Code 时，使用受 Anthropic 条款约束。
+不需要。桌面应用自带这个 SuDuo 版本测试过的 Codex CLI（SuDuo 0.11.0 对应 0.159.2），从源码运行时 `pnpm install` 也会装同一个版本。两种方式都和你可能已经装好的 Codex CLI 共用 `~/.codex`。其他 Agent 可选，需要你自己安装；用 Claude Code 时，使用受 Anthropic 条款约束。
 
 </details>
 
